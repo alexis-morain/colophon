@@ -390,6 +390,17 @@ kbd {
   margin-top: -6vh;
 }
 
+.empty-block.wide {
+  max-width: 62rem;
+}
+
+.setup-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 26rem) auto;
+  gap: 56px;
+  align-items: start;
+}
+
 .kicker {
   margin: 0 0 26px;
   padding-left: 14px;
@@ -442,37 +453,240 @@ kbd {
 
 /* ---- creation form ----------------------------------------------------- */
 
-.compose {
-  display: flex;
+.setup {
+  display: grid;
   gap: 22px;
-  align-items: flex-end;
-  margin: 0 0 8px;
+  max-width: 40rem;
 }
 
-.compose label {
+.setup-heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3.2vw, 36px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.setup-folder {
+  margin: -10px 0 0;
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.setup-folder code {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.setup-field {
   display: grid;
-  gap: 5px;
+  gap: 8px;
+}
+
+.setup-label {
   color: var(--muted);
   font-size: 12px;
 }
 
-.compose select,
-.compose input {
+.setup-input {
   font: inherit;
+  font-family: var(--font-display);
+  font-size: 17px;
   color: var(--text);
   background: var(--ink-raised);
   border: 1px solid var(--rule);
-  padding: 8px 10px;
+  padding: 10px 12px;
+  width: 100%;
 }
 
-.compose input {
-  width: 72px;
+.setup-input.narrow {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  width: 76px;
 }
 
-.compose select:focus,
-.compose input:focus {
+.setup-input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.setup-spreads {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.setup-hint {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.setup-actions {
+  margin: 4px 0 0;
+  display: flex;
+  gap: 22px;
+  align-items: baseline;
+}
+
+/* Each format is an open double page at its true proportions; the fold is
+   the gap between the two pages. The shape does the explaining. */
+.format-cards {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.format-card {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  align-content: end;
+  padding: 12px 12px 9px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  transition: border-color var(--turn), background var(--turn);
+}
+
+.format-card:hover {
+  border-color: var(--muted);
+}
+
+.format-card.active {
+  border-color: var(--accent);
+  background: var(--ink-raised);
+}
+
+.format-preview {
+  display: flex;
+  gap: 2px;
+  align-items: end;
+  margin-bottom: 6px;
+}
+
+.format-page {
+  background: rgba(237, 230, 216, 0.22);
+}
+
+.format-card.active .format-page {
+  background: var(--paper);
+}
+
+.format-name {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.format-dims {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* The chosen format at scale: real margins, real gutter, cm measurements.
+   It doubles as the backdrop of the build progress. */
+.format-large {
+  margin: 26px 0 0;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.format-large-cote {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  justify-self: center;
+}
+
+.format-large-spread {
+  position: relative;
+  background: var(--paper);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 18px 44px -18px rgba(0, 0, 0, 0.8);
+  transition: width var(--turn), height var(--turn);
+}
+
+.format-large-slot {
+  position: absolute;
+  background: rgba(23, 21, 15, 0.16);
+}
+
+.format-large-fold {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 46%,
+    rgba(23, 21, 15, 0.12) 49.6%,
+    rgba(23, 21, 15, 0.18) 50%,
+    rgba(23, 21, 15, 0.12) 50.4%,
+    transparent 54%
+  );
+}
+
+.format-large figcaption {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.format-large figcaption strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---- build progress ---------------------------------------------------- */
+
+.build {
+  display: grid;
+  gap: 10px;
+}
+
+.build-bar {
+  height: 3px;
+  background: var(--rule);
+  overflow: hidden;
+}
+
+.build-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 480ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.build-stage {
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.build-stage-label {
+  animation: stage-in 260ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes stage-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 3px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.build-pct {
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
 }
 
 .buildlog {

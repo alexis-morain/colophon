@@ -12,7 +12,14 @@ import {
   renderPdf,
   saveAlbum,
 } from "./bridge";
-import { Album, Discard, OpenedAlbum, Spread } from "./album";
+import {
+  Album,
+  Discard,
+  mediaCanvas,
+  OpenedAlbum,
+  slotsFor,
+  Spread,
+} from "./album";
 import {
   changeTemplate,
   moveBlocker,
@@ -139,14 +146,21 @@ export default function App() {
   }, [save, rendering]);
 
   /** Build an album from a photo folder, streaming the engine's progress. */
-  const createAlbum = useCallback(async (dir: string, format: string, spreads: number) => {
+  const createAlbum = useCallback(async (
+    dir: string,
+    format: string,
+    spreads: number,
+    title: string | null,
+  ) => {
     setBuilding([]);
     setError(null);
+    // Every line is kept: the counter lines drive the progress bar, the
+    // named stages feed the visible log.
     const off = await onBuildProgress((line) =>
-      setBuilding((b) => (b ? [...b.slice(-7), line] : [line])),
+      setBuilding((b) => (b ? [...b, line] : [line])),
     );
     try {
-      const result = await buildAlbum(dir, format, spreads);
+      const result = await buildAlbum(dir, format, spreads, title);
       resetThumbs();
       setOpened(result);
       setHist({ album: result.album, past: [], future: [] });
@@ -164,6 +178,22 @@ export default function App() {
       setBuilding(null);
     }
   }, []);
+
+  /** Back to the creation screen. Unsaved work asks before dying. */
+  const closeAlbum = useCallback(() => {
+    if (dirty && !window.confirm("Des modifications ne sont pas enregistrées. Fermer quand même ?")) {
+      return;
+    }
+    setHist(null);
+    setOpened(null);
+    setSavedAlbum(null);
+    setCuration([]);
+    setSelected(null);
+    setTriSelected(null);
+    setView("livre");
+    setStatus(null);
+    setError(null);
+  }, [dirty]);
 
   /** Bring a discarded photo back, next to the photo that beat it. */
   const rescue = useCallback(
@@ -229,9 +259,10 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // A focused select or input owns the keyboard.
+      // A focused control owns the keyboard: an input takes the letters, a
+      // button takes space and enter (standard activation).
       const t = e.target as HTMLElement | null;
-      if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+      if (t && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(t.tagName)) return;
 
       const key = e.key.toLowerCase();
       if (e.metaKey && key === "o") {
@@ -248,6 +279,13 @@ export default function App() {
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
+        return;
+      }
+      if (e.metaKey && (key === "1" || key === "2")) {
+        e.preventDefault();
+        setView(key === "1" ? "livre" : "tri");
+        setSelected(null);
+        setTriSelected(null);
         return;
       }
       // The sorting view keeps the global shortcuts, nothing spread-bound.
@@ -353,6 +391,7 @@ export default function App() {
         onPdf={inTauri ? () => void regenPdf() : undefined}
         pdfBusy={rendering}
         onOpen={openAlbum}
+        onClose={closeAlbum}
       />
       {view === "tri" ? (
         <TriView
@@ -419,6 +458,7 @@ function Bar({
   onPdf,
   pdfBusy,
   onOpen,
+  onClose,
 }: {
   album: Album;
   spread: Spread;
@@ -438,6 +478,7 @@ function Bar({
   onPdf?: () => void;
   pdfBusy?: boolean;
   onOpen: () => void;
+  onClose: () => void;
 }) {
   return (
     <header className="bar">
@@ -508,6 +549,9 @@ function Bar({
             {pdfBusy ? "PDF…" : "PDF"}
           </button>
         )}
+        <button className="link" onClick={onClose} title="Fermer et composer un autre album">
+          Nouveau
+        </button>
         <button className="link" onClick={onOpen}>
           Ouvrir
         </button>
@@ -549,11 +593,13 @@ function Empty({
   error,
 }: {
   onOpen: () => void;
-  onCreate: (dir: string, format: string, spreads: number) => void;
+  onCreate: (dir: string, format: string, spreads: number, title: string | null) => void;
   building: string[] | null;
   error: string | null;
 }) {
   const [formats, setFormats] = useState<FormatPreset[]>([]);
+  const [dir, setDir] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
   const [format, setFormat] = useState("carre-21");
   const [spreads, setSpreads] = useState(48);
 
@@ -561,70 +607,295 @@ function Empty({
     listFormats().then(setFormats, () => {});
   }, []);
 
-  const compose = async () => {
-    const dir = await pickPhotosFolder();
-    if (dir) onCreate(dir, format, spreads);
+  const folderName = dir?.split("/").pop() ?? "";
+  const chosen = formats.find((f) => f.name === format);
+
+  const pick = async () => {
+    const picked = await pickPhotosFolder();
+    if (!picked) return;
+    setDir(picked);
+    setTitle(picked.split("/").pop() ?? "");
   };
 
   return (
     <div className="empty">
-      <div className="empty-block">
+      <div className={"empty-block" + (dir || building ? " wide" : "")}>
         <p className="kicker">Colophon</p>
-        <h1>
-          Un dossier de photos,
-          <br />
-          un album à feuilleter.
-        </h1>
-        <p className="lede">
-          Colophon lit vos photos, écarte les doublons et les ratés, compose
-          les planches et rend un PDF. Tout se retouche ensuite dans la vue
-          Livre.
-        </p>
 
-        {inTauri && !building && (
-          <div className="compose">
-            <label>
-              format
-              <select value={format} onChange={(e) => setFormat(e.target.value)}>
-                {formats.map((f) => (
-                  <option key={f.name} value={f.name}>
-                    {f.name} · {f.w.toFixed(0)} × {f.h.toFixed(0)} mm
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              planches
-              <input
-                type="number"
-                min={8}
-                max={200}
-                value={spreads}
-                onChange={(e) => setSpreads(Number(e.target.value) || 48)}
-              />
-            </label>
-            <button className="cta" onClick={() => void compose()}>
-              Composer un album…
+        {!dir && !building && (
+          <>
+            <h1>
+              Un dossier de photos,
+              <br />
+              un album à feuilleter.
+            </h1>
+            <p className="lede">
+              Colophon lit vos photos, écarte les doublons et les ratés,
+              compose les planches et rend un PDF prêt à relire. Tout se
+              retouche ensuite : gabarits, ordre, photos repêchées.
+            </p>
+            <button className="cta" onClick={() => void pick()}>
+              Choisir un dossier de photos…
             </button>
+            <p className="hint">
+              ou{" "}
+              <button className="link" onClick={onOpen}>
+                ouvrir un album existant
+              </button>{" "}
+              (<kbd>⌘</kbd> <kbd>O</kbd>)
+            </p>
+          </>
+        )}
+
+        {(dir || building) && (
+          <div className="setup-layout">
+            {dir && !building && (
+              <form
+                className="setup"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  onCreate(dir, format, spreads, title.trim() || null);
+                }}
+              >
+                <h1 className="setup-heading">Nouvel album</h1>
+                <p className="setup-folder">
+                  <code>{dir}</code>
+                  <button type="button" className="link" onClick={() => void pick()}>
+                    changer de dossier
+                  </button>
+                </p>
+
+                <label className="setup-field">
+                  <span className="setup-label">titre</span>
+                  <input
+                    className="setup-input"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder={folderName}
+                    autoFocus
+                  />
+                </label>
+
+                <div className="setup-field">
+                  <span className="setup-label">format de page</span>
+                  <div className="format-cards">
+                    {formats.map((f) => (
+                      <FormatCard
+                        key={f.name}
+                        f={f}
+                        active={f.name === format}
+                        onPick={() => setFormat(f.name)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <label className="setup-field">
+                  <span className="setup-label">planches</span>
+                  <span className="setup-spreads">
+                    <input
+                      className="setup-input narrow"
+                      type="number"
+                      min={8}
+                      max={200}
+                      value={spreads}
+                      onChange={(e) => setSpreads(Number(e.target.value) || 48)}
+                    />
+                    <span className="setup-hint">
+                      soit {spreads * 2} pages, l'imprimeur compte en pages
+                    </span>
+                  </span>
+                </label>
+
+                <p className="setup-actions">
+                  <button className="cta" type="submit">
+                    Composer l'album
+                  </button>
+                  <button type="button" className="link" onClick={() => setDir(null)}>
+                    Annuler
+                  </button>
+                </p>
+              </form>
+            )}
+
+            {building && (
+              <div className="setup">
+                <h1 className="setup-heading">
+                  Composition de « {title.trim() || folderName || "l'album"} »
+                </h1>
+                <BuildProgress lines={building} />
+                <p className="setup-hint">
+                  L'analyse des photos ne se fait qu'une fois : recomposer ce
+                  dossier sera bien plus rapide.
+                </p>
+              </div>
+            )}
+
+            {chosen && <FormatSpreadPreview f={chosen} />}
           </div>
         )}
 
-        {building && (
-          <pre className="buildlog">
-            {building.length ? building.join("\n") : "lecture du dossier…"}
-          </pre>
-        )}
-
-        {!building && (
-          <p className="hint">
-            <button className="link" onClick={onOpen}>
-              Ouvrir un album existant
-            </button>{" "}
-            (<kbd>⌘</kbd> <kbd>O</kbd>), puis les flèches pour tourner les pages
-          </p>
-        )}
         {error && <p className="warn">{error}</p>}
       </div>
+    </div>
+  );
+}
+
+const cm = (mm: number) =>
+  (mm / 10).toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+
+/**
+ * One page format, drawn as an open double page at its true proportions:
+ * the shapes differ, so the choice is visible before any vocabulary.
+ */
+function FormatCard({
+  f,
+  active,
+  onPick,
+}: {
+  f: FormatPreset;
+  active: boolean;
+  onPick: () => void;
+}) {
+  const pageH = 44;
+  const pageW = (f.w / f.h) * pageH;
+  return (
+    <button
+      type="button"
+      className={"format-card" + (active ? " active" : "")}
+      onClick={onPick}
+      title={f.about}
+    >
+      <span className="format-preview">
+        <span className="format-page" style={{ width: pageW, height: pageH }} />
+        <span className="format-page" style={{ width: pageW, height: pageH }} />
+      </span>
+      <span className="format-name">{f.name.replace(/-/g, " ")}</span>
+      <span className="format-dims">
+        {cm(f.w)} × {cm(f.h)} cm
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The chosen format, drawn large with the real spread geometry: the actual
+ * margins, gutter and a six-photo template from the engine's own arithmetic,
+ * plus its measurements. What you pick is what the press trims.
+ */
+function FormatSpreadPreview({ f }: { f: FormatPreset }) {
+  const album = { trim_mm: { w: f.w, h: f.h }, bleed_mm: 0 } as Album;
+  const canvas = mediaCanvas(album);
+  const rects = slotsFor("six", 6, canvas);
+  const width = 320;
+  const scale = width / canvas.w;
+
+  return (
+    <figure className="format-large">
+      <span className="format-large-cote">{cm(f.w * 2)} cm ouvert</span>
+      <div
+        className="format-large-spread"
+        style={{ width: canvas.w * scale, height: canvas.h * scale }}
+      >
+        {rects.map((r, i) => (
+          <span
+            key={i}
+            className="format-large-slot"
+            style={{
+              left: r.x * scale,
+              top: r.y * scale,
+              width: r.w * scale,
+              height: r.h * scale,
+            }}
+          />
+        ))}
+        <span className="format-large-fold" />
+      </div>
+      <figcaption>
+        <strong>
+          {cm(f.w)} × {cm(f.h)} cm
+        </strong>{" "}
+        la page · {f.about}
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * The engine's progress lines, read into a bar and a stage label. The
+ * analysis phase streams counts, so the bar moves all along the longest
+ * stretch instead of freezing at « analyse ».
+ */
+function buildStage(lines: string[]): { pct: number; label: string } {
+  let pct = 2;
+  let label = "lecture du dossier";
+  for (const l of lines) {
+    let p = 0;
+    let lab = "";
+    const count = l.match(/^analyze: (\d+)\/(\d+)/);
+    if (l.startsWith("scan:")) {
+      p = 4;
+      lab = "inventaire du dossier";
+    } else if (count) {
+      const [, i, n] = count;
+      p = 5 + (65 * Number(i)) / Math.max(1, Number(n));
+      lab = `analyse des photos, ${i} sur ${n}`;
+    } else if (l.startsWith("analyze:")) {
+      p = 70;
+      lab = "analyse des photos";
+    } else if (l.startsWith("junk:") || l.startsWith("note:")) {
+      p = 72;
+      lab = "écart des parasites";
+    } else if (l.startsWith("dedup:")) {
+      p = 76;
+      lab = "déduplication des rafales";
+    } else if (l.startsWith("thinning:")) {
+      p = 80;
+      lab = "éclaircissage des doublons";
+    } else if (l.startsWith("chapters:")) {
+      p = 84;
+      lab = "découpage en chapitres";
+    } else if (l.startsWith("layout:")) {
+      p = 88;
+      lab = "mise en page des planches";
+    } else if (l.startsWith("curation:")) {
+      p = 92;
+      lab = "journal de curation";
+    } else if (l.startsWith("pdf:")) {
+      p = 96;
+      lab = "rendu du PDF";
+    }
+    if (p >= pct) {
+      pct = p;
+      label = lab;
+    }
+  }
+  return { pct, label };
+}
+
+function BuildProgress({ lines }: { lines: string[] }) {
+  const { pct, label } = buildStage(lines);
+  const log = lines.filter((l) => !/^analyze: \d+\/\d+$/.test(l)).slice(-6);
+  return (
+    <div className="build">
+      <div
+        className="build-bar"
+        role="progressbar"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <span style={{ width: `${pct}%` }} />
+      </div>
+      <p className="build-stage">
+        <span key={label} className="build-stage-label">
+          {label}
+        </span>
+        <span className="build-pct">{Math.round(pct)} %</span>
+      </p>
+      <pre className="buildlog">
+        {log.length ? log.join("\n") : "lecture du dossier…"}
+      </pre>
     </div>
   );
 }

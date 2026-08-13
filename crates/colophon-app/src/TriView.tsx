@@ -11,7 +11,7 @@ import { cachedThumb, loadThumb } from "./thumbs";
 const REASONS: [string, string][] = [
   ["retiree", "Retirées à la main"],
   ["hors_budget", "Hors budget : bonnes photos, album plein"],
-  ["meme_moment", "Même moment : deux images maximum par minute"],
+  ["meme_moment", "Même moment, quasi la même photo"],
   ["doublon", "Doublons de rafale ou de scène"],
   ["jumeau", "Quasi identiques"],
   ["parasite", "Parasites : captures, images reçues"],

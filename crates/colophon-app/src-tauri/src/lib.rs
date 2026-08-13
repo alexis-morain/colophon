@@ -176,12 +176,16 @@ async fn build_album_from_folder(
     photos_dir: String,
     format: String,
     spreads: usize,
+    title: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<OpenedAlbum, String> {
     let trim = colophon_core::format::parse(&format).map_err(|e| e.to_string())?;
     let photos = PathBuf::from(&photos_dir);
     let out = album_out_dir(&app, &photos)?;
+    let title = title
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
 
     let emitter = app.clone();
     let build_out = out.clone();
@@ -190,7 +194,7 @@ async fn build_album_from_folder(
             &photos,
             &build_out,
             colophon_core::BuildOptions {
-                title: None,
+                title,
                 spreads: spreads.clamp(8, 200),
                 trim,
                 progress: Box::new(move |line| {

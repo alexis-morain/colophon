@@ -65,12 +65,20 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     anyhow::ensure!(!scanned.images.is_empty(), "no usable images found");
     let photos_scanned = scanned.images.len();
 
-    // 2. metadata + thumbnails + analysis, in parallel
+    // 2. metadata + thumbnails + analysis, in parallel. The longest phase by
+    // far, so it reports counts as it goes: a progress bar with nothing to
+    // say for ten seconds is a frozen app to the person watching.
     let cache = thumb::ThumbCache::new(out)?;
+    let total = scanned.images.len();
+    let done = std::sync::atomic::AtomicUsize::new(0);
     let photos: Vec<Photo> = scanned
         .images
         .par_iter()
         .map_init(face::new_detector, |det, path| {
+            let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if n % 20 == 0 || n == total {
+                say(&format!("analyze: {n}/{total}"));
+            }
             let meta = meta::read(path);
             let img = match cache.get(path, meta.orientation) {
                 Ok(i) => i,
@@ -230,6 +238,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     write_thumb_index(&album, &discards, &root, &cache, out)?;
 
     // 6. render PDF from thumbnails (preview quality in P0)
+    say("pdf: rendu des planches");
     let mut writer = pdf::PdfWriter::new(&album);
     for spread in &album.spreads {
         let assets: Vec<pdf::JpegAsset> = spread

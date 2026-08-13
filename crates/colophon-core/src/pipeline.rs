@@ -124,56 +124,53 @@ pub fn dedup(mut photos: Vec<Photo>) -> (Vec<Photo>, Vec<DropPair>) {
     (out, settle(drops))
 }
 
-/// Photos this close together are one moment. Three selfies inside a minute
-/// are one memory even when they look nothing alike to a perceptual hash:
-/// change the sky behind a face and the hash moves, the moment does not.
+/// Photos this close together are one moment. Inside that window the visual
+/// gate loosens: change the sky behind a face and the hash moves a lot, so
+/// same-minute frames get compared with a wider tolerance than twins do.
 const MOMENT_GAP_SECONDS: i64 = 60;
-/// How many frames a single moment is worth in a finished album.
-const MOMENT_KEEP: usize = 2;
+const MOMENT_HAMMING: u32 = 24;
 
-/// Keep the best few frames of each moment, in chronological order.
-/// Every dropped frame points at the best frame of its moment.
+/// Drop near-duplicates inside each one-minute window, keeping the
+/// best-scored frame of every run. Both gates must agree: the clock alone
+/// never drops anything, so three genuinely different photos taken in one
+/// minute all survive, while three takes of the same one collapse. What
+/// exceeds the album budget later is trimmed by score, not by timestamp.
 pub fn cap_moments(chapter: &mut Chapter) -> Vec<DropPair> {
-    let before = chapter.photos.len();
-    let mut keep: Vec<usize> = Vec::with_capacity(before);
-    let mut moment: Vec<usize> = Vec::new();
+    let n = chapter.photos.len();
+    let mut dropped = vec![false; n];
     let mut drops: Vec<DropPair> = Vec::new();
-
-    let close = |a: &Photo, b: &Photo| {
-        (b.meta.taken - a.meta.taken).num_seconds().abs() <= MOMENT_GAP_SECONDS
-    };
-    let flush = |moment: &mut Vec<usize>,
-                 keep: &mut Vec<usize>,
-                 drops: &mut Vec<DropPair>,
-                 photos: &[Photo]| {
-        if moment.len() > MOMENT_KEEP {
-            moment.sort_by(|&a, &b| {
-                photos[b].effective_score().partial_cmp(&photos[a].effective_score()).unwrap()
-            });
-            let best = photos[moment[0]].path.clone();
-            for &i in moment.iter().skip(MOMENT_KEEP) {
-                drops.push((photos[i].path.clone(), best.clone()));
+    for i in 0..n {
+        if dropped[i] {
+            continue;
+        }
+        for j in i + 1..n {
+            if dropped[j] {
+                continue;
             }
-            moment.truncate(MOMENT_KEEP);
-            moment.sort();
+            let (a, b) = (&chapter.photos[i], &chapter.photos[j]);
+            // photos are time-sorted: past the window, stay past it
+            if (b.meta.taken - a.meta.taken).num_seconds().abs() > MOMENT_GAP_SECONDS {
+                break;
+            }
+            if hamming(a.analysis.dhash, b.analysis.dhash) > MOMENT_HAMMING {
+                continue;
+            }
+            if b.effective_score() > a.effective_score() {
+                dropped[i] = true;
+                drops.push((a.path.clone(), b.path.clone()));
+                break;
+            }
+            dropped[j] = true;
+            drops.push((b.path.clone(), a.path.clone()));
         }
-        keep.append(moment);
-    };
-
-    for i in 0..before {
-        let same = moment
-            .last()
-            .is_some_and(|&last| close(&chapter.photos[last], &chapter.photos[i]));
-        if !same {
-            flush(&mut moment, &mut keep, &mut drops, &chapter.photos);
-        }
-        moment.push(i);
     }
-    flush(&mut moment, &mut keep, &mut drops, &chapter.photos);
-
-    keep.sort();
-    chapter.photos = keep.into_iter().map(|i| chapter.photos[i].clone()).collect();
-    drops
+    let mut k = 0;
+    chapter.photos.retain(|_| {
+        let keep = !dropped[k];
+        k += 1;
+        keep
+    });
+    settle(drops)
 }
 
 /// Second pass, once chapters exist: drop near-identical frames whatever

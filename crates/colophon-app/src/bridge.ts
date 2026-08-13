@@ -28,22 +28,34 @@ async function pickFolder(title: string): Promise<string | null> {
 
 export type FormatPreset = { name: string; w: number; h: number; about: string };
 
-/** Page format presets, from the engine. Empty outside Tauri. */
+/** Page format presets, from the engine. A static mirror serves the browser
+ *  harness so the creation screen can be worked on without the shell. */
 export async function listFormats(): Promise<FormatPreset[]> {
-  if (!inTauri) return [];
+  if (!inTauri) return DEV_FORMATS;
   return invoke<FormatPreset[]>("list_formats");
 }
+
+const DEV_FORMATS: FormatPreset[] = [
+  { name: "carre-21", w: 210, h: 210, about: "carré 21 × 21, le format d'album courant" },
+  { name: "carre-30", w: 300, h: 300, about: "carré 30 × 30, grand format de table" },
+  { name: "portrait-a4", w: 210, h: 297, about: "A4 portrait" },
+  { name: "paysage-a4", w: 297, h: 210, about: "A4 paysage" },
+  { name: "paysage-28x21", w: 280, h: 210, about: "paysage 28 × 21" },
+  { name: "portrait-20x25", w: 203, h: 254, about: "portrait 20 × 25, le 8 × 10 pouces" },
+];
 
 /** Build an album from a photo folder, then open it. Long: seconds cold. */
 export async function buildAlbum(
   photosDir: string,
   format: string,
   spreads: number,
+  title: string | null,
 ): Promise<OpenedAlbum> {
   return invoke<OpenedAlbum>("build_album_from_folder", {
     photosDir,
     format,
     spreads,
+    title,
   });
 }
 

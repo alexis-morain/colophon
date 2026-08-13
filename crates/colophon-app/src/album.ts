@@ -21,6 +21,56 @@ export type OpenedAlbum = {
   root_present: boolean;
 };
 
+/** Every template with its photo count. Port of `pdf.rs::TEMPLATES`. */
+export const TEMPLATES: [string, number][] = [
+  ["full1", 1],
+  ["full1_verso", 1],
+  ["solo", 1],
+  ["solo_verso", 1],
+  ["solo_paysage", 1],
+  ["solo_paysage_verso", 1],
+  ["duo", 2],
+  ["trio", 3],
+  ["trio_verso", 3],
+  ["quad", 4],
+  ["six", 6],
+  ["six_verso", 6],
+  ["octo", 8],
+];
+
+export function templateCapacity(name: string): number {
+  return TEMPLATES.find(([t]) => t === name)?.[1] ?? 1;
+}
+
+/**
+ * Port of `pdf.rs::template_for_count`. Counts without an exact template
+ * (5, 7) drop to the largest one below: a grid with a hole in it is worse
+ * than one photo fewer.
+ */
+export function templateForCount(n: number): [string, number] | null {
+  if (n <= 0) return null;
+  if (n === 1) return ["solo", 1];
+  if (n === 2) return ["duo", 2];
+  if (n === 3) return ["trio", 3];
+  if (n <= 5) return ["quad", 4];
+  if (n <= 7) return ["six", 6];
+  return ["octo", 8];
+}
+
+/** Port of `pdf.rs::fallback_template`: where a spread lands after a loss. */
+export function fallbackTemplate(
+  current: string,
+  remaining: number,
+): { template: string; capacity: number } | null {
+  const fam = templateForCount(remaining);
+  if (!fam) return null;
+  const [family, capacity] = fam;
+  const verso = `${family}_verso`;
+  const keepVerso =
+    current.endsWith("_verso") && TEMPLATES.some(([t]) => t === verso);
+  return { template: keepVerso ? verso : family, capacity };
+}
+
 /** Millimetres, origin top-left of the media canvas (bleed included). */
 export type Rect = { x: number; y: number; w: number; h: number };
 

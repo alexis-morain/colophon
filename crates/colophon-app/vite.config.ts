@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin, ViteDevServer } from "vite";
 
@@ -21,7 +21,27 @@ function albumDevServer(dir: string): Plugin {
     name: "colophon-album-dev-server",
     apply: "serve",
     configureServer(server) {
-      server.middlewares.use("/__dev/album", (_req, res) => {
+      server.middlewares.use("/__dev/album", (req, res) => {
+        // POST mirrors the save_album command: temp file then rename.
+        if (req.method === "POST") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            try {
+              // Parse first (a broken payload must never touch the file) and
+              // re-indent: album.json stays diffable and hand-repairable.
+              const pretty = JSON.stringify(JSON.parse(body), null, 2);
+              const tmp = join(dir, "album.json.tmp");
+              writeFileSync(tmp, pretty);
+              renameSync(tmp, join(dir, "album.json"));
+              res.end("ok");
+            } catch (e) {
+              res.statusCode = 500;
+              res.end(String(e));
+            }
+          });
+          return;
+        }
         try {
           const album = JSON.parse(read("album.json").toString());
           res.setHeader("Content-Type", "application/json");
@@ -113,6 +133,25 @@ function geometryParity(): Plugin {
             );
           }
         });
+      }
+
+      // The fallback rule is written twice too: same parity treatment.
+      for (const [name, cap] of mod.TEMPLATES) {
+        const want = dump.templates[name];
+        if (!want) problems.push(`${format} ${name}: unknown to rust`);
+        else if (want.slots.length !== cap) {
+          problems.push(
+            `${format} ${name} capacity: rust ${want.slots.length}, ts ${cap}`,
+          );
+        }
+      }
+      for (const [n, want] of Object.entries<any>(dump.fallbacks ?? {})) {
+        const got = mod.templateForCount(Number(n));
+        if (!got || got[0] !== want[0] || got[1] !== want[1]) {
+          problems.push(
+            `fallback(${n}): rust ${JSON.stringify(want)}, ts ${JSON.stringify(got)}`,
+          );
+        }
       }
     }
     return problems;

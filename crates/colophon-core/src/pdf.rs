@@ -108,6 +108,41 @@ pub const TEMPLATES: &[(&str, usize)] = &[
     ("octo", 8),
 ];
 
+/// How many photos a template holds.
+pub fn template_capacity(name: &str) -> usize {
+    TEMPLATES
+        .iter()
+        .find(|(t, _)| *t == name)
+        .map(|(_, n)| *n)
+        .unwrap_or(1)
+}
+
+/// The template family for a photo count, with its capacity. Counts without
+/// an exact template (5, 7) drop to the largest one below: a grid with a hole
+/// in it is worse than one photo fewer.
+pub fn template_for_count(n: usize) -> Option<(&'static str, usize)> {
+    Some(match n {
+        0 => return None,
+        1 => ("solo", 1),
+        2 => ("duo", 2),
+        3 => ("trio", 3),
+        4 | 5 => ("quad", 4),
+        6 | 7 => ("six", 6),
+        _ => ("octo", 8),
+    })
+}
+
+/// Where a spread lands after losing photos: the fallback template for what
+/// remains, keeping the `_verso` side when the family has one. This is the
+/// single copy of the rule; the front end ports it and `dump_geometry`
+/// exposes the table so the parity check catches any drift.
+pub fn fallback_template(current: &str, remaining: usize) -> Option<(String, usize)> {
+    let (family, capacity) = template_for_count(remaining)?;
+    let verso = format!("{family}_verso");
+    let keep_verso = current.ends_with("_verso") && TEMPLATES.iter().any(|(t, _)| *t == verso);
+    Some((if keep_verso { verso } else { family.to_string() }, capacity))
+}
+
 /// Every template's geometry for one page format, as JSON. Feeds the parity
 /// check against the TypeScript port: two hand-written copies of the same
 /// arithmetic drift silently otherwise.
@@ -126,11 +161,20 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
         })
         .collect();
 
+    // Count -> [template, capacity], for every count a spread can reach.
+    let fallbacks: serde_json::Map<String, serde_json::Value> = (1..=9usize)
+        .filter_map(|n| {
+            template_for_count(n)
+                .map(|(t, cap)| (n.to_string(), serde_json::json!([t, cap])))
+        })
+        .collect();
+
     serde_json::json!({
         "trim_mm": { "w": album.trim_mm.w, "h": album.trim_mm.h },
         "bleed_mm": album.bleed_mm,
         "canvas": { "w": g.media_w, "h": g.media_h, "margin": g.margin, "gutter": g.gutter },
         "templates": templates,
+        "fallbacks": fallbacks,
     })
 }
 
@@ -358,6 +402,41 @@ impl PdfWriter {
         self.doc.compress();
         self.doc.save(out).context("write pdf")?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fallback_walks_down_the_families() {
+        assert_eq!(fallback_template("quad", 3), Some(("trio".into(), 3)));
+        assert_eq!(fallback_template("trio", 2), Some(("duo".into(), 2)));
+        assert_eq!(fallback_template("duo", 1), Some(("solo".into(), 1)));
+        assert_eq!(fallback_template("solo", 0), None);
+        // no 7- or 5-photo template: the spread drops one more
+        assert_eq!(fallback_template("octo", 7), Some(("six".into(), 6)));
+        assert_eq!(fallback_template("six", 5), Some(("quad".into(), 4)));
+    }
+
+    #[test]
+    fn fallback_keeps_the_verso_side_when_it_exists() {
+        assert_eq!(
+            fallback_template("six_verso", 3),
+            Some(("trio_verso".into(), 3))
+        );
+        // quad has no verso variant: fall back to the plain family
+        assert_eq!(fallback_template("six_verso", 4), Some(("quad".into(), 4)));
+    }
+
+    #[test]
+    fn every_fallback_target_is_a_known_template() {
+        for n in 1..=9 {
+            let (t, cap) = template_for_count(n).unwrap();
+            assert!(cap <= n, "capacity {cap} exceeds the {n} photos left");
+            assert_eq!(template_capacity(t), cap);
+        }
     }
 }
 

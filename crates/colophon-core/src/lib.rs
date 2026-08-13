@@ -14,5 +14,5 @@ pub mod pipeline;
 pub mod scan;
 pub mod thumb;
 
-pub use build::{build_album, BuildOptions, BuildReport};
+pub use build::{build_album, render_album_pdf, write_album_json, BuildOptions, BuildReport};
 pub use model::{Album, Size, Slot, Spread};

@@ -94,6 +94,32 @@ fn thumb(src: String, state: State<'_, AppState>) -> Result<tauri::ipc::Response
     Ok(tauri::ipc::Response::new(data))
 }
 
+/// Persist the edited album over album.json, atomically: the album is the
+/// user's work, a crash mid-write must not cost it.
+#[tauri::command]
+fn save_album(album: Album, state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.open.lock().unwrap();
+    let opened = guard.as_ref().ok_or("aucun album ouvert")?;
+    colophon_core::write_album_json(&opened.dir, &album)
+        .map(|_| ())
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Re-render album.pdf from the saved album.json, off the main thread: fifty
+/// spreads of JPEG passthrough take a second or two.
+#[tauri::command]
+async fn render_pdf(state: State<'_, AppState>) -> Result<String, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    tauri::async_runtime::spawn_blocking(move || colophon_core::render_album_pdf(&dir))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -102,7 +128,7 @@ pub fn run() {
             app.manage(AppState::default());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![open_album, thumb])
+        .invoke_handler(tauri::generate_handler![open_album, thumb, save_album, render_pdf])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -133,6 +159,47 @@ mod tests {
                 assert_eq!(&data[..2], &[0xFF, 0xD8], "{} n'est pas un JPEG", slot.src);
             }
         }
+    }
+
+    /// The whole editing loop below the UI: open, remove a photo, let the
+    /// template fall back, save atomically, reopen, find the same album.
+    #[test]
+    fn edited_album_survives_a_save_and_reopen() {
+        let Some(dir) = sample() else { return };
+        let (_, mut album, _) = load_album(&dir).expect("album lisible");
+
+        let idx = album
+            .spreads
+            .iter()
+            .position(|s| s.slots.len() >= 2)
+            .expect("au moins une planche à deux photos");
+        let spread = &mut album.spreads[idx];
+        spread.slots.remove(0);
+        let (template, cap) =
+            colophon_core::pdf::fallback_template(&spread.template, spread.slots.len())
+                .expect("un gabarit de repli existe");
+        spread.template = template.clone();
+        spread.slots.truncate(cap);
+
+        let tmp = std::env::temp_dir().join(format!("colophon-save-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        colophon_core::write_album_json(&tmp, &album).expect("écriture atomique");
+        let reread: Album =
+            serde_json::from_str(&std::fs::read_to_string(tmp.join("album.json")).unwrap())
+                .expect("album relisible");
+        assert_eq!(reread.spreads[idx].template, template);
+        assert_eq!(reread.spreads[idx].slots.len(), cap);
+        assert!(!tmp.join("album.json.tmp").exists(), "pas de fichier temporaire orphelin");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The editor's PDF button: re-render from album.json + thumbs.json only.
+    #[test]
+    fn render_pdf_from_saved_album_alone() {
+        let Some(dir) = sample() else { return };
+        let pdf = colophon_core::render_album_pdf(&dir).expect("rendu PDF");
+        let bytes = std::fs::read(&pdf).unwrap();
+        assert_eq!(&bytes[..5], b"%PDF-", "album.pdf n'est pas un PDF");
     }
 
     #[test]

@@ -1,6 +1,8 @@
 // One spread, rendered at the trimmed size the reader will hold. The media
 // canvas (bleed included) sits behind, offset so the bleed falls outside the
-// visible page, exactly like a trimmed print.
+// visible page, exactly like a trimmed print. When the edit callbacks are
+// given, photos become selectable and draggable; the view stays a pure
+// reader without them.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -13,7 +15,19 @@ import {
 } from "./album";
 import { cachedThumb, loadThumb } from "./thumbs";
 
-export function SpreadView({ album, spread }: { album: Album; spread: Spread }) {
+export function SpreadView({
+  album,
+  spread,
+  selected,
+  onSelect,
+  onSwap,
+}: {
+  album: Album;
+  spread: Spread;
+  selected?: number | null;
+  onSelect?: (slot: number | null) => void;
+  onSwap?: (a: number, b: number) => void;
+}) {
   const paper = useRef<HTMLDivElement>(null);
   const [mm, setMm] = useState(1);
 
@@ -43,6 +57,7 @@ export function SpreadView({ album, spread }: { album: Album; spread: Spread }) 
           "--spread-aspect": trimW / album.trim_mm.h,
         } as React.CSSProperties
       }
+      onClick={() => onSelect?.(null)}
     >
       <div
         className="canvas"
@@ -61,6 +76,10 @@ export function SpreadView({ album, spread }: { album: Album; spread: Spread }) 
               key={`${slot.src}-${i}`}
               src={slot.src}
               focal={slot.focal}
+              selected={selected === i}
+              onSelect={onSelect && (() => onSelect(selected === i ? null : i))}
+              onSwap={onSwap && ((from) => onSwap(from, i))}
+              index={i}
               style={{
                 left: `${r.x * mm}px`,
                 top: `${r.y * mm}px`,
@@ -93,12 +112,21 @@ function Photo({
   src,
   focal,
   style,
+  index,
+  selected,
+  onSelect,
+  onSwap,
 }: {
   src: string;
   focal: [number, number];
   style: React.CSSProperties;
+  index: number;
+  selected?: boolean;
+  onSelect?: () => void;
+  onSwap?: (from: number) => void;
 }) {
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(src));
+  const [over, setOver] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -117,8 +145,47 @@ function Photo({
     };
   }, [src]);
 
+  const editable = Boolean(onSelect);
   return (
-    <div className="slot" style={style}>
+    <div
+      className={
+        "slot" +
+        (editable ? " editable" : "") +
+        (selected ? " selected" : "") +
+        (over ? " dropping" : "")
+      }
+      style={style}
+      onClick={
+        onSelect &&
+        ((e) => {
+          e.stopPropagation();
+          onSelect();
+        })
+      }
+      draggable={Boolean(onSwap)}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/colophon-slot", String(index));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={
+        onSwap &&
+        ((e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        })
+      }
+      onDragEnter={onSwap && (() => setOver(true))}
+      onDragLeave={onSwap && (() => setOver(false))}
+      onDrop={
+        onSwap &&
+        ((e) => {
+          e.preventDefault();
+          setOver(false);
+          const from = Number(e.dataTransfer.getData("text/colophon-slot"));
+          if (Number.isInteger(from)) onSwap(from);
+        })
+      }
+    >
       {url && (
         <img
           src={url}

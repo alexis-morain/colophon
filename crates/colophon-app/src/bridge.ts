@@ -4,7 +4,7 @@
 // the book view gets checked without rebuilding the Rust side.
 
 import { invoke } from "@tauri-apps/api/core";
-import { OpenedAlbum } from "./album";
+import { Album, OpenedAlbum } from "./album";
 
 export const inTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -38,4 +38,24 @@ export async function fetchThumb(src: string): Promise<ArrayBuffer> {
   const res = await fetch(`/__dev/thumb?src=${encodeURIComponent(src)}`);
   if (!res.ok) throw new Error(await res.text());
   return res.arrayBuffer();
+}
+
+/** Overwrite album.json, atomically on both sides of the bridge. */
+export async function saveAlbum(album: Album): Promise<void> {
+  if (inTauri) return invoke("save_album", { album });
+  const res = await fetch("/__dev/album", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(album),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+/** Re-render album.pdf from the saved album.json. Tauri only: the dev server
+ *  has no engine. Returns the PDF's path. */
+export async function renderPdf(): Promise<string> {
+  if (!inTauri) {
+    throw new Error("PDF hors application : utilisez la commande colophon");
+  }
+  return invoke<string>("render_pdf");
 }

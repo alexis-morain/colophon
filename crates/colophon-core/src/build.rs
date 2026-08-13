@@ -156,8 +156,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     // 5. album.json, plus the thumbnail index. Cache filenames hash the
     // absolute path and mtime, which no reader can recompute: without this
     // index an album folder is unreadable on another machine.
-    let album_json = out.join("album.json");
-    fs::write(&album_json, serde_json::to_string_pretty(&album)?)?;
+    let album_json = write_album_json(out, &album)?;
     write_thumb_index(&album, &root, &cache, out)?;
 
     // 6. render PDF from thumbnails (preview quality in P0)
@@ -191,6 +190,54 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         photos_scanned,
         photos_kept,
     })
+}
+
+/// Write `album.json` atomically: temp file then rename, so a crash halfway
+/// never leaves a truncated album. The album is the user's work, not a cache.
+pub fn write_album_json(dir: &Path, album: &model::Album) -> Result<PathBuf> {
+    let target = dir.join("album.json");
+    let tmp = dir.join("album.json.tmp");
+    fs::write(&tmp, serde_json::to_string_pretty(album)?)
+        .with_context(|| format!("write {}", tmp.display()))?;
+    fs::rename(&tmp, &target).with_context(|| format!("rename onto {}", target.display()))?;
+    Ok(target)
+}
+
+/// Re-render `album.pdf` from `album.json` alone, resolving every photo
+/// through `thumbs.json`. No scan, no analysis: this is what the editor calls
+/// after a change, and it works even when the original folder has moved.
+pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
+    let json = dir.join("album.json");
+    let album: model::Album = serde_json::from_str(
+        &fs::read_to_string(&json).with_context(|| format!("read {}", json.display()))?,
+    )
+    .context("album.json illisible")?;
+    let thumbs: std::collections::BTreeMap<String, String> =
+        serde_json::from_str(&fs::read_to_string(dir.join("thumbs.json"))?)
+            .context("thumbs.json illisible")?;
+
+    let mut writer = pdf::PdfWriter::new(&album);
+    for (i, spread) in album.spreads.iter().enumerate() {
+        let assets: Vec<pdf::JpegAsset> = spread
+            .slots
+            .iter()
+            .filter_map(|slot| {
+                let name = thumbs.get(&slot.src)?;
+                let data = fs::read(dir.join(".cache").join("thumbs").join(name)).ok()?;
+                let (w, h) = jpeg_dimensions(&data)?;
+                Some(pdf::JpegAsset { data, width: w, height: h, focal: slot.focal })
+            })
+            .collect();
+        anyhow::ensure!(
+            assets.len() == spread.slots.len(),
+            "planche {}: vignette manquante, régénérez l'album avec la commande colophon",
+            i + 1
+        );
+        writer.add_spread(spread, &assets)?;
+    }
+    let pdf_path = dir.join("album.pdf");
+    writer.save(&pdf_path)?;
+    Ok(pdf_path)
 }
 
 /// `thumbs.json`: slot source to cached thumbnail filename, relative to

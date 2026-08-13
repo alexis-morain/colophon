@@ -1,0 +1,23 @@
+[package]
+name = "colophon-app"
+description = "Colophon desktop editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# The `_lib` suffix keeps the library name distinct from the binary on Windows.
+name = "colophon_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+colophon-core = { path = "../../colophon-core" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"

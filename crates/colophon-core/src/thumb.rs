@@ -52,7 +52,10 @@ impl ThumbCache {
             .to_rgb8()
             .save_with_format(&cached, image::ImageFormat::Jpeg)
             .with_context(|| format!("write thumb for {}", src.display()))?;
-        Ok(thumb)
+        // Read it back instead of returning the in-memory version: JPEG is
+        // lossy, and every later run analyses the encoded pixels. Without this
+        // the first build and the next one produce different albums.
+        image::open(&cached).with_context(|| format!("reread thumb for {}", src.display()))
     }
 }
 

@@ -1,0 +1,298 @@
+/* Colophon desktop. The chrome is deliberately quiet: photographs carry the
+   colour, the interface stays warm-neutral so nothing bleeds onto them.
+   Everything is square-cornered, on purpose, like a trimmed page. */
+
+:root {
+  --ink: #17150f;
+  --ink-raised: #201d15;
+  --paper: #f6f2e9;
+  --text: #ede6d8;
+  --muted: #a2998a;
+  --accent: #c2532b;
+  --rule: rgba(237, 230, 216, 0.14);
+
+  --font-display: "Charter", "Iowan Old Style", Palatino, Georgia, serif;
+  --font-ui: "Avenir Next", Avenir, Futura, system-ui, sans-serif;
+
+  --turn: 180ms cubic-bezier(0.2, 0, 0, 1);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+code,
+kbd {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.92em;
+}
+
+/* ---- reading shell ---------------------------------------------------- */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 20px;
+  padding: 34px 28px 14px 84px; /* room for the macOS traffic lights */
+  border-bottom: 1px solid var(--rule);
+}
+
+.bar h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.bar .meta {
+  margin: 0;
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.bar .template {
+  color: var(--accent);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.link {
+  color: var(--muted);
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+  transition: color var(--turn), border-color var(--turn);
+}
+
+.link:hover {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.stage {
+  display: grid;
+  place-items: center;
+  padding: 28px 40px;
+  min-height: 0;
+}
+
+.turn {
+  width: 100%;
+  display: grid;
+  place-items: center;
+  animation: turn var(--turn) both;
+}
+
+@keyframes turn {
+  from {
+    opacity: 0;
+    transform: translate3d(10px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- the spread ------------------------------------------------------- */
+
+.paper {
+  position: relative;
+  /* The spread is as wide as the page format allows, never taller than the
+     stage: a portrait album and a panoramic one both land whole. */
+  --spread-aspect: 2;
+  width: min(100%, calc((100vh - 230px) * var(--spread-aspect)));
+  max-height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  /* contact shadow plus ambient: a sheet resting on a dark table */
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 26px 64px -22px rgba(0, 0, 0, 0.8);
+}
+
+.canvas {
+  position: absolute;
+}
+
+.slot {
+  position: absolute;
+  overflow: hidden;
+  background: rgba(23, 21, 15, 0.06);
+}
+
+.slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* The signature detail: the fold. A soft double shade with a crease at the
+   exact centre, so a spread reads as bound paper and not as two tiles. */
+.gutter {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 46%,
+    rgba(23, 21, 15, 0.14) 49.6%,
+    rgba(23, 21, 15, 0.2) 50%,
+    rgba(23, 21, 15, 0.14) 50.4%,
+    transparent 54%
+  );
+}
+
+.caption {
+  position: absolute;
+  font-family: var(--font-display);
+  color: #3a342c;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  /* `top` carries the PDF baseline; lift the line box onto it */
+  line-height: 1;
+  transform: translateY(-0.85em);
+}
+
+/* ---- position ruler --------------------------------------------------- */
+
+.progress {
+  position: relative;
+  height: 26px;
+  border-top: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.progress-mark {
+  position: absolute;
+  top: -1px;
+  width: 26px;
+  height: 2px;
+  margin-left: -13px;
+  background: var(--accent);
+  transition: left var(--turn);
+}
+
+/* ---- empty state ------------------------------------------------------ */
+
+.empty {
+  display: grid;
+  align-content: center;
+  height: 100%;
+  padding: 0 clamp(40px, 9vw, 140px);
+}
+
+.empty-block {
+  max-width: 34rem;
+  margin-top: -6vh;
+}
+
+.kicker {
+  margin: 0 0 26px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent);
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.empty h1 {
+  margin: 0 0 22px;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 4.6vw, 54px);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.012em;
+}
+
+.lede {
+  margin: 0 0 34px;
+  max-width: 30rem;
+  color: var(--muted);
+}
+
+.lede code {
+  color: var(--text);
+}
+
+.cta {
+  padding: 11px 22px;
+  background: var(--accent);
+  color: #fdf6f0;
+  font-weight: 600;
+  transition: background var(--turn), transform var(--turn);
+}
+
+.cta:hover {
+  background: #a94523;
+}
+
+.cta:active {
+  transform: translateY(1px);
+}
+
+.hint {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+kbd {
+  font-family: var(--font-ui);
+  padding: 1px 5px;
+  background: var(--ink-raised);
+  border: 1px solid var(--rule);
+  color: var(--text);
+}
+
+.warn {
+  margin: 22px 0 0;
+  padding: 10px 14px 10px 12px;
+  border-left: 2px solid var(--accent);
+  background: var(--ink-raised);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.app > .warn {
+  margin: 0;
+}

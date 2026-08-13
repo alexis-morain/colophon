@@ -1,0 +1,17 @@
+[package]
+name = "colophon-cli"
+description = "Colophon command line: build an album from a folder of photos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "colophon"
+path = "src/main.rs"
+
+[dependencies]
+colophon-core = { path = "../colophon-core" }
+anyhow.workspace = true
+clap = { version = "4", features = ["derive"] }
+serde_json.workspace = true

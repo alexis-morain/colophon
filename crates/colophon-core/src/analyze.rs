@@ -22,6 +22,10 @@ impl Analysis {
         self.height > self.width
     }
 
+    pub fn aspect(&self) -> f64 {
+        f64::from(self.width) / f64::from(self.height).max(1.0)
+    }
+
     /// Composite score used to rank photos inside a burst or chapter.
     pub fn score(&self) -> f64 {
         // Sharpness dominates; exposure modulates. Log keeps outliers sane.

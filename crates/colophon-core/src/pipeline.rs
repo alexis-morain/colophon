@@ -31,7 +31,7 @@ impl Photo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chapter {
     pub photos: Vec<Photo>,
     pub start: NaiveDateTime,
@@ -45,6 +45,14 @@ const BURST_HAMMING: u32 = 12;
 /// Catches the "five shots of the same coastline minutes apart" pattern.
 const SCENE_GAP_SECONDS: i64 = 15 * 60;
 const SCENE_HAMMING: u32 = 11;
+/// Near-identical frames collapse whatever the clock says. Three selfies of
+/// the same face, taken an hour apart, are still one photo in an album, and a
+/// mosaic of eight makes that glaring.
+const TWIN_HAMMING: u32 = 8;
+const TWIN_COLOR: u32 = 10;
+/// How far back the comparison reaches. Wide enough that an alternating run
+/// (portrait, landscape, portrait) still collapses.
+const LOOKBACK: usize = 8;
 /// A time gap larger than this starts a new chapter.
 const CHAPTER_GAP_HOURS: i64 = 8;
 
@@ -67,7 +75,7 @@ pub fn dedup(mut photos: Vec<Photo>) -> Vec<Photo> {
     photos.sort_by_key(|p| p.meta.taken);
     let mut out: Vec<Photo> = Vec::with_capacity(photos.len());
     for p in photos {
-        let lookback = out.len().saturating_sub(3);
+        let lookback = out.len().saturating_sub(LOOKBACK);
         let dup_of = (lookback..out.len()).find(|&i| {
             let prev = &out[i];
             let dt = (p.meta.taken - prev.meta.taken).num_seconds().abs();
@@ -76,7 +84,7 @@ pub fn dedup(mut photos: Vec<Photo>) -> Vec<Photo> {
             (dt <= BURST_GAP_SECONDS && dist <= BURST_HAMMING)
                 || (dt <= SCENE_GAP_SECONDS && dist <= SCENE_HAMMING)
                 || (dt <= SCENE_GAP_SECONDS && dist <= 22 && cdist <= 12)
-                || dist <= 4
+                || (dist <= TWIN_HAMMING && cdist <= TWIN_COLOR)
         });
         match dup_of {
             Some(i) => {
@@ -88,6 +96,88 @@ pub fn dedup(mut photos: Vec<Photo>) -> Vec<Photo> {
         }
     }
     out
+}
+
+/// Photos this close together are one moment. Three selfies inside a minute
+/// are one memory even when they look nothing alike to a perceptual hash:
+/// change the sky behind a face and the hash moves, the moment does not.
+const MOMENT_GAP_SECONDS: i64 = 60;
+/// How many frames a single moment is worth in a finished album.
+const MOMENT_KEEP: usize = 2;
+
+/// Keep the best few frames of each moment, in chronological order.
+pub fn cap_moments(chapter: &mut Chapter) -> usize {
+    let before = chapter.photos.len();
+    let mut keep: Vec<usize> = Vec::with_capacity(before);
+    let mut moment: Vec<usize> = Vec::new();
+
+    let close = |a: &Photo, b: &Photo| {
+        (b.meta.taken - a.meta.taken).num_seconds().abs() <= MOMENT_GAP_SECONDS
+    };
+    let flush = |moment: &mut Vec<usize>, keep: &mut Vec<usize>, photos: &[Photo]| {
+        if moment.len() > MOMENT_KEEP {
+            moment.sort_by(|&a, &b| {
+                photos[b].effective_score().partial_cmp(&photos[a].effective_score()).unwrap()
+            });
+            moment.truncate(MOMENT_KEEP);
+            moment.sort();
+        }
+        keep.append(moment);
+    };
+
+    for i in 0..before {
+        let same = moment
+            .last()
+            .is_some_and(|&last| close(&chapter.photos[last], &chapter.photos[i]));
+        if !same {
+            flush(&mut moment, &mut keep, &chapter.photos);
+        }
+        moment.push(i);
+    }
+    flush(&mut moment, &mut keep, &chapter.photos);
+
+    keep.sort();
+    chapter.photos = keep.into_iter().map(|i| chapter.photos[i].clone()).collect();
+    before - chapter.photos.len()
+}
+
+/// Second pass, once chapters exist: drop near-identical frames whatever
+/// their distance in time or in the sequence. `dedup` only looks a few photos
+/// back, which covers bursts but lets the same selfie come round three times
+/// in an afternoon; a mosaic of eight then prints them side by side.
+/// Chapters hold a few dozen photos, so comparing all pairs is free.
+pub fn thin_twins(chapter: &mut Chapter) -> usize {
+    let n = chapter.photos.len();
+    let mut dropped = vec![false; n];
+    for i in 0..n {
+        if dropped[i] {
+            continue;
+        }
+        for j in i + 1..n {
+            if dropped[j] {
+                continue;
+            }
+            let (a, b) = (&chapter.photos[i], &chapter.photos[j]);
+            let dist = hamming(a.analysis.dhash, b.analysis.dhash);
+            let cdist = color_distance(&a.analysis.colorsig, &b.analysis.colorsig);
+            if dist > TWIN_HAMMING || cdist > TWIN_COLOR {
+                continue;
+            }
+            // Keep the better frame of the pair, drop the other.
+            if b.effective_score() > a.effective_score() {
+                dropped[i] = true;
+                break;
+            }
+            dropped[j] = true;
+        }
+    }
+    let mut k = 0;
+    chapter.photos.retain(|_| {
+        let keep = !dropped[k];
+        k += 1;
+        keep
+    });
+    dropped.iter().filter(|d| **d).count()
 }
 
 /// Split the (time-sorted) photos into chapters on large time gaps.

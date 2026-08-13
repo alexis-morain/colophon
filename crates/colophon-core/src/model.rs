@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 pub struct Album {
     pub version: u32,
     pub title: String,
+    /// Absolute path of the scanned folder. Slot sources are relative to it,
+    /// so an album reopened later still finds its photos.
+    #[serde(default)]
+    pub root: String,
     /// Trim size of a single page, in millimetres.
     pub trim_mm: Size,
     pub bleed_mm: f64,
@@ -36,13 +40,19 @@ pub struct Slot {
 }
 
 impl Album {
-    pub fn new(title: &str) -> Self {
+    pub fn new(title: &str, root: &std::path::Path, trim_mm: Size) -> Self {
         Self {
             version: 1,
             title: title.to_string(),
-            trim_mm: Size { w: 210.0, h: 210.0 },
+            root: root.to_string_lossy().to_string(),
+            trim_mm,
             bleed_mm: 3.0,
             spreads: Vec::new(),
         }
+    }
+
+    /// Portrait, landscape or square page. Drives the template choice.
+    pub fn page_aspect(&self) -> f64 {
+        self.trim_mm.w / self.trim_mm.h
     }
 }

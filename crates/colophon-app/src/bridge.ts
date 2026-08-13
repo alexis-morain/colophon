@@ -145,11 +145,24 @@ export async function saveAlbum(album: Album): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
-/** Re-render album.pdf from the saved album.json. Tauri only: the dev server
- *  has no engine. Returns the PDF's path. */
-export async function renderPdf(): Promise<string> {
+/** Re-render album.pdf, then ask where to keep a copy, Téléchargements by
+ *  default: the app's data dir is no place to look for one's own album.
+ *  Returns the chosen path, or null when the dialog is dismissed.
+ *  Tauri only: the dev server has no engine. */
+export async function exportPdf(title: string): Promise<string | null> {
   if (!inTauri) {
     throw new Error("PDF hors application : utilisez la commande colophon");
   }
-  return invoke<string>("render_pdf");
+  await invoke<string>("render_pdf");
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const { downloadDir, join } = await import("@tauri-apps/api/path");
+  const name = (title.trim() || "album").replace(/[\\/:]+/g, "-");
+  const dest = await save({
+    title: "Enregistrer le PDF de l'album",
+    defaultPath: await join(await downloadDir(), `${name}.pdf`),
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+  if (!dest) return null;
+  await invoke("export_pdf", { dest });
+  return dest;
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   buildAlbum,
+  exportPdf,
   fetchCuration,
   FormatPreset,
   inTauri,
@@ -9,7 +10,6 @@ import {
   openAlbum as openAlbumAt,
   pickAlbumFolder,
   pickPhotosFolder,
-  renderPdf,
   saveAlbum,
 } from "./bridge";
 import {
@@ -132,18 +132,18 @@ export default function App() {
   }, [hist]);
 
   const regenPdf = useCallback(async () => {
-    if (rendering || !(await save())) return;
+    if (rendering || !hist || !(await save())) return;
     setRendering(true);
     setStatus("Rendu du PDF…");
     try {
-      const path = await renderPdf();
-      setStatus(`PDF régénéré : ${path.split("/").pop()}`);
+      const dest = await exportPdf(hist.album.title);
+      setStatus(dest ? `PDF enregistré : ${dest}` : "Enregistrement annulé");
     } catch (e) {
       setStatus(String(e));
     } finally {
       setRendering(false);
     }
-  }, [save, rendering]);
+  }, [save, rendering, hist]);
 
   /** Build an album from a photo folder, streaming the engine's progress. */
   const createAlbum = useCallback(async (
@@ -528,7 +528,7 @@ function Bar({
             className="link"
             onClick={onPdf}
             disabled={pdfBusy}
-            title="Régénère album.pdf"
+            title="Rend le PDF puis l'enregistre où vous voulez"
           >
             {pdfBusy ? "PDF…" : "PDF"}
           </button>

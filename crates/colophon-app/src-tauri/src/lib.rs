@@ -225,6 +225,22 @@ async fn render_pdf(state: State<'_, AppState>) -> Result<String, String> {
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Copy the rendered album.pdf where the user chose to keep it: the app's
+/// data dir is no place to go digging for one's own album.
+#[tauri::command]
+fn export_pdf(dest: String, state: State<'_, AppState>) -> Result<(), String> {
+    let src = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.join("album.pdf")
+    };
+    if !src.is_file() {
+        return Err("album.pdf n'existe pas encore : rendez le PDF d'abord".into());
+    }
+    std::fs::copy(&src, Path::new(&dest))
+        .map(|_| ())
+        .map_err(|e| format!("copie vers {dest} : {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -238,6 +254,7 @@ pub fn run() {
             thumb,
             save_album,
             render_pdf,
+            export_pdf,
             list_formats,
             build_album_from_folder,
             curation

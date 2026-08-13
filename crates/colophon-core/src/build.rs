@@ -87,15 +87,36 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         .collect();
     say(&format!("analyze: {} photos", photos.len()));
 
-    // 3. drop junk, dedup bursts and scenes, chapter, cap
+    // 3. drop junk, dedup bursts and scenes, chapter, cap. Every photo set
+    // aside is recorded with its reason: curation.json feeds the sorting view.
+    let rel = |p: &Path| {
+        p.strip_prefix(&root)
+            .unwrap_or(p)
+            .to_string_lossy()
+            .to_string()
+    };
+    let mut discards: Vec<model::Discard> = Vec::new();
+
     let (photos, junk) = pipeline::split_junk(photos);
-    if junk > 0 {
+    if !junk.is_empty() {
         say(&format!(
-            "junk: {junk} photos without EXIF date or GPS excluded (screenshots, forwards)"
+            "junk: {} photos without EXIF date or GPS excluded (screenshots, forwards)",
+            junk.len()
         ));
     }
-    let kept = pipeline::dedup(photos);
+    discards.extend(junk.iter().map(|p| model::Discard {
+        src: rel(&p.path),
+        reason: "parasite".into(),
+        kept: None,
+    }));
+
+    let (kept, dups) = pipeline::dedup(photos);
     say(&format!("dedup: {} kept", kept.len()));
+    discards.extend(dups.iter().map(|(lost, won)| model::Discard {
+        src: rel(lost),
+        reason: "doublon".into(),
+        kept: Some(rel(won)),
+    }));
 
     let spreads_target = opts.spreads.max(8);
     let max_chapters = (spreads_target / 3).clamp(4, 26);
@@ -103,13 +124,25 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     let chapters = pipeline::chapters(kept);
     let natural = chapters.len();
     let mut base = pipeline::merge_chapters(chapters, max_chapters);
-    let twins: usize = base.iter_mut().map(pipeline::thin_twins).sum();
-    let moments: usize = base.iter_mut().map(pipeline::cap_moments).sum();
-    if twins + moments > 0 {
+    let twins: Vec<_> = base.iter_mut().flat_map(pipeline::thin_twins).collect();
+    let moments: Vec<_> = base.iter_mut().flat_map(pipeline::cap_moments).collect();
+    if !twins.is_empty() || !moments.is_empty() {
         say(&format!(
-            "thinning: {twins} near-identical frames, {moments} extra frames of the same moment"
+            "thinning: {} near-identical frames, {} extra frames of the same moment",
+            twins.len(),
+            moments.len()
         ));
     }
+    discards.extend(twins.iter().map(|(lost, won)| model::Discard {
+        src: rel(lost),
+        reason: "jumeau".into(),
+        kept: Some(rel(won)),
+    }));
+    discards.extend(moments.iter().map(|(lost, won)| model::Discard {
+        src: rel(lost),
+        reason: "meme_moment".into(),
+        kept: Some(rel(won)),
+    }));
 
     // 4. compose spreads. How many photos a spread holds depends on their
     // orientation and their scores, so the budget is aimed rather than
@@ -156,8 +189,28 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     // 5. album.json, plus the thumbnail index. Cache filenames hash the
     // absolute path and mtime, which no reader can recompute: without this
     // index an album folder is unreadable on another machine.
+    // Photos that survived curation but not the spread budget.
+    let shown: std::collections::HashSet<String> = album
+        .spreads
+        .iter()
+        .flat_map(|s| s.slots.iter().map(|sl| sl.src.clone()))
+        .collect();
+    for chapter in &base {
+        for photo in &chapter.photos {
+            let src = rel(&photo.path);
+            if !shown.contains(&src) {
+                discards.push(model::Discard { src, reason: "hors_budget".into(), kept: None });
+            }
+        }
+    }
+    say(&format!("curation: {} photos set aside", discards.len()));
+
     let album_json = write_album_json(out, &album)?;
-    write_thumb_index(&album, &root, &cache, out)?;
+    fs::write(
+        out.join("curation.json"),
+        serde_json::to_string_pretty(&discards)?,
+    )?;
+    write_thumb_index(&album, &discards, &root, &cache, out)?;
 
     // 6. render PDF from thumbnails (preview quality in P0)
     let mut writer = pdf::PdfWriter::new(&album);
@@ -242,20 +295,29 @@ pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
 
 /// `thumbs.json`: slot source to cached thumbnail filename, relative to
 /// `.cache/thumbs`. Written next to album.json so the folder travels whole.
+/// Discarded photos are indexed too: the sorting view shows what was set
+/// aside, and their thumbnails already exist from the analysis pass.
 fn write_thumb_index(
     album: &model::Album,
+    discards: &[model::Discard],
     root: &Path,
     cache: &thumb::ThumbCache,
     out: &Path,
 ) -> Result<()> {
     let mut index = std::collections::BTreeMap::new();
+    let mut add = |src: &str| {
+        let cached = cache.path_for(&root.join(src));
+        if let Some(name) = cached.file_name() {
+            index.insert(src.to_string(), name.to_string_lossy().to_string());
+        }
+    };
     for spread in &album.spreads {
         for slot in &spread.slots {
-            let cached = cache.path_for(&root.join(&slot.src));
-            if let Some(name) = cached.file_name() {
-                index.insert(slot.src.clone(), name.to_string_lossy().to_string());
-            }
+            add(&slot.src);
         }
+    }
+    for d in discards {
+        add(&d.src);
     }
     fs::write(out.join("thumbs.json"), serde_json::to_string_pretty(&index)?)?;
     Ok(())

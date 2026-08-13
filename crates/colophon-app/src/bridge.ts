@@ -12,13 +12,48 @@ export const inTauri =
 /** Native folder picker. In the browser, the dev server's folder is implied. */
 export async function pickAlbumFolder(): Promise<string | null> {
   if (!inTauri) return "__dev__";
+  return pickFolder("Choisir un dossier d'album");
+}
+
+/** Native folder picker for a folder of photos to compose from. */
+export async function pickPhotosFolder(): Promise<string | null> {
+  return pickFolder("Choisir un dossier de photos");
+}
+
+async function pickFolder(title: string): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const picked = await open({
-    directory: true,
-    multiple: false,
-    title: "Choisir un dossier d'album",
-  });
+  const picked = await open({ directory: true, multiple: false, title });
   return typeof picked === "string" ? picked : null;
+}
+
+export type FormatPreset = { name: string; w: number; h: number; about: string };
+
+/** Page format presets, from the engine. Empty outside Tauri. */
+export async function listFormats(): Promise<FormatPreset[]> {
+  if (!inTauri) return [];
+  return invoke<FormatPreset[]>("list_formats");
+}
+
+/** Build an album from a photo folder, then open it. Long: seconds cold. */
+export async function buildAlbum(
+  photosDir: string,
+  format: string,
+  spreads: number,
+): Promise<OpenedAlbum> {
+  return invoke<OpenedAlbum>("build_album_from_folder", {
+    photosDir,
+    format,
+    spreads,
+  });
+}
+
+/** Subscribe to the engine's progress lines. Returns the unsubscribe. */
+export async function onBuildProgress(
+  cb: (line: string) => void,
+): Promise<() => void> {
+  if (!inTauri) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<string>("build:progress", (e) => cb(e.payload));
 }
 
 export async function openAlbum(path: string): Promise<OpenedAlbum> {

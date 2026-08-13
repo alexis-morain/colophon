@@ -39,6 +39,22 @@ pub struct Slot {
     pub focal: [f64; 2],
 }
 
+/// One photo the curation set aside, and why. `curation.json` holds the
+/// full list next to album.json: it is the sorting view's input, everything
+/// the album does not show.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Discard {
+    /// Path relative to the album root, like `Slot::src`.
+    pub src: String,
+    /// Machine-readable reason: `parasite`, `doublon`, `jumeau`,
+    /// `meme_moment`, `hors_budget`.
+    pub reason: String,
+    /// The photo that won over this one, when the drop came from a
+    /// comparison. Relative to the album root too.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kept: Option<String>,
+}
+
 impl Album {
     pub fn new(title: &str, root: &std::path::Path, trim_mm: Size) -> Self {
         Self {

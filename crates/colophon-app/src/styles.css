@@ -342,6 +342,53 @@ kbd {
   font-size: 12.5px;
 }
 
+/* ---- creation form ----------------------------------------------------- */
+
+.compose {
+  display: flex;
+  gap: 22px;
+  align-items: flex-end;
+  margin: 0 0 8px;
+}
+
+.compose label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compose select,
+.compose input {
+  font: inherit;
+  color: var(--text);
+  background: var(--ink-raised);
+  border: 1px solid var(--rule);
+  padding: 8px 10px;
+}
+
+.compose input {
+  width: 72px;
+}
+
+.compose select:focus,
+.compose input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.buildlog {
+  margin: 0 0 8px;
+  padding: 14px 16px;
+  background: var(--ink-raised);
+  border-left: 2px solid var(--accent);
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
 kbd {
   font-family: var(--font-ui);
   padding: 1px 5px;

@@ -56,24 +56,47 @@ const LOOKBACK: usize = 8;
 /// A time gap larger than this starts a new chapter.
 const CHAPTER_GAP_HOURS: i64 = 8;
 
+/// A photo dropped in favour of another: (loser's path, winner's path).
+pub type DropPair = (PathBuf, PathBuf);
+
+/// Winners can lose a later round; follow the chain so every discarded photo
+/// points at a photo that actually survived the pass.
+fn settle(pairs: Vec<DropPair>) -> Vec<DropPair> {
+    let map: std::collections::HashMap<PathBuf, PathBuf> = pairs.iter().cloned().collect();
+    pairs
+        .into_iter()
+        .map(|(dropped, mut winner)| {
+            let mut hops = 0;
+            while let Some(next) = map.get(&winner) {
+                winner = next.clone();
+                hops += 1;
+                if hops > 64 {
+                    break; // defensive: the pass never drops both ways round
+                }
+            }
+            (dropped, winner)
+        })
+        .collect()
+}
+
 /// Screenshots, memes and forwarded images lack a camera fingerprint.
 /// A real photo carries an EXIF capture date; failing that, it needs both
 /// GPS and a camera model (iOS can stamp GPS onto saved images, so GPS
-/// alone proves nothing).
-pub fn split_junk(photos: Vec<Photo>) -> (Vec<Photo>, usize) {
-    let (keep, junk): (Vec<_>, Vec<_>) = photos.into_iter().partition(|p| {
+/// alone proves nothing). Returns the junk itself: the sorting view shows it.
+pub fn split_junk(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
+    photos.into_iter().partition(|p| {
         p.meta.taken_reliable || (p.meta.gps.is_some() && p.meta.model.is_some())
-    });
-    let n = junk.len();
-    (keep, n)
+    })
 }
 
 /// Collapse bursts and near-duplicates, keeping the best-scored photo of
 /// each run. Looks back over the last few kept photos so that an
 /// alternating burst (dark/bright/dark) still collapses.
-pub fn dedup(mut photos: Vec<Photo>) -> Vec<Photo> {
+/// Also returns who lost against whom, for `curation.json`.
+pub fn dedup(mut photos: Vec<Photo>) -> (Vec<Photo>, Vec<DropPair>) {
     photos.sort_by_key(|p| p.meta.taken);
     let mut out: Vec<Photo> = Vec::with_capacity(photos.len());
+    let mut drops: Vec<DropPair> = Vec::new();
     for p in photos {
         let lookback = out.len().saturating_sub(LOOKBACK);
         let dup_of = (lookback..out.len()).find(|&i| {
@@ -89,13 +112,16 @@ pub fn dedup(mut photos: Vec<Photo>) -> Vec<Photo> {
         match dup_of {
             Some(i) => {
                 if p.effective_score() > out[i].effective_score() {
+                    drops.push((out[i].path.clone(), p.path.clone()));
                     out[i] = p;
+                } else {
+                    drops.push((p.path.clone(), out[i].path.clone()));
                 }
             }
             None => out.push(p),
         }
     }
-    out
+    (out, settle(drops))
 }
 
 /// Photos this close together are one moment. Three selfies inside a minute
@@ -106,19 +132,28 @@ const MOMENT_GAP_SECONDS: i64 = 60;
 const MOMENT_KEEP: usize = 2;
 
 /// Keep the best few frames of each moment, in chronological order.
-pub fn cap_moments(chapter: &mut Chapter) -> usize {
+/// Every dropped frame points at the best frame of its moment.
+pub fn cap_moments(chapter: &mut Chapter) -> Vec<DropPair> {
     let before = chapter.photos.len();
     let mut keep: Vec<usize> = Vec::with_capacity(before);
     let mut moment: Vec<usize> = Vec::new();
+    let mut drops: Vec<DropPair> = Vec::new();
 
     let close = |a: &Photo, b: &Photo| {
         (b.meta.taken - a.meta.taken).num_seconds().abs() <= MOMENT_GAP_SECONDS
     };
-    let flush = |moment: &mut Vec<usize>, keep: &mut Vec<usize>, photos: &[Photo]| {
+    let flush = |moment: &mut Vec<usize>,
+                 keep: &mut Vec<usize>,
+                 drops: &mut Vec<DropPair>,
+                 photos: &[Photo]| {
         if moment.len() > MOMENT_KEEP {
             moment.sort_by(|&a, &b| {
                 photos[b].effective_score().partial_cmp(&photos[a].effective_score()).unwrap()
             });
+            let best = photos[moment[0]].path.clone();
+            for &i in moment.iter().skip(MOMENT_KEEP) {
+                drops.push((photos[i].path.clone(), best.clone()));
+            }
             moment.truncate(MOMENT_KEEP);
             moment.sort();
         }
@@ -130,15 +165,15 @@ pub fn cap_moments(chapter: &mut Chapter) -> usize {
             .last()
             .is_some_and(|&last| close(&chapter.photos[last], &chapter.photos[i]));
         if !same {
-            flush(&mut moment, &mut keep, &chapter.photos);
+            flush(&mut moment, &mut keep, &mut drops, &chapter.photos);
         }
         moment.push(i);
     }
-    flush(&mut moment, &mut keep, &chapter.photos);
+    flush(&mut moment, &mut keep, &mut drops, &chapter.photos);
 
     keep.sort();
     chapter.photos = keep.into_iter().map(|i| chapter.photos[i].clone()).collect();
-    before - chapter.photos.len()
+    drops
 }
 
 /// Second pass, once chapters exist: drop near-identical frames whatever
@@ -146,9 +181,11 @@ pub fn cap_moments(chapter: &mut Chapter) -> usize {
 /// back, which covers bursts but lets the same selfie come round three times
 /// in an afternoon; a mosaic of eight then prints them side by side.
 /// Chapters hold a few dozen photos, so comparing all pairs is free.
-pub fn thin_twins(chapter: &mut Chapter) -> usize {
+/// Returns who lost against whom, for `curation.json`.
+pub fn thin_twins(chapter: &mut Chapter) -> Vec<DropPair> {
     let n = chapter.photos.len();
     let mut dropped = vec![false; n];
+    let mut drops: Vec<DropPair> = Vec::new();
     for i in 0..n {
         if dropped[i] {
             continue;
@@ -166,9 +203,11 @@ pub fn thin_twins(chapter: &mut Chapter) -> usize {
             // Keep the better frame of the pair, drop the other.
             if b.effective_score() > a.effective_score() {
                 dropped[i] = true;
+                drops.push((a.path.clone(), b.path.clone()));
                 break;
             }
             dropped[j] = true;
+            drops.push((b.path.clone(), a.path.clone()));
         }
     }
     let mut k = 0;
@@ -177,7 +216,7 @@ pub fn thin_twins(chapter: &mut Chapter) -> usize {
         k += 1;
         keep
     });
-    dropped.iter().filter(|d| **d).count()
+    settle(drops)
 }
 
 /// Split the (time-sorted) photos into chapters on large time gaps.

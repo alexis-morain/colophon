@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 /// Slot source to cached thumbnail filename, as written in thumbs.json.
 type ThumbIndex = BTreeMap<String, String>;
@@ -105,6 +105,85 @@ fn save_album(album: Album, state: State<'_, AppState>) -> Result<(), String> {
         .map_err(|e| format!("{e:#}"))
 }
 
+#[derive(Serialize)]
+struct FormatPreset {
+    name: String,
+    w: f64,
+    h: f64,
+    about: String,
+}
+
+/// The page format presets, for the creation screen's picker.
+#[tauri::command]
+fn list_formats() -> Vec<FormatPreset> {
+    colophon_core::format::FORMATS
+        .iter()
+        .map(|(name, w, h, about)| FormatPreset {
+            name: name.to_string(),
+            w: *w,
+            h: *h,
+            about: about.to_string(),
+        })
+        .collect()
+}
+
+/// One album folder per source folder, keyed by its absolute path so two
+/// folders sharing a name never collide, inside the app's own data dir.
+fn album_out_dir(app: &tauri::AppHandle, photos: &Path) -> Result<PathBuf, String> {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    photos.hash(&mut h);
+    let name = photos
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "album".into());
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("dossier de données introuvable : {e}"))?
+        .join("albums");
+    Ok(base.join(format!("{name}-{:08x}", h.finish() as u32)))
+}
+
+/// Build an album from a folder of photos, then open it. Progress lines
+/// stream to the front as `build:progress` events; the build itself runs on
+/// a blocking thread, it takes seconds. Rebuilding the same folder reuses
+/// its thumbnail cache, so a second pass is fast.
+#[tauri::command]
+async fn build_album_from_folder(
+    photos_dir: String,
+    format: String,
+    spreads: usize,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<OpenedAlbum, String> {
+    let trim = colophon_core::format::parse(&format).map_err(|e| e.to_string())?;
+    let photos = PathBuf::from(&photos_dir);
+    let out = album_out_dir(&app, &photos)?;
+
+    let emitter = app.clone();
+    let build_out = out.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        colophon_core::build_album(
+            &photos,
+            &build_out,
+            colophon_core::BuildOptions {
+                title: None,
+                spreads: spreads.clamp(8, 200),
+                trim,
+                progress: Box::new(move |line| {
+                    let _ = emitter.emit("build:progress", line);
+                }),
+            },
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("{e:#}"))?;
+
+    open_album(out.to_string_lossy().to_string(), state)
+}
+
 /// Re-render album.pdf from the saved album.json, off the main thread: fifty
 /// spreads of JPEG passthrough take a second or two.
 #[tauri::command]
@@ -128,7 +207,14 @@ pub fn run() {
             app.manage(AppState::default());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![open_album, thumb, save_album, render_pdf])
+        .invoke_handler(tauri::generate_handler![
+            open_album,
+            thumb,
+            save_album,
+            render_pdf,
+            list_formats,
+            build_album_from_folder
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

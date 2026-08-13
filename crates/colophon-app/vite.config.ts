@@ -78,81 +78,23 @@ function albumDevServer(dir: string): Plugin {
  * `pdf.rs::slots_for` and `album.ts::slotsBottomUp` are the same arithmetic
  * written twice, which is exactly how a preview starts lying about the print.
  * GET /__dev/geometry runs the engine's own dump and diffs it against the
- * TypeScript port, for every template and every page format.
+ * TypeScript port. The comparison itself lives in src/parity.ts, shared with
+ * the Vitest test that runs without a dev server; loaded through
+ * ssrLoadModule so an edit to album.ts is picked up without a restart.
  */
 function geometryParity(): Plugin {
   const binary = join(__dirname, "../../target/release/colophon");
-  const FORMATS = ["carre-21", "carre-30", "portrait-a4", "paysage-a4", "240x180"];
 
   async function check(server: ViteDevServer) {
-    const mod = await server.ssrLoadModule("/src/album.ts");
+    const parity = await server.ssrLoadModule("/src/parity.ts");
     const problems: string[] = [];
-
-    for (const format of FORMATS) {
+    for (const format of parity.PARITY_FORMATS as string[]) {
       const dump = JSON.parse(
         execFileSync(binary, ["--dump-geometry", "--format", format], {
           encoding: "utf8",
         }),
       );
-      const album = { trim_mm: dump.trim_mm, bleed_mm: dump.bleed_mm };
-      const g = mod.mediaCanvas(album);
-      const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
-
-      for (const key of ["w", "h", "margin", "gutter"] as const) {
-        if (!near(g[key], dump.canvas[key])) {
-          problems.push(`${format} canvas.${key}: rust ${dump.canvas[key]}, ts ${g[key]}`);
-        }
-      }
-
-      for (const [name, want] of Object.entries<any>(dump.templates)) {
-        const n = want.slots.length;
-        // The port works top-down; flip it back to compare with the PDF.
-        const got = mod
-          .slotsFor(name, n, g)
-          .map((r: any) => [r.x, g.h - (r.y + r.h), r.w, r.h]);
-        if (got.length !== n) {
-          problems.push(`${format} ${name}: rust ${n} slots, ts ${got.length}`);
-          continue;
-        }
-        want.slots.forEach((slot: number[], i: number) => {
-          slot.forEach((v, k) => {
-            if (!near(v, got[i][k])) {
-              problems.push(
-                `${format} ${name} slot ${i}[${"xywh"[k]}]: rust ${v}, ts ${got[i][k]}`,
-              );
-            }
-          });
-        });
-
-        const anchor = mod.captionAnchor(name, n, g);
-        const tsCaption = [anchor.x, g.h - anchor.y];
-        want.caption.forEach((v: number, k: number) => {
-          if (!near(v, tsCaption[k])) {
-            problems.push(
-              `${format} ${name} caption[${"xy"[k]}]: rust ${v}, ts ${tsCaption[k]}`,
-            );
-          }
-        });
-      }
-
-      // The fallback rule is written twice too: same parity treatment.
-      for (const [name, cap] of mod.TEMPLATES) {
-        const want = dump.templates[name];
-        if (!want) problems.push(`${format} ${name}: unknown to rust`);
-        else if (want.slots.length !== cap) {
-          problems.push(
-            `${format} ${name} capacity: rust ${want.slots.length}, ts ${cap}`,
-          );
-        }
-      }
-      for (const [n, want] of Object.entries<any>(dump.fallbacks ?? {})) {
-        const got = mod.templateForCount(Number(n));
-        if (!got || got[0] !== want[0] || got[1] !== want[1]) {
-          problems.push(
-            `fallback(${n}): rust ${JSON.stringify(want)}, ts ${JSON.stringify(got)}`,
-          );
-        }
-      }
+      problems.push(...parity.geometryProblems(dump, format));
     }
     return problems;
   }

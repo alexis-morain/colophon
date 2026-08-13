@@ -1,13 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  buildAlbum,
+  FormatPreset,
   inTauri,
+  listFormats,
+  onBuildProgress,
   openAlbum as openAlbumAt,
   pickAlbumFolder,
+  pickPhotosFolder,
   renderPdf,
   saveAlbum,
 } from "./bridge";
 import { Album, OpenedAlbum, Spread } from "./album";
-import { changeTemplate, removePhoto, swapPhotos, templateChoices } from "./edits";
+import {
+  changeTemplate,
+  moveBlocker,
+  movePhoto,
+  removePhoto,
+  swapPhotos,
+  templateChoices,
+} from "./edits";
 import { SpreadView } from "./SpreadView";
 import { loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
@@ -24,6 +36,8 @@ export default function App() {
   const [selected, setSelected] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [building, setBuilding] = useState<string[] | null>(null);
+  const [rendering, setRendering] = useState(false);
 
   const album = hist?.album ?? null;
   const total = album?.spreads.length ?? 0;
@@ -99,15 +113,42 @@ export default function App() {
   }, [hist]);
 
   const regenPdf = useCallback(async () => {
-    if (!(await save())) return;
+    if (rendering || !(await save())) return;
+    setRendering(true);
     setStatus("Rendu du PDF…");
     try {
       const path = await renderPdf();
       setStatus(`PDF régénéré : ${path.split("/").pop()}`);
     } catch (e) {
       setStatus(String(e));
+    } finally {
+      setRendering(false);
     }
-  }, [save]);
+  }, [save, rendering]);
+
+  /** Build an album from a photo folder, streaming the engine's progress. */
+  const createAlbum = useCallback(async (dir: string, format: string, spreads: number) => {
+    setBuilding([]);
+    setError(null);
+    const off = await onBuildProgress((line) =>
+      setBuilding((b) => (b ? [...b.slice(-7), line] : [line])),
+    );
+    try {
+      const result = await buildAlbum(dir, format, spreads);
+      resetThumbs();
+      setOpened(result);
+      setHist({ album: result.album, past: [], future: [] });
+      setSavedAlbum(result.album);
+      setIndex(0);
+      setSelected(null);
+      setStatus(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      off();
+      setBuilding(null);
+    }
+  }, []);
 
   // A removed spread can leave the position past the end.
   useEffect(() => {
@@ -170,6 +211,28 @@ export default function App() {
         return;
       }
       if (!total) return;
+      if (
+        e.metaKey &&
+        e.shiftKey &&
+        (e.key === "ArrowRight" || e.key === "ArrowLeft") &&
+        selected !== null &&
+        album
+      ) {
+        e.preventDefault();
+        const to = index + (e.key === "ArrowRight" ? 1 : -1);
+        if (to < 0 || to >= total) return;
+        const blocked = moveBlocker(album, index, selected, to);
+        if (blocked === "target_full") {
+          setStatus(`Planche ${to + 1} pleine : aucun gabarit n'accepte une photo de plus`);
+        } else if (blocked === "source_breaks") {
+          setStatus("Refusé : il faudrait sacrifier une autre photo de cette planche");
+        } else if (blocked === null) {
+          setSelected(null);
+          apply((a) => movePhoto(a, index, selected, to));
+          setStatus(`Photo envoyée sur la planche ${to + 1}`);
+        }
+        return;
+      }
       if ((e.key === "Backspace" || e.key === "Delete") && selected !== null) {
         e.preventDefault();
         setSelected(null);
@@ -204,9 +267,18 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [total, openAlbum, save, undo, redo, apply, index, selected]);
+  }, [total, openAlbum, save, undo, redo, apply, index, selected, album]);
 
-  if (!album || total === 0) return <Empty onOpen={openAlbum} error={error} />;
+  if (!album || total === 0) {
+    return (
+      <Empty
+        onOpen={openAlbum}
+        onCreate={createAlbum}
+        building={building}
+        error={error}
+      />
+    );
+  }
 
   const spread = album.spreads[Math.min(index, total - 1)];
 
@@ -226,6 +298,7 @@ export default function App() {
         onRedo={redo}
         onSave={() => void save()}
         onPdf={inTauri ? () => void regenPdf() : undefined}
+        pdfBusy={rendering}
         onOpen={openAlbum}
       />
       <main className="stage">
@@ -243,7 +316,8 @@ export default function App() {
       {selected !== null && (
         <p className="hintbar">
           <kbd>⌫</kbd> retire la photo, le gabarit suit. Glissez une photo sur
-          une autre pour les permuter.
+          une autre pour les permuter, <kbd>⌘⇧←</kbd> <kbd>⌘⇧→</kbd> pour
+          l'envoyer sur la planche voisine.
         </p>
       )}
       {opened && !opened.root_present && (
@@ -270,6 +344,7 @@ function Bar({
   onRedo,
   onSave,
   onPdf,
+  pdfBusy,
   onOpen,
 }: {
   album: Album;
@@ -285,6 +360,7 @@ function Bar({
   onRedo: () => void;
   onSave: () => void;
   onPdf?: () => void;
+  pdfBusy?: boolean;
   onOpen: () => void;
 }) {
   return (
@@ -327,8 +403,13 @@ function Bar({
           Enregistrer
         </button>
         {onPdf && (
-          <button className="link" onClick={onPdf} title="Régénère album.pdf">
-            PDF
+          <button
+            className="link"
+            onClick={onPdf}
+            disabled={pdfBusy}
+            title="Régénère album.pdf"
+          >
+            {pdfBusy ? "PDF…" : "PDF"}
           </button>
         )}
         <button className="link" onClick={onOpen}>
@@ -367,11 +448,28 @@ function Progress({
 
 function Empty({
   onOpen,
+  onCreate,
+  building,
   error,
 }: {
   onOpen: () => void;
+  onCreate: (dir: string, format: string, spreads: number) => void;
+  building: string[] | null;
   error: string | null;
 }) {
+  const [formats, setFormats] = useState<FormatPreset[]>([]);
+  const [format, setFormat] = useState("carre-21");
+  const [spreads, setSpreads] = useState(48);
+
+  useEffect(() => {
+    listFormats().then(setFormats, () => {});
+  }, []);
+
+  const compose = async () => {
+    const dir = await pickPhotosFolder();
+    if (dir) onCreate(dir, format, spreads);
+  };
+
   return (
     <div className="empty">
       <div className="empty-block">
@@ -382,16 +480,53 @@ function Empty({
           un album à feuilleter.
         </h1>
         <p className="lede">
-          Ouvrez un dossier produit par la ligne de commande, celui qui contient
-          <code> album.json</code>. La vue Livre affiche les planches telles
-          qu'elles seront imprimées.
+          Colophon lit vos photos, écarte les doublons et les ratés, compose
+          les planches et rend un PDF. Tout se retouche ensuite dans la vue
+          Livre.
         </p>
-        <button className="cta" onClick={onOpen}>
-          Ouvrir un album
-        </button>
-        <p className="hint">
-          ou <kbd>⌘</kbd> <kbd>O</kbd>, puis les flèches pour tourner les pages
-        </p>
+
+        {inTauri && !building && (
+          <div className="compose">
+            <label>
+              format
+              <select value={format} onChange={(e) => setFormat(e.target.value)}>
+                {formats.map((f) => (
+                  <option key={f.name} value={f.name}>
+                    {f.name} · {f.w.toFixed(0)} × {f.h.toFixed(0)} mm
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              planches
+              <input
+                type="number"
+                min={8}
+                max={200}
+                value={spreads}
+                onChange={(e) => setSpreads(Number(e.target.value) || 48)}
+              />
+            </label>
+            <button className="cta" onClick={() => void compose()}>
+              Composer un album…
+            </button>
+          </div>
+        )}
+
+        {building && (
+          <pre className="buildlog">
+            {building.length ? building.join("\n") : "lecture du dossier…"}
+          </pre>
+        )}
+
+        {!building && (
+          <p className="hint">
+            <button className="link" onClick={onOpen}>
+              Ouvrir un album existant
+            </button>{" "}
+            (<kbd>⌘</kbd> <kbd>O</kbd>), puis les flèches pour tourner les pages
+          </p>
+        )}
         {error && <p className="warn">{error}</p>}
       </div>
     </div>

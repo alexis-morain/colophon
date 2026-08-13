@@ -95,6 +95,14 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
             .to_string_lossy()
             .to_string()
     };
+    // Face anchors survive into curation.json: a rescued photo is cropped
+    // like any other. Keyed by path because the passes only return paths.
+    let focals: std::collections::HashMap<PathBuf, [f64; 2]> = photos
+        .iter()
+        .map(|p| (p.path.clone(), p.focal.unwrap_or_else(model::default_focal)))
+        .collect();
+    let focal_of =
+        |p: &Path| focals.get(p).copied().unwrap_or_else(model::default_focal);
     let mut discards: Vec<model::Discard> = Vec::new();
 
     let (photos, junk) = pipeline::split_junk(photos);
@@ -108,6 +116,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         src: rel(&p.path),
         reason: "parasite".into(),
         kept: None,
+        focal: focal_of(&p.path),
     }));
 
     let (kept, dups) = pipeline::dedup(photos);
@@ -116,6 +125,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         src: rel(lost),
         reason: "doublon".into(),
         kept: Some(rel(won)),
+        focal: focal_of(lost),
     }));
 
     let spreads_target = opts.spreads.max(8);
@@ -137,11 +147,13 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         src: rel(lost),
         reason: "jumeau".into(),
         kept: Some(rel(won)),
+        focal: focal_of(lost),
     }));
     discards.extend(moments.iter().map(|(lost, won)| model::Discard {
         src: rel(lost),
         reason: "meme_moment".into(),
         kept: Some(rel(won)),
+        focal: focal_of(lost),
     }));
 
     // 4. compose spreads. How many photos a spread holds depends on their
@@ -199,7 +211,12 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         for photo in &chapter.photos {
             let src = rel(&photo.path);
             if !shown.contains(&src) {
-                discards.push(model::Discard { src, reason: "hors_budget".into(), kept: None });
+                discards.push(model::Discard {
+                    src,
+                    reason: "hors_budget".into(),
+                    kept: None,
+                    focal: focal_of(&photo.path),
+                });
             }
         }
     }

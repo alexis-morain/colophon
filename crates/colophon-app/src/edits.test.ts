@@ -9,8 +9,10 @@ import {
   movePhoto,
   moveBlocker,
   removePhoto,
+  rescuePhoto,
   swapPhotos,
   templateChoices,
+  triEntries,
 } from "./edits";
 
 function slot(n: number): Slot {
@@ -102,6 +104,49 @@ describe("swapPhotos", () => {
     expect(b.spreads[0].slots[0].src).toBe("p1.jpg");
     expect(b.spreads[0].slots[0].focal).toEqual([0.1, 0.9]);
     expect(b.spreads[0].slots[1].src).toBe("p0.jpg");
+  });
+});
+
+describe("rescuePhoto", () => {
+  const back = { src: "back.jpg", focal: [0.5, 0.42] as [number, number] };
+
+  it("lands on the anchor spread when it can grow", () => {
+    const a = album(spread("trio", 3), spread("duo", 2));
+    const r = rescuePhoto(a, back, 0);
+    expect(r?.at).toBe(0);
+    expect(r?.album.spreads[0].template).toBe("quad");
+    expect(r?.album.spreads[0].slots[3].src).toBe("back.jpg");
+    r && assertSound(r.album);
+  });
+
+  it("spills to a neighbour when the anchor is full", () => {
+    const a = album(spread("quad", 4), spread("duo", 2));
+    const r = rescuePhoto(a, back, 0);
+    expect(r?.at).toBe(1);
+    expect(r?.album.spreads[1].template).toBe("trio");
+    r && assertSound(r.album);
+  });
+
+  it("gives up when the whole neighbourhood is full", () => {
+    const a = album(spread("quad", 4), spread("quad", 4), spread("quad", 4));
+    expect(rescuePhoto(a, back, 1)).toBeNull();
+  });
+});
+
+describe("triEntries", () => {
+  it("lists discards not shown, plus hand-removed photos", () => {
+    const a = album(spread("duo", 2)); // shows p0, p1
+    const curation = [
+      { src: "gone.jpg", reason: "doublon", kept: "p0.jpg", focal: [0.5, 0.42] as [number, number] },
+      { src: "p1.jpg", reason: "hors_budget", focal: [0.5, 0.42] as [number, number] },
+    ];
+    // p9 was shown at build time (thumb indexed) but is in no spread now
+    const thumbs = ["p0.jpg", "p1.jpg", "gone.jpg", "p9.jpg"];
+    const entries = triEntries(a, curation, thumbs);
+    expect(entries.map((e) => [e.src, e.reason])).toEqual([
+      ["gone.jpg", "doublon"],
+      ["p9.jpg", "retiree"],
+    ]);
   });
 });
 

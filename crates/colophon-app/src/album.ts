@@ -19,6 +19,16 @@ export type OpenedAlbum = {
   album: Album;
   dir: string;
   root_present: boolean;
+  /** Every source with a cached thumbnail: shown photos plus discarded. */
+  thumb_srcs: string[];
+};
+
+/** One photo curation set aside, as written in curation.json. */
+export type Discard = {
+  src: string;
+  reason: string;
+  kept?: string;
+  focal: [number, number];
 };
 
 /** Every template with its photo count. Port of `pdf.rs::TEMPLATES`. */

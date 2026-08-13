@@ -4,7 +4,9 @@
 
 import { fetchThumb } from "./bridge";
 
-const LIMIT = 120;
+// Sized for the sorting view: a couple of screens of grid cells plus the
+// book view's neighbourhood, without ever holding a whole album.
+const LIMIT = 240;
 const urls = new Map<string, string>();
 const pending = new Map<string, Promise<string>>();
 

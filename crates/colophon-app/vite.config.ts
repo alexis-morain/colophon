@@ -44,13 +44,29 @@ function albumDevServer(dir: string): Plugin {
         }
         try {
           const album = JSON.parse(read("album.json").toString());
+          const thumbs = JSON.parse(read("thumbs.json").toString());
           res.setHeader("Content-Type", "application/json");
           res.end(
-            JSON.stringify({ album, dir, root_present: true }),
+            JSON.stringify({
+              album,
+              dir,
+              root_present: true,
+              thumb_srcs: Object.keys(thumbs),
+            }),
           );
         } catch (e) {
           res.statusCode = 500;
           res.end(String(e));
+        }
+      });
+      server.middlewares.use("/__dev/curation", (_req, res) => {
+        try {
+          res.setHeader("Content-Type", "application/json");
+          res.end(read("curation.json"));
+        } catch {
+          // an album built before the export simply has no discard list
+          res.setHeader("Content-Type", "application/json");
+          res.end("[]");
         }
       });
       server.middlewares.use("/__dev/thumb", (req, res) => {

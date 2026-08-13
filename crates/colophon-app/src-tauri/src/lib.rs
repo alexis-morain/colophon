@@ -31,6 +31,10 @@ struct OpenedAlbum {
     /// False when the original photo folder has moved: the preview still works
     /// off the thumbnail cache, a full-resolution export would not.
     root_present: bool,
+    /// Every source with a cached thumbnail: shown photos plus discarded
+    /// ones. The sorting view derives "removed by hand" from what is here
+    /// but neither in the album nor in curation.json.
+    thumb_srcs: Vec<String>,
 }
 
 /// Read an album folder (or its album.json) into the album and its thumb index.
@@ -76,12 +80,30 @@ fn read_thumb(dir: &Path, thumbs: &ThumbIndex, src: &str) -> Result<Vec<u8>, Str
 fn open_album(path: String, state: State<'_, AppState>) -> Result<OpenedAlbum, String> {
     let (dir, album, thumbs) = load_album(Path::new(&path))?;
     let root_present = Path::new(&album.root).is_dir();
+    let thumb_srcs = thumbs.keys().cloned().collect();
     *state.open.lock().unwrap() = Some(Opened { dir: dir.clone(), thumbs });
     Ok(OpenedAlbum {
         album,
         dir: dir.to_string_lossy().to_string(),
         root_present,
+        thumb_srcs,
     })
+}
+
+/// The photos curation set aside, with reasons, from curation.json.
+/// Empty when the album predates the export: the sorting view just shows
+/// the hand-removed photos then.
+#[tauri::command]
+fn curation(state: State<'_, AppState>) -> Result<Vec<colophon_core::model::Discard>, String> {
+    let guard = state.open.lock().unwrap();
+    let opened = guard.as_ref().ok_or("aucun album ouvert")?;
+    let path = opened.dir.join("curation.json");
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let text =
+        std::fs::read_to_string(&path).map_err(|e| format!("lecture de curation.json : {e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("curation.json illisible : {e}"))
 }
 
 /// Raw JPEG bytes of one slot's thumbnail. Returned as a binary IPC response,
@@ -213,7 +235,8 @@ pub fn run() {
             save_album,
             render_pdf,
             list_formats,
-            build_album_from_folder
+            build_album_from_folder,
+            curation
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   buildAlbum,
+  fetchCuration,
   FormatPreset,
   inTauri,
   listFormats,
@@ -11,16 +12,21 @@ import {
   renderPdf,
   saveAlbum,
 } from "./bridge";
-import { Album, OpenedAlbum, Spread } from "./album";
+import { Album, Discard, OpenedAlbum, Spread } from "./album";
 import {
   changeTemplate,
   moveBlocker,
   movePhoto,
   removePhoto,
+  rescuePhoto,
+  spreadOf,
   swapPhotos,
   templateChoices,
+  triEntries,
+  TriEntry,
 } from "./edits";
 import { SpreadView } from "./SpreadView";
+import { TriView } from "./TriView";
 import { loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
 
@@ -38,6 +44,9 @@ export default function App() {
   const [status, setStatus] = useState<string | null>(null);
   const [building, setBuilding] = useState<string[] | null>(null);
   const [rendering, setRendering] = useState(false);
+  const [view, setView] = useState<"livre" | "tri">("livre");
+  const [curation, setCuration] = useState<Discard[]>([]);
+  const [triSelected, setTriSelected] = useState<string | null>(null);
 
   const album = hist?.album ?? null;
   const total = album?.spreads.length ?? 0;
@@ -54,8 +63,11 @@ export default function App() {
       setSavedAlbum(result.album);
       setIndex(0);
       setSelected(null);
+      setTriSelected(null);
+      setView("livre");
       setError(null);
       setStatus(null);
+      setCuration(await fetchCuration().catch(() => []));
     } catch (e) {
       setError(String(e));
     }
@@ -141,7 +153,10 @@ export default function App() {
       setSavedAlbum(result.album);
       setIndex(0);
       setSelected(null);
+      setTriSelected(null);
+      setView("livre");
       setStatus(null);
+      setCuration(await fetchCuration().catch(() => []));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -149,6 +164,31 @@ export default function App() {
       setBuilding(null);
     }
   }, []);
+
+  /** Bring a discarded photo back, next to the photo that beat it. */
+  const rescue = useCallback(
+    (entry: TriEntry) => {
+      if (!album) return;
+      const anchorByWinner = entry.kept ? spreadOf(album, entry.kept) : -1;
+      const anchor = anchorByWinner >= 0 ? anchorByWinner : index;
+      const result = rescuePhoto(
+        album,
+        { src: entry.src, focal: entry.focal },
+        anchor,
+      );
+      if (!result) {
+        setStatus(
+          `Aucune place autour de la planche ${anchor + 1} : libérez une case ou changez un gabarit`,
+        );
+        return;
+      }
+      setTriSelected(null);
+      apply(() => result.album);
+      setIndex(result.at);
+      setStatus(`Repêchée sur la planche ${result.at + 1}`);
+    },
+    [album, index, apply],
+  );
 
   // A removed spread can leave the position past the end.
   useEffect(() => {
@@ -210,6 +250,11 @@ export default function App() {
         else undo();
         return;
       }
+      // The sorting view keeps the global shortcuts, nothing spread-bound.
+      if (view === "tri") {
+        if (e.key === "Escape") setTriSelected(null);
+        return;
+      }
       if (!total) return;
       if (
         e.metaKey &&
@@ -267,7 +312,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [total, openAlbum, save, undo, redo, apply, index, selected, album]);
+  }, [total, openAlbum, save, undo, redo, apply, index, selected, album, view]);
 
   if (!album || total === 0) {
     return (
@@ -281,6 +326,7 @@ export default function App() {
   }
 
   const spread = album.spreads[Math.min(index, total - 1)];
+  const entries = triEntries(album, curation, opened?.thumb_srcs ?? []);
 
   return (
     <div className="app">
@@ -293,6 +339,13 @@ export default function App() {
         canUndo={(hist?.past.length ?? 0) > 0}
         canRedo={(hist?.future.length ?? 0) > 0}
         status={status}
+        view={view}
+        triCount={entries.length}
+        onView={(v) => {
+          setView(v);
+          setSelected(null);
+          setTriSelected(null);
+        }}
         onTemplate={(t) => apply((a) => changeTemplate(a, index, t))}
         onUndo={undo}
         onRedo={redo}
@@ -301,23 +354,40 @@ export default function App() {
         pdfBusy={rendering}
         onOpen={openAlbum}
       />
-      <main className="stage">
-        <div className="turn" key={index}>
-          <SpreadView
-            album={album}
-            spread={spread}
-            selected={selected}
-            onSelect={setSelected}
-            onSwap={(a, b) => apply((al) => swapPhotos(al, index, a, b))}
-          />
-        </div>
-      </main>
-      <Progress index={index} total={total} onSeek={setIndex} />
-      {selected !== null && (
+      {view === "tri" ? (
+        <TriView
+          entries={entries}
+          selected={triSelected}
+          onSelect={setTriSelected}
+          onRescue={rescue}
+        />
+      ) : (
+        <>
+          <main className="stage">
+            <div className="turn" key={index}>
+              <SpreadView
+                album={album}
+                spread={spread}
+                selected={selected}
+                onSelect={setSelected}
+                onSwap={(a, b) => apply((al) => swapPhotos(al, index, a, b))}
+              />
+            </div>
+          </main>
+          <Progress index={index} total={total} onSeek={setIndex} />
+        </>
+      )}
+      {view === "livre" && selected !== null && (
         <p className="hintbar">
           <kbd>⌫</kbd> retire la photo, le gabarit suit. Glissez une photo sur
           une autre pour les permuter, <kbd>⌘⇧←</kbd> <kbd>⌘⇧→</kbd> pour
           l'envoyer sur la planche voisine.
+        </p>
+      )}
+      {view === "tri" && triSelected !== null && (
+        <p className="hintbar">
+          « Repêcher » réinsère la photo près de celle qui l'avait emporté,
+          la planche s'adapte. Double-clic : pareil.
         </p>
       )}
       {opened && !opened.root_present && (
@@ -339,6 +409,9 @@ function Bar({
   canUndo,
   canRedo,
   status,
+  view,
+  triCount,
+  onView,
   onTemplate,
   onUndo,
   onRedo,
@@ -355,6 +428,9 @@ function Bar({
   canUndo: boolean;
   canRedo: boolean;
   status: string | null;
+  view: "livre" | "tri";
+  triCount: number;
+  onView: (v: "livre" | "tri") => void;
   onTemplate: (t: string) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -367,24 +443,44 @@ function Bar({
     <header className="bar">
       <h1>{album.title}</h1>
       <p className="meta">
-        <span>
-          planche {index + 1} sur {total}
+        <span className="views" role="tablist">
+          <button
+            className={"view-tab" + (view === "livre" ? " active" : "")}
+            onClick={() => onView("livre")}
+          >
+            Livre
+          </button>
+          <button
+            className={"view-tab" + (view === "tri" ? " active" : "")}
+            onClick={() => onView("tri")}
+          >
+            Tri · {triCount}
+          </button>
         </span>
-        <select
-          className="template-pick"
-          value={spread.template}
-          onChange={(e) => {
-            onTemplate(e.target.value);
-            e.target.blur();
-          }}
-          title="Gabarit de la planche"
-        >
-          {templateChoices(spread).map(([t, cap]) => (
-            <option key={t} value={t}>
-              {t} · {cap}
-            </option>
-          ))}
-        </select>
+        {view === "livre" ? (
+          <>
+            <span>
+              planche {index + 1} sur {total}
+            </span>
+            <select
+              className="template-pick"
+              value={spread.template}
+              onChange={(e) => {
+                onTemplate(e.target.value);
+                e.target.blur();
+              }}
+              title="Gabarit de la planche"
+            >
+              {templateChoices(spread).map(([t, cap]) => (
+                <option key={t} value={t}>
+                  {t} · {cap}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : (
+          <span>photos écartées par la curation, ou retirées à la main</span>
+        )}
         {status && <span className="status">{status}</span>}
       </p>
       <p className="actions">

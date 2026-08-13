@@ -4,7 +4,7 @@
 // the book view gets checked without rebuilding the Rust side.
 
 import { invoke } from "@tauri-apps/api/core";
-import { Album, OpenedAlbum } from "./album";
+import { Album, Discard, OpenedAlbum } from "./album";
 
 export const inTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -73,6 +73,14 @@ export async function fetchThumb(src: string): Promise<ArrayBuffer> {
   const res = await fetch(`/__dev/thumb?src=${encodeURIComponent(src)}`);
   if (!res.ok) throw new Error(await res.text());
   return res.arrayBuffer();
+}
+
+/** The photos curation set aside. Empty for albums built before the export. */
+export async function fetchCuration(): Promise<Discard[]> {
+  if (inTauri) return invoke<Discard[]>("curation");
+  const res = await fetch("/__dev/curation");
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 /** Overwrite album.json, atomically on both sides of the bridge. */

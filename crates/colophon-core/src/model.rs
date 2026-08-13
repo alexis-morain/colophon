@@ -53,6 +53,15 @@ pub struct Discard {
     /// comparison. Relative to the album root too.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kept: Option<String>,
+    /// Focal point, same convention as `Slot::focal`, so a rescued photo is
+    /// cropped like any other. Face anchor when one was found.
+    #[serde(default = "default_focal")]
+    pub focal: [f64; 2],
+}
+
+/// Same default as the composer: slightly above centre.
+pub fn default_focal() -> [f64; 2] {
+    [0.5, 0.42]
 }
 
 impl Album {

@@ -4,6 +4,8 @@
 
 import {
   Album,
+  Discard,
+  Slot,
   Spread,
   TEMPLATES,
   fallbackTemplate,
@@ -122,6 +124,65 @@ export function movePhoto(
   if (!fb) spreads.splice(from, 1);
   else spreads[from] = { ...src, template: fb.template, slots: rest };
   return { ...album, spreads };
+}
+
+export type TriEntry = Discard & { manual?: boolean };
+
+/**
+ * What the sorting view lists right now: curation entries plus hand-removed
+ * photos (in the thumbnail index but neither shown nor listed), minus
+ * everything the album currently shows. Rescuing or undoing updates the
+ * list with no bookkeeping.
+ */
+export function triEntries(
+  album: Album,
+  curation: Discard[],
+  thumbSrcs: string[],
+): TriEntry[] {
+  const shown = new Set(
+    album.spreads.flatMap((s) => s.slots.map((sl) => sl.src)),
+  );
+  const listed = new Set(curation.map((d) => d.src));
+  const out: TriEntry[] = curation.filter((d) => !shown.has(d.src));
+  for (const src of thumbSrcs) {
+    if (!shown.has(src) && !listed.has(src)) {
+      out.push({ src, reason: "retiree", focal: [0.5, 0.42], manual: true });
+    }
+  }
+  return out;
+}
+
+/** The spread currently showing a photo, or -1. */
+export function spreadOf(album: Album, src: string): number {
+  return album.spreads.findIndex((s) => s.slots.some((sl) => sl.src === src));
+}
+
+/**
+ * Bring a discarded photo back into the album. Tried around the anchor
+ * spread (the one holding the photo that won over it, else wherever the
+ * reader stands): first spread of the three that can grow takes it.
+ * Returns the new album and where it landed, or null when all three are full.
+ */
+export function rescuePhoto(
+  album: Album,
+  slot: Slot,
+  anchor: number,
+): { album: Album; at: number } | null {
+  const candidates = [anchor, anchor + 1, anchor - 1];
+  for (const at of candidates) {
+    const spread = album.spreads[at];
+    if (!spread) continue;
+    const grown = growTemplate(spread.template, spread.slots.length);
+    if (!grown) continue;
+    const spreads = album.spreads.slice();
+    spreads[at] = {
+      ...spread,
+      template: grown.template,
+      slots: [...spread.slots, slot],
+    };
+    return { album: { ...album, spreads }, at };
+  }
+  return null;
 }
 
 /** Swap two photos of the same spread, focal points travelling with them. */

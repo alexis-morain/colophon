@@ -111,7 +111,8 @@ fn spread(template: &str, photos: &[Photo], root: &std::path::Path) -> Spread {
                     .unwrap_or(&p.path)
                     .to_string_lossy()
                     .to_string(),
-                focal: [0.5, 0.42], // slightly above centre: better default for people
+                // Face anchor when we have one, otherwise slightly above centre.
+                focal: p.focal.unwrap_or([0.5, 0.42]),
             })
             .collect(),
         caption: None,

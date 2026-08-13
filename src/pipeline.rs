@@ -10,6 +10,8 @@ pub struct Photo {
     pub path: PathBuf,
     pub meta: PhotoMeta,
     pub analysis: Analysis,
+    /// Face-anchored crop focal point, when at least one face was found.
+    pub focal: Option<[f64; 2]>,
 }
 
 impl Photo {
@@ -17,12 +19,15 @@ impl Photo {
     /// screenshots, downloads or forwarded images: heavy penalty so they
     /// never outrank a real photo, without being dropped outright.
     pub fn effective_score(&self) -> f64 {
-        let base = self.analysis.score();
-        if self.meta.taken_reliable {
-            base
-        } else {
-            base * 0.25
+        let mut score = self.analysis.score();
+        if !self.meta.taken_reliable {
+            score *= 0.25;
         }
+        // People beat scenery in a family album, mildly.
+        if self.focal.is_some() {
+            score *= 1.15;
+        }
+        score
     }
 }
 

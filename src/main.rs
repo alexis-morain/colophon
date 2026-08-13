@@ -1,4 +1,5 @@
 mod analyze;
+mod face;
 mod layout;
 mod meta;
 mod model;
@@ -67,7 +68,7 @@ fn main() -> Result<()> {
     let photos: Vec<Photo> = scanned
         .images
         .par_iter()
-        .filter_map(|path| {
+        .map_init(face::new_detector, |det, path| {
             let meta = meta::read(path);
             let img = match cache.get(path, meta.orientation) {
                 Ok(i) => i,
@@ -77,8 +78,10 @@ fn main() -> Result<()> {
                 }
             };
             let analysis = analyze::analyze(&img);
-            Some(Photo { path: path.clone(), meta, analysis })
+            let focal = face::focal_point(det.as_mut(), &img);
+            Some(Photo { path: path.clone(), meta, analysis, focal })
         })
+        .flatten()
         .collect();
     eprintln!("analyze: {} photos in {:.1?}", photos.len(), t0.elapsed());
 

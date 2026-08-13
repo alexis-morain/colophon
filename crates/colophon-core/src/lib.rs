@@ -11,8 +11,10 @@ pub mod meta;
 pub mod model;
 pub mod pdf;
 pub mod pipeline;
+pub mod print;
 pub mod scan;
 pub mod thumb;
 
 pub use build::{build_album, render_album_pdf, write_album_json, BuildOptions, BuildReport};
+pub use print::render_print_pdf;
 pub use model::{Album, Size, Slot, Spread};

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "dump_geometry"])]
+    #[arg(required_unless_present_any = ["formats", "dump_geometry", "print"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -38,6 +38,12 @@ struct Cli {
     /// parity check against the editor's TypeScript port.
     #[arg(long)]
     dump_geometry: bool,
+
+    /// Render album-print.pdf at full resolution (300 dpi) from the album
+    /// already built in --out. Reopens the originals: slower than the
+    /// preview, and the photo folder must still be in place.
+    #[arg(long)]
+    print: bool,
 }
 
 /// Built once at startup so `--help` can show the format table.
@@ -57,6 +63,17 @@ fn main() -> Result<()> {
     if cli.dump_geometry {
         let album = Album::new("geometry", std::path::Path::new("."), trim);
         println!("{}", serde_json::to_string_pretty(&pdf::dump_geometry(&album))?);
+        return Ok(());
+    }
+
+    if cli.print {
+        let t0 = std::time::Instant::now();
+        let out = colophon_core::render_print_pdf(
+            &cli.out,
+            &cli.out.join("album-print.pdf"),
+            &|line| eprintln!("{line}"),
+        )?;
+        eprintln!("done in {:.1?}: {}", t0.elapsed(), out.display());
         return Ok(());
     }
 

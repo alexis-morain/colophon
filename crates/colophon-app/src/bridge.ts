@@ -145,15 +145,19 @@ export async function saveAlbum(album: Album): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
-/** Re-render album.pdf, then ask where to keep a copy, Téléchargements by
- *  default: the app's data dir is no place to look for one's own album.
- *  Returns the chosen path, or null when the dialog is dismissed.
- *  Tauri only: the dev server has no engine. */
-export async function exportPdf(title: string): Promise<string | null> {
+/** Ask where to keep the PDF (Téléchargements by default), then render it
+ *  at print resolution straight to that path. The dialog comes first: the
+ *  render reopens every original at 300 dpi and takes minutes, nobody
+ *  should wait through it before being asked a question. Progress arrives
+ *  as (done, total) photo counts. Returns the chosen path, or null when
+ *  the dialog is dismissed. Tauri only: the dev server has no engine. */
+export async function exportPdf(
+  title: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<string | null> {
   if (!inTauri) {
     throw new Error("PDF hors application : utilisez la commande colophon");
   }
-  await invoke<string>("render_pdf");
   const { save } = await import("@tauri-apps/plugin-dialog");
   const { downloadDir, join } = await import("@tauri-apps/api/path");
   const name = (title.trim() || "album").replace(/[\\/:]+/g, "-");
@@ -163,6 +167,15 @@ export async function exportPdf(title: string): Promise<string | null> {
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
   if (!dest) return null;
-  await invoke("export_pdf", { dest });
+  const { listen } = await import("@tauri-apps/api/event");
+  const off = await listen<string>("export:progress", (e) => {
+    const m = /^render: (\d+)\/(\d+)/.exec(e.payload);
+    if (m && onProgress) onProgress(Number(m[1]), Number(m[2]));
+  });
+  try {
+    await invoke("export_pdf", { dest });
+  } finally {
+    off();
+  }
   return dest;
 }

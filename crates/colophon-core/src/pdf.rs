@@ -292,6 +292,7 @@ pub struct PdfWriter {
     pages_id: lopdf::ObjectId,
     font_id: lopdf::ObjectId,
     geom: SpreadGeometry,
+    bleed_mm: f64,
 }
 
 impl PdfWriter {
@@ -304,7 +305,14 @@ impl PdfWriter {
             "BaseFont" => "Helvetica",
             "Encoding" => "WinAnsiEncoding",
         });
-        Self { doc, page_ids: Vec::new(), pages_id, font_id, geom: geometry(album) }
+        Self {
+            doc,
+            page_ids: Vec::new(),
+            pages_id,
+            font_id,
+            geom: geometry(album),
+            bleed_mm: album.bleed_mm,
+        }
     }
 
     pub fn add_spread(&mut self, spread: &Spread, assets: &[JpegAsset]) -> Result<()> {
@@ -368,15 +376,16 @@ impl PdfWriter {
             "XObject" => xobjects,
             "Font" => dictionary! { "F1" => Object::Reference(self.font_id) },
         };
+        // TrimBox marks the finished spread inside the bleed: prepress reads
+        // it for the cut, and a preflight without it flags the file.
+        let b = self.bleed_mm * MM_TO_PT;
+        let (mw, mh) = (self.geom.media_w * MM_TO_PT, self.geom.media_h * MM_TO_PT);
         let page_id = self.doc.add_object(dictionary! {
             "Type" => "Page",
             "Parent" => Object::Reference(self.pages_id),
-            "MediaBox" => vec![
-                0.into(),
-                0.into(),
-                (self.geom.media_w * MM_TO_PT).into(),
-                (self.geom.media_h * MM_TO_PT).into(),
-            ],
+            "MediaBox" => vec![0.into(), 0.into(), mw.into(), mh.into()],
+            "BleedBox" => vec![0.into(), 0.into(), mw.into(), mh.into()],
+            "TrimBox" => vec![b.into(), b.into(), (mw - b).into(), (mh - b).into()],
             "Resources" => resources,
             "Contents" => Object::Reference(content_id),
         });

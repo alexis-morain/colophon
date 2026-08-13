@@ -134,9 +134,11 @@ export default function App() {
   const regenPdf = useCallback(async () => {
     if (rendering || !hist || !(await save())) return;
     setRendering(true);
-    setStatus("Rendu du PDF…");
+    setStatus("Rendu du PDF d’impression…");
     try {
-      const dest = await exportPdf(hist.album.title);
+      const dest = await exportPdf(hist.album.title, (done, total) =>
+        setStatus(`Rendu à 300 dpi : ${done}/${total} photos…`),
+      );
       setStatus(dest ? `PDF enregistré : ${dest}` : "Enregistrement annulé");
     } catch (e) {
       setStatus(String(e));

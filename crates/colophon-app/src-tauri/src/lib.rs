@@ -225,20 +225,28 @@ async fn render_pdf(state: State<'_, AppState>) -> Result<String, String> {
         .map_err(|e| format!("{e:#}"))
 }
 
-/// Copy the rendered album.pdf where the user chose to keep it: the app's
-/// data dir is no place to go digging for one's own album.
+/// Render the print-resolution PDF straight to where the user chose to keep
+/// it. Reopens every original at 300 dpi, so this takes minutes, not
+/// seconds: progress goes out as `export:progress` events (`render: i/n`).
 #[tauri::command]
-fn export_pdf(dest: String, state: State<'_, AppState>) -> Result<(), String> {
-    let src = {
+async fn export_pdf(
+    app: tauri::AppHandle,
+    dest: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let dir = {
         let guard = state.open.lock().unwrap();
-        guard.as_ref().ok_or("aucun album ouvert")?.dir.join("album.pdf")
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
     };
-    if !src.is_file() {
-        return Err("album.pdf n'existe pas encore : rendez le PDF d'abord".into());
-    }
-    std::fs::copy(&src, Path::new(&dest))
-        .map(|_| ())
-        .map_err(|e| format!("copie vers {dest} : {e}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        colophon_core::render_print_pdf(&dir, Path::new(&dest), &|line| {
+            let _ = app.emit("export:progress", line);
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|_| ())
+    .map_err(|e| format!("{e:#}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

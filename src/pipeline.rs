@@ -103,6 +103,44 @@ pub fn chapters(photos: Vec<Photo>) -> Vec<Chapter> {
     chapters
 }
 
+/// Merge adjacent chapters until at most `max` remain, always closing the
+/// smallest time gap first so the strongest natural boundaries survive.
+/// A year of scattered photos collapses into month-ish runs; a one-week
+/// trip with clear day gaps is left untouched.
+pub fn merge_chapters(mut chapters: Vec<Chapter>, max: usize) -> Vec<Chapter> {
+    while chapters.len() > max.max(1) {
+        let mut best = 1usize;
+        let mut best_gap = i64::MAX;
+        for i in 1..chapters.len() {
+            let gap = (chapters[i].start - chapters[i - 1].end).num_seconds();
+            if gap < best_gap {
+                best_gap = gap;
+                best = i;
+            }
+        }
+        let absorbed = chapters.remove(best);
+        let prev = &mut chapters[best - 1];
+        prev.end = absorbed.end;
+        prev.photos.extend(absorbed.photos);
+    }
+    chapters
+}
+
+/// Split a total photo budget across chapters, proportional to the square
+/// root of their size: big events get more room, small ones still exist.
+pub fn allocate_budget(chapters: &[Chapter], total: usize) -> Vec<usize> {
+    let weights: Vec<f64> = chapters.iter().map(|c| (c.photos.len() as f64).sqrt()).collect();
+    let sum: f64 = weights.iter().sum();
+    chapters
+        .iter()
+        .zip(&weights)
+        .map(|(c, w)| {
+            let share = (total as f64 * w / sum).round() as usize;
+            share.clamp(2, c.photos.len().max(2))
+        })
+        .collect()
+}
+
 /// Cap each chapter to its strongest photos, keeping chronological order.
 pub fn cap_chapter(chapter: &mut Chapter, max: usize) {
     if chapter.photos.len() <= max {

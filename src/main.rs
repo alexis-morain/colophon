@@ -29,9 +29,9 @@ struct Cli {
     #[arg(short, long)]
     title: Option<String>,
 
-    /// Maximum photos kept per chapter
-    #[arg(long, default_value_t = 24)]
-    max_per_chapter: usize,
+    /// Target number of spreads (double pages) for the finished album
+    #[arg(short, long, default_value_t = 48)]
+    spreads: usize,
 }
 
 fn main() -> Result<()> {
@@ -89,14 +89,25 @@ fn main() -> Result<()> {
     }
     let kept = pipeline::dedup(photos);
     eprintln!("dedup: {} kept", kept.len());
-    let mut chapters = pipeline::chapters(kept);
-    for c in &mut chapters {
-        pipeline::cap_chapter(c, cli.max_per_chapter);
+
+    // Page budget: ~2.6 photos per spread on average with our templates.
+    let spreads_target = cli.spreads.max(8);
+    let photo_budget = spreads_target * 26 / 10;
+    let max_chapters = (spreads_target / 3).clamp(4, 26);
+
+    let chapters = pipeline::chapters(kept);
+    let natural = chapters.len();
+    let mut chapters = pipeline::merge_chapters(chapters, max_chapters);
+    let caps = pipeline::allocate_budget(&chapters, photo_budget);
+    for (c, cap) in chapters.iter_mut().zip(caps) {
+        pipeline::cap_chapter(c, cap);
     }
     eprintln!(
-        "chapters: {} ({} photos total)",
+        "chapters: {} (from {} natural, {} photos kept for ~{} spreads)",
         chapters.len(),
-        chapters.iter().map(|c| c.photos.len()).sum::<usize>()
+        natural,
+        chapters.iter().map(|c| c.photos.len()).sum::<usize>(),
+        spreads_target
     );
 
     // 4. compose spreads

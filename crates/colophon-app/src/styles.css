@@ -123,34 +123,102 @@ kbd {
   align-items: baseline;
 }
 
-.template-pick {
-  font: inherit;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+.actions-sep {
+  width: 1px;
+  align-self: center;
+  height: 14px;
+  background: var(--rule);
+}
+
+/* ---- template picker ---------------------------------------------------- */
+
+.tpl {
+  position: relative;
+  display: inline-flex;
+}
+
+.tpl-current {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  color: var(--text);
+  font-size: 12px;
+  transition: border-color var(--turn);
+}
+
+.tpl-current:hover,
+.tpl-current[aria-expanded="true"] {
+  border-color: var(--muted);
+}
+
+.tpl-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 2px;
+  padding: 10px;
+  background: var(--ink-raised);
+  border: 1px solid var(--rule);
+  box-shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.9);
+}
+
+.tpl-option {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding: 10px 12px 8px;
+  border: 1px solid transparent;
+  transition: border-color var(--turn), background var(--turn);
+}
+
+.tpl-option:hover {
+  border-color: var(--muted);
+}
+
+.tpl-option.active {
+  border-color: var(--accent);
+}
+
+.tpl-option-name {
   font-size: 11.5px;
-  color: var(--accent);
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--rule);
-  padding: 1px 2px;
-  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
 }
 
-.template-pick:focus {
-  outline: none;
-  border-bottom-color: var(--accent);
-}
-
-.status {
+.tpl-option-cap {
+  font-size: 10.5px;
   color: var(--muted);
-  font-size: 12px;
 }
 
-.hintbar {
-  margin: 0;
-  padding: 6px 28px 10px;
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
+.tpl-diagram {
+  position: relative;
+  display: block;
+  background: var(--paper);
+}
+
+.tpl-current .tpl-diagram {
+  background: rgba(237, 230, 216, 0.28);
+}
+
+.tpl-diagram-slot {
+  position: absolute;
+  background: rgba(23, 21, 15, 0.22);
+}
+
+.tpl-diagram-fold {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 47%,
+    rgba(23, 21, 15, 0.25) 50%,
+    transparent 53%
+  );
 }
 
 .stage {
@@ -185,7 +253,7 @@ kbd {
   /* The spread is as wide as the page format allows, never taller than the
      stage: a portrait album and a panoramic one both land whole. */
   --spread-aspect: 2;
-  width: min(100%, calc((100vh - 230px) * var(--spread-aspect)));
+  width: min(100%, calc((100vh - 216px) * var(--spread-aspect)));
   max-height: 100%;
   overflow: hidden;
   background: var(--paper);
@@ -277,8 +345,14 @@ kbd {
   margin: 0 0 26px;
 }
 
+/* Sticky: scrolling a four-hundred-photo list, the reason stays readable. */
 .tri-section h2 {
-  margin: 0 0 10px;
+  position: sticky;
+  top: -20px; /* the container's own padding */
+  z-index: 2;
+  margin: 0;
+  padding: 12px 0 10px;
+  background: var(--ink);
   font-family: var(--font-display);
   font-size: 15px;
   font-weight: 600;
@@ -323,6 +397,8 @@ kbd {
   display: block;
 }
 
+/* Hidden until the cell is hovered or selected: always one click away,
+   never four hundred orange bands at once. */
 .tri-rescue {
   position: absolute;
   left: 0;
@@ -333,6 +409,16 @@ kbd {
   color: #fdf6f0;
   font-size: 12.5px;
   font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--turn);
+}
+
+.tri-cell:hover .tri-rescue,
+.tri-cell.selected .tri-rescue,
+.tri-rescue:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .tri-rescue:hover {
@@ -357,37 +443,188 @@ kbd {
   border-color: var(--text);
 }
 
-/* ---- position ruler --------------------------------------------------- */
+/* ---- the foot ----------------------------------------------------------- */
 
-.progress {
-  position: relative;
-  height: 26px;
+/* Fixed height whatever it shows: the page above never moves. Top row is the
+   navigation (arrows, graduated ruler, position), bottom row one line for
+   hints and statuses. The sorting view swaps the row's content, not its box. */
+.foot {
+  display: grid;
+  grid-template-rows: 34px 26px;
   border-top: 1px solid var(--rule);
-  cursor: pointer;
+  padding: 0 28px;
 }
 
-.progress-mark {
-  position: absolute;
-  top: -1px;
+.foot-nav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.foot-arrow {
   width: 26px;
-  height: 2px;
-  margin-left: -13px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  transition: color var(--turn), border-color var(--turn);
+}
+
+.foot-arrow:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.foot-arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* One tick per spread; chapter starts get the accent and their caption on
+   hover. The ticks are the click targets, the mark is the reader. */
+.ruler {
+  position: relative;
+  flex: 1;
+  height: 100%;
+}
+
+.ruler-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  margin-left: -4.5px;
+  padding: 0;
+}
+
+.ruler-tick::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: var(--rule);
+  transition: background var(--turn);
+}
+
+.ruler-tick:hover::after {
+  background: var(--text);
+  top: 9px;
+  bottom: 9px;
+}
+
+.ruler-tick.chapter::after {
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  background: rgba(194, 83, 43, 0.55);
+}
+
+.ruler-tick.chapter:hover::after {
   background: var(--accent);
+}
+
+.ruler-mark {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 3px;
+  margin: -1.5px 0 0 -9px;
+  background: var(--accent);
+  pointer-events: none;
   transition: left var(--turn);
+}
+
+.foot-pos {
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  min-width: 62px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.foot-line {
+  margin: 0;
+  align-self: start;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The sorting view's foot: the selected photo, its winner, the rescue. */
+.foot-tri {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.foot-tri.muted {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.foot-tri-name {
+  color: var(--text);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foot-winner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 1px 2px;
+  border-bottom: 1px solid transparent;
+  transition: color var(--turn), border-color var(--turn);
+}
+
+.foot-winner:hover {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.mini-thumb {
+  width: 26px;
+  height: 26px;
+  display: block;
+  background: var(--ink-raised);
+  overflow: hidden;
+}
+
+.mini-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 /* ---- empty state ------------------------------------------------------ */
 
+/* Centered when there is room, scrollable when there is not: a low window
+   must never amputate the heading or the submit button. */
 .empty {
   display: grid;
-  align-content: center;
   height: 100%;
-  padding: 0 clamp(40px, 9vw, 140px);
+  overflow-y: auto;
+  padding: 40px clamp(40px, 9vw, 140px);
 }
 
 .empty-block {
   max-width: 34rem;
-  margin-top: -6vh;
+  margin: auto 0;
 }
 
 .empty-block.wide {
@@ -399,6 +636,18 @@ kbd {
   grid-template-columns: minmax(0, 26rem) auto;
   gap: 56px;
   align-items: start;
+}
+
+/* Grid items refuse to shrink below their content by default; the form
+   would slide under the preview in a narrow window. */
+.setup-layout > * {
+  min-width: 0;
+}
+
+@media (max-width: 920px) {
+  .setup-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .kicker {
@@ -443,6 +692,11 @@ kbd {
 
 .cta:active {
   transform: translateY(1px);
+}
+
+.cta.small {
+  padding: 5px 14px;
+  font-size: 12.5px;
 }
 
 .hint {
@@ -534,10 +788,10 @@ kbd {
 /* Each format is an open double page at its true proportions; the fold is
    the gap between the two pages. The shape does the explaining. */
 .format-cards {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
   align-items: stretch;
-  flex-wrap: wrap;
 }
 
 .format-card {
@@ -578,12 +832,14 @@ kbd {
 .format-name {
   font-size: 12px;
   color: var(--text);
+  white-space: nowrap;
 }
 
 .format-dims {
   font-size: 11px;
   color: var(--muted);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: nowrap;
 }
 
 /* The chosen format at scale: real margins, real gutter, cm measurements.

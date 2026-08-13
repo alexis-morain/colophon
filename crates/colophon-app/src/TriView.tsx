@@ -99,17 +99,16 @@ function Cell({
       title={entry.kept ? `${name}, gardée : ${entry.kept.split("/").pop()}` : name}
     >
       <LazyThumb src={entry.src} />
-      {selected && (
-        <button
-          className="tri-rescue"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRescue();
-          }}
-        >
-          Repêcher
-        </button>
-      )}
+      <button
+        className="tri-rescue"
+        tabIndex={selected ? 0 : -1}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRescue();
+        }}
+      >
+        Repêcher
+      </button>
     </figure>
   );
 }

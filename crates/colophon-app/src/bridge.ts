@@ -15,8 +15,11 @@ export async function pickAlbumFolder(): Promise<string | null> {
   return pickFolder("Choisir un dossier d'album");
 }
 
-/** Native folder picker for a folder of photos to compose from. */
+/** Native folder picker for a folder of photos to compose from. In the
+ *  browser the whole creation flow runs against the dev album, so any
+ *  readable path does; it only feeds the title and the folder line. */
 export async function pickPhotosFolder(): Promise<string | null> {
+  if (!inTauri) return "~/Photos/corse-2013";
   return pickFolder("Choisir un dossier de photos");
 }
 
@@ -51,6 +54,7 @@ export async function buildAlbum(
   spreads: number,
   title: string | null,
 ): Promise<OpenedAlbum> {
+  if (!inTauri) return devBuild();
   return invoke<OpenedAlbum>("build_album_from_folder", {
     photosDir,
     format,
@@ -63,9 +67,44 @@ export async function buildAlbum(
 export async function onBuildProgress(
   cb: (line: string) => void,
 ): Promise<() => void> {
-  if (!inTauri) return () => {};
+  if (!inTauri) {
+    devProgressListeners.add(cb);
+    return () => devProgressListeners.delete(cb);
+  }
   const { listen } = await import("@tauri-apps/api/event");
   return listen<string>("build:progress", (e) => cb(e.payload));
+}
+
+/* The browser harness stands in for the engine: the same progress lines the
+ * Rust side emits, paced so the whole creation flow can be watched and
+ * styled without the shell, then the dev album opens as the result. */
+const devProgressListeners = new Set<(line: string) => void>();
+
+async function devBuild(): Promise<OpenedAlbum> {
+  const emit = (line: string) => devProgressListeners.forEach((cb) => cb(line));
+  const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const photos = 575;
+  emit(`scan: ${photos} photos`);
+  await tick(300);
+  for (let i = 20; i <= photos; i += 20) {
+    emit(`analyze: ${i}/${photos}`);
+    await tick(60);
+  }
+  emit(`analyze: ${photos} photos, 4.1s`);
+  for (const line of [
+    "junk: 3 écartées",
+    "dedup: 96 doublons",
+    "thinning: 95 écartées",
+    "chapters: 9 chapitres",
+    "layout: 48 planches",
+    "curation: 419 entrées",
+    "pdf: album.pdf",
+  ]) {
+    await tick(280);
+    emit(line);
+  }
+  await tick(200);
+  return openAlbum("__dev__");
 }
 
 export async function openAlbum(path: string): Promise<OpenedAlbum> {

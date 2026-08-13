@@ -1,0 +1,22 @@
+[package]
+name = "colophon"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Libre photo book creator: from a folder of photos to a print-ready album"
+repository = "https://github.com/alexis-morain/colophon"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+kamadak-exif = "0.5"
+lopdf = "0.34"
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+
+[profile.release]
+opt-level = 3

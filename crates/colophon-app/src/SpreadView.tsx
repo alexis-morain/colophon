@@ -3,17 +3,46 @@
 // visible page, exactly like a trimmed print. When the edit callbacks are
 // given, photos become selectable and draggable; the view stays a pure
 // reader without them.
+//
+// The selected photo is a crop editor: dragging inside the case moves the
+// framing (⌥ refines), the wheel zooms past the fill, a double-click
+// recentres on the detected focal. Gestures work on a local draft and land
+// on the undo stack once, at the end of the gesture.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Album,
   CAPTION_SIZE_MM,
+  PHOTO_CAPTION_DROP_MM,
+  PHOTO_CAPTION_SIZE_MM,
+  Rect,
+  Slot,
+  Spread,
+  TEXT_LEADING_MM,
+  TEXT_SIZE_MM,
+  ZOOM_MAX,
+  ZOOM_MIN,
   captionAnchor,
   mediaCanvas,
   slotsFor,
-  Spread,
+  textAnchor,
 } from "./album";
+import { detectedFocal } from "./bridge";
 import { cachedThumb, loadThumb } from "./thumbs";
+
+/** A crop being adjusted: values shown before they land on the undo stack. */
+type CropDraft = { slot: number; focal: [number, number]; zoom: number };
+
+/** Measure a string at a given CSS font, for overflow signalling. */
+const measure = (() => {
+  let ctx: CanvasRenderingContext2D | null = null;
+  return (text: string, font: string): number => {
+    if (!ctx) ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return 0;
+    ctx.font = font;
+    return ctx.measureText(text).width;
+  };
+})();
 
 export function SpreadView({
   album,
@@ -21,15 +50,32 @@ export function SpreadView({
   selected,
   onSelect,
   onSwap,
+  onPlace,
+  onCrop,
+  onSpreadCaption,
+  onText,
+  onOverflow,
 }: {
   album: Album;
   spread: Spread;
   selected?: number | null;
   onSelect?: (slot: number | null) => void;
   onSwap?: (a: number, b: number) => void;
+  /** A drawer photo lands in a case. */
+  onPlace?: (slot: number, photo: Slot) => void;
+  /** A crop gesture ended: commit focal + zoom for one slot. */
+  onCrop?: (slot: number, focal: [number, number], zoom: number) => void;
+  /** The chapter caption was renamed in place. */
+  onSpreadCaption?: (caption: string) => void;
+  /** The free text of a `texte` spread changed. */
+  onText?: (text: string) => void;
+  /** Some text overflows its room on this spread (signalled, never cut). */
+  onOverflow?: (message: string | null) => void;
 }) {
   const paper = useRef<HTMLDivElement>(null);
   const [mm, setMm] = useState(1);
+  const [draft, setDraft] = useState<CropDraft | null>(null);
+  const [editingCaption, setEditingCaption] = useState(false);
 
   const trimW = album.trim_mm.w * 2;
   const canvas = mediaCanvas(album);
@@ -46,6 +92,49 @@ export function SpreadView({
     ro.observe(el);
     return () => ro.disconnect();
   }, [trimW]);
+
+  // The draft belongs to one selection on one spread.
+  useEffect(() => setDraft(null), [spread, selected]);
+  useEffect(() => setEditingCaption(false), [spread]);
+
+  // Photo captions wider than their slot, and text lines wider than the
+  // page: named to the reader, never cut.
+  useEffect(() => {
+    if (!onOverflow) return;
+    const problems: string[] = [];
+    spread.slots.forEach((slot, i) => {
+      const r = rects[i];
+      if (!slot.caption || !r) return;
+      // Below the trimmed page (full-bleed slots): the caption would print
+      // in the bleed and be cut off entirely.
+      if (r.y + r.h + PHOTO_CAPTION_DROP_MM > canvas.h - 4) {
+        problems.push(
+          `la légende de la case ${i + 1} tombe hors page sous une pleine page : retirez-la ou changez de gabarit`,
+        );
+        return;
+      }
+      const wMm = measureMm(slot.caption, PHOTO_CAPTION_SIZE_MM);
+      if (wMm > r.w) {
+        problems.push(
+          `légende de la case ${i + 1} trop longue de ${Math.ceil(wMm - r.w)} mm : raccourcissez-la`,
+        );
+      }
+    });
+    if (spread.template === "texte" && spread.text) {
+      const room = canvas.w / 2 - canvas.margin - canvas.gutter / 2;
+      const over = spread.text
+        .split("\n")
+        .filter((l) => measureMm(l, TEXT_SIZE_MM) > room).length;
+      if (over > 0) {
+        problems.push(
+          `${over} ligne${over > 1 ? "s" : ""} de texte dépasse${over > 1 ? "nt" : ""} la page : coupez-les`,
+        );
+      }
+    }
+    onOverflow(problems[0] ?? null);
+  }, [spread, rects, canvas, mm, onOverflow]);
+
+  const textAt = textAnchor(canvas);
 
   return (
     <div
@@ -71,36 +160,120 @@ export function SpreadView({
         {spread.slots.map((slot, i) => {
           const r = rects[i];
           if (!r) return null;
+          const d = draft?.slot === i ? draft : null;
           return (
-            <Photo
+            <CropPhoto
               key={`${slot.src}-${i}`}
-              src={slot.src}
-              focal={slot.focal}
+              slot={slot}
+              rect={r}
+              mm={mm}
+              focal={d?.focal ?? slot.focal}
+              zoom={d?.zoom ?? slot.zoom ?? 1}
               selected={selected === i}
               onSelect={onSelect && (() => onSelect(selected === i ? null : i))}
               onSwap={onSwap && ((from) => onSwap(from, i))}
+              onPlace={onPlace && ((photo) => onPlace(i, photo))}
+              onDraft={(focal, zoom) => setDraft({ slot: i, focal, zoom })}
+              onCommit={
+                onCrop &&
+                ((focal, zoom) => {
+                  setDraft(null);
+                  onCrop(i, focal, zoom);
+                })
+              }
               index={i}
-              style={{
-                left: `${r.x * mm}px`,
-                top: `${r.y * mm}px`,
-                width: `${r.w * mm}px`,
-                height: `${r.h * mm}px`,
-              }}
             />
           );
         })}
 
-        {spread.caption && (
-          <span
-            className="caption"
+        {/* Photo captions, at print size and position. */}
+        {spread.slots.map((slot, i) => {
+          const r = rects[i];
+          if (!slot.caption || !r) return null;
+          const over = measureMm(slot.caption, PHOTO_CAPTION_SIZE_MM) > r.w;
+          return (
+            <span
+              key={`cap-${i}`}
+              className={"photo-caption" + (over ? " overflow" : "")}
+              style={{
+                left: `${r.x * mm}px`,
+                top: `${(r.y + r.h + PHOTO_CAPTION_DROP_MM) * mm}px`,
+                maxWidth: "none",
+                fontSize: `${Math.max(PHOTO_CAPTION_SIZE_MM * mm * 1.35, 9)}px`,
+              }}
+              title={over ? "Cette légende dépasse la photo : raccourcissez-la" : undefined}
+            >
+              {slot.caption}
+            </span>
+          );
+        })}
+
+        {/* Chapter caption: readable in place, renamable in place. */}
+        {editingCaption && onSpreadCaption ? (
+          <input
+            className="caption caption-input"
             style={{
               left: `${caption.x * mm}px`,
               top: `${caption.y * mm}px`,
-              fontSize: `${CAPTION_SIZE_MM * mm * 1.35}px`,
+              fontSize: `${Math.max(CAPTION_SIZE_MM * mm * 1.35, 13)}px`,
             }}
-          >
-            {spread.caption}
-          </span>
+            defaultValue={spread.caption ?? ""}
+            placeholder="Titre de chapitre…"
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              setEditingCaption(false);
+              onSpreadCaption(e.currentTarget.value);
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") {
+                e.currentTarget.value = spread.caption ?? "";
+                e.currentTarget.blur();
+              }
+            }}
+          />
+        ) : (
+          (spread.caption || onSpreadCaption) && (
+            <span
+              className={
+                "caption" +
+                (onSpreadCaption ? " editable" : "") +
+                (spread.caption ? "" : " ghost")
+              }
+              style={{
+                left: `${caption.x * mm}px`,
+                top: `${caption.y * mm}px`,
+                fontSize: `${CAPTION_SIZE_MM * mm * 1.35}px`,
+              }}
+              title={onSpreadCaption ? "Cliquer pour renommer le chapitre" : undefined}
+              onClick={
+                onSpreadCaption &&
+                ((e) => {
+                  e.stopPropagation();
+                  setEditingCaption(true);
+                })
+              }
+            >
+              {spread.caption ?? "titre de chapitre"}
+            </span>
+          )
+        )}
+
+        {/* Free-text page: the text in place, editable in place. */}
+        {spread.template === "texte" && (
+          <TextBlock
+            text={spread.text ?? ""}
+            x={textAt.x * mm}
+            y={textAt.y * mm}
+            width={(canvas.w / 2 - canvas.margin - canvas.gutter / 2) * mm}
+            fontPx={Math.max(TEXT_SIZE_MM * mm * 1.35, 13)}
+            leadPx={TEXT_LEADING_MM * mm * 1.35}
+            roomMm={canvas.w / 2 - canvas.margin - canvas.gutter / 2}
+            onText={onText}
+          />
         )}
       </div>
       <div className="gutter" aria-hidden="true" />
@@ -108,92 +281,355 @@ export function SpreadView({
   );
 }
 
-function Photo({
-  src,
+/** Width of a string in spread millimetres at a print size in mm: measured
+ *  at a big fixed font (glyph widths scale linearly), then scaled down. */
+function measureMm(text: string, sizeMm: number): number {
+  return (measure(text, "100px Helvetica, Arial, sans-serif") * sizeMm) / 100;
+}
+
+/**
+ * The free text of a `texte` spread. A click turns it into a textarea in
+ * place; overlong lines are underlined, never wrapped or cut for print.
+ */
+function TextBlock({
+  text,
+  x,
+  y,
+  width,
+  fontPx,
+  leadPx,
+  roomMm,
+  onText,
+}: {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  fontPx: number;
+  leadPx: number;
+  roomMm: number;
+  onText?: (text: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  useEffect(() => setEditing(false), [text === ""]);
+
+  if (editing && onText) {
+    return (
+      <textarea
+        className="text-page-input"
+        style={{
+          left: `${x}px`,
+          top: `${y - fontPx}px`,
+          width: `${width}px`,
+          fontSize: `${fontPx}px`,
+          lineHeight: `${Math.max(leadPx, fontPx * 1.3)}px`,
+        }}
+        defaultValue={text}
+        placeholder={"Votre texte, ligne à ligne.\nEntrée pour aller à la ligne."}
+        autoFocus
+        onClick={(e) => e.stopPropagation()}
+        onBlur={(e) => {
+          setEditing(false);
+          onText(e.currentTarget.value);
+        }}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Escape") e.currentTarget.blur();
+        }}
+      />
+    );
+  }
+
+  const lines = text.split("\n");
+  return (
+    <div
+      className={"text-page" + (onText ? " editable" : "")}
+      style={{
+        left: `${x}px`,
+        top: `${y - fontPx}px`,
+        width: `${width}px`,
+        fontSize: `${fontPx}px`,
+        lineHeight: `${Math.max(leadPx, fontPx * 1.3)}px`,
+      }}
+      title={onText ? "Cliquer pour éditer le texte" : undefined}
+      onClick={
+        onText &&
+        ((e) => {
+          e.stopPropagation();
+          setEditing(true);
+        })
+      }
+    >
+      {text === "" ? (
+        <span className="text-page-ghost">Page de texte : cliquer pour écrire.</span>
+      ) : (
+        lines.map((l, i) => (
+          <span
+            key={i}
+            className={
+              "text-page-line" +
+              (measureMm(l, TEXT_SIZE_MM) > roomMm ? " overflow" : "")
+            }
+          >
+            {l || " "}
+          </span>
+        ))
+      )}
+    </div>
+  );
+}
+
+/**
+ * One photo in its case. Unselected: click selects, HTML5 drag swaps with
+ * another case, a drawer photo can drop in. Selected: the pointer owns the
+ * crop (drag moves the framing, ⌥ refines, wheel zooms, double-click
+ * recentres on the detected focal point).
+ */
+function CropPhoto({
+  slot,
+  rect,
+  mm,
   focal,
-  style,
+  zoom,
   index,
   selected,
   onSelect,
   onSwap,
+  onPlace,
+  onDraft,
+  onCommit,
 }: {
-  src: string;
+  slot: Slot;
+  rect: Rect;
+  mm: number;
   focal: [number, number];
-  style: React.CSSProperties;
+  zoom: number;
   index: number;
   selected?: boolean;
   onSelect?: () => void;
   onSwap?: (from: number) => void;
+  onPlace?: (photo: Slot) => void;
+  onDraft: (focal: [number, number], zoom: number) => void;
+  onCommit?: (focal: [number, number], zoom: number) => void;
 }) {
-  const [url, setUrl] = useState<string | undefined>(() => cachedThumb(src));
+  const [url, setUrl] = useState<string | undefined>(() => cachedThumb(slot.src));
   const [over, setOver] = useState(false);
+  const img = useRef<HTMLImageElement>(null);
+  const gesture = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    focal: [number, number];
+    moved: boolean;
+  } | null>(null);
+  // The wheel commits when it stops: one undo step per zoom burst.
+  const wheelState = useRef<{ focal: [number, number]; zoom: number } | null>(null);
+  const wheelTimer = useRef<number | undefined>(undefined);
+  // The click that closes a crop drag must not toggle the selection.
+  const justDragged = useRef(false);
 
   useEffect(() => {
     let alive = true;
-    const hit = cachedThumb(src);
+    const hit = cachedThumb(slot.src);
     if (hit) {
       setUrl(hit);
       return;
     }
     setUrl(undefined);
-    loadThumb(src).then(
+    loadThumb(slot.src).then(
       (u) => alive && setUrl(u),
       () => {},
     );
     return () => {
       alive = false;
     };
-  }, [src]);
+  }, [slot.src]);
+
+  // Wheel zoom needs a non-passive listener to swallow the page scroll.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !selected || !onCommit) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cur = wheelState.current ?? { focal, zoom };
+      const next = Math.min(
+        ZOOM_MAX,
+        Math.max(ZOOM_MIN, cur.zoom * Math.exp(-e.deltaY * 0.0022)),
+      );
+      wheelState.current = { focal: cur.focal, zoom: next };
+      onDraft(cur.focal, next);
+      window.clearTimeout(wheelTimer.current);
+      wheelTimer.current = window.setTimeout(() => {
+        const w = wheelState.current;
+        wheelState.current = null;
+        if (w) onCommit(w.focal, w.zoom);
+      }, 350);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  });
+
+  /** Pointer drag on a selected slot: move the crop window. */
+  const startCrop = (e: React.PointerEvent) => {
+    if (!selected || !onCommit || e.button !== 0) return;
+    e.stopPropagation();
+    gesture.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      focal: [...focal] as [number, number],
+      moved: false,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const moveCrop = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    const el = img.current;
+    if (!g || g.id !== e.pointerId || !el?.naturalWidth) return;
+    const iw = el.naturalWidth;
+    const ih = el.naturalHeight;
+    const w = rect.w * mm;
+    const h = rect.h * mm;
+    const s = Math.max(w / iw, h / ih) * zoom;
+    const spanX = iw * s - w; // how far the image can slide, in px
+    const spanY = ih * s - h;
+    const fine = e.altKey ? 0.2 : 1;
+    const dx = (e.clientX - g.x) * fine;
+    const dy = (e.clientY - g.y) * fine;
+    if (!g.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+    g.moved = true;
+    const fx = spanX > 0.5 ? g.focal[0] - dx / spanX : g.focal[0];
+    const fy = spanY > 0.5 ? g.focal[1] - dy / spanY : g.focal[1];
+    onDraft(
+      [Math.min(1, Math.max(0, fx)), Math.min(1, Math.max(0, fy))],
+      zoom,
+    );
+  };
+
+  const endCrop = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g || g.id !== e.pointerId) return;
+    gesture.current = null;
+    if (g.moved) {
+      justDragged.current = true;
+      onCommit?.(focal, zoom);
+    }
+  };
+
+  const recentre = async (e: React.MouseEvent) => {
+    if (!selected || !onCommit) return;
+    e.stopPropagation();
+    const f = await detectedFocal(slot.src).catch(() => [0.5, 0.42] as [number, number]);
+    onCommit([f[0], f[1]], zoom);
+  };
 
   const editable = Boolean(onSelect);
+  const style: React.CSSProperties = {
+    left: `${rect.x * mm}px`,
+    top: `${rect.y * mm}px`,
+    width: `${rect.w * mm}px`,
+    height: `${rect.h * mm}px`,
+  };
+
   return (
     <div
+      ref={box}
       className={
         "slot" +
         (editable ? " editable" : "") +
-        (selected ? " selected" : "") +
-        (over ? " dropping" : "")
+        (selected ? " selected cropping" : "") +
+        (over ? " dropping" : "") +
+        ((slot.zoom ?? 1) > 1.001 ? " zoomed" : "")
       }
       style={style}
       onClick={
         onSelect &&
         ((e) => {
           e.stopPropagation();
-          onSelect();
+          if (justDragged.current) {
+            justDragged.current = false;
+            return;
+          }
+          if (!gesture.current) onSelect();
         })
       }
-      draggable={Boolean(onSwap)}
+      onDoubleClick={selected ? recentre : undefined}
+      onPointerDown={startCrop}
+      onPointerMove={moveCrop}
+      onPointerUp={endCrop}
+      onPointerCancel={endCrop}
+      draggable={Boolean(onSwap) && !selected}
       onDragStart={(e) => {
         e.dataTransfer.setData("text/colophon-slot", String(index));
         e.dataTransfer.effectAllowed = "move";
       }}
       onDragOver={
-        onSwap &&
+        (onSwap || onPlace) &&
         ((e) => {
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
         })
       }
-      onDragEnter={onSwap && (() => setOver(true))}
-      onDragLeave={onSwap && (() => setOver(false))}
+      onDragEnter={(onSwap || onPlace) && (() => setOver(true))}
+      onDragLeave={(onSwap || onPlace) && (() => setOver(false))}
       onDrop={
-        onSwap &&
+        (onSwap || onPlace) &&
         ((e) => {
           e.preventDefault();
           setOver(false);
+          const pool = e.dataTransfer.getData("application/x-colophon-photo");
+          if (pool && onPlace) {
+            try {
+              const photo = JSON.parse(pool) as Slot;
+              if (photo.src) onPlace({ src: photo.src, focal: photo.focal ?? [0.5, 0.42] });
+            } catch {
+              /* not ours */
+            }
+            return;
+          }
           const from = Number(e.dataTransfer.getData("text/colophon-slot"));
-          if (Number.isInteger(from)) onSwap(from);
+          if (Number.isInteger(from) && onSwap) onSwap(from);
         })
+      }
+      title={
+        selected
+          ? "Glisser pour recadrer · molette pour zoomer · double-clic recentre · ⌥ affine"
+          : undefined
       }
     >
       {url && (
         <img
+          ref={img}
           src={url}
           alt=""
-          // Same anchor convention as the renderer: focal y runs from the top.
-          style={{ objectPosition: `${focal[0] * 100}% ${focal[1] * 100}%` }}
+          draggable={false}
+          // Cover-crop plus manual zoom: object-position anchors the focal,
+          // the scale around that same origin reproduces pdf.rs::crop_window
+          // exactly (same fixed point, same visible window).
+          style={{
+            objectPosition: `${focal[0] * 100}% ${focal[1] * 100}%`,
+            transform: zoom > 1.001 ? `scale(${zoom})` : undefined,
+            transformOrigin: `${focal[0] * 100}% ${focal[1] * 100}%`,
+          }}
         />
+      )}
+      {selected && (slot.zoom ?? 1) > 1.001 && (
+        <span className="slot-zoom">×{zoom.toFixed(2).replace(".", ",")}</span>
       )}
     </div>
   );
+}
+
+/** Shared with the light table: the crop of one slot as CSS, the same
+ *  cover + focal + scale-around-focal maths as the print (see CropPhoto). */
+export function thumbCropStyle(slot: Slot): React.CSSProperties {
+  const zoom = slot.zoom ?? 1;
+  return {
+    objectPosition: `${slot.focal[0] * 100}% ${slot.focal[1] * 100}%`,
+    transform: zoom > 1.001 ? `scale(${zoom})` : undefined,
+    transformOrigin: `${slot.focal[0] * 100}% ${slot.focal[1] * 100}%`,
+  };
 }

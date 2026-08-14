@@ -4,6 +4,7 @@
 
 import {
   captionAnchor,
+  cropWindow,
   mediaCanvas,
   slotsFor,
   TEMPLATES,
@@ -25,6 +26,13 @@ type Dump = {
   canvas: { w: number; h: number; margin: number; gutter: number };
   templates: Record<string, { slots: number[][]; caption: number[] }>;
   fallbacks?: Record<string, [string, number]>;
+  crop_windows?: {
+    rect: [number, number];
+    image: [number, number];
+    focal: [number, number];
+    zoom: number;
+    window: [number, number, number, number];
+  }[];
 };
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
@@ -87,6 +95,24 @@ export function geometryProblems(dump: Dump, label: string): string[] {
         `fallback(${n}): rust ${JSON.stringify(want)}, ts ${JSON.stringify(got)}`,
       );
     }
+  }
+
+  // The manual-crop arithmetic (focal + zoom) exists on both sides too.
+  for (const s of dump.crop_windows ?? []) {
+    const got = cropWindow(
+      { w: s.rect[0], h: s.rect[1] },
+      s.image[0],
+      s.image[1],
+      s.focal,
+      s.zoom,
+    );
+    s.window.forEach((v, k) => {
+      if (!near(v, got[k])) {
+        problems.push(
+          `crop(zoom ${s.zoom}, focal ${s.focal})[${"xywh"[k]}]: rust ${v}, ts ${got[k]}`,
+        );
+      }
+    });
   }
   return problems;
 }

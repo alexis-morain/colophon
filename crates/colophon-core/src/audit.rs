@@ -218,7 +218,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
         for (ci, (slot, rect)) in spread.slots.iter().zip(&rects_of[si]).enumerate() {
             let info = &infos[&slot.src];
 
-            for side in face_cuts(rect, info.w, info.h, slot.focal, &info.faces) {
+            for side in face_cuts(rect, info.w, info.h, slot.focal, slot.zoom, &info.faces) {
                 visage.push(Finding {
                     planche: si + 1,
                     case_idx: Some(ci),
@@ -243,7 +243,9 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
             }
 
             if let Some((ow, oh)) = info.orig {
-                let scale = print::print_scale(rect, ow, oh);
+                // Zooming shows fewer source pixels: the effective print
+                // resolution drops with it.
+                let scale = print::print_scale(rect, ow, oh) * slot.zoom.max(1.0);
                 if print::PRINT_DPI / scale < MIN_EFFECTIVE_PPI {
                     ppi.push(Finding {
                         planche: si + 1,
@@ -400,9 +402,10 @@ fn face_cuts(
     iw: f64,
     ih: f64,
     focal: [f64; 2],
+    zoom: f64,
     faces: &[[f64; 4]],
 ) -> Vec<&'static str> {
-    let (x0, y0, vw, vh) = pdf::crop_window(rect, iw, ih, focal);
+    let (x0, y0, vw, vh) = pdf::crop_window(rect, iw, ih, focal, zoom);
     let (mx, my) = (FACE_MARGIN * vw, FACE_MARGIN * vh);
     let cropped_left = x0 > 0.5;
     let cropped_right = x0 + vw < iw - 0.5;
@@ -536,16 +539,20 @@ mod tests {
         let rect = pdf::Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 };
         // Face against the left edge of the visible window: cut.
         let faces = [[0.05, 0.4, 0.2, 0.3]];
-        let cuts = face_cuts(&rect, 2000.0, 1000.0, [0.5, 0.5], &faces);
+        let cuts = face_cuts(&rect, 2000.0, 1000.0, [0.5, 0.5], 1.0, &faces);
         assert_eq!(cuts, vec!["gauche"]);
         // Same face, but the crop anchored left keeps it fully visible.
-        let cuts = face_cuts(&rect, 2000.0, 1000.0, [0.0, 0.5], &faces);
+        let cuts = face_cuts(&rect, 2000.0, 1000.0, [0.0, 0.5], 1.0, &faces);
         assert!(cuts.is_empty());
         // A face against the top border was framed that way by the
         // photographer: vertical edges are not cropped here, no cut.
         let faces = [[0.45, 0.0, 0.2, 0.3]];
-        let cuts = face_cuts(&rect, 2000.0, 1000.0, [0.5, 0.5], &faces);
+        let cuts = face_cuts(&rect, 2000.0, 1000.0, [0.5, 0.5], 1.0, &faces);
         assert!(cuts.is_empty());
+        // Zoomed in around the centre, the top edge becomes a crop too:
+        // the same top-border face now reads as cut.
+        let cuts = face_cuts(&rect, 2000.0, 1000.0, [0.5, 0.5], 1.5, &faces);
+        assert_eq!(cuts, vec!["haut"]);
     }
 
     #[test]

@@ -20,3 +20,7 @@ pub mod thumb;
 pub use build::{build_album, render_album_pdf, write_album_json, BuildOptions, BuildReport};
 pub use print::render_print_pdf;
 pub use model::{Album, Size, Slot, Spread};
+// The shells reason about capture times (pinned-spread anchors) and decode
+// thumbnails (detected-focal lookups) without carrying their own pins.
+pub use chrono;
+pub use image;

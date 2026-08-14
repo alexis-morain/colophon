@@ -4,10 +4,13 @@
 
 import {
   Album,
+  Cover,
   Discard,
   Slot,
   Spread,
   TEMPLATES,
+  ZOOM_MAX,
+  ZOOM_MIN,
   fallbackTemplate,
   templateCapacity,
   templateForCount,
@@ -18,6 +21,12 @@ function withSpread(album: Album, at: number, spread: Spread | null): Album {
   if (spread) spreads[at] = spread;
   else spreads.splice(at, 1);
   return { ...album, spreads };
+}
+
+/** Every hand edit stamps its spread: the badge, and the recomposition
+ *  shield, derive from this single mark. */
+function touched(spread: Spread): Spread {
+  return spread.edited ? spread : { ...spread, edited: true };
 }
 
 /**
@@ -32,11 +41,11 @@ export function removePhoto(album: Album, at: number, slot: number): Album {
   const slots = spread.slots.filter((_, i) => i !== slot);
   const fb = fallbackTemplate(spread.template, slots.length);
   if (!fb) return withSpread(album, at, null);
-  return withSpread(album, at, {
+  return withSpread(album, at, touched({
     ...spread,
     template: fb.template,
     slots: slots.slice(0, fb.capacity),
-  });
+  }));
 }
 
 /**
@@ -49,11 +58,11 @@ export function changeTemplate(album: Album, at: number, template: string): Albu
   if (!spread || spread.template === template) return album;
   const cap = templateCapacity(template);
   if (cap > spread.slots.length) return album;
-  return withSpread(album, at, {
+  return withSpread(album, at, touched({
     ...spread,
     template,
     slots: spread.slots.slice(0, cap),
-  });
+  }));
 }
 
 /**
@@ -114,15 +123,15 @@ export function movePhoto(
   const grown = growTemplate(dst.template, dst.slots.length)!;
 
   const spreads = album.spreads.slice();
-  spreads[to] = {
+  spreads[to] = touched({
     ...dst,
     template: grown.template,
     slots: [...dst.slots, src.slots[slot]],
-  };
+  });
   const rest = src.slots.filter((_, i) => i !== slot);
   const fb = fallbackTemplate(src.template, rest.length);
   if (!fb) spreads.splice(from, 1);
-  else spreads[from] = { ...src, template: fb.template, slots: rest };
+  else spreads[from] = touched({ ...src, template: fb.template, slots: rest });
   return { ...album, spreads };
 }
 
@@ -175,11 +184,11 @@ export function rescuePhoto(
     const grown = growTemplate(spread.template, spread.slots.length);
     if (!grown) continue;
     const spreads = album.spreads.slice();
-    spreads[at] = {
+    spreads[at] = touched({
       ...spread,
       template: grown.template,
       slots: [...spread.slots, slot],
-    };
+    });
     return { album: { ...album, spreads }, at };
   }
   return null;
@@ -191,13 +200,166 @@ export function swapPhotos(album: Album, at: number, a: number, b: number): Albu
   if (!spread || a === b || !spread.slots[a] || !spread.slots[b]) return album;
   const slots = spread.slots.slice();
   [slots[a], slots[b]] = [slots[b], slots[a]];
-  return withSpread(album, at, { ...spread, slots });
+  return withSpread(album, at, touched({ ...spread, slots }));
 }
 
-/** Templates the spread can switch to right now, current one included. */
+/** Set a slot's manual crop: focal point and zoom, both clamped. */
+export function setSlotCrop(
+  album: Album,
+  at: number,
+  slot: number,
+  focal: [number, number],
+  zoom: number,
+): Album {
+  const spread = album.spreads[at];
+  const s = spread?.slots[slot];
+  if (!s) return album;
+  const clamp = (v: number, lo: number, hi: number) =>
+    Math.min(Math.max(v, lo), hi);
+  const z = clamp(zoom, ZOOM_MIN, ZOOM_MAX);
+  const next: Slot = {
+    ...s,
+    focal: [clamp(focal[0], 0, 1), clamp(focal[1], 0, 1)],
+    // The exact fill stays off the file, like serde's default skip.
+    ...(z > 1 ? { zoom: z } : {}),
+  };
+  if (z === 1) delete next.zoom;
+  if (
+    next.focal[0] === s.focal[0] &&
+    next.focal[1] === s.focal[1] &&
+    (next.zoom ?? 1) === (s.zoom ?? 1)
+  ) {
+    return album;
+  }
+  const slots = spread.slots.slice();
+  slots[slot] = next;
+  return withSpread(album, at, touched({ ...spread, slots }));
+}
+
+/** Set or clear a photo's caption. */
+export function setSlotCaption(
+  album: Album,
+  at: number,
+  slot: number,
+  caption: string,
+): Album {
+  const spread = album.spreads[at];
+  const s = spread?.slots[slot];
+  if (!s) return album;
+  const trimmed = caption.trim();
+  if ((s.caption ?? "") === trimmed) return album;
+  const slots = spread.slots.slice();
+  slots[slot] = { ...s, caption: trimmed || undefined };
+  return withSpread(album, at, touched({ ...spread, slots }));
+}
+
+/** Rename (or clear) a spread's chapter caption, in place. */
+export function setSpreadCaption(album: Album, at: number, caption: string): Album {
+  const spread = album.spreads[at];
+  if (!spread) return album;
+  const trimmed = caption.trim();
+  if ((spread.caption ?? "") === trimmed) return album;
+  return withSpread(
+    album,
+    at,
+    touched({ ...spread, caption: trimmed || undefined }),
+  );
+}
+
+/** Set the free text of a `texte` spread. */
+export function setSpreadText(album: Album, at: number, text: string): Album {
+  const spread = album.spreads[at];
+  if (!spread) return album;
+  if ((spread.text ?? "") === text) return album;
+  return withSpread(album, at, touched({ ...spread, text }));
+}
+
+/** Toggle the padlock. Locking is not an edit: the badge stays honest. */
+export function toggleLock(album: Album, at: number): Album {
+  const spread = album.spreads[at];
+  if (!spread) return album;
+  return withSpread(album, at, { ...spread, locked: !spread.locked });
+}
+
+/**
+ * Put a drawer photo into a case. The photo already there leaves the album
+ * and reappears in the drawer: nothing is ever lost, only displaced.
+ */
+export function placePhoto(
+  album: Album,
+  at: number,
+  slot: number,
+  photo: Slot,
+): Album {
+  const spread = album.spreads[at];
+  if (!spread || !spread.slots[slot]) return album;
+  if (spread.slots.some((s, i) => i !== slot && s.src === photo.src)) {
+    return album; // already on this spread: a duplicate pair is a defect
+  }
+  const slots = spread.slots.slice();
+  slots[slot] = photo;
+  return withSpread(album, at, touched({ ...spread, slots }));
+}
+
+/** Move a whole spread to another position. */
+export function moveSpread(album: Album, from: number, to: number): Album {
+  if (
+    from === to ||
+    !album.spreads[from] ||
+    to < 0 ||
+    to >= album.spreads.length
+  ) {
+    return album;
+  }
+  const spreads = album.spreads.slice();
+  const [spread] = spreads.splice(from, 1);
+  spreads.splice(to, 0, touched(spread));
+  return { ...album, spreads };
+}
+
+/** Duplicate a spread, right after itself. */
+export function duplicateSpread(album: Album, at: number): Album {
+  const spread = album.spreads[at];
+  if (!spread) return album;
+  const spreads = album.spreads.slice();
+  spreads.splice(at + 1, 0, touched({ ...spread, locked: false }));
+  return { ...album, spreads };
+}
+
+/** Insert a photo-less spread (breathing page or free text) after `at`. */
+export function insertSpread(
+  album: Album,
+  at: number,
+  kind: "vide" | "texte",
+): Album {
+  const spreads = album.spreads.slice();
+  const spread: Spread = {
+    template: kind,
+    slots: [],
+    edited: true,
+    ...(kind === "texte" ? { text: "" } : {}),
+  };
+  spreads.splice(at + 1, 0, spread);
+  return { ...album, spreads };
+}
+
+/** Remove a whole spread. Undo brings it back, photos and all. */
+export function removeSpread(album: Album, at: number): Album {
+  if (!album.spreads[at]) return album;
+  return withSpread(album, at, null);
+}
+
+/** Replace the album's cover. */
+export function setCover(album: Album, cover: Cover): Album {
+  return { ...album, cover };
+}
+
+/** Templates the spread can switch to right now, current one included.
+ *  Photo-less templates (capacity 0) never enter the picker. */
 export function templateChoices(spread: Spread): [string, number][] {
   return TEMPLATE_CHOICES.filter(
-    ([t, cap]) => cap <= spread.slots.length || t === spread.template,
+    ([t, cap]) =>
+      (cap > 0 && cap <= spread.slots.length) || t === spread.template,
   );
 }
 

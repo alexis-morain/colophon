@@ -118,9 +118,9 @@ function Cell({
 /**
  * A thumbnail that only fetches once scrolled into view: the sorting view
  * lists hundreds of photos, the blob-URL pool is bounded, and most cells
- * are never seen.
+ * are never seen. The drawer and the light table lean on it too.
  */
-function LazyThumb({ src }: { src: string }) {
+export function LazyThumb({ src }: { src: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(src));
 

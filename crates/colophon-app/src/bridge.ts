@@ -126,6 +126,49 @@ export async function fetchThumb(src: string): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
+/** A blocking yes/no question. window.confirm silently returns true inside
+ *  the Tauri webview (no JS dialogs in WKWebView), which would turn every
+ *  guard into a rubber stamp: the native dialog plugin asks for real. */
+export async function confirmDialog(message: string): Promise<boolean> {
+  if (!inTauri) return window.confirm(message);
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return ask(message, { title: "Colophon", kind: "warning" });
+}
+
+/** Recompose the open album from its photo folder. Edited and locked
+ *  spreads survive verbatim; progress streams like a build. Tauri only. */
+export async function recomposeAlbum(): Promise<OpenedAlbum> {
+  if (!inTauri) {
+    throw new Error("recomposition hors application : utilisez la commande colophon");
+  }
+  return invoke<OpenedAlbum>("recompose_album");
+}
+
+/** Abandon the composition in flight. The engine stops between photos. */
+export async function cancelBuild(): Promise<void> {
+  if (!inTauri) return;
+  return invoke("cancel_build");
+}
+
+/** Abandon the print render in flight. No half-written PDF can survive. */
+export async function cancelExport(): Promise<void> {
+  if (!inTauri) return;
+  return invoke("cancel_export");
+}
+
+/** EXIF date of a photo, formatted for a caption suggestion, or null. */
+export async function captionSuggestion(src: string): Promise<string | null> {
+  if (!inTauri) return null;
+  return invoke<string | null>("caption_suggestion", { src });
+}
+
+/** Face-anchored focal point, recomputed on the thumbnail. The crop
+ *  editor's double-click recentres on it. */
+export async function detectedFocal(src: string): Promise<[number, number]> {
+  if (!inTauri) return [0.5, 0.42];
+  return invoke<[number, number]>("detected_focal", { src });
+}
+
 /** The photos curation set aside. Empty for albums built before the export. */
 export async function fetchCuration(): Promise<Discard[]> {
   if (inTauri) return invoke<Discard[]>("curation");

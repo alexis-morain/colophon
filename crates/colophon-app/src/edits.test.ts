@@ -6,12 +6,21 @@ import { describe, expect, it } from "vitest";
 import { Album, Slot, Spread, templateCapacity } from "./album";
 import {
   changeTemplate,
+  duplicateSpread,
+  insertSpread,
   movePhoto,
   moveBlocker,
+  moveSpread,
+  placePhoto,
   removePhoto,
+  removeSpread,
   rescuePhoto,
+  setSlotCaption,
+  setSlotCrop,
+  setSpreadText,
   swapPhotos,
   templateChoices,
+  toggleLock,
   triEntries,
 } from "./edits";
 
@@ -179,5 +188,102 @@ describe("movePhoto", () => {
     expect(b.spreads).toHaveLength(1);
     expect(b.spreads[0].template).toBe("trio");
     assertSound(b);
+  });
+});
+
+describe("the hand-edit badge", () => {
+  it("stamps every editing operation, and only them", () => {
+    const a = album(spread("quad", 4), spread("duo", 2));
+    expect(removePhoto(a, 0, 0).spreads[0].edited).toBe(true);
+    expect(changeTemplate(a, 0, "trio").spreads[0].edited).toBe(true);
+    expect(swapPhotos(a, 0, 0, 1).spreads[0].edited).toBe(true);
+    const moved = movePhoto(a, 0, 0, 1);
+    expect(moved.spreads[0].edited).toBe(true);
+    expect(moved.spreads[1].edited).toBe(true);
+    // locking pins without pretending the spread was edited
+    const locked = toggleLock(a, 0);
+    expect(locked.spreads[0].locked).toBe(true);
+    expect(locked.spreads[0].edited).toBeUndefined();
+    expect(toggleLock(locked, 0).spreads[0].locked).toBe(false);
+  });
+});
+
+describe("setSlotCrop", () => {
+  it("clamps focal to [0,1] and zoom to its bounds", () => {
+    const a = album(spread("duo", 2));
+    const b = setSlotCrop(a, 0, 0, [-0.2, 1.4], 9);
+    expect(b.spreads[0].slots[0].focal).toEqual([0, 1]);
+    expect(b.spreads[0].slots[0].zoom).toBe(4);
+    expect(b.spreads[0].edited).toBe(true);
+    // below-fill zoom clamps back to 1, which is the current value: no-op
+    expect(setSlotCrop(a, 0, 0, [0.5, 0.5], 0.3)).toBe(a);
+  });
+
+  it("is a no-op when nothing changes", () => {
+    const a = album(spread("duo", 2));
+    expect(setSlotCrop(a, 0, 0, [0.5, 0.5], 1)).toBe(a);
+  });
+});
+
+describe("captions and text", () => {
+  it("sets and clears a photo caption", () => {
+    const a = album(spread("duo", 2));
+    const b = setSlotCaption(a, 0, 1, "  la plage  ");
+    expect(b.spreads[0].slots[1].caption).toBe("la plage");
+    expect(b.spreads[0].edited).toBe(true);
+    const c = setSlotCaption(b, 0, 1, "   ");
+    expect(c.spreads[0].slots[1].caption).toBeUndefined();
+  });
+
+  it("writes the free text of a texte spread", () => {
+    const a = album(spread("duo", 2));
+    const b = insertSpread(a, 0, "texte");
+    expect(b.spreads[1].template).toBe("texte");
+    expect(b.spreads[1].slots).toHaveLength(0);
+    const c = setSpreadText(b, 1, "Un été.\nDeux lignes.");
+    expect(c.spreads[1].text).toBe("Un été.\nDeux lignes.");
+    assertSound(c);
+  });
+});
+
+describe("spread manipulation", () => {
+  it("moves a spread and stamps it edited", () => {
+    const a = album(spread("solo", 1), spread("duo", 2), spread("trio", 3));
+    const b = moveSpread(a, 0, 2);
+    expect(b.spreads.map((s) => s.template)).toEqual(["duo", "trio", "solo"]);
+    expect(b.spreads[2].edited).toBe(true);
+  });
+
+  it("duplicates right after itself, without the lock", () => {
+    const a = album(spread("duo", 2));
+    a.spreads[0].locked = true;
+    const b = duplicateSpread(a, 0);
+    expect(b.spreads).toHaveLength(2);
+    expect(b.spreads[1].template).toBe("duo");
+    expect(b.spreads[1].locked).toBe(false);
+    expect(b.spreads[1].edited).toBe(true);
+  });
+
+  it("inserts a breathing page and removes it again", () => {
+    const a = album(spread("duo", 2));
+    const b = insertSpread(a, 0, "vide");
+    expect(b.spreads[1].template).toBe("vide");
+    expect(removeSpread(b, 1).spreads).toHaveLength(1);
+  });
+});
+
+describe("placePhoto", () => {
+  it("replaces the case's photo, keeping the drawer photo's focal", () => {
+    const a = album(spread("duo", 2));
+    const b = placePhoto(a, 0, 1, { src: "new.jpg", focal: [0.3, 0.6] });
+    expect(b.spreads[0].slots[1].src).toBe("new.jpg");
+    expect(b.spreads[0].slots[1].focal).toEqual([0.3, 0.6]);
+    expect(b.spreads[0].edited).toBe(true);
+    assertSound(b);
+  });
+
+  it("refuses a photo already on the spread", () => {
+    const a = album(spread("duo", 2));
+    expect(placePhoto(a, 0, 1, { src: "p0.jpg", focal: [0.5, 0.5] })).toBe(a);
   });
 });

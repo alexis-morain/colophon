@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   buildAlbum,
+  cancelBuild,
+  cancelExport,
+  captionSuggestion,
+  confirmDialog,
   exportPdf,
   fetchCuration,
   FormatPreset,
@@ -10,6 +14,7 @@ import {
   openAlbum as openAlbumAt,
   pickAlbumFolder,
   pickPhotosFolder,
+  recomposeAlbum,
   saveAlbum,
 } from "./bridge";
 import {
@@ -17,29 +22,50 @@ import {
   Discard,
   mediaCanvas,
   OpenedAlbum,
+  Slot,
   slotsFor,
+  spineMm,
   Spread,
 } from "./album";
 import {
   changeTemplate,
+  duplicateSpread,
+  insertSpread,
   moveBlocker,
   movePhoto,
+  moveSpread,
+  placePhoto,
   removePhoto,
+  removeSpread,
   rescuePhoto,
+  setCover,
+  setSlotCaption,
+  setSlotCrop,
+  setSpreadCaption,
+  setSpreadText,
   spreadOf,
   swapPhotos,
+  toggleLock,
   triEntries,
   TriEntry,
 } from "./edits";
 import { SpreadView } from "./SpreadView";
 import { TemplatePicker } from "./TemplatePicker";
 import { TriView } from "./TriView";
+import { Drawer } from "./Drawer";
+import { PlanchesView, LockGlyph } from "./PlanchesView";
+import { CoverView } from "./CoverView";
 import { cachedThumb, loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
 
 /** Full album snapshots: a 50-spread album is a few tens of kilobytes. */
 type History = { album: Album; past: Album[]; future: Album[] };
 const HISTORY_CAP = 50;
+
+type View = "livre" | "tri" | "planches";
+
+/** In the book view, index -1 is the cover. */
+const COVER = -1;
 
 export default function App() {
   const [opened, setOpened] = useState<OpenedAlbum | null>(null);
@@ -50,35 +76,42 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [building, setBuilding] = useState<string[] | null>(null);
+  const [busyTitle, setBusyTitle] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
-  const [view, setView] = useState<"livre" | "tri">("livre");
+  const [view, setView] = useState<View>("livre");
   const [curation, setCuration] = useState<Discard[]>([]);
   const [triSelected, setTriSelected] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [overflow, setOverflow] = useState<string | null>(null);
 
   const album = hist?.album ?? null;
   const total = album?.spreads.length ?? 0;
   const dirty = album !== null && album !== savedAlbum;
+
+  const adopt = useCallback((result: OpenedAlbum) => {
+    resetThumbs();
+    setOpened(result);
+    setHist({ album: result.album, past: [], future: [] });
+    setSavedAlbum(result.album);
+    setIndex(0);
+    setSelected(null);
+    setTriSelected(null);
+    setView("livre");
+    setError(null);
+    setStatus(null);
+  }, []);
 
   const openAlbum = useCallback(async () => {
     const picked = await pickAlbumFolder();
     if (picked === null) return;
     try {
       const result = await openAlbumAt(picked);
-      resetThumbs();
-      setOpened(result);
-      setHist({ album: result.album, past: [], future: [] });
-      setSavedAlbum(result.album);
-      setIndex(0);
-      setSelected(null);
-      setTriSelected(null);
-      setView("livre");
-      setError(null);
-      setStatus(null);
+      adopt(result);
       setCuration(await fetchCuration().catch(() => []));
     } catch (e) {
       setError(String(e));
     }
-  }, []);
+  }, [adopt]);
 
   /** Push an edited album onto the history. No-op edits stay off the stack. */
   const apply = useCallback((edit: (album: Album) => Album) => {
@@ -118,18 +151,24 @@ export default function App() {
     });
   }, []);
 
+  // Saving reads the freshest history through a ref: ⌘S from inside a
+  // caption field blurs the field first, and the commit that blur applies
+  // must be part of what lands on disk.
+  const histRef = useRef<History | null>(null);
+  histRef.current = hist;
   const save = useCallback(async () => {
-    if (!hist) return false;
+    const h = histRef.current;
+    if (!h) return false;
     try {
-      await saveAlbum(hist.album);
-      setSavedAlbum(hist.album);
+      await saveAlbum(h.album);
+      setSavedAlbum(h.album);
       setStatus("Enregistré");
       return true;
     } catch (e) {
       setStatus(String(e));
       return false;
     }
-  }, [hist]);
+  }, []);
 
   const regenPdf = useCallback(async () => {
     if (rendering || !hist || !(await save())) return;
@@ -139,9 +178,20 @@ export default function App() {
       const dest = await exportPdf(hist.album.title, (done, total) =>
         setStatus(`Rendu à 300 dpi : ${done}/${total} photos…`),
       );
-      setStatus(dest ? `PDF enregistré : ${dest}` : "Enregistrement annulé");
+      const dos = spineMm(hist.album.spreads.length)
+        .toFixed(1)
+        .replace(".", ",");
+      setStatus(
+        dest
+          ? `PDF enregistré : ${dest} · dos ${dos} mm (provisoire)`
+          : "Enregistrement annulé",
+      );
     } catch (e) {
-      setStatus(String(e));
+      setStatus(
+        String(e).includes("export annulé")
+          ? "Export annulé, aucun fichier écrit"
+          : String(e),
+      );
     } finally {
       setRendering(false);
     }
@@ -155,6 +205,7 @@ export default function App() {
     title: string | null,
   ) => {
     setBuilding([]);
+    setBusyTitle(null);
     setError(null);
     // Every line is kept: the counter lines drive the progress bar, the
     // named stages feed the visible log.
@@ -163,27 +214,62 @@ export default function App() {
     );
     try {
       const result = await buildAlbum(dir, format, spreads, title);
-      resetThumbs();
-      setOpened(result);
-      setHist({ album: result.album, past: [], future: [] });
-      setSavedAlbum(result.album);
-      setIndex(0);
-      setSelected(null);
-      setTriSelected(null);
-      setView("livre");
-      setStatus(null);
+      adopt(result);
       setCuration(await fetchCuration().catch(() => []));
     } catch (e) {
-      setError(String(e));
+      if (String(e).includes("annulée")) setStatus("Composition annulée");
+      else setError(String(e));
     } finally {
       off();
       setBuilding(null);
     }
-  }, []);
+  }, [adopt]);
+
+  /**
+   * Recompose the album in place. Edited and locked spreads survive
+   * verbatim, so the button is safe; it still resets ⌘Z, which is the one
+   * thing worth a confirmation.
+   */
+  const recompose = useCallback(async () => {
+    if (!hist || building) return;
+    if (
+      !(await confirmDialog(
+        "Recomposer l'album ? Les planches éditées à la main ou verrouillées " +
+          "sont conservées telles quelles, les autres sont recomposées. " +
+          "L'historique d'annulation repart de zéro.",
+      ))
+    ) {
+      return;
+    }
+    if (dirty && !(await save())) return;
+    setBusyTitle(hist.album.title);
+    setBuilding([]);
+    const off = await onBuildProgress((line) =>
+      setBuilding((b) => (b ? [...b, line] : [line])),
+    );
+    try {
+      const result = await recomposeAlbum();
+      adopt(result);
+      setCuration(await fetchCuration().catch(() => []));
+      setStatus("Album recomposé, planches éditées conservées");
+    } catch (e) {
+      if (String(e).includes("annulée")) setStatus("Recomposition annulée");
+      else setError(String(e));
+    } finally {
+      off();
+      setBuilding(null);
+      setBusyTitle(null);
+    }
+  }, [hist, building, dirty, save, adopt]);
 
   /** Back to the creation screen. Unsaved work asks before dying. */
-  const closeAlbum = useCallback(() => {
-    if (dirty && !window.confirm("Des modifications ne sont pas enregistrées. Fermer quand même ?")) {
+  const closeAlbum = useCallback(async () => {
+    if (
+      dirty &&
+      !(await confirmDialog(
+        "Des modifications ne sont pas enregistrées. Fermer quand même ?",
+      ))
+    ) {
       return;
     }
     setHist(null);
@@ -202,7 +288,7 @@ export default function App() {
     (entry: TriEntry) => {
       if (!album) return;
       const anchorByWinner = entry.kept ? spreadOf(album, entry.kept) : -1;
-      const anchor = anchorByWinner >= 0 ? anchorByWinner : index;
+      const anchor = anchorByWinner >= 0 ? anchorByWinner : Math.max(index, 0);
       const result = rescuePhoto(
         album,
         { src: entry.src, focal: entry.focal },
@@ -218,6 +304,26 @@ export default function App() {
       apply(() => result.album);
       setIndex(result.at);
       setStatus(`Repêchée sur la planche ${result.at + 1}`);
+    },
+    [album, index, apply],
+  );
+
+  /** A drawer photo lands in a case; the displaced one joins the drawer. */
+  const place = useCallback(
+    (slot: number, photo: Slot) => {
+      if (!album || index < 0) return;
+      const before = album.spreads[index]?.slots[slot]?.src;
+      const next = placePhoto(album, index, slot, photo);
+      if (next === album) {
+        setStatus("Déjà sur cette planche : deux fois la même photo serait un doublon");
+        return;
+      }
+      apply(() => next);
+      setStatus(
+        before
+          ? "Photo placée · l'ancienne repart dans la réserve"
+          : "Photo placée",
+      );
     },
     [album, index, apply],
   );
@@ -266,11 +372,22 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // A focused control owns the keyboard: an input takes the letters, a
-      // button takes space and enter (standard activation).
+      // button takes space and enter (standard activation). App-level
+      // chords still pass: ⌘S from inside a caption field must save.
       const t = e.target as HTMLElement | null;
-      if (t && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(t.tagName)) return;
-
       const key = e.key.toLowerCase();
+      if (t && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(t.tagName)) {
+        const appChord = e.metaKey && ["s", "o", "1", "2", "3"].includes(key);
+        if (!appChord) return;
+        if (key === "s") {
+          // Blur commits the field being edited; save once that landed.
+          e.preventDefault();
+          t.blur();
+          setTimeout(() => void save(), 0);
+          return;
+        }
+        t.blur();
+      }
       if (e.metaKey && key === "o") {
         e.preventDefault();
         void openAlbum();
@@ -287,9 +404,9 @@ export default function App() {
         else undo();
         return;
       }
-      if (e.metaKey && (key === "1" || key === "2")) {
+      if (e.metaKey && (key === "1" || key === "2" || key === "3")) {
         e.preventDefault();
-        setView(key === "1" ? "livre" : "tri");
+        setView(key === "1" ? "livre" : key === "2" ? "tri" : "planches");
         setSelected(null);
         setTriSelected(null);
         return;
@@ -299,13 +416,46 @@ export default function App() {
         if (e.key === "Escape") setTriSelected(null);
         return;
       }
-      if (!total) return;
+      if (!total || !album) return;
+
+      // Spread manipulation, book view and light table alike.
+      if (e.metaKey && key === "d" && index >= 0) {
+        e.preventDefault();
+        apply((a) => duplicateSpread(a, index));
+        setIndex(index + 1);
+        setStatus(`Planche ${index + 1} dupliquée`);
+        return;
+      }
+      if (e.metaKey && key === "l" && index >= 0) {
+        e.preventDefault();
+        const was = album.spreads[index]?.locked;
+        apply((a) => toggleLock(a, index));
+        setStatus(was ? "Planche libérée" : "Planche figée : elle survivra à toute recomposition");
+        return;
+      }
+
+      if (view === "planches") {
+        if ((e.key === "Backspace" || e.key === "Delete") && index >= 0) {
+          e.preventDefault();
+          apply((a) => removeSpread(a, index));
+          setStatus(`Planche ${index + 1} supprimée (⌘Z la ramène)`);
+          return;
+        }
+        if (e.key === "Escape") return;
+        const step = (d: number) =>
+          setIndex((i) => Math.min(total - 1, Math.max(0, i + d)));
+        if (e.key === "ArrowRight") step(1);
+        if (e.key === "ArrowLeft") step(-1);
+        if (e.key === "Enter") setView("livre");
+        return;
+      }
+
       if (
         e.metaKey &&
         e.shiftKey &&
         (e.key === "ArrowRight" || e.key === "ArrowLeft") &&
         selected !== null &&
-        album
+        index >= 0
       ) {
         e.preventDefault();
         const to = index + (e.key === "ArrowRight" ? 1 : -1);
@@ -322,7 +472,48 @@ export default function App() {
         }
         return;
       }
-      if ((e.key === "Backspace" || e.key === "Delete") && selected !== null) {
+
+      // Crop keys on the selected photo: ⌥flèches déplacent le cadrage,
+      // + / − zooment, 0 revient au remplissage exact.
+      if (selected !== null && index >= 0) {
+        const slot = album.spreads[index]?.slots[selected];
+        if (slot) {
+          const zoom = slot.zoom ?? 1;
+          if (e.altKey && e.key.startsWith("Arrow")) {
+            e.preventDefault();
+            const d = 0.02;
+            const [fx, fy] = slot.focal;
+            const focal: [number, number] =
+              e.key === "ArrowLeft"
+                ? [fx - d, fy]
+                : e.key === "ArrowRight"
+                  ? [fx + d, fy]
+                  : e.key === "ArrowUp"
+                    ? [fx, fy - d]
+                    : [fx, fy + d];
+            apply((a) => setSlotCrop(a, index, selected, focal, zoom));
+            return;
+          }
+          if (e.key === "+" || e.key === "=") {
+            e.preventDefault();
+            apply((a) => setSlotCrop(a, index, selected, slot.focal, zoom + 0.1));
+            return;
+          }
+          if (e.key === "-" || e.key === "_") {
+            e.preventDefault();
+            apply((a) => setSlotCrop(a, index, selected, slot.focal, zoom - 0.1));
+            return;
+          }
+          if (e.key === "0") {
+            e.preventDefault();
+            apply((a) => setSlotCrop(a, index, selected, slot.focal, 1));
+            setStatus("Zoom remis au remplissage exact");
+            return;
+          }
+        }
+      }
+
+      if ((e.key === "Backspace" || e.key === "Delete") && selected !== null && index >= 0) {
         e.preventDefault();
         setSelected(null);
         apply((a) => removePhoto(a, index, selected));
@@ -332,8 +523,12 @@ export default function App() {
         setSelected(null);
         return;
       }
+      if (key === "p" && !e.metaKey) {
+        setDrawerOpen((o) => !o);
+        return;
+      }
       const step = (d: number) =>
-        setIndex((i) => Math.min(total - 1, Math.max(0, i + d)));
+        setIndex((i) => Math.min(total - 1, Math.max(COVER, i + d)));
       switch (e.key) {
         case "ArrowRight":
         case "ArrowDown":
@@ -358,20 +553,25 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [total, openAlbum, save, undo, redo, apply, index, selected, album, view]);
 
-  if (!album || total === 0) {
+  if (!album || total === 0 || building) {
     return (
       <Empty
         onOpen={openAlbum}
         onCreate={createAlbum}
         building={building}
+        busyTitle={busyTitle}
         error={error}
+        onCancelBuild={() => void cancelBuild()}
       />
     );
   }
 
-  const spread = album.spreads[Math.min(index, total - 1)];
+  const onCover = index === COVER && view === "livre";
+  const spread = onCover ? null : album.spreads[Math.min(index, total - 1)];
   const entries = triEntries(album, curation, opened?.thumb_srcs ?? []);
   const triEntry = entries.find((e) => e.src === triSelected) ?? null;
+  const selectedSlot =
+    spread && selected !== null ? (spread.slots[selected] ?? null) : null;
 
   return (
     <div className="app">
@@ -387,13 +587,28 @@ export default function App() {
           setView(v);
           setSelected(null);
           setTriSelected(null);
+          if (v !== "livre" && index === COVER) setIndex(0);
         }}
         onTemplate={(t) => apply((a) => changeTemplate(a, index, t))}
+        onLock={
+          spread
+            ? () => {
+                const was = spread.locked;
+                apply((a) => toggleLock(a, index));
+                setStatus(
+                  was
+                    ? "Planche libérée"
+                    : "Planche figée : elle survivra à toute recomposition",
+                );
+              }
+            : undefined
+        }
         onUndo={undo}
         onRedo={redo}
         onSave={() => void save()}
         onPdf={inTauri ? () => void regenPdf() : undefined}
         pdfBusy={rendering}
+        onRecompose={inTauri ? () => void recompose() : undefined}
         onOpen={openAlbum}
         onClose={closeAlbum}
       />
@@ -404,18 +619,59 @@ export default function App() {
           onSelect={setTriSelected}
           onRescue={rescue}
         />
+      ) : view === "planches" ? (
+        <PlanchesView
+          album={album}
+          current={Math.max(index, 0)}
+          onSelect={setIndex}
+          onOpen={(at) => {
+            setIndex(at);
+            setView("livre");
+          }}
+          onMove={(from, to) => {
+            apply((a) => moveSpread(a, from, to));
+            setIndex(to);
+            setStatus(`Planche déplacée en position ${to + 1}`);
+          }}
+          onLock={(at) => apply((a) => toggleLock(a, at))}
+        />
       ) : (
         <main className="stage">
           <div className="turn" key={index}>
-            <SpreadView
-              album={album}
-              spread={spread}
-              selected={selected}
-              onSelect={setSelected}
-              onSwap={(a, b) => apply((al) => swapPhotos(al, index, a, b))}
-            />
+            {onCover ? (
+              <CoverView
+                album={album}
+                onCover={(c) => apply((a) => setCover(a, c))}
+              />
+            ) : (
+              spread && (
+                <SpreadView
+                  album={album}
+                  spread={spread}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onSwap={(a, b) => apply((al) => swapPhotos(al, index, a, b))}
+                  onPlace={place}
+                  onCrop={(slot, focal, zoom) =>
+                    apply((a) => setSlotCrop(a, index, slot, focal, zoom))
+                  }
+                  onSpreadCaption={(c) =>
+                    apply((a) => setSpreadCaption(a, index, c))
+                  }
+                  onText={(text) => apply((a) => setSpreadText(a, index, text))}
+                  onOverflow={setOverflow}
+                />
+              )
+            )}
           </div>
         </main>
+      )}
+      {view === "livre" && !onCover && (
+        <Drawer
+          entries={entries}
+          open={drawerOpen}
+          onToggle={() => setDrawerOpen((o) => !o)}
+        />
       )}
       {view === "tri" ? (
         <TriFoot
@@ -430,14 +686,53 @@ export default function App() {
             setTriSelected(null);
           }}
         />
+      ) : view === "planches" ? (
+        <PlanchesFoot
+          album={album}
+          index={Math.max(index, 0)}
+          status={status}
+          onInsert={(kind) => {
+            const at = Math.max(index, 0);
+            apply((a) => insertSpread(a, at, kind));
+            setIndex(at + 1);
+            setStatus(
+              kind === "vide"
+                ? "Planche vide insérée : une respiration"
+                : "Planche de texte insérée : double-clic pour l'ouvrir et écrire",
+            );
+          }}
+          onDuplicate={() => {
+            const at = Math.max(index, 0);
+            apply((a) => duplicateSpread(a, at));
+            setIndex(at + 1);
+          }}
+          onRemove={() => {
+            const at = Math.max(index, 0);
+            apply((a) => removeSpread(a, at));
+            setStatus(`Planche ${at + 1} supprimée (⌘Z la ramène)`);
+          }}
+        />
       ) : (
         <BookFoot
           album={album}
           index={index}
           total={total}
           status={status}
-          selected={selected !== null}
-          onSeek={(i) => setIndex(Math.min(total - 1, Math.max(0, i)))}
+          overflow={overflow}
+          rendering={rendering}
+          onCancelExport={() => void cancelExport()}
+          selectedSlot={selectedSlot}
+          onCaption={
+            selected !== null && index >= 0
+              ? (text) => apply((a) => setSlotCaption(a, index, selected, text))
+              : undefined
+          }
+          onSeek={(i) => setIndex(Math.min(total - 1, Math.max(COVER, i)))}
+          onMoveSpread={(from, to) => {
+            apply((a) => moveSpread(a, from, to));
+            setIndex(to);
+            setStatus(`Planche déplacée en position ${to + 1}`);
+          }}
         />
       )}
       {opened && !opened.root_present && (
@@ -460,31 +755,37 @@ function Bar({
   triCount,
   onView,
   onTemplate,
+  onLock,
   onUndo,
   onRedo,
   onSave,
   onPdf,
   pdfBusy,
+  onRecompose,
   onOpen,
   onClose,
 }: {
   album: Album;
-  spread: Spread;
+  spread: Spread | null;
   dirty: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  view: "livre" | "tri";
+  view: View;
   triCount: number;
-  onView: (v: "livre" | "tri") => void;
+  onView: (v: View) => void;
   onTemplate: (t: string) => void;
+  onLock?: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onSave: () => void;
   onPdf?: () => void;
   pdfBusy?: boolean;
+  onRecompose?: () => void;
   onOpen: () => void;
   onClose: () => void;
 }) {
+  const photoSpread =
+    spread && spread.template !== "vide" && spread.template !== "texte";
   return (
     <header className="bar">
       <h1>{album.title}</h1>
@@ -504,9 +805,40 @@ function Bar({
           >
             Tri · {triCount}
           </button>
+          <button
+            className={"view-tab" + (view === "planches" ? " active" : "")}
+            onClick={() => onView("planches")}
+            title="⌘3"
+          >
+            Planches
+          </button>
         </span>
-        {view === "livre" && (
+        {view === "livre" && spread && photoSpread && (
           <TemplatePicker album={album} spread={spread} onPick={onTemplate} />
+        )}
+        {view === "livre" && spread && (
+          <span className="spread-flags">
+            {spread.edited && (
+              <span
+                className="badge-edited"
+                title="Éditée à la main : survit à toute recomposition"
+              />
+            )}
+            {onLock && (
+              <button
+                className={"lock" + (spread.locked ? " locked" : "")}
+                onClick={onLock}
+                aria-pressed={spread.locked ?? false}
+                title={
+                  spread.locked
+                    ? "Figée : survit à toute recomposition. Cliquer pour libérer (⌘L)"
+                    : "Figer cette planche face aux recompositions (⌘L)"
+                }
+              >
+                <LockGlyph open={!spread.locked} />
+              </button>
+            )}
+          </span>
         )}
       </p>
       <p className="actions">
@@ -517,6 +849,15 @@ function Bar({
           Rétablir
         </button>
         <span className="actions-sep" aria-hidden="true" />
+        {onRecompose && (
+          <button
+            className="link"
+            onClick={onRecompose}
+            title="Recompose l'album ; les planches éditées ou verrouillées sont conservées"
+          >
+            Recomposer
+          </button>
+        )}
         <button
           className={"link" + (dirty ? " dirty" : "")}
           onClick={onSave}
@@ -549,55 +890,124 @@ function Bar({
 
 /**
  * The book's foot: page-turn arrows, a ruler graduated one tick per spread
- * (chapter starts marked in accent, their caption on hover), the position,
- * and a fixed line for hints and statuses. Constant height, whatever shows:
- * the spread above never moves.
+ * (chapter starts marked in accent, their caption on hover, drag a tick to
+ * move that spread), the cover tick, the position, and a fixed line that
+ * hosts hints, statuses and the caption editor of the selected photo.
+ * Constant height, whatever shows: the spread above never moves.
  */
 function BookFoot({
   album,
   index,
   total,
   status,
-  selected,
+  overflow,
+  rendering,
+  onCancelExport,
+  selectedSlot,
+  onCaption,
   onSeek,
+  onMoveSpread,
 }: {
   album: Album;
   index: number;
   total: number;
   status: string | null;
-  selected: boolean;
+  overflow: string | null;
+  rendering: boolean;
+  onCancelExport: () => void;
+  selectedSlot: Slot | null;
+  onCaption?: (text: string) => void;
   onSeek: (i: number) => void;
+  onMoveSpread: (from: number, to: number) => void;
 }) {
+  const ruler = useRef<HTMLElement>(null);
+  const drag = useRef<{ from: number; startX: number; moved: boolean } | null>(null);
+  const [dropTick, setDropTick] = useState<number | null>(null);
+
+  const tickAt = (clientX: number): number => {
+    const el = ruler.current;
+    if (!el || total < 2) return 0;
+    const r = el.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    return Math.round(f * (total - 1));
+  };
+
   return (
     <footer className="foot">
       <div className="foot-nav">
         <button
           className="foot-arrow"
           onClick={() => onSeek(index - 1)}
-          disabled={index === 0}
+          disabled={index <= COVER}
           aria-label="Planche précédente"
           title="←"
         >
           ‹
         </button>
-        <nav className="ruler" aria-label="Aller à une planche">
+        <button
+          className={"ruler-cover" + (index === COVER ? " current" : "")}
+          onClick={() => onSeek(COVER)}
+          title="Couverture"
+        >
+          C
+        </button>
+        <nav
+          ref={ruler}
+          className="ruler"
+          aria-label="Aller à une planche, glisser un trait pour déplacer sa planche"
+          onPointerMove={(e) => {
+            const d = drag.current;
+            if (!d) return;
+            if (!d.moved && Math.abs(e.clientX - d.startX) < 5) return;
+            d.moved = true;
+            setDropTick(tickAt(e.clientX));
+          }}
+          onPointerUp={(e) => {
+            const d = drag.current;
+            drag.current = null;
+            setDropTick(null);
+            if (!d) return;
+            if (d.moved) {
+              const to = tickAt(e.clientX);
+              if (to !== d.from) onMoveSpread(d.from, to);
+            } else {
+              onSeek(d.from);
+            }
+          }}
+          onPointerCancel={() => {
+            drag.current = null;
+            setDropTick(null);
+          }}
+        >
           {album.spreads.map((s, i) => (
             <button
               key={i}
               className={
                 "ruler-tick" +
                 (s.caption ? " chapter" : "") +
-                (i === index ? " current" : "")
+                (i === index ? " current" : "") +
+                (dropTick === i ? " droptick" : "")
               }
               style={{ left: `${total > 1 ? (i / (total - 1)) * 100 : 0}%` }}
-              title={s.caption ? `${s.caption} · planche ${i + 1}` : `planche ${i + 1}`}
-              onClick={() => onSeek(i)}
+              title={
+                (s.caption ? `${s.caption} · ` : "") +
+                `planche ${i + 1} · glisser pour la déplacer`
+              }
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                drag.current = { from: i, startX: e.clientX, moved: false };
+                (e.currentTarget.closest(".ruler") as HTMLElement)?.setPointerCapture(
+                  e.pointerId,
+                );
+              }}
             />
           ))}
-          <span
-            className="ruler-mark"
-            style={{ left: `${total > 1 ? (index / (total - 1)) * 100 : 0}%` }}
-          />
+          {index >= 0 && (
+            <span
+              className="ruler-mark"
+              style={{ left: `${total > 1 ? (index / (total - 1)) * 100 : 0}%` }}
+            />
+          )}
         </nav>
         <button
           className="foot-arrow"
@@ -609,20 +1019,142 @@ function BookFoot({
           ›
         </button>
         <span className="foot-pos">
-          {index + 1} / {total}
+          {index === COVER ? "C" : index + 1} / {total}
         </span>
+      </div>
+      <div className="foot-line">
+        {rendering ? (
+          <span className="foot-render">
+            {status ?? "Rendu du PDF d’impression…"}{" "}
+            <button className="link" onClick={onCancelExport}>
+              Annuler l'export
+            </button>
+          </span>
+        ) : selectedSlot && onCaption ? (
+          <CaptionEditor slot={selectedSlot} onCaption={onCaption} status={status} />
+        ) : (
+          <span className={overflow && !status ? "foot-overflow" : undefined}>
+            {status ??
+              overflow ??
+              (index === COVER
+                ? "La couverture : titre et sous-titre en place, glissez la photo pour la recadrer."
+                : "")}
+          </span>
+        )}
+      </div>
+    </footer>
+  );
+}
+
+/**
+ * The caption editor of the selected photo, living in the foot's fixed
+ * line: an input, the EXIF suggestion one click away, and the crop hints.
+ */
+function CaptionEditor({
+  slot,
+  onCaption,
+  status,
+}: {
+  slot: Slot;
+  onCaption: (text: string) => void;
+  status: string | null;
+}) {
+  const [value, setValue] = useState(slot.caption ?? "");
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+
+  useEffect(() => {
+    setValue(slot.caption ?? "");
+    setSuggestion(null);
+    let alive = true;
+    captionSuggestion(slot.src).then(
+      (s) => alive && setSuggestion(s),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [slot]);
+
+  return (
+    <span className="foot-captioning">
+      <label className="foot-caption-label">
+        Légende
+        <input
+          className="foot-caption"
+          value={value}
+          placeholder="aucune"
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => value.trim() !== (slot.caption ?? "") && onCaption(value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              setValue(slot.caption ?? "");
+              e.currentTarget.blur();
+            }
+          }}
+        />
+      </label>
+      {suggestion && !value && (
+        <button
+          className="link"
+          onClick={() => {
+            setValue(suggestion);
+            onCaption(suggestion);
+          }}
+          title="Date EXIF de la photo, proposée, jamais imposée"
+        >
+          proposer « {suggestion} »
+        </button>
+      )}
+      <span className="foot-caption-hints">
+        {status ??
+          "Glisser recadre · molette zoome · double-clic recentre · ⌥ affine · ⌫ retire"}
+      </span>
+    </span>
+  );
+}
+
+/** The light table's foot: insertion and spread actions on the current one. */
+function PlanchesFoot({
+  album,
+  index,
+  status,
+  onInsert,
+  onDuplicate,
+  onRemove,
+}: {
+  album: Album;
+  index: number;
+  status: string | null;
+  onInsert: (kind: "vide" | "texte") => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+}) {
+  const spread = album.spreads[index];
+  return (
+    <footer className="foot">
+      <div className="foot-nav planches-actions">
+        <span className="foot-pos planches-pos">
+          planche {index + 1} / {album.spreads.length}
+          {spread?.caption ? ` · ${spread.caption}` : ""}
+        </span>
+        <button className="link" onClick={() => onInsert("vide")} title="Après la planche courante">
+          + planche vide
+        </button>
+        <button className="link" onClick={() => onInsert("texte")} title="Après la planche courante">
+          + planche de texte
+        </button>
+        <span className="actions-sep" aria-hidden="true" />
+        <button className="link" onClick={onDuplicate} title="⌘D">
+          Dupliquer
+        </button>
+        <button className="link" onClick={onRemove} title="⌫">
+          Supprimer
+        </button>
       </div>
       <p className="foot-line">
         {status ??
-          (selected ? (
-            <>
-              <kbd>⌫</kbd> retire la photo, le gabarit suit. Glissez une photo
-              sur une autre pour les permuter, <kbd>⌘⇧←</kbd> <kbd>⌘⇧→</kbd>{" "}
-              pour l'envoyer sur la planche voisine.
-            </>
-          ) : (
-            ""
-          ))}
+          "Glissez une planche sur une autre pour la déplacer. Double-clic ouvre dans le Livre, ⌘L fige."}
       </p>
     </footer>
   );
@@ -666,7 +1198,8 @@ function TriFoot({
       ) : (
         <div className="foot-tri muted">
           Photos écartées par la curation ou retirées à la main. Un clic pour
-          les détails, un double-clic repêche.
+          les détails, un double-clic repêche. Le tiroir du Livre les garde
+          aussi à portée de glisser.
         </div>
       )}
       <p className="foot-line">{status ?? ""}</p>
@@ -697,12 +1230,16 @@ function Empty({
   onOpen,
   onCreate,
   building,
+  busyTitle,
   error,
+  onCancelBuild,
 }: {
   onOpen: () => void;
   onCreate: (dir: string, format: string, spreads: number, title: string | null) => void;
   building: string[] | null;
+  busyTitle: string | null;
   error: string | null;
+  onCancelBuild: () => void;
 }) {
   const [formats, setFormats] = useState<FormatPreset[]>([]);
   const [dir, setDir] = useState<string | null>(null);
@@ -828,12 +1365,15 @@ function Empty({
             {building && (
               <div className="setup">
                 <h1 className="setup-heading">
-                  Composition de « {title.trim() || folderName || "l'album"} »
+                  {busyTitle
+                    ? `Recomposition de « ${busyTitle} »`
+                    : `Composition de « ${title.trim() || folderName || "l'album"} »`}
                 </h1>
-                <BuildProgress lines={building} />
+                <BuildProgress lines={building} onCancel={onCancelBuild} />
                 <p className="setup-hint">
-                  L'analyse des photos ne se fait qu'une fois : recomposer ce
-                  dossier sera bien plus rapide.
+                  {busyTitle
+                    ? "Les planches éditées à la main ou verrouillées sont conservées telles quelles."
+                    : "L'analyse des photos ne se fait qu'une fois : recomposer ce dossier sera bien plus rapide."}
                 </p>
               </div>
             )}
@@ -965,6 +1505,9 @@ function buildStage(lines: string[]): { pct: number; label: string } {
     } else if (l.startsWith("layout:")) {
       p = 88;
       lab = "mise en page des planches";
+    } else if (l.startsWith("pinned:")) {
+      p = 90;
+      lab = "planches éditées remises en place";
     } else if (l.startsWith("curation:")) {
       p = 92;
       lab = "journal de curation";
@@ -980,7 +1523,13 @@ function buildStage(lines: string[]): { pct: number; label: string } {
   return { pct, label };
 }
 
-function BuildProgress({ lines }: { lines: string[] }) {
+function BuildProgress({
+  lines,
+  onCancel,
+}: {
+  lines: string[];
+  onCancel: () => void;
+}) {
   const { pct, label } = buildStage(lines);
   const log = lines.filter((l) => !/^analyze: \d+\/\d+$/.test(l)).slice(-6);
   return (
@@ -998,7 +1547,17 @@ function BuildProgress({ lines }: { lines: string[] }) {
         <span key={label} className="build-stage-label">
           {label}
         </span>
-        <span className="build-pct">{Math.round(pct)} %</span>
+        <span className="build-actions">
+          <button
+            className="link"
+            type="button"
+            onClick={onCancel}
+            title="Arrête la composition ; rien n'est écrit"
+          >
+            Annuler
+          </button>
+          <span className="build-pct">{Math.round(pct)} %</span>
+        </span>
       </p>
       <pre className="buildlog">
         {log.length ? log.join("\n") : "lecture du dossier…"}

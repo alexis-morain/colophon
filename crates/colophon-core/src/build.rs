@@ -11,12 +11,21 @@ use std::path::{Path, PathBuf};
 pub struct BuildOptions {
     /// Album title. Defaults to the folder name when empty.
     pub title: Option<String>,
-    /// Target number of spreads for the finished album.
+    /// Target number of spreads for the finished album, pinned ones excluded.
     pub spreads: usize,
     /// Trim size of a single page, in millimetres. See `format`.
     pub trim: model::Size,
     /// Called with human-readable progress lines.
     pub progress: Box<dyn Fn(&str) + Send + Sync>,
+    /// Returns true when the caller wants the build abandoned. Checked
+    /// between stages and between photos; a cancelled build writes nothing.
+    pub cancel: Box<dyn Fn() -> bool + Send + Sync>,
+    /// Spreads a recomposition must preserve verbatim (edited or locked),
+    /// each with the capture time it should be re-inserted at. Their photos
+    /// are withdrawn from the pipeline so nothing places them twice.
+    pub pinned: Vec<(model::Spread, Option<chrono::NaiveDateTime>)>,
+    /// Cover carried over on recomposition; a fresh build has none yet.
+    pub cover: Option<model::Cover>,
 }
 
 impl Default for BuildOptions {
@@ -26,6 +35,9 @@ impl Default for BuildOptions {
             spreads: 48,
             trim: model::Size { w: 210.0, h: 210.0 },
             progress: Box::new(|_| {}),
+            cancel: Box::new(|| false),
+            pinned: Vec::new(),
+            cover: None,
         }
     }
 }
@@ -51,8 +63,25 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     });
     fs::create_dir_all(out)?;
 
-    // 1. scan
-    let scanned = scan::scan(&root);
+    let cancelled = || (opts.cancel)();
+    let rel = |p: &Path| {
+        p.strip_prefix(&root)
+            .unwrap_or(p)
+            .to_string_lossy()
+            .to_string()
+    };
+
+    // 1. scan. Photos held by pinned spreads leave the pipeline here: a
+    // recomposition must never place them a second time.
+    let mut scanned = scan::scan(&root);
+    let pinned_srcs: std::collections::HashSet<String> = opts
+        .pinned
+        .iter()
+        .flat_map(|(s, _)| s.slots.iter().map(|sl| sl.src.clone()))
+        .collect();
+    if !pinned_srcs.is_empty() {
+        scanned.images.retain(|p| !pinned_srcs.contains(&rel(p)));
+    }
     say(&format!(
         "scan: {} images ({} HEIC skipped, {} unknown skipped)",
         scanned.images.len(),
@@ -75,6 +104,9 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         .images
         .par_iter()
         .map_init(face::new_detector, |det, path| {
+            if cancelled() {
+                return None; // drain the queue fast, the check below bails
+            }
             let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
             if n % 20 == 0 || n == total {
                 say(&format!("analyze: {n}/{total}"));
@@ -102,16 +134,15 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         })
         .flatten()
         .collect();
+    anyhow::ensure!(!cancelled(), "composition annulée");
     say(&format!("analyze: {} photos", photos.len()));
+
+    // Capture times, for re-inserting pinned spreads chronologically.
+    let times: std::collections::HashMap<String, chrono::NaiveDateTime> =
+        photos.iter().map(|p| (rel(&p.path), p.meta.taken)).collect();
 
     // 3. drop junk, dedup bursts and scenes, chapter, cap. Every photo set
     // aside is recorded with its reason: curation.json feeds the sorting view.
-    let rel = |p: &Path| {
-        p.strip_prefix(&root)
-            .unwrap_or(p)
-            .to_string_lossy()
-            .to_string()
-    };
     // Face anchors survive into curation.json: a rescued photo is cropped
     // like any other. Keyed by path because the passes only return paths.
     let focals: std::collections::HashMap<PathBuf, [f64; 2]> = photos
@@ -219,7 +250,9 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     // orientation and their scores, so the budget is aimed rather than
     // computed: compose, measure, correct. Composition costs nothing, no
     // image is touched here.
+    anyhow::ensure!(!cancelled(), "composition annulée");
     let mut album = model::Album::new(&title, &root, opts.trim);
+    album.cover = opts.cover.clone();
     let mut budget = spreads_target * layout::PHOTOS_PER_SPREAD_X10 / 10;
     let mut photos_kept = 0;
     // Keep the attempt closest to the target: on fragmented sets the
@@ -257,6 +290,32 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     if let Some((_, spreads, kept)) = best {
         album.spreads = spreads;
         photos_kept = kept;
+    }
+
+    // Re-insert the pinned spreads where their photos belong in time. A
+    // pinned spread's own photos are unknown to `times` (withdrawn above),
+    // so already-inserted pinned spreads are transparent to the scan and
+    // the original order between them holds.
+    if !opts.pinned.is_empty() {
+        let time_of = |s: &model::Spread| {
+            s.slots.first().and_then(|sl| times.get(&sl.src)).copied()
+        };
+        let mut last_at: Option<usize> = None;
+        for (spread, anchor) in &opts.pinned {
+            let at = match anchor {
+                Some(t) => album
+                    .spreads
+                    .iter()
+                    .position(|s| time_of(s).is_some_and(|st| st > *t))
+                    .unwrap_or(album.spreads.len()),
+                // No time at all (a text page opening the album): right
+                // after the previous pinned spread, else at the front.
+                None => last_at.map(|i| i + 1).unwrap_or(0),
+            };
+            album.spreads.insert(at, spread.clone());
+            last_at = Some(at);
+        }
+        say(&format!("pinned: {} planches conservées", opts.pinned.len()));
     }
 
     say(&format!(
@@ -302,6 +361,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     write_thumb_index(&album, &discards, &root, &cache, out)?;
 
     // 6. render PDF from thumbnails (preview quality in P0)
+    anyhow::ensure!(!cancelled(), "composition annulée");
     say("pdf: rendu des planches");
     let mut writer = pdf::PdfWriter::new(&album);
     for spread in &album.spreads {
@@ -313,7 +373,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
                 let thumb_path = cache.path_for(&src);
                 let data = fs::read(&thumb_path).ok()?;
                 let (w, h) = jpeg_dimensions(&data)?;
-                Some(pdf::JpegAsset { data, width: w, height: h, focal: slot.focal })
+                Some(pdf::JpegAsset { data, width: w, height: h, focal: slot.focal, zoom: slot.zoom })
             })
             .collect();
         if assets.len() == spread.slots.len() {
@@ -368,7 +428,7 @@ pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
                 let name = thumbs.get(&slot.src)?;
                 let data = fs::read(dir.join(".cache").join("thumbs").join(name)).ok()?;
                 let (w, h) = jpeg_dimensions(&data)?;
-                Some(pdf::JpegAsset { data, width: w, height: h, focal: slot.focal })
+                Some(pdf::JpegAsset { data, width: w, height: h, focal: slot.focal, zoom: slot.zoom })
             })
             .collect();
         anyhow::ensure!(
@@ -418,7 +478,7 @@ const MONTHS_FR: [&str; 12] = [
     "septembre", "octobre", "novembre", "décembre",
 ];
 
-fn date_fr(d: chrono::NaiveDate, with_year: bool) -> String {
+pub fn date_fr(d: chrono::NaiveDate, with_year: bool) -> String {
     use chrono::Datelike;
     let m = MONTHS_FR[d.month0() as usize];
     if with_year {

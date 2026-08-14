@@ -200,18 +200,24 @@ impl Composer {
             let slots = (0..take)
                 .map(|c| {
                     let p = &photos[i + order[c]];
-                    Slot {
-                        src: p
-                            .path
+                    Slot::new(
+                        p.path
                             .strip_prefix(root)
                             .unwrap_or(&p.path)
                             .to_string_lossy()
                             .to_string(),
-                        focal: face_safe_focal(p, &cells[c]),
-                    }
+                        face_safe_focal(p, &cells[c]),
+                    )
                 })
                 .collect();
-            spreads.push(Spread { template: name.clone(), slots, caption: None });
+            spreads.push(Spread {
+                template: name.clone(),
+                slots,
+                caption: None,
+                text: None,
+                edited: false,
+                locked: false,
+            });
 
             let family = name.trim_end_matches("_verso").to_string();
             if self.family_run.0 == family {

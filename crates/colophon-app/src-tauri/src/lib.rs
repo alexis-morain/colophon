@@ -6,7 +6,8 @@ use colophon_core::model::Album;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State};
 
 /// Slot source to cached thumbnail filename, as written in thumbs.json.
@@ -22,6 +23,9 @@ struct Opened {
 #[derive(Default)]
 struct AppState {
     open: Mutex<Option<Opened>>,
+    /// Raised by the Annuler buttons; the running build or export polls it.
+    cancel_build: Arc<AtomicBool>,
+    cancel_export: Arc<AtomicBool>,
 }
 
 #[derive(Serialize)]
@@ -88,6 +92,46 @@ fn open_album(path: String, state: State<'_, AppState>) -> Result<OpenedAlbum, S
         root_present,
         thumb_srcs,
     })
+}
+
+/// The face-anchored focal point of a photo, recomputed on its cached
+/// thumbnail. The crop editor's double-click recentres on it: the detector
+/// value is not persisted anywhere, and one thumbnail pass costs nothing.
+#[tauri::command]
+fn detected_focal(src: String, state: State<'_, AppState>) -> Result<[f64; 2], String> {
+    let data = {
+        let guard = state.open.lock().unwrap();
+        let opened = guard.as_ref().ok_or("aucun album ouvert")?;
+        read_thumb(&opened.dir, &opened.thumbs, &src)?
+    };
+    let img = colophon_core::image::load_from_memory(&data)
+        .map_err(|e| format!("vignette illisible : {e}"))?;
+    let mut det = colophon_core::face::new_detector();
+    let faces = colophon_core::face::face_boxes(det.as_mut(), &img);
+    Ok(colophon_core::face::focal_from_boxes(&faces).unwrap_or([0.5, 0.42]))
+}
+
+/// The EXIF capture date of a photo, formatted the way chapter captions
+/// are. The caption editor proposes it, never imposes it. None when the
+/// date is unreliable (screenshots, forwards) or the original is gone.
+#[tauri::command]
+fn caption_suggestion(src: String, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let text = std::fs::read_to_string(dir.join("album.json"))
+        .map_err(|e| format!("lecture de album.json : {e}"))?;
+    let album: Album =
+        serde_json::from_str(&text).map_err(|e| format!("album.json illisible : {e}"))?;
+    let path = PathBuf::from(&album.root).join(&src);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let meta = colophon_core::meta::read(&path);
+    Ok(meta
+        .taken_reliable
+        .then(|| colophon_core::build::date_fr(meta.taken.date(), true)))
 }
 
 /// The photos curation set aside, with reasons, from curation.json.
@@ -189,6 +233,8 @@ async fn build_album_from_folder(
 
     let emitter = app.clone();
     let build_out = out.clone();
+    state.cancel_build.store(false, Ordering::Relaxed);
+    let flag = state.cancel_build.clone();
     tauri::async_runtime::spawn_blocking(move || {
         colophon_core::build_album(
             &photos,
@@ -200,6 +246,8 @@ async fn build_album_from_folder(
                 progress: Box::new(move |line| {
                     let _ = emitter.emit("build:progress", line);
                 }),
+                cancel: Box::new(move || flag.load(Ordering::Relaxed)),
+                ..Default::default()
             },
         )
     })
@@ -208,6 +256,88 @@ async fn build_album_from_folder(
     .map_err(|e| format!("{e:#}"))?;
 
     open_album(out.to_string_lossy().to_string(), state)
+}
+
+/// Recompose the open album from its photo folder, preserving every spread
+/// edited by hand or locked. Their photos are withdrawn from the pipeline
+/// and the spreads re-inserted at their place in time: recomposing is safe.
+#[tauri::command]
+async fn recompose_album(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<OpenedAlbum, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let json = dir.join("album.json");
+    let text = std::fs::read_to_string(&json)
+        .map_err(|e| format!("lecture de {} : {e}", json.display()))?;
+    let album: Album =
+        serde_json::from_str(&text).map_err(|e| format!("album.json illisible : {e}"))?;
+    let root = PathBuf::from(&album.root);
+    if !root.is_dir() {
+        return Err(format!(
+            "dossier de photos introuvable ({}) : impossible de recomposer",
+            root.display()
+        ));
+    }
+
+    // Pinned spreads keep their place through a capture-time anchor. A
+    // photo-less spread (texte, vide) inherits the time of the spread
+    // before it, so it stays glued to its chapter.
+    let mut pinned = Vec::new();
+    let mut last: Option<colophon_core::chrono::NaiveDateTime> = None;
+    for spread in &album.spreads {
+        let t = spread
+            .slots
+            .first()
+            .map(|sl| colophon_core::meta::read(&root.join(&sl.src)).taken)
+            .or(last);
+        if spread.pinned() {
+            pinned.push((spread.clone(), t));
+        }
+        last = t;
+    }
+    let target = album.spreads.len().saturating_sub(pinned.len()).max(4);
+
+    state.cancel_build.store(false, Ordering::Relaxed);
+    let flag = state.cancel_build.clone();
+    let emitter = app.clone();
+    let build_out = dir.clone();
+    let opts = colophon_core::BuildOptions {
+        title: Some(album.title.clone()),
+        spreads: target,
+        trim: album.trim_mm,
+        progress: Box::new(move |line| {
+            let _ = emitter.emit("build:progress", line);
+        }),
+        cancel: Box::new(move || flag.load(Ordering::Relaxed)),
+        pinned,
+        cover: album.cover.clone(),
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        colophon_core::build_album(&root, &build_out, opts)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("{e:#}"))?;
+
+    open_album(dir.to_string_lossy().to_string(), state)
+}
+
+/// Abandon the composition in flight. The build polls the flag between
+/// photos and stages, and a cancelled build writes no album.
+#[tauri::command]
+fn cancel_build(state: State<'_, AppState>) {
+    state.cancel_build.store(true, Ordering::Relaxed);
+}
+
+/// Abandon the print render in flight. The atomic temp + rename in core
+/// means no half-written PDF can survive this.
+#[tauri::command]
+fn cancel_export(state: State<'_, AppState>) {
+    state.cancel_export.store(true, Ordering::Relaxed);
 }
 
 /// Re-render album.pdf from the saved album.json, off the main thread: fifty
@@ -238,10 +368,17 @@ async fn export_pdf(
         let guard = state.open.lock().unwrap();
         guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
     };
+    state.cancel_export.store(false, Ordering::Relaxed);
+    let flag = state.cancel_export.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        colophon_core::render_print_pdf(&dir, Path::new(&dest), &|line| {
-            let _ = app.emit("export:progress", line);
-        })
+        colophon_core::render_print_pdf(
+            &dir,
+            Path::new(&dest),
+            &|line| {
+                let _ = app.emit("export:progress", line);
+            },
+            &move || flag.load(Ordering::Relaxed),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -265,6 +402,11 @@ pub fn run() {
             export_pdf,
             list_formats,
             build_album_from_folder,
+            recompose_album,
+            cancel_build,
+            cancel_export,
+            caption_suggestion,
+            detected_focal,
             curation
         ])
         .run(tauri::generate_context!())

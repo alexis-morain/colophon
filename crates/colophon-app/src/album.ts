@@ -3,8 +3,32 @@
 // view and the PDF agree. The PDF stays the reference; this is the working
 // preview until pdf.js renders the real thing.
 
-export type Slot = { src: string; focal: [number, number] };
-export type Spread = { template: string; slots: Slot[]; caption?: string };
+export type Slot = {
+  src: string;
+  focal: [number, number];
+  /** Manual zoom past the cover fill, absent = 1. Never below 1. */
+  zoom?: number;
+  /** Caption printed under the photo. */
+  caption?: string;
+};
+export type Spread = {
+  template: string;
+  slots: Slot[];
+  caption?: string;
+  /** Free text of a `texte` spread, lines printed as typed. */
+  text?: string;
+  /** Touched by hand: survives any recomposition, wears the badge. */
+  edited?: boolean;
+  /** Pinned without being edited: same recomposition shield. */
+  locked?: boolean;
+};
+
+export type Cover = {
+  title: string;
+  subtitle?: string;
+  photo?: Slot;
+  back_text?: string;
+};
 
 export type Album = {
   version: number;
@@ -13,6 +37,7 @@ export type Album = {
   trim_mm: { w: number; h: number };
   bleed_mm: number;
   spreads: Spread[];
+  cover?: Cover;
 };
 
 export type OpenedAlbum = {
@@ -61,6 +86,10 @@ export const TEMPLATES: [string, number][] = [
   ["six", 6],
   ["six_verso", 6],
   ["octo", 8],
+  // Photo-less spreads the editor inserts; zero capacity keeps them out of
+  // the template picker and of every count-driven rule.
+  ["vide", 0],
+  ["texte", 0],
 ];
 
 /** Cell aspects, port of `pdf.rs::CELL_*`. */
@@ -171,6 +200,8 @@ function fitted(b: Rect, aspect: number): Rect {
 
 /** The engine's own geometry, origin bottom-left as in the PDF. */
 function slotsBottomUp(template: string, n: number, g: Canvas): Rect[] {
+  // Photo-less spreads hold no rectangles at all.
+  if (template === "vide" || template === "texte") return [];
   const verso = template.endsWith("_verso");
   const leadRight = !verso;
   const lead = pageBox(leadRight, g);
@@ -326,4 +357,59 @@ function overlaps(a: Rect, b: Rect): boolean {
   return (
     a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
   );
+}
+
+/**
+ * The part of an image a cover-crop into `rect` shows, in image pixels:
+ * `[x0, y0, vw, vh]`, top-left origin. Port of `pdf.rs::crop_window`; the
+ * parity test compares both over the engine's sample dump. The crop editor
+ * converts pointer deltas with it, so a drag moves the print's crop, not an
+ * approximation of it.
+ */
+export function cropWindow(
+  rect: { w: number; h: number },
+  iw: number,
+  ih: number,
+  focal: [number, number],
+  zoom: number,
+): [number, number, number, number] {
+  const s = Math.max(rect.w / iw, rect.h / ih) * Math.max(zoom, 1);
+  const vw = rect.w / s;
+  const vh = rect.h / s;
+  const clamp = (v: number, lo: number, hi: number) =>
+    Math.min(Math.max(v, lo), hi);
+  const x0 = clamp((iw - vw) * clamp(focal[0], 0, 1), 0, Math.max(iw - vw, 0));
+  const y0 = clamp((ih - vh) * clamp(focal[1], 0, 1), 0, Math.max(ih - vh, 0));
+  return [x0, y0, vw, vh];
+}
+
+/** Hard bounds of the manual zoom: 1 = exact fill, 4 = enough to isolate a
+ *  face without ever printing mush. */
+export const ZOOM_MIN = 1;
+export const ZOOM_MAX = 4;
+
+/** Photo captions: 7 pt, baseline this far under the slot. Port of pdf.rs. */
+export const PHOTO_CAPTION_SIZE_MM = 7 * 0.352778;
+export const PHOTO_CAPTION_DROP_MM = 3.4;
+
+/** Free-text pages: 11 pt, fixed leading. Port of pdf.rs. */
+export const TEXT_SIZE_MM = 11 * 0.352778;
+export const TEXT_LEADING_MM = 6.4;
+
+/** First baseline of a `texte` spread, top-left origin (pdf.rs works
+ *  bottom-up; the flip happens here like in slotsFor). */
+export function textAnchor(g: Canvas): { x: number; y: number } {
+  return { x: g.w / 2 + g.gutter / 2, y: g.h - g.h * 0.62 };
+}
+
+/**
+ * Provisional spine width, in millimetres, for `spreads` double pages.
+ * PROVISOIRE : formule par défaut (papier ~200 g, couverture rigide) en
+ * attente de la réponse Cloudprinter ; seule la valeur affichée à l'export
+ * en dépend, jamais la géométrie des planches.
+ */
+export function spineMm(spreads: number): number {
+  const SHEET_MM = 0.22; // une feuille imprimée ≈ 0,22 mm
+  const COVER_MM = 1.5; // carton de couverture, aller-retour
+  return spreads * SHEET_MM + COVER_MM;
 }

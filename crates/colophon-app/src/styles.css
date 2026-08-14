@@ -59,7 +59,10 @@ kbd {
 
 .app {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  /* One clamped column: the drawer's strip must scroll inside it, never
+     widen it (a hundred 88 px cells would push the book off screen). */
+  grid-template-columns: minmax(0, 100%);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   height: 100%;
 }
 
@@ -226,10 +229,15 @@ kbd {
   place-items: center;
   padding: 28px 40px;
   min-height: 0;
+  /* The spread sizes itself against the stage that remains once the bar,
+     the drawer and the foot took their fixed heights: container units,
+     not viewport arithmetic that goes stale with every new band. */
+  container-type: size;
 }
 
 .turn {
   width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
   animation: turn var(--turn) both;
@@ -253,8 +261,7 @@ kbd {
   /* The spread is as wide as the page format allows, never taller than the
      stage: a portrait album and a panoramic one both land whole. */
   --spread-aspect: 2;
-  width: min(100%, calc((100vh - 216px) * var(--spread-aspect)));
-  max-height: 100%;
+  width: min(100cqw, calc(100cqh * var(--spread-aspect)));
   overflow: hidden;
   background: var(--paper);
   /* contact shadow plus ambient: a sheet resting on a dark table */
@@ -300,6 +307,40 @@ kbd {
   opacity: 0.6;
 }
 
+/* The selected slot is a crop editor: the pointer owns the framing. */
+.slot.cropping {
+  cursor: grab;
+  touch-action: none;
+}
+
+.slot.cropping:active {
+  cursor: grabbing;
+}
+
+/* Zoom readout while cropping, inside the slot so nothing shifts. */
+.slot-zoom {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 2px 6px;
+  background: rgba(23, 21, 15, 0.72);
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  pointer-events: none;
+}
+
+/* A zoomed slot flags itself discreetly even unselected. */
+.slot.zoomed:not(.selected)::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 5px;
+  height: 5px;
+  background: rgba(194, 83, 43, 0.65);
+}
+
 /* The signature detail: the fold. A soft double shade with a crease at the
    exact centre, so a spread reads as bound paper and not as two tiles. */
 .gutter {
@@ -325,6 +366,92 @@ kbd {
   /* `top` carries the PDF baseline; lift the line box onto it */
   line-height: 1;
   transform: translateY(-0.85em);
+}
+
+.caption.editable {
+  cursor: text;
+}
+
+/* Invisible until the reader hovers the page: an invitation to title a
+   chapter, never forty-eight ghost lines at once. */
+.caption.ghost {
+  opacity: 0;
+  transition: opacity var(--turn);
+}
+
+.paper:hover .caption.ghost {
+  opacity: 0.4;
+}
+
+.caption-input {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--accent);
+  padding: 0;
+  min-width: 220px;
+  outline: none;
+  font-family: var(--font-display);
+  color: #3a342c;
+}
+
+/* Photo captions, at print position under their slot. */
+.photo-caption {
+  position: absolute;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: #5b544a;
+  white-space: nowrap;
+  line-height: 1;
+  transform: translateY(-0.85em);
+  pointer-events: none;
+}
+
+.photo-caption.overflow {
+  color: var(--accent);
+  border-bottom: 1px dashed var(--accent);
+  pointer-events: auto;
+}
+
+/* Free-text page: lines as typed, overlong ones underlined. */
+.text-page {
+  position: absolute;
+  display: grid;
+  align-content: start;
+  font-family: var(--font-display);
+  color: #332e26;
+  white-space: pre;
+}
+
+.text-page.editable {
+  cursor: text;
+}
+
+.text-page-line {
+  display: block;
+}
+
+.text-page-line.overflow {
+  color: var(--accent);
+  border-bottom: 1px dashed var(--accent);
+}
+
+.text-page-ghost {
+  color: rgba(58, 52, 44, 0.42);
+}
+
+.text-page-input {
+  position: absolute;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid var(--accent);
+  padding: 0 0 0 8px;
+  margin-left: -10px;
+  outline: none;
+  resize: none;
+  min-height: 40%;
+  font-family: var(--font-display);
+  color: #332e26;
+  white-space: pre;
+  overflow: auto;
 }
 
 /* ---- sorting view ------------------------------------------------------ */
@@ -976,4 +1103,584 @@ kbd {
 
 .app > .warn {
   margin: 0;
+}
+
+/* ---- badges and locks --------------------------------------------------- */
+
+.spread-flags,
+.planche-flags {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* « Éditée à la main » : a square accent point, title on hover. Discreet on
+   purpose; the information, not an alarm. */
+.badge-edited {
+  width: 7px;
+  height: 7px;
+  background: var(--accent);
+  display: inline-block;
+}
+
+.lock {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  color: var(--muted);
+  transition: color var(--turn), border-color var(--turn);
+}
+
+.lock:hover {
+  color: var(--text);
+  border-color: var(--rule);
+}
+
+.lock.locked {
+  color: var(--accent);
+}
+
+/* ---- the drawer --------------------------------------------------------- */
+
+/* Fixed heights, both states: opening the drawer resizes the stage once,
+   through the grid, and nothing else moves. */
+.drawer {
+  border-top: 1px solid var(--rule);
+}
+
+.drawer-bar {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 28px;
+}
+
+.drawer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  transition: color var(--turn);
+}
+
+.drawer-toggle:hover {
+  color: var(--text);
+}
+
+.drawer-chevron {
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.drawer-tabs {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.drawer-tab {
+  padding: 1px 9px;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  font-size: 11.5px;
+}
+
+.drawer-tab.active {
+  color: var(--ink);
+  background: var(--text);
+  border-color: var(--text);
+}
+
+.drawer-hint {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.drawer-strip {
+  height: 108px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 28px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.drawer-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.drawer-cell {
+  flex: 0 0 88px;
+  width: 88px;
+  height: 88px;
+  margin: 0;
+  background: var(--ink-raised);
+  cursor: grab;
+}
+
+.drawer-cell:active {
+  cursor: grabbing;
+}
+
+.drawer-cell .tri-thumb,
+.drawer-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+/* ---- the light table ---------------------------------------------------- */
+
+.planches {
+  overflow-y: auto;
+  padding: 20px 28px 40px;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+  align-content: start;
+}
+
+.planche-cell {
+  margin: 0;
+  cursor: grab;
+  border: 1px solid transparent;
+  padding: 6px 6px 4px;
+  transition: border-color var(--turn), background var(--turn);
+}
+
+.planche-cell:hover {
+  border-color: var(--rule);
+}
+
+.planche-cell.current {
+  border-color: var(--accent);
+  background: var(--ink-raised);
+}
+
+.planche-cell.dropping {
+  border: 1px dashed var(--accent);
+}
+
+.planche-cell:active {
+  cursor: grabbing;
+}
+
+.mini-spread {
+  position: relative;
+  width: 100%;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.mini-slot {
+  position: absolute;
+  overflow: hidden;
+  background: rgba(23, 21, 15, 0.1);
+}
+
+.mini-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.mini-text {
+  position: absolute;
+  left: 55%;
+  top: 34%;
+  right: 10%;
+  font-family: var(--font-display);
+  font-size: 8px;
+  line-height: 1.5;
+  color: #4a443a;
+  overflow: hidden;
+  max-height: 46%;
+  white-space: pre-wrap;
+}
+
+.mini-fold {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 47%,
+    rgba(23, 21, 15, 0.16) 50%,
+    transparent 53%
+  );
+}
+
+.planche-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.planche-num {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.planche-chapter {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.planche-flags {
+  margin-left: auto;
+}
+
+.planches-actions {
+  gap: 18px;
+}
+
+.planches-pos {
+  text-align: left;
+  min-width: 0;
+  margin-right: 10px;
+}
+
+/* ---- the cover ---------------------------------------------------------- */
+
+.cover {
+  --cover-aspect: 2.1;
+  /* 40px kept for the note under the sheet. */
+  width: min(100cqw, calc((100cqh - 40px) * var(--cover-aspect)));
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+.cover-sheet {
+  width: 100%;
+  display: flex;
+  background: var(--paper);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 26px 64px -22px rgba(0, 0, 0, 0.8);
+}
+
+.cover-back {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+}
+
+.cover-back-text {
+  width: 70%;
+  height: 40%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  resize: none;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: clamp(11px, 1.4vw, 16px);
+  line-height: 1.6;
+  color: #3a342c;
+}
+
+.cover-back-text::placeholder {
+  color: rgba(58, 52, 44, 0.4);
+}
+
+.cover-spine {
+  position: relative;
+  min-width: 8px;
+  background: rgba(23, 21, 15, 0.08);
+  border-left: 1px solid rgba(23, 21, 15, 0.12);
+  border-right: 1px solid rgba(23, 21, 15, 0.12);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.cover-spine-title {
+  writing-mode: vertical-rl;
+  font-family: var(--font-display);
+  font-size: clamp(8px, 0.9vw, 12px);
+  letter-spacing: 0.06em;
+  color: #3a342c;
+  white-space: nowrap;
+}
+
+.cover-front {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cover-photo {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.cover-photo:active {
+  cursor: grabbing;
+}
+
+.cover-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cover-photo-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #6b6459;
+  font-size: 14px;
+  background: rgba(23, 21, 15, 0.05);
+  transition: background var(--turn);
+}
+
+.cover-photo-empty:hover {
+  background: rgba(23, 21, 15, 0.1);
+}
+
+.cover-titles {
+  position: absolute;
+  left: 9%;
+  bottom: 9%;
+  right: 9%;
+  display: grid;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.cover-title-input,
+.cover-subtitle-input {
+  pointer-events: auto;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  outline: none;
+  padding: 2px 0;
+  font-family: var(--font-display);
+  color: #fdf6f0;
+  text-shadow: 0 1px 8px rgba(23, 21, 15, 0.66);
+  width: 100%;
+}
+
+.cover-front:not(:has(.cover-photo)) .cover-title-input,
+.cover-front:not(:has(.cover-photo)) .cover-subtitle-input {
+  color: #3a342c;
+  text-shadow: none;
+}
+
+.cover-title-input {
+  font-size: clamp(18px, 2.6vw, 34px);
+  font-weight: 600;
+}
+
+.cover-subtitle-input {
+  font-size: clamp(11px, 1.3vw, 16px);
+}
+
+.cover-title-input:hover,
+.cover-title-input:focus,
+.cover-subtitle-input:hover,
+.cover-subtitle-input:focus {
+  border-bottom-color: rgba(253, 246, 240, 0.5);
+}
+
+.cover-photo-change {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 3px 10px;
+  background: rgba(23, 21, 15, 0.62);
+  color: var(--text);
+  font-size: 11.5px;
+  opacity: 0;
+  transition: opacity var(--turn);
+}
+
+.cover-front:hover .cover-photo-change,
+.cover-photo-change:focus-visible {
+  opacity: 1;
+}
+
+.cover-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Popover, anchored under the sheet: photos of the album, pick one. */
+.cover-picker {
+  position: fixed;
+  z-index: 40;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, 86vw);
+  max-height: 68vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--ink-raised);
+  border: 1px solid var(--rule);
+  box-shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.9);
+}
+
+.cover-picker-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 13px;
+}
+
+.cover-picker-grid {
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  grid-auto-rows: min-content;
+  align-items: start;
+  gap: 8px;
+}
+
+.cover-picker-cell {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  background: var(--ink);
+  border: 1px solid transparent;
+  overflow: hidden;
+}
+
+.cover-picker-cell:hover {
+  border-color: var(--muted);
+}
+
+.cover-picker-cell.active {
+  border-color: var(--accent);
+}
+
+.cover-picker-cell .tri-thumb,
+.cover-picker-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---- foot extensions ---------------------------------------------------- */
+
+.ruler-cover {
+  width: 20px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 12px;
+  transition: color var(--turn), border-color var(--turn);
+}
+
+.ruler-cover:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.ruler-cover.current {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.ruler {
+  touch-action: none;
+}
+
+.ruler-tick.droptick::after {
+  background: var(--accent);
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+}
+
+.foot-line {
+  display: block;
+  min-width: 0;
+}
+
+.foot-overflow {
+  color: var(--accent);
+}
+
+.foot-render .link {
+  margin-left: 10px;
+}
+
+.foot-captioning {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 14px;
+  max-width: 100%;
+}
+
+.foot-caption-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.foot-caption {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--ink-raised);
+  border: 1px solid var(--rule);
+  padding: 1px 8px;
+  width: 240px;
+}
+
+.foot-caption:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.foot-caption-hints {
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.build-actions {
+  display: inline-flex;
+  gap: 16px;
+  align-items: baseline;
 }

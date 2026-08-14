@@ -15,6 +15,8 @@ pub struct Album {
     pub trim_mm: Size,
     pub bleed_mm: f64,
     pub spreads: Vec<Spread>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<Cover>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -29,6 +31,23 @@ pub struct Spread {
     pub slots: Vec<Slot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub caption: Option<String>,
+    /// Free text of a `texte` spread. Lines are printed as typed: the editor
+    /// signals overlong lines, nothing is ever wrapped or cut silently.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Touched by hand in the editor. A recomposition never rebuilds it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub edited: bool,
+    /// Pinned by the user without being edited. Same recomposition shield.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub locked: bool,
+}
+
+impl Spread {
+    /// Survives a recomposition untouched.
+    pub fn pinned(&self) -> bool {
+        self.edited || self.locked
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +56,110 @@ pub struct Slot {
     pub src: String,
     /// Focal point in [0,1]x[0,1], (0,0) = top-left. Cover-crop anchors here.
     pub focal: [f64; 2],
+    /// Manual zoom past the cover fill, 1.0 = exact fill. Albums from before
+    /// the crop editor carry no field and read as 1.0.
+    #[serde(default = "default_zoom", skip_serializing_if = "is_default_zoom")]
+    pub zoom: f64,
+    /// Caption printed under the photo. Absent = none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+}
+
+impl Slot {
+    pub fn new(src: String, focal: [f64; 2]) -> Self {
+        Self { src, focal, zoom: 1.0, caption: None }
+    }
+}
+
+/// The book's cover. Absent on albums composed before the cover editor;
+/// the interface then seeds it from the album title.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Cover {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub subtitle: String,
+    /// Front-cover photo, cropped like any slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo: Option<Slot>,
+    /// Back-cover text (the quatrième de couverture), optional.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub back_text: String,
+}
+
+pub fn default_zoom() -> f64 {
+    1.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An album.json written before S2 (no zoom, no captions per photo, no
+    /// edited/locked flags, no cover) must open unchanged: zoom reads 1.0
+    /// and every new field defaults quiet.
+    #[test]
+    fn pre_s2_album_json_still_opens() {
+        let json = r#"{
+            "version": 1,
+            "title": "corse",
+            "root": "/photos/corse",
+            "trim_mm": { "w": 210.0, "h": 210.0 },
+            "bleed_mm": 3.0,
+            "spreads": [{
+                "template": "duo",
+                "slots": [
+                    { "src": "a.jpg", "focal": [0.5, 0.42] },
+                    { "src": "b.jpg", "focal": [0.2, 0.5] }
+                ],
+                "caption": "12 mars 2013"
+            }]
+        }"#;
+        let album: Album = serde_json::from_str(json).expect("ancien album lisible");
+        let slot = &album.spreads[0].slots[0];
+        assert_eq!(slot.zoom, 1.0);
+        assert!(slot.caption.is_none());
+        assert!(!album.spreads[0].pinned());
+        assert!(album.cover.is_none());
+
+        // And the new fields stay off the file until they carry something:
+        // album.json remains diffable across the schema change.
+        let out = serde_json::to_string(&album).unwrap();
+        assert!(!out.contains("zoom"));
+        assert!(!out.contains("edited"));
+        assert!(!out.contains("locked"));
+        assert!(!out.contains("cover"));
+    }
+
+    /// A manual crop survives the round trip.
+    #[test]
+    fn zoomed_slot_round_trips() {
+        let mut album = Album::new("t", std::path::Path::new("/p"), Size { w: 210.0, h: 210.0 });
+        let mut slot = Slot::new("a.jpg".into(), [0.3, 0.6]);
+        slot.zoom = 1.8;
+        slot.caption = Some("la plage".into());
+        album.spreads.push(Spread {
+            template: "solo".into(),
+            slots: vec![slot],
+            caption: None,
+            text: None,
+            edited: true,
+            locked: false,
+        });
+        let back: Album =
+            serde_json::from_str(&serde_json::to_string(&album).unwrap()).unwrap();
+        assert_eq!(back.spreads[0].slots[0].zoom, 1.8);
+        assert_eq!(back.spreads[0].slots[0].caption.as_deref(), Some("la plage"));
+        assert!(back.spreads[0].edited);
+    }
+}
+
+fn is_default_zoom(z: &f64) -> bool {
+    (*z - 1.0).abs() < 1e-9
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// One photo the curation set aside, and why. `curation.json` holds the
@@ -73,6 +196,7 @@ impl Album {
             trim_mm,
             bleed_mm: 3.0,
             spreads: Vec::new(),
+            cover: None,
         }
     }
 

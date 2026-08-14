@@ -34,6 +34,8 @@ pub struct JpegAsset {
     pub width: u32,
     pub height: u32,
     pub focal: [f64; 2],
+    /// Manual zoom past the cover fill, 1.0 = exact fill.
+    pub zoom: f64,
 }
 
 pub fn geometry(album: &Album) -> SpreadGeometry {
@@ -121,6 +123,11 @@ pub const TEMPLATES: &[(&str, usize)] = &[
     ("six", 6),
     ("six_verso", 6),
     ("octo", 8),
+    // Photo-less spreads the editor inserts: a breathing page and a free
+    // text page. Zero capacity keeps them out of the template picker and of
+    // every count-driven rule.
+    ("vide", 0),
+    ("texte", 0),
 ];
 
 /// Cell aspect of the margined landscape cells (stacks, quads).
@@ -196,14 +203,42 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
         })
         .collect();
 
+    // Crop windows over fixed samples: the manual-crop arithmetic (focal +
+    // zoom) is written twice too, and a drift here silently shifts every
+    // recadrage between the preview and the print.
+    let crop_samples: Vec<serde_json::Value> = CROP_SAMPLES
+        .iter()
+        .map(|(rw, rh, iw, ih, fx, fy, zoom)| {
+            let rect = Rect { x: 0.0, y: 0.0, w: *rw, h: *rh };
+            let (x0, y0, vw, vh) = crop_window(&rect, *iw, *ih, [*fx, *fy], *zoom);
+            serde_json::json!({
+                "rect": [rw, rh], "image": [iw, ih], "focal": [fx, fy],
+                "zoom": zoom, "window": [x0, y0, vw, vh],
+            })
+        })
+        .collect();
+
     serde_json::json!({
         "trim_mm": { "w": album.trim_mm.w, "h": album.trim_mm.h },
         "bleed_mm": album.bleed_mm,
         "canvas": { "w": g.media_w, "h": g.media_h, "margin": g.margin, "gutter": g.gutter },
         "templates": templates,
         "fallbacks": fallbacks,
+        "crop_windows": crop_samples,
     })
 }
+
+/// (rect w, rect h, image w, image h, focal x, focal y, zoom): the shapes a
+/// real album mixes — portrait in landscape cell, pano, off-center focal,
+/// zoomed, and the degenerate zoom below 1 that must clamp to the fill.
+const CROP_SAMPLES: &[(f64, f64, f64, f64, f64, f64, f64)] = &[
+    (100.0, 100.0, 2000.0, 1000.0, 0.5, 0.5, 1.0),
+    (100.0, 100.0, 2000.0, 1000.0, 0.0, 0.42, 1.0),
+    (160.0, 90.0, 1000.0, 1500.0, 0.5, 0.2, 1.0),
+    (100.0, 100.0, 2000.0, 1000.0, 0.5, 0.5, 1.6),
+    (60.0, 120.0, 3000.0, 2000.0, 0.8, 0.3, 2.5),
+    (100.0, 50.0, 1200.0, 1200.0, 0.25, 0.9, 0.5),
+];
 
 /// A point on the spread canvas, in millimetres, origin bottom-left.
 #[derive(Debug, Clone, Copy)]
@@ -251,11 +286,33 @@ pub fn caption_anchor(rects: &[Rect], g: &SpreadGeometry) -> Point {
     caption_anchor_free(rects, g).unwrap_or_else(|| caption_candidates(g)[0])
 }
 
+/// Photo captions: 7 pt, baseline this far under the slot's bottom edge.
+pub const PHOTO_CAPTION_SIZE_PT: f64 = 7.0;
+pub const PHOTO_CAPTION_DROP_MM: f64 = 3.4;
+
+/// Free-text pages: 11 pt Helvetica, fixed leading, lines as typed.
+pub const TEXT_SIZE_PT: f64 = 11.0;
+pub const TEXT_LEADING_MM: f64 = 6.4;
+
+/// Where a `texte` spread's first baseline sits: left margin of the recto
+/// page, at 62 % of the height. The editor mirrors this anchor.
+pub fn text_anchor(g: &SpreadGeometry) -> Point {
+    Point { x: g.media_w / 2.0 + g.gutter / 2.0, y: g.media_h * 0.62 }
+}
+
 /// The part of an image a cover-crop into `rect` shows, in image pixels:
 /// `(x0, y0, vw, vh)`, top-left origin. Same arithmetic as the renderer;
-/// the composer and the linter reason about face cuts with it.
-pub fn crop_window(rect: &Rect, iw: f64, ih: f64, focal: [f64; 2]) -> (f64, f64, f64, f64) {
-    let s = (rect.w / iw).max(rect.h / ih);
+/// the composer and the linter reason about face cuts with it. `zoom` is
+/// the manual magnification past the cover fill (1.0 = exact fill, never
+/// below: a gap inside a slot is not a crop, it is a hole).
+pub fn crop_window(
+    rect: &Rect,
+    iw: f64,
+    ih: f64,
+    focal: [f64; 2],
+    zoom: f64,
+) -> (f64, f64, f64, f64) {
+    let s = (rect.w / iw).max(rect.h / ih) * zoom.max(1.0);
     let vw = rect.w / s;
     let vh = rect.h / s;
     let x0 = ((iw - vw) * focal[0].clamp(0.0, 1.0)).clamp(0.0, (iw - vw).max(0.0));
@@ -271,6 +328,10 @@ fn overlaps(a: &Rect, b: &Rect) -> bool {
 /// The `_verso` variants mirror the layout onto the other page; alternating
 /// them is what keeps a long album from reading like a spreadsheet.
 pub fn slots_for(template: &str, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
+    // Photo-less spreads hold no rectangles at all.
+    if template == "vide" || template == "texte" {
+        return Vec::new();
+    }
     let verso = template.ends_with("_verso");
     // A verso template puts its lead image on the left page.
     let lead_right = !verso;
@@ -439,12 +500,18 @@ pub fn render_template_sheets(album: &Album, dir: &Path) -> Result<Vec<std::path
     std::fs::create_dir_all(dir)?;
     let mut out = Vec::new();
     for (name, n) in TEMPLATES {
+        if *n == 0 {
+            continue; // photo-less templates have no cells to check
+        }
         let spread = Spread {
             template: (*name).to_string(),
             slots: (0..*n)
-                .map(|i| Slot { src: format!("{i}"), focal: [0.5, 0.5] })
+                .map(|i| Slot::new(format!("{i}"), [0.5, 0.5]))
                 .collect(),
             caption: None,
+            text: None,
+            edited: false,
+            locked: false,
         };
         let assets: Vec<JpegAsset> = (0..*n)
             .map(|i| solid_jpeg(SHEET_PALETTE[i], 160, 120))
@@ -464,7 +531,7 @@ fn solid_jpeg(rgb: [u8; 3], w: u32, h: u32) -> Result<JpegAsset> {
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut data, 95)
         .encode_image(&img)
         .context("encodage de l'aplat")?;
-    Ok(JpegAsset { data, width: w, height: h, focal: [0.5, 0.5] })
+    Ok(JpegAsset { data, width: w, height: h, focal: [0.5, 0.5], zoom: 1.0 })
 }
 
 pub struct PdfWriter {
@@ -523,10 +590,11 @@ impl PdfWriter {
                 rect.w * MM_TO_PT,
                 rect.h * MM_TO_PT,
             );
-            // cover-crop: scale to fill, anchor on focal point, clip to slot
+            // cover-crop: scale to fill (times the manual zoom), anchor on
+            // the focal point, clip to the slot
             let iw = asset.width as f64;
             let ih = asset.height as f64;
-            let s = (w / iw).max(h / ih);
+            let s = (w / iw).max(h / ih) * asset.zoom.max(1.0);
             let dw = iw * s;
             let dh = ih * s;
             let fx = asset.focal[0].clamp(0.0, 1.0);
@@ -537,6 +605,38 @@ impl PdfWriter {
             content.push_str(&format!(
                 "q {x:.2} {y:.2} {w:.2} {h:.2} re W n {dw:.2} 0 0 {dh:.2} {dx:.2} {dy:.2} cm /{name} Do Q\n"
             ));
+        }
+
+        // Photo captions: 7 pt under the slot's bottom edge, left-aligned on
+        // the slot. Printed as typed, never truncated: the editor is the
+        // place that signals overflow.
+        for (slot, rect) in spread.slots.iter().zip(rects.iter()) {
+            let Some(caption) = &slot.caption else { continue };
+            if caption.is_empty() {
+                continue;
+            }
+            let cx = rect.x * MM_TO_PT;
+            let cy = (rect.y - PHOTO_CAPTION_DROP_MM) * MM_TO_PT;
+            let text = winansi_escape(caption);
+            content.push_str(&format!(
+                "BT /F1 {PHOTO_CAPTION_SIZE_PT} Tf 0.25 0.25 0.25 rg {cx:.2} {cy:.2} Td ({text}) Tj ET\n"
+            ));
+        }
+
+        // Free-text page: lines exactly as typed, fixed leading.
+        if let Some(text) = &spread.text {
+            let at = text_anchor(&self.geom);
+            for (i, line) in text.lines().enumerate() {
+                if line.is_empty() {
+                    continue;
+                }
+                let cx = at.x * MM_TO_PT;
+                let cy = (at.y - i as f64 * TEXT_LEADING_MM) * MM_TO_PT;
+                let esc = winansi_escape(line);
+                content.push_str(&format!(
+                    "BT /F1 {TEXT_SIZE_PT} Tf 0.2 0.19 0.16 rg {cx:.2} {cy:.2} Td ({esc}) Tj ET\n"
+                ));
+            }
         }
 
         if let Some(caption) = &spread.caption {

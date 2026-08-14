@@ -59,6 +59,8 @@ for fmt in FORMATS:
             stderr=subprocess.DEVNULL,
         )
         for name, spec in geo["templates"].items():
+            if not spec["slots"]:
+                continue  # gabarits sans case (vide, texte) : rien à rasteriser
             pdf = os.path.join(td, f"{name}.pdf")
             png = os.path.join(td, f"{name}.png")
             subprocess.check_call(

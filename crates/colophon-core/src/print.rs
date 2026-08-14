@@ -57,7 +57,9 @@ fn print_asset(
     orientation: u32,
     rect: &pdf::Rect,
     focal: [f64; 2],
+    zoom: f64,
 ) -> Result<pdf::JpegAsset> {
+    let zoom = zoom.max(1.0);
     let is_jpeg = src
         .extension()
         .and_then(|e| e.to_str())
@@ -67,15 +69,17 @@ fn print_asset(
     if is_jpeg && orientation == 1 {
         let data = fs::read(src).with_context(|| format!("lecture de {}", src.display()))?;
         if let Some((w, h, 3)) = jpeg_sof(&data) {
-            if print_scale(rect, w, h) >= 1.0 {
-                return Ok(pdf::JpegAsset { data, width: w, height: h, focal });
+            // A zoomed slot shows fewer source pixels, so it needs more of
+            // them: the passthrough bar rises with the zoom.
+            if print_scale(rect, w, h) * zoom >= 1.0 {
+                return Ok(pdf::JpegAsset { data, width: w, height: h, focal, zoom });
             }
         }
     }
 
     let img = crate::heic::open(src).with_context(|| format!("décodage de {}", src.display()))?;
     let img = thumb::apply_orientation(img, orientation);
-    let f = print_scale(rect, img.width(), img.height());
+    let f = print_scale(rect, img.width(), img.height()) * zoom;
     let img = if f < 1.0 {
         let w = ((img.width() as f64 * f).round() as u32).max(1);
         let h = ((img.height() as f64 * f).round() as u32).max(1);
@@ -88,8 +92,13 @@ fn print_asset(
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut data, JPEG_QUALITY)
         .encode_image(&rgb)
         .with_context(|| format!("réencodage de {}", src.display()))?;
-    Ok(pdf::JpegAsset { data, width: rgb.width(), height: rgb.height(), focal })
+    Ok(pdf::JpegAsset { data, width: rgb.width(), height: rgb.height(), focal, zoom })
 }
+
+/// The caller decided to abandon a long render. Checked between photos, so
+/// cancelling answers within a photo's decode, never mid-file: the atomic
+/// temp + rename below guarantees no half-written PDF survives either path.
+pub type CancelFlag<'a> = &'a (dyn Fn() -> bool + Sync);
 
 /// Render a print-resolution PDF from `album.json`, resolving every photo
 /// through the album root. Sequential on purpose: one 45 Mpx original in
@@ -101,6 +110,7 @@ pub fn render_print_pdf(
     dir: &Path,
     out: &Path,
     progress: &dyn Fn(&str),
+    cancel: CancelFlag,
 ) -> Result<PathBuf> {
     let json = dir.join("album.json");
     let album: Album = serde_json::from_str(
@@ -126,9 +136,10 @@ pub fn render_print_pdf(
         let rects = pdf::slots_for(&spread.template, spread.slots.len(), &g);
         let mut assets = Vec::with_capacity(spread.slots.len());
         for (slot, rect) in spread.slots.iter().zip(rects.iter()) {
+            anyhow::ensure!(!cancel(), "export annulé");
             let src = root.join(&slot.src);
             let orientation = meta::read(&src).orientation;
-            let asset = print_asset(&src, orientation, rect, slot.focal)
+            let asset = print_asset(&src, orientation, rect, slot.focal, slot.zoom)
                 .with_context(|| format!("planche {} : {}", i + 1, slot.src))?;
             assets.push(asset);
             done += 1;
@@ -136,11 +147,16 @@ pub fn render_print_pdf(
         }
         writer.add_spread(spread, &assets)?;
     }
+    anyhow::ensure!(!cancel(), "export annulé");
 
     // Temp file then rename: a crash mid-write never leaves a truncated PDF
     // where the caller will look for a finished one.
     let tmp = out.with_extension("pdf.part");
-    writer.save(&tmp)?;
+    let saved = writer.save(&tmp);
+    if saved.is_err() {
+        let _ = fs::remove_file(&tmp);
+        saved?;
+    }
     fs::rename(&tmp, out)
         .with_context(|| format!("renommage vers {}", out.display()))?;
     Ok(out.to_path_buf())
@@ -167,6 +183,43 @@ mod tests {
         assert!((f - (200.0 / 2000.0) * PRINT_DPI / 25.4).abs() < 1e-9);
     }
 
+    /// A cancelled export writes nothing: no destination file, no leftover
+    /// .part. The DoD's « annuler un export en cours sans corruption ».
+    #[test]
+    fn cancelled_export_leaves_no_file() {
+        let dir = std::env::temp_dir().join(format!("colophon-cancel-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        // Minimal album folder: one spread, one photo.
+        let src_dir = dir.join("photos");
+        fs::create_dir_all(&src_dir).unwrap();
+        let img = image::RgbImage::from_pixel(320, 240, image::Rgb([90, 120, 150]));
+        image::DynamicImage::ImageRgb8(img)
+            .save_with_format(src_dir.join("a.jpg"), image::ImageFormat::Jpeg)
+            .unwrap();
+        let mut album = Album::new("t", &src_dir, crate::model::Size { w: 210.0, h: 210.0 });
+        album.spreads.push(crate::model::Spread {
+            template: "solo".into(),
+            slots: vec![crate::model::Slot::new("a.jpg".into(), [0.5, 0.5])],
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+        });
+        fs::write(dir.join("album.json"), serde_json::to_string(&album).unwrap()).unwrap();
+
+        let out = dir.join("out.pdf");
+        let err = render_print_pdf(&dir, &out, &|_| {}, &|| true).unwrap_err();
+        assert!(err.to_string().contains("annulé"), "{err}");
+        assert!(!out.exists(), "un export annulé ne doit rien écrire");
+        assert!(!out.with_extension("pdf.part").exists(), "pas de .part orphelin");
+
+        // Same folder, no cancellation: the file lands, atomically.
+        render_print_pdf(&dir, &out, &|_| {}, &|| false).unwrap();
+        assert!(out.exists());
+        assert!(!out.with_extension("pdf.part").exists());
+        fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn sof_parser_reads_size_and_components() {
         let img = image::RgbImage::from_pixel(10, 8, image::Rgb([120, 90, 60]));
@@ -190,17 +243,22 @@ mod tests {
             .unwrap();
 
         // Big slot: the 400 px original is far below print need, passthrough.
-        let a = print_asset(&src, 1, &rect(200.0, 150.0), [0.5, 0.5]).unwrap();
+        let a = print_asset(&src, 1, &rect(200.0, 150.0), [0.5, 0.5], 1.0).unwrap();
         assert_eq!((a.width, a.height), (400, 300));
         assert_eq!(a.data, fs::read(&src).unwrap());
 
         // Tiny slot: 10 mm at 300 dpi is 118 px, the original is downscaled.
-        let a = print_asset(&src, 1, &rect(10.0, 10.0), [0.5, 0.5]).unwrap();
+        let a = print_asset(&src, 1, &rect(10.0, 10.0), [0.5, 0.5], 1.0).unwrap();
         assert_eq!(a.height, 118);
         assert!(a.width < 400);
 
+        // Same tiny slot zoomed ×2: the crop shows half the frame, so twice
+        // the pixels are kept for the same printed millimetres.
+        let a = print_asset(&src, 1, &rect(10.0, 10.0), [0.5, 0.5], 2.0).unwrap();
+        assert_eq!(a.height, 236);
+
         // Rotated EXIF: no passthrough, the pixels come out oriented.
-        let a = print_asset(&src, 6, &rect(200.0, 150.0), [0.5, 0.5]).unwrap();
+        let a = print_asset(&src, 6, &rect(200.0, 150.0), [0.5, 0.5], 1.0).unwrap();
         assert_eq!((a.width, a.height), (300, 400));
 
         fs::remove_dir_all(&dir).ok();

@@ -99,6 +99,7 @@ fn main() -> Result<()> {
             &cli.out,
             &cli.out.join("album-print.pdf"),
             &|line| eprintln!("{line}"),
+            &|| false,
         )?;
         eprintln!("done in {:.1?}: {}", t0.elapsed(), out.display());
         return Ok(());
@@ -115,6 +116,7 @@ fn main() -> Result<()> {
             spreads: cli.spreads,
             trim,
             progress: Box::new(|line| eprintln!("{line}")),
+            ..Default::default()
         },
     )?;
 

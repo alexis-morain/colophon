@@ -417,6 +417,56 @@ pub fn slots_for(template: &str, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
     v
 }
 
+/// Slot colors of the template sheets, shared with scripts/pdf-png.py:
+/// the raster check knows which color belongs in which cell.
+pub const SHEET_PALETTE: [[u8; 3]; 8] = [
+    [200, 30, 40],
+    [30, 120, 200],
+    [30, 160, 60],
+    [230, 160, 30],
+    [130, 60, 180],
+    [20, 170, 170],
+    [230, 90, 140],
+    [90, 90, 30],
+];
+
+/// One PDF per template, every slot filled with its palette color. The
+/// PDF → PNG non-regression rasterizes these and checks each cell shows
+/// its color where the geometry says: it bites on placement and clipping
+/// in the real renderer, where the geometry parity only checks arithmetic.
+pub fn render_template_sheets(album: &Album, dir: &Path) -> Result<Vec<std::path::PathBuf>> {
+    use crate::model::{Slot, Spread};
+    std::fs::create_dir_all(dir)?;
+    let mut out = Vec::new();
+    for (name, n) in TEMPLATES {
+        let spread = Spread {
+            template: (*name).to_string(),
+            slots: (0..*n)
+                .map(|i| Slot { src: format!("{i}"), focal: [0.5, 0.5] })
+                .collect(),
+            caption: None,
+        };
+        let assets: Vec<JpegAsset> = (0..*n)
+            .map(|i| solid_jpeg(SHEET_PALETTE[i], 160, 120))
+            .collect::<Result<_>>()?;
+        let mut writer = PdfWriter::new(album);
+        writer.add_spread(&spread, &assets)?;
+        let path = dir.join(format!("{name}.pdf"));
+        writer.save(&path)?;
+        out.push(path);
+    }
+    Ok(out)
+}
+
+fn solid_jpeg(rgb: [u8; 3], w: u32, h: u32) -> Result<JpegAsset> {
+    let img = image::RgbImage::from_pixel(w, h, image::Rgb(rgb));
+    let mut data = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut data, 95)
+        .encode_image(&img)
+        .context("encodage de l'aplat")?;
+    Ok(JpegAsset { data, width: w, height: h, focal: [0.5, 0.5] })
+}
+
 pub struct PdfWriter {
     doc: Document,
     page_ids: Vec<Object>,

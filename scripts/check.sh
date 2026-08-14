@@ -32,6 +32,15 @@ for k, c in r['compteurs'].items():
   done
 fi
 
+# PDF → PNG : le rendu réel de chaque gabarit, rasterisé et vérifié case
+# par case sur les six formats. macOS seulement (sips) et Pillow requis ;
+# ailleurs le test passe son tour en le disant.
+if command -v sips >/dev/null && python3 -c "import PIL" 2>/dev/null; then
+  python3 scripts/pdf-png.py
+else
+  echo "pdf-png : sauté (sips ou Pillow absent)"
+fi
+
 cd crates/colophon-app
 npx tsc --noEmit
 npx vitest run

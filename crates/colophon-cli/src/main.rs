@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "dump_geometry", "print", "audit"])]
+    #[arg(required_unless_present_any = ["formats", "dump_geometry", "print", "audit", "sheets"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -50,6 +50,11 @@ struct Cli {
     /// print the JSON report. Exits non-zero when a counter passes son seuil.
     #[arg(long)]
     audit: bool,
+
+    /// Write one PDF per template into DIR, slots filled with the check
+    /// palette. Feeds the PDF → PNG raster non-regression.
+    #[arg(long, value_name = "DIR", hide = true)]
+    sheets: Option<PathBuf>,
 }
 
 /// Built once at startup so `--help` can show the format table.
@@ -69,6 +74,13 @@ fn main() -> Result<()> {
     if cli.dump_geometry {
         let album = Album::new("geometry", std::path::Path::new("."), trim);
         println!("{}", serde_json::to_string_pretty(&pdf::dump_geometry(&album))?);
+        return Ok(());
+    }
+
+    if let Some(dir) = &cli.sheets {
+        let album = Album::new("gabarits", std::path::Path::new("."), trim);
+        let files = pdf::render_template_sheets(&album, dir)?;
+        eprintln!("{} gabarits rendus dans {}", files.len(), dir.display());
         return Ok(());
     }
 

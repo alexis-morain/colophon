@@ -28,6 +28,20 @@ for k, c in r['compteurs'].items():
         print(f\"  {k}: {c['count']} (seuil {c['seuil']})\")" >&2
       exit 1
     fi
+    # A freshly composed album has been corrected by nobody, so the reprise
+    # must read exactly zero. It fails here if the composer stopped laying
+    # down its reference, or if the diff started seeing corrections in an
+    # untouched book.
+    if ! ./target/release/colophon --reprise -o "$out" > "$out/reprise.json"; then
+      echo "reprise : l'album neuf de $set ne mesure pas zéro" >&2
+      exit 1
+    fi
+    python3 -c "
+import json, sys
+r = json.load(open('$out/reprise.json'))
+if r['planches_touchees'] != 0:
+    print(f\"  reprise {r['planches_touchees']} planches sur un album neuf\", file=sys.stderr)
+    sys.exit(1)"
     echo "audit $set : ok"
   done
 fi

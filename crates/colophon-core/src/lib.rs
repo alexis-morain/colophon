@@ -6,6 +6,7 @@ pub mod analyze;
 pub mod audit;
 pub mod build;
 pub mod face;
+pub mod font;
 pub mod format;
 pub mod heic;
 pub mod layout;
@@ -13,7 +14,10 @@ pub mod meta;
 pub mod model;
 pub mod pdf;
 pub mod pipeline;
+pub mod prevol;
 pub mod print;
+pub mod printer;
+pub mod reprise;
 pub mod scan;
 pub mod thumb;
 

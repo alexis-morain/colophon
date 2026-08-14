@@ -354,6 +354,15 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     say(&format!("curation: {} photos set aside", discards.len()));
 
     let album_json = write_album_json(out, &album)?;
+    // The composer's proposal, kept aside as the reference `--reprise`
+    // measures against. Written once and never rewritten: a recomposition is
+    // a new proposal, but by then the album already carries hand corrections,
+    // and folding those into the reference would hide what we are measuring.
+    let origine = out.join("album.origin.json");
+    if !origine.exists() {
+        fs::write(&origine, serde_json::to_string_pretty(&album)?)
+            .with_context(|| format!("write {}", origine.display()))?;
+    }
     fs::write(
         out.join("curation.json"),
         serde_json::to_string_pretty(&discards)?,

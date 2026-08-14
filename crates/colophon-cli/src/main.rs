@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "dump_geometry", "print", "audit", "sheets"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "dump_geometry", "print", "audit", "reprise", "prevol", "sheets"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -51,6 +51,27 @@ struct Cli {
     #[arg(long)]
     audit: bool,
 
+    /// Measure how much of the composer's proposal was corrected by hand:
+    /// compares album.json against the album.origin.json written at the
+    /// first build. Exits non-zero past 30 % of spreads touched.
+    #[arg(long)]
+    reprise: bool,
+
+    /// Preflight the album already built in --out against a printer profile:
+    /// resolution, pagination, bleed, colour space, fonts, safe zone. Prints
+    /// the report plus the spec sheet. Exits non-zero on a blocking defect.
+    #[arg(long)]
+    prevol: bool,
+
+    /// Printer profile the export and the preflight read: cloudprinter,
+    /// prodigi, lulu, generique.
+    #[arg(long, default_value = "cloudprinter", value_name = "ID")]
+    profil: String,
+
+    /// List the printer profiles and exit
+    #[arg(long)]
+    profils: bool,
+
     /// Write one PDF per template into DIR, slots filled with the check
     /// palette. Feeds the PDF → PNG raster non-regression.
     #[arg(long, value_name = "DIR", hide = true)]
@@ -86,6 +107,33 @@ fn main() -> Result<()> {
 
     if cli.audit {
         let report = colophon_core::audit::audit(&cli.out)?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        if !report.ok {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    if cli.profils {
+        for p in colophon_core::printer::PrinterProfile::tous() {
+            println!("{:<14} {}", p.id, p.nom);
+        }
+        return Ok(());
+    }
+
+    if cli.prevol {
+        let profil = colophon_core::printer::PrinterProfile::par_id(&cli.profil)
+            .ok_or_else(|| anyhow::anyhow!("profil inconnu : {} (voir --profils)", cli.profil))?;
+        let report = colophon_core::prevol::prevol(&cli.out, profil)?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        if !report.ok {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    if cli.reprise {
+        let report = colophon_core::reprise::reprise(&cli.out)?;
         println!("{}", serde_json::to_string_pretty(&report)?);
         if !report.ok {
             std::process::exit(1);

@@ -2,12 +2,23 @@
 //! Images are embedded as JPEG (DCTDecode passthrough), cover-cropped
 //! into their slot via a clip rectangle, anchored on the focal point.
 
+use crate::font;
 use crate::model::{Album, Spread};
 use anyhow::{Context, Result};
 use lopdf::{dictionary, Document, Object, Stream};
 use std::path::Path;
 
 const MM_TO_PT: f64 = 72.0 / 25.4;
+
+/// Whether the writer's output may call itself PDF/X.
+///
+/// Fonts are embedded, which was the structural gap: glyphs now travel in the
+/// file instead of being borrowed from the reader. What is still missing is
+/// the declaration, an OutputIntent carrying the destination ICC profile plus
+/// the XMP block that names the conformance level. Until both exist this stays
+/// false, and the preflight blocks any profile demanding PDF/X rather than let
+/// a file claim a conformance nobody verified.
+pub const EMITS_PDF_X: bool = false;
 
 /// Geometry of one slot on the spread canvas, in millimetres,
 /// origin bottom-left, bleed included.
@@ -26,6 +37,10 @@ pub struct SpreadGeometry {
     pub margin: f64,
     /// Gap between two images, including across the fold.
     pub gutter: f64,
+    /// Bleed on every side. The trimmed spread is the media inset by this
+    /// much: anything that must survive the cut is measured from there,
+    /// never from the media edge.
+    pub bleed: f64,
 }
 
 /// A resolved image ready to embed: raw JPEG bytes plus pixel size.
@@ -47,6 +62,7 @@ pub fn geometry(album: &Album) -> SpreadGeometry {
         media_h: album.trim_mm.h + album.bleed_mm * 2.0,
         margin,
         gutter: margin / 2.0,
+        bleed: album.bleed_mm,
     }
 }
 
@@ -249,8 +265,19 @@ pub struct Point {
 
 /// Nominal size of the caption box, used to test whether a candidate spot is
 /// clear. Generous on purpose: a caption half over a photo is still unreadable.
+/// Chapter captions: 9 pt.
+pub const CAPTION_SIZE_PT: f64 = 9.0;
+
+/// The ground a caption actually covers. `at` is the baseline: type rises by
+/// about the cap height above it and drops by the descender below.
+///
+/// This used to be a margin-proportional proxy nearly three times the type
+/// size. The slack cost nothing while the anchors floated in the bleed; once
+/// they moved in to clear the trim, the proxy started reading a caption as
+/// covered where the printed line runs clear of every photo.
 fn caption_box(at: Point, g: &SpreadGeometry) -> Rect {
-    Rect { x: at.x, y: at.y - g.margin * 0.15, w: g.margin * 3.5, h: g.margin * 0.6 }
+    let size = CAPTION_SIZE_PT / MM_TO_PT;
+    Rect { x: at.x, y: at.y - size * 0.3, w: g.margin * 3.5, h: size * 1.35 }
 }
 
 /// The first caption spot no image covers, tried in reading order, or None
@@ -267,9 +294,14 @@ pub fn caption_anchor_free(rects: &[Rect], g: &SpreadGeometry) -> Option<Point> 
 
 fn caption_candidates(g: &SpreadGeometry) -> [Point; 4] {
     let half = g.media_w / 2.0;
-    let low = g.margin * 0.36; // 5 mm on a 210 mm page
-    let high = g.media_h - g.margin * 0.75;
-    let left = g.margin * 0.57; // 8 mm
+    // Measured from the trimmed edge, not from the media: a caption placed
+    // 5 mm from the media edge comes back from the press 5 mm minus the bleed
+    // from the cut, and every supplier's safe zone rejects it. Anchored here,
+    // the baseline clears 7 mm on a 210 mm page — past Cloudprinter's 5 and
+    // Prodigi's 6.35.
+    let low = g.bleed + g.margin * CAPTION_SAFE;
+    let high = g.media_h - g.bleed - g.margin * 0.75;
+    let left = g.bleed + g.margin * 0.57;
     let right = half + g.gutter / 2.0;
     [
         Point { x: left, y: low },
@@ -285,6 +317,13 @@ fn caption_candidates(g: &SpreadGeometry) -> [Point; 4] {
 pub fn caption_anchor(rects: &[Rect], g: &SpreadGeometry) -> Point {
     caption_anchor_free(rects, g).unwrap_or_else(|| caption_candidates(g)[0])
 }
+
+/// Share of the margin kept between a chapter caption and the trimmed edge.
+/// 7 mm on a 210 mm page: the widest safe zone among the suppliers we
+/// actually target. Lulu asks for 12.7 and is flagged by the preflight
+/// instead — composing for the strictest profile of all would push every
+/// caption into the middle of the page.
+pub const CAPTION_SAFE: f64 = 0.5;
 
 /// Photo captions: 7 pt, baseline this far under the slot's bottom edge.
 pub const PHOTO_CAPTION_SIZE_PT: f64 = 7.0;
@@ -543,16 +582,66 @@ pub struct PdfWriter {
     bleed_mm: f64,
 }
 
+/// Put the text face in the document and return its resource id.
+///
+/// A simple TrueType font under WinAnsi encoding, not a CID one: the renderer
+/// already escapes every string into WinAnsi, so the byte in the content
+/// stream, the slot in `/Widths` and the glyph the reader draws are the same
+/// index all the way down.
+///
+/// Panics if the compiled-in face is unreadable. That is a broken build
+/// artifact, not a user error, and `font::tests` catches it before it ships;
+/// falling back to a non-embedded base-14 would be the silent export failure
+/// this project refuses.
+fn embed_font(doc: &mut Document) -> lopdf::ObjectId {
+    let m = font::metrics().expect("police incorporée illisible : asset corrompu");
+    assert!(
+        m.embeddable(),
+        "la licence de la police interdit l'incorporation (fsType {})",
+        m.fs_type
+    );
+
+    // Length1 is the size of the face before compression; a reader needs it to
+    // unpack the stream back into a font file.
+    let file_id = doc.add_object(Stream::new(
+        dictionary! { "Length1" => font::FONT_DATA.len() as i64 },
+        font::FONT_DATA.to_vec(),
+    ));
+
+    let descriptor_id = doc.add_object(dictionary! {
+        "Type" => "FontDescriptor",
+        "FontName" => font::FONT_NAME,
+        // Nonsymbolic: the face draws the standard Latin set, so the reader
+        // may lean on the encoding rather than on the font's own cmap.
+        "Flags" => 32,
+        "FontBBox" => m.bbox.iter().map(|v| Object::Integer(i64::from(*v))).collect::<Vec<_>>(),
+        "ItalicAngle" => m.italic_angle,
+        "Ascent" => i64::from(m.ascent),
+        "Descent" => i64::from(m.descent),
+        "CapHeight" => i64::from(m.cap_height),
+        // Nominal stem width for a regular weight. Required by the spec,
+        // consulted by no renderer that has the glyphs themselves.
+        "StemV" => 80,
+        "FontFile2" => Object::Reference(file_id),
+    });
+
+    doc.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "TrueType",
+        "BaseFont" => font::FONT_NAME,
+        "FirstChar" => i64::from(font::FIRST_CHAR),
+        "LastChar" => i64::from(font::LAST_CHAR),
+        "Widths" => m.widths.iter().map(|w| Object::Integer(i64::from(*w))).collect::<Vec<_>>(),
+        "Encoding" => "WinAnsiEncoding",
+        "FontDescriptor" => Object::Reference(descriptor_id),
+    })
+}
+
 impl PdfWriter {
     pub fn new(album: &Album) -> Self {
         let mut doc = Document::with_version("1.5");
         let pages_id = doc.new_object_id();
-        let font_id = doc.add_object(dictionary! {
-            "Type" => "Font",
-            "Subtype" => "Type1",
-            "BaseFont" => "Helvetica",
-            "Encoding" => "WinAnsiEncoding",
-        });
+        let font_id = embed_font(&mut doc);
         Self {
             doc,
             page_ids: Vec::new(),

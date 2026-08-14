@@ -135,7 +135,14 @@ export function fallbackTemplate(
 /** Millimetres, origin top-left of the media canvas (bleed included). */
 export type Rect = { x: number; y: number; w: number; h: number };
 
-export type Canvas = { w: number; h: number; margin: number; gutter: number };
+export type Canvas = {
+  w: number;
+  h: number;
+  margin: number;
+  gutter: number;
+  /** Bleed on every side; the trimmed spread is the media inset by this much. */
+  bleed: number;
+};
 
 /** Full media canvas of a spread: two trimmed pages plus bleed all round. */
 export function mediaCanvas(album: Album): Canvas {
@@ -145,8 +152,15 @@ export function mediaCanvas(album: Album): Canvas {
     h: album.trim_mm.h + album.bleed_mm * 2,
     margin,
     gutter: margin / 2,
+    bleed: album.bleed_mm,
   };
 }
+
+/**
+ * Share of the margin kept between a chapter caption and the trimmed edge.
+ * Port of `pdf.rs::CAPTION_SAFE`.
+ */
+export const CAPTION_SAFE = 0.5;
 
 /** Slot rectangles for a template, top-left origin, ready for CSS. */
 export function slotsFor(template: string, n: number, g: Canvas): Rect[] {
@@ -328,9 +342,10 @@ export const CAPTION_SIZE_MM = 9 * 0.352778;
 export function captionAnchor(template: string, n: number, g: Canvas): Rect {
   const rects = slotsBottomUp(template, n, g);
   const half = g.w / 2;
-  const low = g.margin * 0.36;
-  const high = g.h - g.margin * 0.75;
-  const left = g.margin * 0.57;
+  // Measured from the trimmed edge, not from the media: see pdf.rs.
+  const low = g.bleed + g.margin * CAPTION_SAFE;
+  const high = g.h - g.bleed - g.margin * 0.75;
+  const left = g.bleed + g.margin * 0.57;
   const right = half + g.gutter / 2;
 
   const candidates = [
@@ -339,13 +354,14 @@ export function captionAnchor(template: string, n: number, g: Canvas): Rect {
     { x: left, y: high },
     { x: right, y: high },
   ];
+  // The ground the printed line actually covers. Port of `pdf.rs::caption_box`.
   const at =
     candidates.find((c) => {
       const b = {
         x: c.x,
-        y: c.y - g.margin * 0.15,
+        y: c.y - CAPTION_SIZE_MM * 0.3,
         w: g.margin * 3.5,
-        h: g.margin * 0.6,
+        h: CAPTION_SIZE_MM * 1.35,
       };
       return rects.every((r) => !overlaps(r, b));
     }) ?? candidates[0];

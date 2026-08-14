@@ -45,7 +45,7 @@ impl ThumbCache {
                 return Ok(img);
             }
         }
-        let img = image::open(src).with_context(|| format!("decode {}", src.display()))?;
+        let img = crate::heic::open(src).with_context(|| format!("decode {}", src.display()))?;
         let img = apply_orientation(img, orientation);
         let thumb = img.thumbnail(THUMB_SIZE, THUMB_SIZE);
         thumb

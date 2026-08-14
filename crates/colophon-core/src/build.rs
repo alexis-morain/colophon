@@ -93,7 +93,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
             // Original size, oriented. Header read only, no decode. Falls
             // back to the thumbnail size, which understates the pixels and
             // keeps the composer conservative about big cells.
-            let orig = image::image_dimensions(path)
+            let orig = crate::heic::dimensions(path)
                 .map(|(w, h)| {
                     if (5..=8).contains(&meta.orientation) { (h, w) } else { (w, h) }
                 })

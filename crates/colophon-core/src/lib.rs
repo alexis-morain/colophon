@@ -7,6 +7,7 @@ pub mod audit;
 pub mod build;
 pub mod face;
 pub mod format;
+pub mod heic;
 pub mod layout;
 pub mod meta;
 pub mod model;

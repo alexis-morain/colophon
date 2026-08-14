@@ -73,7 +73,7 @@ fn print_asset(
         }
     }
 
-    let img = image::open(src).with_context(|| format!("décodage de {}", src.display()))?;
+    let img = crate::heic::open(src).with_context(|| format!("décodage de {}", src.display()))?;
     let img = thumb::apply_orientation(img, orientation);
     let f = print_scale(rect, img.width(), img.height());
     let img = if f < 1.0 {

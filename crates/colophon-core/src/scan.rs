@@ -19,6 +19,9 @@ pub fn scan(root: &Path) -> ScanResult {
     let mut images = Vec::new();
     let mut skipped_heic = 0;
     let mut skipped_other = 0;
+    // HEIC joins the album when the platform can decode it (ImageIO on
+    // macOS, WIC on Windows); elsewhere it is counted and reported.
+    let heic_ok = crate::heic::system().is_some();
 
     for entry in WalkDir::new(root)
         .follow_links(false)
@@ -38,7 +41,11 @@ pub fn scan(root: &Path) -> ScanResult {
         if SUPPORTED.contains(&ext.as_str()) {
             images.push(entry.into_path());
         } else if HEIC.contains(&ext.as_str()) {
-            skipped_heic += 1;
+            if heic_ok {
+                images.push(entry.into_path());
+            } else {
+                skipped_heic += 1;
+            }
         } else if IGNORED.contains(&ext.as_str()) {
             // silently ignored: videos and sidecars are expected in real folders
         } else {

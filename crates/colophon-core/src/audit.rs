@@ -166,7 +166,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
             let faces = face::face_boxes(det.as_mut(), &img);
             let orig = if root_ok {
                 let p = root.join(src);
-                image::image_dimensions(&p).ok().map(|(w, h)| {
+                crate::heic::dimensions(&p).ok().map(|(w, h)| {
                     if (5..=8).contains(&meta::read(&p).orientation) {
                         (h, w)
                     } else {

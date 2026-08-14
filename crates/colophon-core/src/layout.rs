@@ -11,7 +11,7 @@
 use crate::analyze;
 use crate::audit::{
     ASPECT_BETRAYAL, DUP_HAMMING, DUP_PHASH, FACE_MARGIN, FACE_MIN_SHARE,
-    MIN_EFFECTIVE_PPI, OPENING_MIN_PHOTOS,
+    MIN_EFFECTIVE_PPI, OPENING_MIN_PHOTOS, SCENE_SPREAD_COLOR, SCENE_SPREAD_SECONDS,
 };
 use crate::model::{Album, Slot, Spread};
 use crate::pdf::{self, Rect, SpreadGeometry};
@@ -159,12 +159,7 @@ impl Composer {
                 let mut front: Vec<Photo> = Vec::new();
                 let mut back: Vec<Photo> = Vec::new();
                 for p in window {
-                    let twin = front.iter().any(|q| {
-                        analyze::hamming(p.analysis.dhash, q.analysis.dhash)
-                            <= DUP_HAMMING
-                            || analyze::hamming(p.analysis.phash, q.analysis.phash)
-                                <= DUP_PHASH
-                    });
+                    let twin = front.iter().any(|q| spread_twins(&p, q));
                     if front.len() < hint && aspect_class(&p) == class0 && !twin {
                         front.push(p);
                     } else {
@@ -399,13 +394,24 @@ fn assign(chunk: &[Photo], cells: &[Rect]) -> Option<(Vec<usize>, f64)> {
     Some((order, score))
 }
 
+/// Two photos that must never share a spread: near in hash, or two frames
+/// of the same scene minutes apart (pose series flip every gradient but
+/// keep the palette). Mirrors the linter's doublon_planche rule.
+fn spread_twins(a: &Photo, b: &Photo) -> bool {
+    analyze::hamming(a.analysis.dhash, b.analysis.dhash) <= DUP_HAMMING
+        || analyze::hamming(a.analysis.phash, b.analysis.phash) <= DUP_PHASH
+        || (a.meta.taken_reliable
+            && b.meta.taken_reliable
+            && (a.meta.taken - b.meta.taken).num_seconds().abs() <= SCENE_SPREAD_SECONDS
+            && analyze::color_distance(&a.analysis.colorsig, &b.analysis.colorsig)
+                <= SCENE_SPREAD_COLOR)
+}
+
 /// Length of the longest prefix free of same-spread near-duplicates.
 fn dup_prefix(chunk: &[Photo]) -> usize {
     for j in 1..chunk.len() {
         for k in 0..j {
-            let d = analyze::hamming(chunk[j].analysis.dhash, chunk[k].analysis.dhash);
-            let p = analyze::hamming(chunk[j].analysis.phash, chunk[k].analysis.phash);
-            if d <= DUP_HAMMING || p <= DUP_PHASH {
+            if spread_twins(&chunk[j], &chunk[k]) {
                 return j;
             }
         }

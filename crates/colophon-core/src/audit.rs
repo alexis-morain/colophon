@@ -21,6 +21,11 @@ pub const DUP_HAMMING: u32 = 24;
 /// Same rule on the DCT pHash: either hash agreeing is enough. Kept tight
 /// (8 bits): low-frequency DCT makes any two seascapes look related at 12.
 pub const DUP_PHASH: u32 = 8;
+/// Pose series: two frames of the same scene seconds apart read as twins
+/// to the eye even when the hashes disagree (a handstand flips every
+/// gradient). Same spread + same minutes + same colors = doublon.
+pub const SCENE_SPREAD_SECONDS: i64 = 180;
+pub const SCENE_SPREAD_COLOR: u32 = 20;
 /// Faces keep at least this share of the visible window between them and
 /// every cropped edge; below it a face reads as cut.
 pub const FACE_MARGIN: f64 = 0.04;
@@ -128,6 +133,8 @@ struct PhotoInfo {
     /// Original size, EXIF orientation applied. None when the source folder
     /// is unreachable: the resolution counter then skips with a note.
     orig: Option<(u32, u32)>,
+    /// Capture time, when the original and its EXIF are reachable.
+    taken: Option<chrono::NaiveDateTime>,
 }
 
 pub fn audit(dir: &Path) -> Result<AuditReport> {
@@ -169,17 +176,15 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
                 .with_context(|| format!("vignette illisible pour {src}, régénérez l'album"))?;
             let analysis = analyze::analyze(&img);
             let faces = face::face_boxes(det.as_mut(), &img);
-            let orig = if root_ok {
+            let (orig, taken) = if root_ok {
                 let p = root.join(src);
-                crate::heic::dimensions(&p).ok().map(|(w, h)| {
-                    if (5..=8).contains(&meta::read(&p).orientation) {
-                        (h, w)
-                    } else {
-                        (w, h)
-                    }
-                })
+                let m = meta::read(&p);
+                let orig = crate::heic::dimensions(&p).ok().map(|(w, h)| {
+                    if (5..=8).contains(&m.orientation) { (h, w) } else { (w, h) }
+                });
+                (orig, m.taken_reliable.then_some(m.taken))
             } else {
-                None
+                (None, None)
             };
             Ok((
                 src.clone(),
@@ -192,6 +197,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
                     score: analysis.score(),
                     faces,
                     orig,
+                    taken,
                 },
             ))
         })
@@ -258,7 +264,15 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
                 let (a, b) = (&infos[&spread.slots[i].src], &infos[&spread.slots[j].src]);
                 let d = analyze::hamming(a.dhash, b.dhash);
                 let p = analyze::hamming(a.phash, b.phash);
-                if d <= DUP_HAMMING || p <= DUP_PHASH {
+                let same_scene = match (a.taken, b.taken) {
+                    (Some(ta), Some(tb)) => {
+                        (ta - tb).num_seconds().abs() <= SCENE_SPREAD_SECONDS
+                            && analyze::color_distance(&a.colorsig, &b.colorsig)
+                                <= SCENE_SPREAD_COLOR
+                    }
+                    _ => false,
+                };
+                if d <= DUP_HAMMING || p <= DUP_PHASH || same_scene {
                     doublons.push(Finding {
                         planche: si + 1,
                         case_idx: Some(i),

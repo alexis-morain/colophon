@@ -9,11 +9,15 @@ import {
   fetchCuration,
   FormatPreset,
   inTauri,
+  listDensities,
+  DensitePreset,
   listFormats,
+  listPrinters,
   onBuildProgress,
   openAlbum as openAlbumAt,
   pickAlbumFolder,
   pickPhotosFolder,
+  Printer,
   recomposeAlbum,
   saveAlbum,
 } from "./bridge";
@@ -24,7 +28,6 @@ import {
   OpenedAlbum,
   Slot,
   slotsFor,
-  spineMm,
   Spread,
 } from "./album";
 import {
@@ -55,6 +58,7 @@ import { TriView } from "./TriView";
 import { Drawer } from "./Drawer";
 import { PlanchesView, LockGlyph } from "./PlanchesView";
 import { CoverView } from "./CoverView";
+import { EnvoiView } from "./EnvoiView";
 import { cachedThumb, loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
 
@@ -62,7 +66,7 @@ import "./styles.css";
 type History = { album: Album; past: Album[]; future: Album[] };
 const HISTORY_CAP = 50;
 
-type View = "livre" | "tri" | "planches";
+type View = "livre" | "tri" | "planches" | "envoi";
 
 /** In the book view, index -1 is the cover. */
 const COVER = -1;
@@ -83,6 +87,16 @@ export default function App() {
   const [triSelected, setTriSelected] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [overflow, setOverflow] = useState<string | null>(null);
+  // The supplier the destination screen reads. One per session:
+  // the album carries no printer, the file it produces does.
+  const [profil, setProfil] = useState("cloudprinter");
+  // Loaded once and shared: the cover editor draws its sheet for the same
+  // supplier the destination screen preflights against.
+  const [printers, setPrinters] = useState<Printer[] | null>(null);
+
+  useEffect(() => {
+    listPrinters().then(setPrinters, () => setPrinters([]));
+  }, []);
 
   const album = hist?.album ?? null;
   const total = album?.spreads.length ?? 0;
@@ -175,16 +189,17 @@ export default function App() {
     setRendering(true);
     setStatus("Rendu du PDF d’impression…");
     try {
-      const dest = await exportPdf(hist.album.title, (done, total) =>
+      const written = await exportPdf(hist.album.title, profil, (done, total) =>
         setStatus(`Rendu à 300 dpi : ${done}/${total} photos…`),
       );
-      const dos = spineMm(hist.album.spreads.length)
-        .toFixed(1)
-        .replace(".", ",");
+      // What was actually written, named. A supplier who wants two files gets
+      // two, and the second one is the thing nobody thinks to look for.
       setStatus(
-        dest
-          ? `PDF enregistré : ${dest} · dos ${dos} mm (provisoire)`
-          : "Enregistrement annulé",
+        written === null
+          ? "Enregistrement annulé"
+          : written.length > 1
+            ? `${written.length} fichiers enregistrés : ${written.join(" · ")}`
+            : `PDF enregistré : ${written[0]}`,
       );
     } catch (e) {
       setStatus(
@@ -195,13 +210,14 @@ export default function App() {
     } finally {
       setRendering(false);
     }
-  }, [save, rendering, hist]);
+  }, [save, rendering, hist, profil]);
 
   /** Build an album from a photo folder, streaming the engine's progress. */
   const createAlbum = useCallback(async (
     dir: string,
     format: string,
     spreads: number,
+    densite: string,
     title: string | null,
   ) => {
     setBuilding([]);
@@ -213,7 +229,7 @@ export default function App() {
       setBuilding((b) => (b ? [...b, line] : [line])),
     );
     try {
-      const result = await buildAlbum(dir, format, spreads, title);
+      const result = await buildAlbum(dir, format, spreads, densite, title);
       adopt(result);
       setCuration(await fetchCuration().catch(() => []));
     } catch (e) {
@@ -404,13 +420,24 @@ export default function App() {
         else undo();
         return;
       }
-      if (e.metaKey && (key === "1" || key === "2" || key === "3")) {
+      if (e.metaKey && (key === "1" || key === "2" || key === "3" || key === "4")) {
         e.preventDefault();
-        setView(key === "1" ? "livre" : key === "2" ? "tri" : "planches");
+        setView(
+          key === "1"
+            ? "livre"
+            : key === "2"
+              ? "tri"
+              : key === "3"
+                ? "planches"
+                : "envoi",
+        );
         setSelected(null);
         setTriSelected(null);
         return;
       }
+      // The destination screen has no spread under the cursor: it keeps the
+      // global shortcuts and nothing else.
+      if (view === "envoi") return;
       // The sorting view keeps the global shortcuts, nothing spread-bound.
       if (view === "tri") {
         if (e.key === "Escape") setTriSelected(null);
@@ -619,6 +646,21 @@ export default function App() {
           onSelect={setTriSelected}
           onRescue={rescue}
         />
+      ) : view === "envoi" ? (
+        <EnvoiView
+          album={album}
+          printers={printers}
+          profil={profil}
+          onProfil={setProfil}
+          onJump={(planche) => {
+            setIndex(planche - 1);
+            setSelected(null);
+            setView("livre");
+          }}
+          onExport={() => void regenPdf()}
+          exporting={rendering}
+          dirty={dirty}
+        />
       ) : view === "planches" ? (
         <PlanchesView
           album={album}
@@ -641,6 +683,7 @@ export default function App() {
             {onCover ? (
               <CoverView
                 album={album}
+                printer={printers?.find((p) => p.id === profil) ?? null}
                 onCover={(c) => apply((a) => setCover(a, c))}
               />
             ) : (
@@ -712,6 +755,10 @@ export default function App() {
             setStatus(`Planche ${at + 1} supprimée (⌘Z la ramène)`);
           }}
         />
+      ) : view === "envoi" ? (
+        <footer className="foot envoi-foot">
+          <span className="status">{status}</span>
+        </footer>
       ) : (
         <BookFoot
           album={album}
@@ -811,6 +858,13 @@ function Bar({
             title="⌘3"
           >
             Planches
+          </button>
+          <button
+            className={"view-tab" + (view === "envoi" ? " active" : "")}
+            onClick={() => onView("envoi")}
+            title="⌘4 · le contrôle avant impression"
+          >
+            Envoi
           </button>
         </span>
         {view === "livre" && spread && photoSpread && (
@@ -1235,20 +1289,29 @@ function Empty({
   onCancelBuild,
 }: {
   onOpen: () => void;
-  onCreate: (dir: string, format: string, spreads: number, title: string | null) => void;
+  onCreate: (
+    dir: string,
+    format: string,
+    spreads: number,
+    densite: string,
+    title: string | null,
+  ) => void;
   building: string[] | null;
   busyTitle: string | null;
   error: string | null;
   onCancelBuild: () => void;
 }) {
   const [formats, setFormats] = useState<FormatPreset[]>([]);
+  const [densities, setDensities] = useState<DensitePreset[]>([]);
   const [dir, setDir] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [format, setFormat] = useState("carre-21");
   const [spreads, setSpreads] = useState(48);
+  const [densite, setDensite] = useState("equilibree");
 
   useEffect(() => {
     listFormats().then(setFormats, () => {});
+    listDensities().then(setDensities, () => {});
   }, []);
 
   const folderName = dir?.split("/").pop() ?? "";
@@ -1298,7 +1361,7 @@ function Empty({
                 className="setup"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  onCreate(dir, format, spreads, title.trim() || null);
+                  onCreate(dir, format, spreads, densite, title.trim() || null);
                 }}
               >
                 <h1 className="setup-heading">Nouvel album</h1>
@@ -1332,6 +1395,30 @@ function Empty({
                       />
                     ))}
                   </div>
+                </div>
+
+                <div className="setup-field">
+                  <span className="setup-label">rythme</span>
+                  <div className="densites">
+                    {densities.map((d) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        className={"densite" + (d.id === densite ? " active" : "")}
+                        onClick={() => setDensite(d.id)}
+                        aria-pressed={d.id === densite}
+                      >
+                        <span className="densite-nom">{d.nom}</span>
+                        <span className="densite-about">{d.about}</span>
+                        <DensiteApercu photos={d.photos_par_planche} />
+                      </button>
+                    ))}
+                  </div>
+                  <span className="setup-hint">
+                    Le rythme se choisit maintenant : il vaut pour tout l'album
+                    et pour ses recompositions. Chaque planche reste modifiable
+                    une par une ensuite.
+                  </span>
                 </div>
 
                 <label className="setup-field">
@@ -1385,6 +1472,29 @@ function Empty({
         {error && <p className="warn">{error}</p>}
       </div>
     </div>
+  );
+}
+
+/** Three spreads' worth of cells at this pace, drawn small. Shows what the
+ *  sentence says: how crowded a double page gets. */
+function DensiteApercu({ photos }: { photos: number }) {
+  // The average, rounded to the shapes a template actually lays out.
+  const n = photos <= 2 ? 2 : photos <= 3.5 ? 4 : 6;
+  const cols = n === 2 ? 1 : 2;
+  return (
+    <span className="densite-apercu" aria-hidden="true">
+      {[0, 1].map((page) => (
+        <span
+          key={page}
+          className="densite-page"
+          style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
+        >
+          {Array.from({ length: n / 2 }, (_, i) => (
+            <span key={i} className="densite-case" />
+          ))}
+        </span>
+      ))}
+    </span>
   );
 }
 

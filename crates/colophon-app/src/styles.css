@@ -1684,3 +1684,322 @@ kbd {
   gap: 16px;
   align-items: baseline;
 }
+
+/* ---- où envoyer ce PDF -------------------------------------------------- */
+
+/* Two columns on a wide window: the verdict and its defects lead, the
+   supplier list and the spec sheet sit beside them. Nothing is a card. */
+.envoi {
+  overflow-y: auto;
+  padding: 26px 28px 40px;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  grid-template-areas:
+    "verdict imprimeurs"
+    "defauts fiche"
+    "actions fiche";
+  gap: 0 44px;
+  align-content: start;
+}
+
+@media (max-width: 900px) {
+  .envoi {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "verdict" "defauts" "actions" "imprimeurs" "fiche";
+  }
+}
+
+.envoi-verdict {
+  grid-area: verdict;
+  max-width: 62ch;
+}
+
+.envoi h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+}
+
+.envoi-ok {
+  color: var(--text);
+}
+
+.envoi-ko {
+  color: var(--accent);
+}
+
+.envoi-wait {
+  color: var(--muted);
+}
+
+.envoi-sub {
+  margin: 8px 0 0;
+  color: var(--muted);
+  max-width: 58ch;
+}
+
+.envoi-dirty {
+  margin: 0 0 14px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent);
+  color: var(--text);
+  max-width: 58ch;
+}
+
+.envoi-defauts {
+  grid-area: defauts;
+  margin: 22px 0 0;
+  max-width: 68ch;
+}
+
+/* One rule between rows, none around them: a list, not a stack of boxes. */
+.envoi-defaut {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 2px 14px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.envoi-defauts > :last-child {
+  border-bottom: 1px solid var(--rule);
+}
+
+button.envoi-defaut {
+  transition: background var(--turn);
+}
+
+button.envoi-defaut:hover,
+button.envoi-defaut:focus-visible {
+  background: var(--ink-raised);
+  outline: none;
+}
+
+.envoi-defaut-ou {
+  grid-row: span 2;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.envoi-defaut.bloquant .envoi-defaut-ou {
+  color: var(--accent);
+}
+
+.envoi-defaut-cause {
+  line-height: 1.45;
+}
+
+.envoi-defaut-remede {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.envoi-imprimeurs {
+  grid-area: imprimeurs;
+}
+
+.envoi-imprimeurs h3,
+.envoi-fiche h3 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.envoi-imprimeurs ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.envoi-imprimeur {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px 9px 13px;
+  border-left: 2px solid transparent;
+  transition: background var(--turn), border-color var(--turn);
+}
+
+.envoi-imprimeur:hover {
+  background: var(--ink-raised);
+}
+
+.envoi-imprimeur.active {
+  background: var(--ink-raised);
+  border-left-color: var(--accent);
+}
+
+.envoi-imprimeur-nom {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 15px;
+}
+
+.envoi-imprimeur-quoi {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.envoi-provisoire {
+  display: inline-block;
+  margin-top: 3px;
+  color: var(--accent);
+  font-size: 11px;
+  border-bottom: 1px dotted currentColor;
+  cursor: help;
+}
+
+.envoi-fiche {
+  grid-area: fiche;
+  margin-top: 26px;
+}
+
+.envoi-fiche dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.envoi-fiche dt {
+  color: var(--muted);
+}
+
+.envoi-fiche dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.envoi-reserves,
+.envoi-notes {
+  margin-top: 18px;
+  padding-left: 12px;
+  border-left: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.envoi-reserves h4 {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.envoi-reserves ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.envoi-notes p {
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.envoi-actions {
+  grid-area: actions;
+  margin-top: 26px;
+}
+
+.envoi-exporter {
+  padding: 10px 20px;
+  background: var(--accent);
+  color: var(--paper);
+  font-size: 14px;
+  transition: opacity var(--turn);
+}
+
+.envoi-exporter:disabled {
+  background: none;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  cursor: not-allowed;
+}
+
+.envoi-porte {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  max-width: 52ch;
+}
+
+/* The destination screen carries its own action: the strip under it only
+   ever says what just happened. */
+.envoi-foot {
+  grid-template-rows: 34px;
+  align-content: center;
+}
+
+/* ---- le rythme de composition ------------------------------------------ */
+
+/* Three choices side by side, each one saying what it does and showing it.
+   Wider than tall: the shape of a double page, which is what is on offer. */
+.densites {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.densite {
+  display: grid;
+  gap: 5px;
+  align-content: start;
+  text-align: left;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--rule);
+  transition: border-color var(--turn), background var(--turn);
+}
+
+.densite:hover {
+  border-color: var(--muted);
+}
+
+.densite.active {
+  border-color: var(--accent);
+  background: var(--ink-raised);
+}
+
+.densite-nom {
+  font-family: var(--font-display);
+  font-size: 15px;
+}
+
+.densite-about {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+/* Two facing pages, with the cells this pace puts on them. */
+.densite-apercu {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  height: 34px;
+}
+
+.densite-page {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  padding: 3px;
+  background: var(--paper);
+}
+
+.densite-case {
+  background: #cfc6b6;
+}
+
+.densite.active .densite-case {
+  background: #b9ad98;
+}

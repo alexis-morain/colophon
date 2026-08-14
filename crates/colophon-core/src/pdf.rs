@@ -4,21 +4,17 @@
 
 use crate::font;
 use crate::model::{Album, Spread};
+use crate::pdfx;
 use anyhow::{Context, Result};
 use lopdf::{dictionary, Document, Object, Stream};
 use std::path::Path;
 
 const MM_TO_PT: f64 = 72.0 / 25.4;
 
-/// Whether the writer's output may call itself PDF/X.
-///
-/// Fonts are embedded, which was the structural gap: glyphs now travel in the
-/// file instead of being borrowed from the reader. What is still missing is
-/// the declaration, an OutputIntent carrying the destination ICC profile plus
-/// the XMP block that names the conformance level. Until both exist this stays
-/// false, and the preflight blocks any profile demanding PDF/X rather than let
-/// a file claim a conformance nobody verified.
-pub const EMITS_PDF_X: bool = false;
+/// Whether the writer's output may call itself PDF/X. Defined once, in
+/// [`crate::pdfx`] next to the declaration it describes, and re-exported here
+/// because `pdf::EMITS_PDF_X` is what the preflight has always read.
+pub use crate::pdfx::EMITS_PDF_X;
 
 /// Geometry of one slot on the spread canvas, in millimetres,
 /// origin bottom-left, bleed included.
@@ -41,6 +37,36 @@ pub struct SpreadGeometry {
     /// much: anything that must survive the cut is measured from there,
     /// never from the media edge.
     pub bleed: f64,
+}
+
+/// The two boxes a page needs: the sheet, and the finished piece inside it.
+/// `trim` is `[x0, y0, x1, y1]` in millimetres, and it is asymmetric on a
+/// cover, where the bleed differs edge by edge.
+pub(crate) struct Boxes {
+    pub media: [f64; 2],
+    pub trim: [f64; 4],
+}
+
+/// One run of text at a baseline, in millimetres, in the album's only face.
+/// The single place a string turns into content operators: escaping and
+/// emission stay together, so a caller cannot emit one without the other.
+pub(crate) fn text_op(
+    content: &mut String,
+    x_mm: f64,
+    y_mm: f64,
+    size_pt: f64,
+    rgb: [f64; 3],
+    s: &str,
+) {
+    if s.is_empty() {
+        return;
+    }
+    let (x, y) = (x_mm * MM_TO_PT, y_mm * MM_TO_PT);
+    let (r, g, b) = (rgb[0], rgb[1], rgb[2]);
+    let esc = winansi_escape(s);
+    content.push_str(&format!(
+        "BT /F1 {size_pt} Tf {r} {g} {b} rg {x:.2} {y:.2} Td ({esc}) Tj ET\n"
+    ));
 }
 
 /// A resolved image ready to embed: raw JPEG bytes plus pixel size.
@@ -234,6 +260,41 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
         })
         .collect();
 
+    // The cover sheet, per supplier and per book thickness. The editor draws
+    // that sheet from the same profile data, so the width of the spine it
+    // shows and the width the printer receives are one arithmetic, checked
+    // here rather than believed.
+    let covers: Vec<serde_json::Value> = crate::printer::PrinterProfile::tous()
+        .iter()
+        .flat_map(|p| {
+            [12usize, 48, 96].into_iter().map(move |spreads| {
+                let mut a = album.clone();
+                a.spreads = vec![
+                    Spread {
+                        template: "vide".into(),
+                        slots: vec![],
+                        caption: None,
+                        text: None,
+                        edited: false,
+                        locked: false,
+                    };
+                    spreads
+                ];
+                let c = crate::cover::geometry(&a, p);
+                serde_json::json!({
+                    "profil": p.id,
+                    "spreads": spreads,
+                    "sheet": [c.media_w, c.media_h],
+                    "spine": c.spine_mm(),
+                    "panels": [
+                        [c.back.x, c.back.w],
+                        [c.front.x, c.front.w],
+                    ],
+                })
+            })
+        })
+        .collect();
+
     serde_json::json!({
         "trim_mm": { "w": album.trim_mm.w, "h": album.trim_mm.h },
         "bleed_mm": album.bleed_mm,
@@ -241,6 +302,7 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
         "templates": templates,
         "fallbacks": fallbacks,
         "crop_windows": crop_samples,
+        "covers": covers,
     })
 }
 
@@ -329,9 +391,17 @@ pub const CAPTION_SAFE: f64 = 0.5;
 pub const PHOTO_CAPTION_SIZE_PT: f64 = 7.0;
 pub const PHOTO_CAPTION_DROP_MM: f64 = 3.4;
 
-/// Free-text pages: 11 pt Helvetica, fixed leading, lines as typed.
+/// Spread captions, the line that dates a whole double page.
+pub const SPREAD_CAPTION_SIZE_PT: f64 = 9.0;
+
+/// Free-text pages: 11 pt, fixed leading, lines as typed.
 pub const TEXT_SIZE_PT: f64 = 11.0;
 pub const TEXT_LEADING_MM: f64 = 6.4;
+
+/// Caption grey, and the slightly warmer, darker ink of a text page. Both
+/// were picked against paper, not against a screen.
+pub const INK: [f64; 3] = [0.25, 0.25, 0.25];
+pub const TEXT_INK: [f64; 3] = [0.2, 0.19, 0.16];
 
 /// Where a `texte` spread's first baseline sits: left margin of the recto
 /// page, at 62 % of the height. The editor mirrors this anchor.
@@ -580,6 +650,11 @@ pub struct PdfWriter {
     font_id: lopdf::ObjectId,
     geom: SpreadGeometry,
     bleed_mm: f64,
+    /// Goes into `/Info`, into `dc:title`, and nowhere else.
+    title: String,
+    /// Read once at the top of the render so every date in the file names the
+    /// same instant, however long the render takes.
+    stamp: chrono::DateTime<chrono::Local>,
 }
 
 /// Put the text face in the document and return its resource id.
@@ -639,7 +714,7 @@ fn embed_font(doc: &mut Document) -> lopdf::ObjectId {
 
 impl PdfWriter {
     pub fn new(album: &Album) -> Self {
-        let mut doc = Document::with_version("1.5");
+        let mut doc = Document::with_version(pdfx::PDF_VERSION);
         let pages_id = doc.new_object_id();
         let font_id = embed_font(&mut doc);
         Self {
@@ -649,6 +724,8 @@ impl PdfWriter {
             font_id,
             geom: geometry(album),
             bleed_mm: album.bleed_mm,
+            title: album.title.clone(),
+            stamp: chrono::Local::now(),
         }
     }
 
@@ -658,42 +735,7 @@ impl PdfWriter {
         let mut xobjects = dictionary! {};
 
         for (i, (asset, rect)) in assets.iter().zip(rects.iter()).enumerate() {
-            let img_id = self.doc.add_object(Stream::new(
-                dictionary! {
-                    "Type" => "XObject",
-                    "Subtype" => "Image",
-                    "Width" => asset.width as i64,
-                    "Height" => asset.height as i64,
-                    "ColorSpace" => "DeviceRGB",
-                    "BitsPerComponent" => 8,
-                    "Filter" => "DCTDecode",
-                },
-                asset.data.clone(),
-            ));
-            let name = format!("Im{i}");
-            xobjects.set(name.as_bytes(), Object::Reference(img_id));
-
-            let (x, y, w, h) = (
-                rect.x * MM_TO_PT,
-                rect.y * MM_TO_PT,
-                rect.w * MM_TO_PT,
-                rect.h * MM_TO_PT,
-            );
-            // cover-crop: scale to fill (times the manual zoom), anchor on
-            // the focal point, clip to the slot
-            let iw = asset.width as f64;
-            let ih = asset.height as f64;
-            let s = (w / iw).max(h / ih) * asset.zoom.max(1.0);
-            let dw = iw * s;
-            let dh = ih * s;
-            let fx = asset.focal[0].clamp(0.0, 1.0);
-            let fy = asset.focal[1].clamp(0.0, 1.0);
-            let dx = x - (dw - w) * fx;
-            // focal y is from top of the image; PDF y grows upward
-            let dy = y - (dh - h) * (1.0 - fy);
-            content.push_str(&format!(
-                "q {x:.2} {y:.2} {w:.2} {h:.2} re W n {dw:.2} 0 0 {dh:.2} {dx:.2} {dy:.2} cm /{name} Do Q\n"
-            ));
+            self.draw_image(&mut content, &mut xobjects, i, asset, rect);
         }
 
         // Photo captions: 7 pt under the slot's bottom edge, left-aligned on
@@ -704,12 +746,14 @@ impl PdfWriter {
             if caption.is_empty() {
                 continue;
             }
-            let cx = rect.x * MM_TO_PT;
-            let cy = (rect.y - PHOTO_CAPTION_DROP_MM) * MM_TO_PT;
-            let text = winansi_escape(caption);
-            content.push_str(&format!(
-                "BT /F1 {PHOTO_CAPTION_SIZE_PT} Tf 0.25 0.25 0.25 rg {cx:.2} {cy:.2} Td ({text}) Tj ET\n"
-            ));
+            text_op(
+                &mut content,
+                rect.x,
+                rect.y - PHOTO_CAPTION_DROP_MM,
+                PHOTO_CAPTION_SIZE_PT,
+                INK,
+                caption,
+            );
         }
 
         // Free-text page: lines exactly as typed, fixed leading.
@@ -719,48 +763,104 @@ impl PdfWriter {
                 if line.is_empty() {
                     continue;
                 }
-                let cx = at.x * MM_TO_PT;
-                let cy = (at.y - i as f64 * TEXT_LEADING_MM) * MM_TO_PT;
-                let esc = winansi_escape(line);
-                content.push_str(&format!(
-                    "BT /F1 {TEXT_SIZE_PT} Tf 0.2 0.19 0.16 rg {cx:.2} {cy:.2} Td ({esc}) Tj ET\n"
-                ));
+                text_op(
+                    &mut content,
+                    at.x,
+                    at.y - i as f64 * TEXT_LEADING_MM,
+                    TEXT_SIZE_PT,
+                    TEXT_INK,
+                    line,
+                );
             }
         }
 
         if let Some(caption) = &spread.caption {
             let at = caption_anchor(&rects, &self.geom);
-            let cx = at.x * MM_TO_PT;
-            let cy = at.y * MM_TO_PT;
-            let text = winansi_escape(caption);
-            content.push_str(&format!(
-                "BT /F1 9 Tf 0.25 0.25 0.25 rg {cx:.2} {cy:.2} Td ({text}) Tj ET\n"
-            ));
+            text_op(&mut content, at.x, at.y, SPREAD_CAPTION_SIZE_PT, INK, caption);
         }
 
+        let b = self.bleed_mm;
+        self.add_page(
+            Boxes {
+                media: [self.geom.media_w, self.geom.media_h],
+                trim: [b, b, self.geom.media_w - b, self.geom.media_h - b],
+            },
+            content,
+            xobjects,
+        );
+        Ok(())
+    }
+
+    /// Cover-crop one image into `rect`: scale to fill (times the manual
+    /// zoom), anchor on the focal point, clip to the rectangle. The one place
+    /// that arithmetic exists on the Rust side; `album.ts::cropWindow` is its
+    /// port, and the parity check compares the two.
+    pub(crate) fn draw_image(
+        &mut self,
+        content: &mut String,
+        xobjects: &mut lopdf::Dictionary,
+        index: usize,
+        asset: &JpegAsset,
+        rect: &Rect,
+    ) {
+        let img_id = self.doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Image",
+                "Width" => asset.width as i64,
+                "Height" => asset.height as i64,
+                "ColorSpace" => "DeviceRGB",
+                "BitsPerComponent" => 8,
+                "Filter" => "DCTDecode",
+            },
+            asset.data.clone(),
+        ));
+        let name = format!("Im{index}");
+        xobjects.set(name.as_bytes(), Object::Reference(img_id));
+
+        let (x, y, w, h) = (
+            rect.x * MM_TO_PT,
+            rect.y * MM_TO_PT,
+            rect.w * MM_TO_PT,
+            rect.h * MM_TO_PT,
+        );
+        let iw = asset.width as f64;
+        let ih = asset.height as f64;
+        let s = (w / iw).max(h / ih) * asset.zoom.max(1.0);
+        let dw = iw * s;
+        let dh = ih * s;
+        let fx = asset.focal[0].clamp(0.0, 1.0);
+        let fy = asset.focal[1].clamp(0.0, 1.0);
+        let dx = x - (dw - w) * fx;
+        // focal y is from top of the image; PDF y grows upward
+        let dy = y - (dh - h) * (1.0 - fy);
+        content.push_str(&format!(
+            "q {x:.2} {y:.2} {w:.2} {h:.2} re W n {dw:.2} 0 0 {dh:.2} {dx:.2} {dy:.2} cm /{name} Do Q\n"
+        ));
+    }
+
+    /// One page, its boxes and its content. Every page in every file Colophon
+    /// writes goes through here, spread or cover: the TrimBox is not
+    /// something a second code path can forget.
+    pub(crate) fn add_page(&mut self, boxes: Boxes, content: String, xobjects: lopdf::Dictionary) {
         let content_id = self
             .doc
             .add_object(Stream::new(dictionary! {}, content.into_bytes()));
-
         let resources = dictionary! {
             "XObject" => xobjects,
             "Font" => dictionary! { "F1" => Object::Reference(self.font_id) },
         };
-        // TrimBox marks the finished spread inside the bleed: prepress reads
-        // it for the cut, and a preflight without it flags the file.
-        let b = self.bleed_mm * MM_TO_PT;
-        let (mw, mh) = (self.geom.media_w * MM_TO_PT, self.geom.media_h * MM_TO_PT);
+        let pt = |v: f64| Object::Real((v * MM_TO_PT) as f32);
         let page_id = self.doc.add_object(dictionary! {
             "Type" => "Page",
             "Parent" => Object::Reference(self.pages_id),
-            "MediaBox" => vec![0.into(), 0.into(), mw.into(), mh.into()],
-            "BleedBox" => vec![0.into(), 0.into(), mw.into(), mh.into()],
-            "TrimBox" => vec![b.into(), b.into(), (mw - b).into(), (mh - b).into()],
+            "MediaBox" => vec![0.into(), 0.into(), pt(boxes.media[0]), pt(boxes.media[1])],
+            "BleedBox" => vec![0.into(), 0.into(), pt(boxes.media[0]), pt(boxes.media[1])],
+            "TrimBox" => vec![pt(boxes.trim[0]), pt(boxes.trim[1]), pt(boxes.trim[2]), pt(boxes.trim[3])],
             "Resources" => resources,
             "Contents" => Object::Reference(content_id),
         });
         self.page_ids.push(Object::Reference(page_id));
-        Ok(())
     }
 
     pub fn save(mut self, out: &Path) -> Result<()> {
@@ -773,12 +873,25 @@ impl PdfWriter {
                 "Count" => count,
             }),
         );
+        // Colour, standard, dates and identity, all at once: a file that
+        // carries some of them and not the others fails a supplier's
+        // preflight exactly as loudly as one that carries none.
+        let d = pdfx::declare(&mut self.doc, &self.title, self.stamp)?;
         let catalog_id = self.doc.add_object(dictionary! {
             "Type" => "Catalog",
             "Pages" => Object::Reference(self.pages_id),
+            "OutputIntents" => d.output_intents,
+            "Metadata" => Object::Reference(d.metadata),
         });
         self.doc.trailer.set("Root", catalog_id);
+        self.doc.trailer.set("Info", Object::Reference(d.info));
+        self.doc.trailer.set("ID", d.id);
         self.doc.compress();
+        // The binary comment rides in the version string because that is the
+        // only thing lopdf writes above the first object. Splicing it into the
+        // finished bytes instead would shift every offset the cross-reference
+        // table has already recorded, and produce a file that opens nowhere.
+        self.doc.version = pdfx::header_line();
         self.doc.save(out).context("write pdf")?;
         Ok(())
     }
@@ -787,6 +900,144 @@ impl PdfWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Size, Slot};
+
+    /// Write a one-spread album and hand back its bytes plus the reopened
+    /// document. Everything below reads the file the writer actually
+    /// produced, never the structures it held in memory: the declaration is
+    /// only worth what survives serialisation.
+    fn written() -> (Vec<u8>, Document) {
+        let mut album = Album::new("Été & cie", std::path::Path::new("."), Size { w: 210.0, h: 210.0 });
+        album.spreads.push(Spread {
+            template: "duo".into(),
+            slots: vec![
+                Slot { src: "a.jpg".into(), focal: [0.5, 0.5], zoom: 1.0, caption: Some("la plage".into()) },
+                Slot::new("b.jpg".into(), [0.5, 0.5]),
+            ],
+            caption: Some("Corse, 2013".into()),
+            text: None,
+            edited: false,
+            locked: false,
+        });
+        let assets = vec![
+            solid_jpeg([200, 30, 40], 160, 120).unwrap(),
+            solid_jpeg([30, 120, 200], 160, 120).unwrap(),
+        ];
+        let mut w = PdfWriter::new(&album);
+        w.add_spread(&album.spreads[0], &assets).unwrap();
+        let path = std::env::temp_dir()
+            .join(format!("colophon-pdfx-{}-{:?}.pdf", std::process::id(), std::thread::current().id()));
+        w.save(&path).expect("écriture");
+        let bytes = std::fs::read(&path).unwrap();
+        let doc = Document::load(&path).expect("relecture");
+        let _ = std::fs::remove_file(&path);
+        (bytes, doc)
+    }
+
+    /// The header says 1.6 and the line under it carries the binary marker.
+    /// Both are structural: a validator reads them before anything else.
+    #[test]
+    fn the_file_opens_on_a_pdf_x_header() {
+        let (bytes, _) = written();
+        assert!(bytes.starts_with(b"%PDF-1.6\n"), "{:?}", &bytes[..12]);
+        let second = &bytes[9..];
+        assert_eq!(second[0], b'%', "pas de commentaire sous l'en-tête");
+        let high = second[1..9].iter().take_while(|b| **b >= 128).count();
+        assert!(high >= 4, "{high} octets hauts, il en faut quatre");
+    }
+
+    /// The colour the file was made for travels inside it: two intents, one
+    /// profile, and the profile is the sRGB asset rather than a name.
+    #[test]
+    fn the_output_intent_carries_the_profile() {
+        let (_, doc) = written();
+        let catalog = doc.catalog().expect("catalogue");
+        let intents = catalog.get(b"OutputIntents").unwrap().as_array().unwrap();
+        let subtypes: Vec<&str> = intents
+            .iter()
+            .map(|o| o.as_dict().unwrap().get(b"S").unwrap().as_name_str().unwrap())
+            .collect();
+        assert!(subtypes.contains(&"GTS_PDFX"), "{subtypes:?}");
+        assert!(subtypes.contains(&"GTS_PDFA1"), "{subtypes:?}");
+
+        // Both point at the same stream: PDF/A refuses a file whose intents
+        // disagree on the destination.
+        let profiles: Vec<lopdf::ObjectId> = intents
+            .iter()
+            .map(|o| match o.as_dict().unwrap().get(b"DestOutputProfile").unwrap() {
+                Object::Reference(id) => *id,
+                other => panic!("profil non référencé : {other:?}"),
+            })
+            .collect();
+        assert_eq!(profiles[0], profiles[1]);
+
+        let stream = doc.get_object(profiles[0]).unwrap().as_stream().unwrap();
+        assert_eq!(stream.dict.get(b"N").unwrap().as_i64().unwrap(), 3);
+        let icc = stream.decompressed_content().unwrap();
+        assert_eq!(icc, crate::icc::ICC_DATA, "le profil embarqué n'est pas l'asset");
+    }
+
+    /// The XMP packet is in the file, readable without unpacking a filter,
+    /// and names the level the printer's preflight looks for.
+    #[test]
+    fn the_metadata_names_the_standard() {
+        let (_, doc) = written();
+        let catalog = doc.catalog().unwrap();
+        let id = match catalog.get(b"Metadata").unwrap() {
+            Object::Reference(id) => *id,
+            other => panic!("métadonnées non référencées : {other:?}"),
+        };
+        let stream = doc.get_object(id).unwrap().as_stream().unwrap();
+        assert!(stream.dict.get(b"Filter").is_err(), "le paquet XMP est compressé");
+        let xmp = String::from_utf8(stream.content.clone()).expect("XMP en UTF-8");
+        assert!(xmp.contains("<pdfxid:GTS_PDFXVersion>PDF/X-4</pdfxid:GTS_PDFXVersion>"));
+        assert!(xmp.contains("<pdfaid:part>2</pdfaid:part>"));
+        // The album's own title, escaped, not the file name.
+        assert!(xmp.contains("Été &amp; cie"), "{xmp}");
+    }
+
+    /// `/Info` answers the trapping question and dates the file, and the
+    /// trailer identifies it. PDF/X refuses a file missing any of the three.
+    #[test]
+    fn the_information_dictionary_is_complete() {
+        let (_, doc) = written();
+        let info = match doc.trailer.get(b"Info").unwrap() {
+            Object::Reference(id) => doc.get_object(*id).unwrap().as_dict().unwrap(),
+            other => panic!("Info non référencé : {other:?}"),
+        };
+        assert_eq!(info.get(b"Trapped").unwrap().as_name_str().unwrap(), "False");
+        let created = info.get(b"CreationDate").unwrap().as_str().unwrap();
+        assert!(created.starts_with(b"D:"), "{:?}", String::from_utf8_lossy(created));
+        assert_eq!(info.get(b"ModDate").unwrap().as_str().unwrap(), created);
+
+        let ids = doc.trailer.get(b"ID").unwrap().as_array().unwrap();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0].as_str().unwrap().len(), 16, "identifiant de 16 octets");
+    }
+
+    /// Every page says where the knife goes, and the trim never leaves the
+    /// sheet. This is the one geometric rule PDF/X adds to the others, and
+    /// the whole point of the bleed the composer lays down.
+    #[test]
+    fn every_page_marks_its_trim() {
+        let (_, doc) = written();
+        for (_, page_id) in doc.get_pages() {
+            let page = doc.get_object(page_id).unwrap().as_dict().unwrap();
+            let nums = |k: &[u8]| -> Vec<f64> {
+                page.get(k)
+                    .unwrap_or_else(|_| panic!("{} absent", String::from_utf8_lossy(k)))
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|o| o.as_float().unwrap() as f64)
+                    .collect()
+            };
+            let media = nums(b"MediaBox");
+            let trim = nums(b"TrimBox");
+            assert!(trim[0] > media[0] && trim[1] > media[1], "le fond perdu est nul");
+            assert!(trim[2] < media[2] && trim[3] < media[3], "trim {trim:?} media {media:?}");
+        }
+    }
 
     #[test]
     fn fallback_walks_down_the_families() {

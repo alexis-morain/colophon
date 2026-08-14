@@ -52,7 +52,7 @@ fn jpeg_sof(data: &[u8]) -> Option<(u32, u32, u8)> {
 /// One original resolved for print: passthrough when the file is a plain
 /// upright JPEG already at or below the slot's need, decode + orient +
 /// downscale + re-encode otherwise.
-fn print_asset(
+pub(crate) fn print_asset(
     src: &Path,
     orientation: u32,
     rect: &pdf::Rect,

@@ -30,11 +30,6 @@ const MIN_VISIBLE: f64 = 0.72;
 /// Same bar as the linter's ouverture_faible counter.
 const OPENING_QUANTILE: f64 = 0.75;
 
-/// After this many spreads without a breathing page, promote one.
-const FORCE_FULL_AFTER: usize = 5;
-/// And never two breathing pages closer than this: an album where every
-/// other spread is a solo has no rhythm either.
-const MIN_BREAK_SPACING: usize = 4;
 /// How far ahead the forced promotion may pull a full-page photo from.
 const FULL_SEARCH_WINDOW: usize = 4;
 /// How far ahead the chunker may regroup photos of the same aspect class,
@@ -43,13 +38,137 @@ const GROUP_WINDOW: usize = 8;
 /// Never a fourth spread of the same template family in a row.
 const REPEAT_LIMIT: usize = 3;
 
-/// Photos per spread, cycled through so the book keeps changing pace.
-/// Mosaics of six and eight land often enough to be a rhythm, rarely
-/// enough to stay a surprise.
-const RHYTHM: [usize; 10] = [2, 3, 4, 2, 6, 3, 2, 8, 4, 3];
 
-/// Average photos per spread this rhythm produces, times ten. The photo
-/// budget in `build` leans on it to hit the requested number of spreads.
+/// How much of the album the composer puts on a spread.
+///
+/// The same photos, the same rules, three paces. This exists because the
+/// GO/NO-GO milestone asks a stranger whether they would show the draft as
+/// it is, and « too crowded » and « too empty » are the two answers a single
+/// fixed rhythm cannot both avoid. Offering the choice at the first build
+/// costs one screen and settles the question with the person who owns the
+/// photos, instead of with an average taste nobody has.
+///
+/// Every variant stays inside the linter's guarantees: none of them lets a
+/// run of spreads without a breathing page reach `audit::FLAT_RUN`, and none
+/// changes a single rule about faces, resolution or duplicates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Densite {
+    /// Few photos per spread, a breathing page often. A book to linger on:
+    /// for a given number of spreads, fewer photos make it in, each bigger.
+    Aeree,
+    /// The pace the composer has always had, and the one the counters were
+    /// tuned against.
+    #[default]
+    Equilibree,
+    /// Mosaics of six and eight carry the album: far more of the folder
+    /// reaches the page, each photo smaller.
+    ///
+    /// **Not offered yet.** Measured on the three test sets, this pace ends
+    /// with four cells under the resolution floor on corse-2013, against a
+    /// tolerance of three: a bigger photo budget admits frames whose only
+    /// printable home is a small cell, and the composer has no way to give
+    /// them one without breaking the rule that keeps near-duplicates off a
+    /// spread. It stays in the type, out of [`Densite::offertes`], until
+    /// that is solved rather than tuned around.
+    Dense,
+}
+
+impl Densite {
+    /// Photos per spread, cycled through so the book keeps changing pace.
+    /// Mosaics of six and eight land often enough to be a rhythm, rarely
+    /// enough to stay a surprise.
+    pub fn rhythm(self) -> &'static [usize] {
+        match self {
+            Densite::Aeree => &[1, 2, 2, 3, 1, 2, 4, 2, 1, 3],
+            Densite::Equilibree => &[2, 3, 4, 2, 6, 3, 2, 8, 4, 3],
+            Densite::Dense => &[3, 4, 6, 3, 8, 4, 6, 8, 4, 6],
+        }
+    }
+
+    /// After this many spreads without a breathing page, promote one. Held
+    /// under the linter's `FLAT_RUN` by the test below, which is what makes
+    /// the rhythm a guarantee rather than an intention.
+    pub fn force_full_after(self) -> usize {
+        match self {
+            Densite::Aeree => 3,
+            Densite::Equilibree => 5,
+            Densite::Dense => 6,
+        }
+    }
+
+    /// Never two breathing pages closer than this: an album where every
+    /// other spread is a solo has no rhythm either.
+    pub fn min_break_spacing(self) -> usize {
+        match self {
+            Densite::Aeree => 2,
+            Densite::Equilibree => 4,
+            Densite::Dense => 5,
+        }
+    }
+
+    /// Average photos per spread this rhythm produces, times ten. The photo
+    /// budget in `build` leans on it to hit the requested number of spreads.
+    pub fn photos_per_spread_x10(self) -> usize {
+        let r = self.rhythm();
+        r.iter().sum::<usize>() * 10 / r.len()
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Densite::Aeree => "aeree",
+            Densite::Equilibree => "equilibree",
+            Densite::Dense => "dense",
+        }
+    }
+
+    pub fn nom(self) -> &'static str {
+        match self {
+            Densite::Aeree => "Aérée",
+            Densite::Equilibree => "Équilibrée",
+            Densite::Dense => "Dense",
+        }
+    }
+
+    /// One sentence, for the screen that asks. Says what changes for the
+    /// reader, not what changes in the code.
+    pub fn about(self) -> &'static str {
+        match self {
+            Densite::Aeree => "Une ou deux photos par double page, souvent une seule en grand. Moins de photos retenues, chacune plus grande.",
+            Densite::Equilibree => "Deux à quatre photos, avec des mosaïques de temps en temps. Le rythme par défaut.",
+            Densite::Dense => "Des mosaïques de quatre à huit photos. Beaucoup plus de photos retenues, plus petites.",
+        }
+    }
+
+    pub fn par_id(id: &str) -> Option<Self> {
+        [Densite::Aeree, Densite::Equilibree, Densite::Dense]
+            .into_iter()
+            .find(|d| d.id() == id)
+    }
+
+    /// Every pace the engine can compose at, the CLI included.
+    pub fn toutes() -> [Densite; 3] {
+        [Densite::Aeree, Densite::Equilibree, Densite::Dense]
+    }
+
+    /// The paces the creation screen offers. A pace only reaches this list
+    /// once it passes the linter on the three reference sets: see
+    /// [`Densite::Dense`] for the one that does not.
+    pub fn offertes() -> &'static [Densite] {
+        &[Densite::Aeree, Densite::Equilibree]
+    }
+
+    /// Whether this is the pace an album gets when nobody chose. Keeps the
+    /// field off album.json until it carries something, so the file stays
+    /// diffable across the schema change.
+    pub fn is_default(&self) -> bool {
+        *self == Densite::default()
+    }
+}
+
+/// Average photos per spread of the default pace, times ten. Kept as a
+/// constant because it is what every caller that does not care about the
+/// density reads.
 pub const PHOTOS_PER_SPREAD_X10: usize = 32;
 
 pub struct Composer {
@@ -62,15 +181,21 @@ pub struct Composer {
     /// Current template family and how many spreads it has held in a row.
     family_run: (String, usize),
     geom: SpreadGeometry,
+    densite: Densite,
 }
 
 impl Composer {
     pub fn new(album: &Album) -> Self {
+        Self::avec_densite(album, Densite::default())
+    }
+
+    pub fn avec_densite(album: &Album, densite: Densite) -> Self {
         Self {
             beat: 0,
             since_break: 0,
             family_run: (String::new(), 0),
             geom: pdf::geometry(album),
+            densite,
         }
     }
 
@@ -81,7 +206,7 @@ impl Composer {
         root: &std::path::Path,
     ) -> Vec<Spread> {
         let mut photos = chapter.photos.clone();
-        promote_opening(&mut photos);
+        promote_opening(&mut photos, &|p| self.holds_a_page(p));
         let feature_threshold = quantile(
             &photos.iter().map(Photo::effective_score).collect::<Vec<_>>(),
             FEATURE_QUANTILE,
@@ -101,7 +226,7 @@ impl Composer {
             let mut feature = false;
 
             // The chapter opens on a page of its own: the promoted opener.
-            if i == 0 && remaining >= OPENING_MIN_PHOTOS {
+            if i == 0 && remaining >= OPENING_MIN_PHOTOS && self.holds_a_page(&photos[0]) {
                 take = 1;
                 feature = true;
             }
@@ -112,9 +237,10 @@ impl Composer {
             if take == 0
                 && !last_was_feature
                 && remaining != 2
-                && self.since_break >= MIN_BREAK_SPACING
+                && self.since_break >= self.densite.min_break_spacing()
                 && photos[i].meta.taken_reliable
                 && photos[i].effective_score() >= feature_threshold
+                && self.holds_a_page(&photos[i])
             {
                 take = 1;
                 feature = true;
@@ -126,7 +252,7 @@ impl Composer {
             if take == 0
                 && !last_was_feature
                 && remaining != 2
-                && self.since_break >= FORCE_FULL_AFTER
+                && self.since_break >= self.densite.force_full_after()
             {
                 let end = (i + FULL_SEARCH_WINDOW).min(photos.len());
                 let strongest = |range: &mut dyn Iterator<Item = usize>| {
@@ -147,7 +273,7 @@ impl Composer {
             }
 
             if take == 0 {
-                let hint = chunk_size(&photos[i..], self.beat);
+                let hint = chunk_size(&photos[i..], self.beat, self.densite);
                 // Fill the spread from the window ahead: photos of the same
                 // aspect class, none a near-twin of another. Two 18,5:9
                 // shots three photos apart still make a duo_pano, and the
@@ -186,9 +312,15 @@ impl Composer {
                     if feature && self.fits_full(p) {
                         break (self.with_flip("full1"), vec![0usize]);
                     }
-                    break self
-                        .pick(&photos[i..=i])
-                        .unwrap_or_else(|| (self.with_flip(solo_family(p)), vec![0]));
+                    if let Some(x) = self.pick(&photos[i..=i]) {
+                        break x;
+                    }
+                    // No solo cell prints this photo cleanly. It still goes
+                    // on a page of its own: every other size was refused too,
+                    // by the aspect rule or the twin rule. The linter counts
+                    // what lands here and the preflight refuses to export it,
+                    // which is the escape hatch working as designed.
+                    break (self.with_flip(solo_family(p)), vec![0]);
                 }
                 match self.pick(&photos[i..i + take]) {
                     Some(x) => break x,
@@ -251,6 +383,19 @@ impl Composer {
         }
     }
 
+    /// Whether a photo can carry a page on its own without printing under
+    /// the floor. Checked against the margined solo cell, the smaller of the
+    /// two a promoted photo can land in: passing here means passing either.
+    ///
+    /// This is what keeps a phone snapshot with a high score out of a
+    /// chapter opening. Without it the counter that catches the result
+    /// (`sous_resolution`) fires on the densest pace, where a bigger photo
+    /// budget lets more small frames through.
+    fn holds_a_page(&self, p: &Photo) -> bool {
+        let cell = pdf::slots_for("solo", 1, &self.geom)[0];
+        printable(p, &cell)
+    }
+
     /// Full bleed only when the crop keeps most of the frame, prints at a
     /// clean resolution, and no face ends up against an edge.
     fn fits_full(&self, p: &Photo) -> bool {
@@ -309,17 +454,23 @@ fn printable(p: &Photo, cell: &Rect) -> bool {
 
 /// Rotate the earliest top-quartile photo to the front of the chapter, so
 /// the opening spread carries it. Everything else keeps its order.
-fn promote_opening(photos: &mut [Photo]) {
+fn promote_opening(photos: &mut [Photo], holds_a_page: &dyn Fn(&Photo) -> bool) {
     if photos.len() < OPENING_MIN_PHOTOS {
         return;
     }
     let scores: Vec<f64> = photos.iter().map(|p| p.analysis.score()).collect();
     let bar = quantile(&scores, OPENING_QUANTILE);
-    if scores[0] >= bar {
-        return;
-    }
-    if let Some(j) = (1..photos.len()).find(|&j| scores[j] >= bar) {
-        photos[..=j].rotate_right(1);
+    // Strong first, big enough to print alone second. A 2 Mpx frame at the
+    // top of the quantile makes a fine mosaic cell and a poor opening page,
+    // so the search prefers one that can hold a page — but the chapter opens
+    // strong whatever happens: on a big page format a whole chapter can fail
+    // to hold one, and the linter counts a weak opening as a hard defect.
+    let chosen = (0..photos.len())
+        .find(|&j| scores[j] >= bar && holds_a_page(&photos[j]))
+        .or_else(|| (0..photos.len()).find(|&j| scores[j] >= bar));
+    match chosen {
+        Some(0) | None => {}
+        Some(j) => photos[..=j].rotate_right(1),
     }
 }
 
@@ -453,7 +604,7 @@ fn quantile(scores: &[f64], q: f64) -> f64 {
 
 /// How many photos the next spread absorbs. Only counts a template can lay
 /// out come back, and a lonely leftover is never created.
-fn chunk_size(rest: &[Photo], beat: usize) -> usize {
+fn chunk_size(rest: &[Photo], beat: usize, densite: Densite) -> usize {
     let remaining = rest.len();
     match remaining {
         0..=4 => return remaining.max(1),
@@ -461,7 +612,8 @@ fn chunk_size(rest: &[Photo], beat: usize) -> usize {
         7 => return 4, // 4 + 3
         _ => {}
     }
-    let mut take = RHYTHM[beat % RHYTHM.len()].min(remaining);
+    let rhythm = densite.rhythm();
+    let mut take = rhythm[beat % rhythm.len()].min(remaining);
     if remaining - take == 1 {
         take -= 1;
     }

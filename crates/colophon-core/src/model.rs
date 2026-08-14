@@ -17,6 +17,13 @@ pub struct Album {
     pub spreads: Vec<Spread>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<Cover>,
+    /// The pace the album was composed at, chosen at the first build. Kept
+    /// in the file so a recomposition keeps it: an album that changed
+    /// density halfway would rebuild itself around spreads the user pinned
+    /// under the other pace. Absent on albums composed before the choice
+    /// existed, and read as the default.
+    #[serde(default, skip_serializing_if = "crate::layout::Densite::is_default")]
+    pub densite: crate::layout::Densite,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -197,6 +204,7 @@ impl Album {
             bleed_mm: 3.0,
             spreads: Vec::new(),
             cover: None,
+            densite: crate::layout::Densite::default(),
         }
     }
 

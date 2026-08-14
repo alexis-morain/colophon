@@ -190,10 +190,8 @@ pub fn check(
         });
     }
 
-    // 4. PDF/X conformance. The face is embedded now, so the glyphs are in the
-    // file; what a PDF/X file still owes is the declaration. Read from the
-    // renderer rather than restated here, so the day it emits an OutputIntent
-    // nobody has to remember this line.
+    // 4. PDF/X conformance. Read from the renderer rather than restated here,
+    // so nobody has to remember this line the day the declaration changes.
     if profil.pdf_x == PdfX::X4 && !pdf::EMITS_PDF_X {
         defauts.push(Defaut {
             regle: "conformite",
@@ -208,6 +206,18 @@ pub fn check(
             ),
             remede: "choisissez un profil sans conformité PDF/X, ou demandez à l'imprimeur s'il accepte un PDF simple en RVB".into(),
         });
+    } else if profil.pdf_x == PdfX::X4 {
+        // The declaration is there and measured, but no free validator
+        // certifies PDF/X-4: veraPDF ships PDF/A profiles only. Saying which
+        // is which here costs one line and stops the spec sheet from
+        // promising a verdict nobody delivered.
+        notes.push(
+            "conformité PDF/X-4 déclarée : polices incorporées, OutputIntent sRGB avec profil ICC, \
+             XMP et TrimBox vérifiés à chaque export. Le contrôle indépendant disponible est \
+             PDF/A-2b (veraPDF), qui couvre le même socle ; le verdict PDF/X-4 lui-même revient au \
+             prévol de l'imprimeur."
+                .into(),
+        );
     }
 
     // 5. Resolution, cell by cell. The one defect nobody sees on screen and
@@ -348,10 +358,9 @@ mod tests {
         a
     }
 
-    /// Big originals, matching bleed, sane pagination: nothing about the album
-    /// itself stops the file. On a profile asking for no conformance it goes
-    /// straight out; on Cloudprinter the only thing left standing is the
-    /// PDF/X-4 declaration the writer does not yet emit.
+    /// Big originals, matching bleed, sane pagination: nothing stops the file,
+    /// at the loosest supplier and at the strictest. This is the state the
+    /// export has to reach, and the one the whole session was about.
     #[test]
     fn a_clean_album_passes() {
         let a = album_de(24, 3.0);
@@ -364,11 +373,17 @@ mod tests {
         assert_eq!(r.bloquants, 0);
 
         let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
-        let bloquants: Vec<&str> = r.defauts.iter().filter(|d| d.bloquant).map(|d| d.regle).collect();
-        assert_eq!(bloquants, vec!["conformite"], "défauts : {:?}", r.defauts);
+        assert!(r.ok, "défauts : {:?}", r.defauts);
+        assert_eq!(r.bloquants, 0);
         // The provisional spine is still announced, as a warning.
         assert_eq!(r.avertissements, 1);
         assert!(r.fiche.dos_mm.unwrap() > 0.0);
+        // And what the declaration rests on is said, not implied.
+        assert!(
+            r.notes.iter().any(|n| n.contains("PDF/A-2b")),
+            "la note sur la mesure de conformité a disparu : {:?}",
+            r.notes
+        );
     }
 
     /// The same album fails or passes depending on the supplier. That is the
@@ -381,10 +396,9 @@ mod tests {
             .collect();
 
         // Prodigi generates the bleed itself and takes 24 pages: nothing about
-        // the album bothers it, only the conformance declaration.
+        // the album bothers it, and it builds its own cover.
         let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims);
-        let bloquants: Vec<&str> = r.defauts.iter().filter(|d| d.bloquant).map(|d| d.regle).collect();
-        assert_eq!(bloquants, vec!["conformite"], "{:?}", r.defauts);
+        assert!(r.ok, "{:?}", r.defauts);
 
         // Cloudprinter wants 3 mm of bleed we did not render: blocked.
         let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);

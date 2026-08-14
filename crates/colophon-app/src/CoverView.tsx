@@ -1,20 +1,37 @@
 // The cover editor: back cover, spine, front cover, laid flat like the
 // printed sheet. Title and subtitle edit in place, the front photo comes
 // from the album and recrops like any case (drag to frame, wheel to zoom),
-// the back text is optional. The spine width is computed and shown; its
-// formula is provisional until Cloudprinter answers, and nothing but the
-// display depends on it.
+// the back text is optional.
+//
+// The sheet is drawn for the supplier chosen on the Envoi screen, from that
+// profile's own coefficients: one who builds its own spine gets no spine band
+// here either, and a provisional formula says so where it shows. Same
+// arithmetic as `cover.rs`, and the parity check compares the two.
 
 import { useEffect, useRef, useState } from "react";
-import { Album, Cover, Slot, ZOOM_MAX, ZOOM_MIN, spineMm } from "./album";
+import {
+  Album,
+  Cover,
+  Slot,
+  SPINE_TEXT_MIN_MM,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  coverSheet,
+} from "./album";
+import { Printer } from "./bridge";
 import { LazyThumb } from "./TriView";
 import { cachedThumb, loadThumb } from "./thumbs";
 
 export function CoverView({
   album,
+  printer,
   onCover,
 }: {
   album: Album;
+  /** The supplier the sheet is drawn for. Null while the profiles load: the
+   *  sheet then falls back to two panels and no spine, which is what a
+   *  supplier building its own cover receives anyway. */
+  printer: Printer | null;
   onCover: (cover: Cover) => void;
 }) {
   const cover: Cover = album.cover ?? { title: album.title };
@@ -22,7 +39,14 @@ export function CoverView({
   // one ⌘Z per field touched, not one per keystroke.
   const [form, setForm] = useState<Cover>(cover);
   const [picking, setPicking] = useState(false);
-  const spine = spineMm(album.spreads.length);
+  // The sheet the printer receives, from the profile's own coefficients.
+  // `parity.test.ts` compares this arithmetic with the engine's.
+  const sheet = coverSheet(album, {
+    dos: printer?.dos ?? { mode: "fourni" },
+    bleed_mm: printer?.bleed_mm ?? { haut: 0, bas: 0, exterieur: 0 },
+  });
+  const spine = sheet.spine?.[1] ?? 0;
+  const provisoire = printer?.certitude === "provisoire";
 
   useEffect(() => {
     setForm(album.cover ?? { title: album.title });
@@ -80,14 +104,22 @@ export function CoverView({
           />
         </div>
 
-        {/* Spine: computed width, title along it. */}
-        <div
-          className="cover-spine"
-          style={{ flex: spine }}
-          title={`Dos calculé : ${spine.toFixed(1).replace(".", ",")} mm (provisoire, en attente de l'imprimeur)`}
-        >
-          <span className="cover-spine-title">{form.title || album.title}</span>
-        </div>
+        {/* Spine: the profile's width, title along it above the floor where
+            type stops being readable on a fold. */}
+        {sheet.spine && (
+          <div
+            className="cover-spine"
+            style={{ flex: spine }}
+            title={
+              `Dos ${spine.toFixed(1).replace(".", ",")} mm` +
+              (provisoire ? " (provisoire, en attente de l'imprimeur)" : "")
+            }
+          >
+            {spine >= SPINE_TEXT_MIN_MM && (
+              <span className="cover-spine-title">{form.title || album.title}</span>
+            )}
+          </div>
+        )}
 
         {/* Front cover: photo + title block. */}
         <div className="cover-front" style={{ flex: album.trim_mm.w }}>
@@ -134,9 +166,20 @@ export function CoverView({
       </div>
 
       <p className="cover-note">
-        Dos calculé : {spine.toFixed(1).replace(".", ",")} mm pour{" "}
-        {album.spreads.length * 2} pages · valeur provisoire, la formule de
-        l'imprimeur la remplacera.
+        {sheet.spine ? (
+          <>
+            Dos {spine.toFixed(1).replace(".", ",")} mm pour{" "}
+            {album.spreads.length * 2} pages
+            {provisoire && ", valeur provisoire que la formule de l'imprimeur remplacera"}
+            {spine < SPINE_TEXT_MIN_MM && " · trop mince pour porter un titre"}
+          </>
+        ) : (
+          <>
+            {printer?.nom ?? "L'imprimeur"} fabrique le dos : la feuille part
+            sans lui.
+          </>
+        )}{" "}
+        · feuille {sheet.w.toFixed(0)} × {sheet.h.toFixed(0)} mm
       </p>
 
       {picking && (

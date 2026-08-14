@@ -418,14 +418,69 @@ export function textAnchor(g: Canvas): { x: number; y: number } {
   return { x: g.w / 2 + g.gutter / 2, y: g.h - g.h * 0.62 };
 }
 
+/** Reference paper weight of the spine coefficients. Port of printer.rs. */
+export const GRAMMAGE_REFERENCE = 150;
+export const GRAMMAGE_DEFAUT = 150;
+
+/** The spine parameters a printer profile carries, as `printer.rs`
+ *  serialises them. Declared here so the geometry below takes plain data and
+ *  the parity check can feed it without the bridge. */
+export type DosProfil =
+  | { mode: "fourni" }
+  | { mode: "calcule"; mm_par_feuille: number; constante_mm: number };
+
 /**
- * Provisional spine width, in millimetres, for `spreads` double pages.
- * PROVISOIRE : formule par défaut (papier ~200 g, couverture rigide) en
- * attente de la réponse Cloudprinter ; seule la valeur affichée à l'export
- * en dépend, jamais la géométrie des planches.
+ * Spine width in millimetres, or null when the supplier builds its own.
+ * Port of `PrinterProfile::dos_mm`: the coefficients belong to the profile
+ * and never to this file, so the day Cloudprinter confirms its formula one
+ * edit moves both the editor and the printed sheet. The provisional value is
+ * flagged where it shows, not here.
  */
-export function spineMm(spreads: number): number {
-  const SHEET_MM = 0.22; // une feuille imprimée ≈ 0,22 mm
-  const COVER_MM = 1.5; // carton de couverture, aller-retour
-  return spreads * SHEET_MM + COVER_MM;
+export function spineMm(
+  dos: DosProfil,
+  pages: number,
+  grammage = GRAMMAGE_DEFAUT,
+): number | null {
+  if (dos.mode === "fourni") return null;
+  // A sheet is two pages, and heavier paper thickens the spine pro rata.
+  const feuilles = pages / 2;
+  return (
+    feuilles * dos.mm_par_feuille * (grammage / GRAMMAGE_REFERENCE) +
+    dos.constante_mm
+  );
 }
+
+/** The flat cover sheet, in millimetres. Port of `cover.rs::geometry`: back
+ *  cover, spine, front, plus the profile's bleed on the outer edges. */
+export type CoverSheet = {
+  w: number;
+  h: number;
+  /** `[x, width]` of each trim panel, left to right. */
+  back: [number, number];
+  spine: [number, number] | null;
+  front: [number, number];
+};
+
+export function coverSheet(
+  album: { trim_mm: { w: number; h: number }; spreads: unknown[] },
+  profil: {
+    dos: DosProfil;
+    bleed_mm: { haut: number; bas: number; exterieur: number };
+  },
+): CoverSheet {
+  const pages = album.spreads.length * 2;
+  const spine = spineMm(profil.dos, pages);
+  const s = spine ?? 0;
+  const ext = profil.bleed_mm.exterieur;
+  return {
+    w: album.trim_mm.w * 2 + s + ext * 2,
+    h: album.trim_mm.h + profil.bleed_mm.haut + profil.bleed_mm.bas,
+    back: [ext, album.trim_mm.w],
+    spine: spine === null ? null : [ext + album.trim_mm.w, spine],
+    front: [ext + album.trim_mm.w + s, album.trim_mm.w],
+  };
+}
+
+/** Below this a spine is a fold, not a surface: no title on it. Port of
+ *  `cover.rs::SPINE_TEXT_MIN_MM`. */
+export const SPINE_TEXT_MIN_MM = 9;

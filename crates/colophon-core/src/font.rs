@@ -62,6 +62,37 @@ pub fn metrics() -> Result<Metrics> {
     parse(FONT_DATA)
 }
 
+/// The metrics, parsed once. Wrapping a paragraph asks for the widths on
+/// every candidate line, and re-reading 430 kB of TrueType each time would
+/// turn a cover render into a benchmark.
+static METRICS: std::sync::LazyLock<Option<Metrics>> =
+    std::sync::LazyLock::new(|| metrics().ok());
+
+/// How wide a string sets, in millimetres, at `size_pt`.
+///
+/// Advance widths only, no kerning: the face carries none in the tables the
+/// renderer reads, and what is measured here has to be what the PDF draws.
+/// A character outside WinAnsi measures as the `?` the renderer substitutes.
+pub fn text_width_mm(s: &str, size_pt: f64) -> f64 {
+    let Some(m) = METRICS.as_ref() else { return 0.0 };
+    let width = |c: char| -> i32 {
+        let code = winansi_code(c).unwrap_or(b'?');
+        m.widths
+            .get(usize::from(code - FIRST_CHAR))
+            .copied()
+            .unwrap_or(0)
+    };
+    let em: i32 = s.chars().map(width).sum();
+    // Widths are in the 1000-unit em PDF works in.
+    f64::from(em) / 1000.0 * size_pt * 25.4 / 72.0
+}
+
+/// The WinAnsi code a character is escaped to, the reverse of
+/// [`winansi_char`]. `None` for anything the renderer cannot print.
+pub fn winansi_code(c: char) -> Option<u8> {
+    (FIRST_CHAR..=LAST_CHAR).find(|code| winansi_char(*code) == Some(c))
+}
+
 fn parse(data: &[u8]) -> Result<Metrics> {
     let head = table(data, b"head").context("table head absente")?;
     let hhea = table(data, b"hhea").context("table hhea absente")?;
@@ -354,11 +385,6 @@ mod tests {
         assert!(lookup(sub, 'œ' as u32).unwrap() > 0);
         // A CJK ideograph is outside a Latin text face.
         assert_eq!(lookup(sub, 0x4E2D).unwrap(), 0);
-    }
-
-    /// Reverse of `winansi_char`, for the test above only.
-    fn winansi_code(c: char) -> Option<u8> {
-        (FIRST_CHAR..=LAST_CHAR).find(|code| winansi_char(*code) == Some(c))
     }
 
     /// A truncated file is refused rather than read past its end.

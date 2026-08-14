@@ -47,11 +47,45 @@ const DEV_FORMATS: FormatPreset[] = [
   { name: "portrait-20x25", w: 203, h: 254, about: "portrait 20 × 25, le 8 × 10 pouces" },
 ];
 
+/** A composition pace offered at the first build, as the engine names it. */
+export type DensitePreset = {
+  id: string;
+  nom: string;
+  about: string;
+  /** Photos per spread on average, for the small preview beside it. */
+  photos_par_planche: number;
+};
+
+/** The composition paces, from the engine. Mirrored for the browser harness
+ *  the way the formats are, so the creation screen works without the shell. */
+export async function listDensities(): Promise<DensitePreset[]> {
+  if (!inTauri) return DEV_DENSITES;
+  return invoke<DensitePreset[]>("list_densities");
+}
+
+const DEV_DENSITES: DensitePreset[] = [
+  {
+    id: "aeree",
+    nom: "Aérée",
+    about:
+      "Une ou deux photos par double page, souvent une seule en grand. Moins de photos retenues, chacune plus grande.",
+    photos_par_planche: 2.1,
+  },
+  {
+    id: "equilibree",
+    nom: "Équilibrée",
+    about:
+      "Deux à quatre photos, avec des mosaïques de temps en temps. Le rythme par défaut.",
+    photos_par_planche: 3.2,
+  },
+];
+
 /** Build an album from a photo folder, then open it. Long: seconds cold. */
 export async function buildAlbum(
   photosDir: string,
   format: string,
   spreads: number,
+  densite: string,
   title: string | null,
 ): Promise<OpenedAlbum> {
   if (!inTauri) return devBuild();
@@ -59,6 +93,7 @@ export async function buildAlbum(
     photosDir,
     format,
     spreads,
+    densite,
     title,
   });
 }
@@ -188,6 +223,91 @@ export async function saveAlbum(album: Album): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
+/** A printer profile, exactly as the engine holds it. Never restated here:
+ *  a supplier's specs live in `printer.rs` and travel across the bridge. */
+export type Printer = {
+  id: string;
+  nom: string;
+  pdf_x: "x4" | "aucun";
+  espace: "rgb" | "fogra39";
+  bleed_mm: { haut: number; bas: number; exterieur: number; dos: number };
+  safe_mm: number;
+  fichiers: "un" | "deux";
+  dos: { mode: "fourni" } | { mode: "calcule"; mm_par_feuille: number; constante_mm: number; certitude: Certitude };
+  pages_min: number;
+  pages_max: number;
+  pas_pagination: number;
+  min_ppi: number;
+  certitude: Certitude;
+  reserves: string[];
+};
+
+export type Certitude = "confirme" | "provisoire";
+
+/** One thing wrong with the file, named the way a human would name it. */
+export type Defaut = {
+  regle: string;
+  bloquant: boolean;
+  /** 1-based, as the ruler shows it. */
+  planche?: number;
+  case?: number;
+  src?: string;
+  cause: string;
+  remede: string;
+};
+
+/** The sheet handed to whoever receives the PDF. */
+export type Fiche = {
+  imprimeur: string;
+  format_page_mm: [number, number];
+  planches: number;
+  pages_interieur: number;
+  fond_perdu_mm: { haut: number; bas: number; exterieur: number; dos: number };
+  zone_sure_mm: number;
+  espace: "rgb" | "fogra39";
+  output_intent: string;
+  conformite: "x4" | "aucun";
+  fichiers: "un" | "deux";
+  dos_mm?: number;
+  grammage_g_m2: number;
+  resolution_cible_dpi: number;
+};
+
+export type PrevolReport = {
+  album: string;
+  profil: string;
+  ok: boolean;
+  bloquants: number;
+  avertissements: number;
+  fiche: Fiche;
+  reserves?: string[];
+  notes?: string[];
+  defauts: Defaut[];
+};
+
+/** The printer profiles the engine knows. Outside the shell they come from
+ *  the dev album server, which runs the same engine: no second copy of a
+ *  supplier's specs anywhere in the front end. */
+export async function listPrinters(): Promise<Printer[]> {
+  if (inTauri) return invoke<Printer[]>("list_printers");
+  const res = await fetch("/__dev/printers");
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/** Preflight the saved album against one profile. Seconds on a big album:
+ *  it reopens every original to measure the effective resolution. */
+export async function preflight(profil: string): Promise<PrevolReport> {
+  if (inTauri) return invoke<PrevolReport>("preflight", { profil });
+  const res = await fetch(`/__dev/prevol?profil=${encodeURIComponent(profil)}`);
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(text);
+  }
+}
+
 /** Ask where to keep the PDF (Téléchargements by default), then render it
  *  at print resolution straight to that path. The dialog comes first: the
  *  render reopens every original at 300 dpi and takes minutes, nobody
@@ -196,8 +316,9 @@ export async function saveAlbum(album: Album): Promise<void> {
  *  the dialog is dismissed. Tauri only: the dev server has no engine. */
 export async function exportPdf(
   title: string,
+  profil: string,
   onProgress?: (done: number, total: number) => void,
-): Promise<string | null> {
+): Promise<string[] | null> {
   if (!inTauri) {
     throw new Error("PDF hors application : utilisez la commande colophon");
   }
@@ -216,9 +337,8 @@ export async function exportPdf(
     if (m && onProgress) onProgress(Number(m[1]), Number(m[2]));
   });
   try {
-    await invoke("export_pdf", { dest });
+    return await invoke<string[]>("export_pdf", { dest, profil });
   } finally {
     off();
   }
-  return dest;
 }

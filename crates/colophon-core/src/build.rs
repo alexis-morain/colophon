@@ -26,6 +26,10 @@ pub struct BuildOptions {
     pub pinned: Vec<(model::Spread, Option<chrono::NaiveDateTime>)>,
     /// Cover carried over on recomposition; a fresh build has none yet.
     pub cover: Option<model::Cover>,
+    /// How much the composer puts on a spread. Chosen at the first build and
+    /// kept by every recomposition: changing pace halfway through would
+    /// rebuild the album around the spreads the user had already pinned.
+    pub densite: layout::Densite,
 }
 
 impl Default for BuildOptions {
@@ -38,6 +42,7 @@ impl Default for BuildOptions {
             cancel: Box::new(|| false),
             pinned: Vec::new(),
             cover: None,
+            densite: layout::Densite::default(),
         }
     }
 }
@@ -253,7 +258,8 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     anyhow::ensure!(!cancelled(), "composition annulée");
     let mut album = model::Album::new(&title, &root, opts.trim);
     album.cover = opts.cover.clone();
-    let mut budget = spreads_target * layout::PHOTOS_PER_SPREAD_X10 / 10;
+    album.densite = opts.densite;
+    let mut budget = spreads_target * opts.densite.photos_per_spread_x10() / 10;
     let mut photos_kept = 0;
     // Keep the attempt closest to the target: on fragmented sets the
     // spread count can refuse to follow the budget, and the last attempt
@@ -267,10 +273,15 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         }
         let kept = trial.iter().map(|c| c.photos.len()).sum();
 
-        let mut composer = layout::Composer::new(&album);
+        let mut composer = layout::Composer::avec_densite(&album, opts.densite);
+        // Captions are worked out for the run of chapters at once, not one
+        // by one: whether a place is worth naming depends on the chapter
+        // before it.
+        let captions = chapter_captions(&trial);
         let spreads: Vec<model::Spread> = trial
             .iter()
-            .flat_map(|c| composer.compose(c, Some(chapter_caption(c)), &root))
+            .zip(captions)
+            .flat_map(|(c, caption)| composer.compose(c, Some(caption), &root))
             .collect();
 
         let got = spreads.len();
@@ -497,7 +508,8 @@ pub fn date_fr(d: chrono::NaiveDate, with_year: bool) -> String {
     }
 }
 
-pub fn chapter_caption(c: &pipeline::Chapter) -> String {
+/// The dates of one chapter, the line every chapter has carried so far.
+pub fn chapter_dates(c: &pipeline::Chapter) -> String {
     let s = c.start.date();
     let e = c.end.date();
     if s == e {
@@ -505,6 +517,40 @@ pub fn chapter_caption(c: &pipeline::Chapter) -> String {
     } else {
         format!("{} \u{2013} {}", date_fr(s, false), date_fr(e, true))
     }
+}
+
+/// The town a chapter was shot in, when its photos agree on one.
+pub fn chapter_place(c: &pipeline::Chapter) -> Option<&'static str> {
+    let points: Vec<(f64, f64)> = c.photos.iter().filter_map(|p| p.meta.gps).collect();
+    crate::places::place_of(&points).map(|city| city.name)
+}
+
+/// The line printed on each chapter's opening spread: where, then when.
+///
+/// The place comes from the GPS the cameras wrote, and only when a chapter's
+/// photos agree on one town (see [`crate::places`]). Two things keep it
+/// quiet. A chapter whose photos disagree, or carry no coordinates at all,
+/// shows its dates alone, exactly as before. And a chapter in the same town
+/// as the one before it drops the name: a week in Calvi is one place, not
+/// eight chapters shouting « Calvi », and repeating it teaches the reader
+/// to stop reading the line.
+pub fn chapter_captions(chapters: &[pipeline::Chapter]) -> Vec<String> {
+    let mut out = Vec::with_capacity(chapters.len());
+    let mut previous: Option<&str> = None;
+    for c in chapters {
+        let dates = chapter_dates(c);
+        let place = chapter_place(c);
+        out.push(match place {
+            Some(name) if previous != Some(name) => format!("{name}, {dates}"),
+            _ => dates,
+        });
+        // A chapter that named nowhere does not reset the run: crossing an
+        // unlocated day and coming back is still the same stay.
+        if place.is_some() {
+            previous = place;
+        }
+    }
+    out
 }
 
 /// Minimal JPEG SOF parser: width/height without a full decode.

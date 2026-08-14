@@ -220,11 +220,14 @@ async fn build_album_from_folder(
     photos_dir: String,
     format: String,
     spreads: usize,
+    densite: String,
     title: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<OpenedAlbum, String> {
     let trim = colophon_core::format::parse(&format).map_err(|e| e.to_string())?;
+    let densite = colophon_core::layout::Densite::par_id(&densite)
+        .ok_or_else(|| format!("densité inconnue : {densite}"))?;
     let photos = PathBuf::from(&photos_dir);
     let out = album_out_dir(&app, &photos)?;
     let title = title
@@ -247,6 +250,7 @@ async fn build_album_from_folder(
                     let _ = emitter.emit("build:progress", line);
                 }),
                 cancel: Box::new(move || flag.load(Ordering::Relaxed)),
+                densite,
                 ..Default::default()
             },
         )
@@ -315,6 +319,10 @@ async fn recompose_album(
         cancel: Box::new(move || flag.load(Ordering::Relaxed)),
         pinned,
         cover: album.cover.clone(),
+        // The pace the album was built at, read back from the file: a
+        // recomposition keeps it rather than quietly reverting to the
+        // default one.
+        densite: album.densite,
     };
     tauri::async_runtime::spawn_blocking(move || {
         colophon_core::build_album(&root, &build_out, opts)
@@ -358,32 +366,111 @@ async fn render_pdf(state: State<'_, AppState>) -> Result<String, String> {
 /// Render the print-resolution PDF straight to where the user chose to keep
 /// it. Reopens every original at 300 dpi, so this takes minutes, not
 /// seconds: progress goes out as `export:progress` events (`render: i/n`).
+///
+/// The cover follows the profile, never a habit: a supplier who wants two
+/// files gets the flat cover sheet written beside the interior, one who
+/// builds its own gets nothing extra. Both paths come back so the window can
+/// name what it wrote.
 #[tauri::command]
 async fn export_pdf(
     app: tauri::AppHandle,
     dest: String,
+    profil: String,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
     let dir = {
         let guard = state.open.lock().unwrap();
         guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
     };
+    let profil = printer_profile(&profil)?;
     state.cancel_export.store(false, Ordering::Relaxed);
     let flag = state.cancel_export.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<String>, String> {
+        let interior = Path::new(&dest);
         colophon_core::render_print_pdf(
             &dir,
-            Path::new(&dest),
+            interior,
             &|line| {
                 let _ = app.emit("export:progress", line);
             },
             &move || flag.load(Ordering::Relaxed),
         )
+        .map_err(|e| format!("{e:#}"))?;
+        let mut written = vec![dest.clone()];
+
+        if profil.fichiers == colophon_core::printer::Fichiers::Deux {
+            let _ = app.emit("export:progress", "cover: couverture");
+            let stem = interior
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "album".into());
+            let cover = interior.with_file_name(format!("{stem}-couverture.pdf"));
+            colophon_core::cover::render_cover_pdf(&dir, profil, &cover)
+                .map_err(|e| format!("couverture : {e:#}"))?;
+            written.push(cover.to_string_lossy().to_string());
+        }
+        Ok(written)
     })
     .await
     .map_err(|e| e.to_string())?
-    .map(|_| ())
-    .map_err(|e| format!("{e:#}"))
+}
+
+/// The composition paces the creation screen offers, each with the sentence
+/// that describes it. From the engine, like the formats beside them.
+#[derive(Serialize)]
+struct DensitePreset {
+    id: &'static str,
+    nom: &'static str,
+    about: &'static str,
+    /// Photos per spread on average, for the estimate the screen shows.
+    photos_par_planche: f64,
+}
+
+#[tauri::command]
+fn list_densities() -> Vec<DensitePreset> {
+    colophon_core::layout::Densite::offertes()
+        .iter()
+        .copied()
+        .map(|d| DensitePreset {
+            id: d.id(),
+            nom: d.nom(),
+            about: d.about(),
+            photos_par_planche: d.photos_per_spread_x10() as f64 / 10.0,
+        })
+        .collect()
+}
+
+/// The printer profiles, as data, for the destination screen. Straight from
+/// the engine: the window never carries a second copy of a supplier's specs.
+#[tauri::command]
+fn list_printers() -> &'static [colophon_core::printer::PrinterProfile] {
+    colophon_core::printer::PrinterProfile::tous()
+}
+
+fn printer_profile(
+    id: &str,
+) -> Result<&'static colophon_core::printer::PrinterProfile, String> {
+    colophon_core::printer::PrinterProfile::par_id(id)
+        .ok_or_else(|| format!("profil imprimeur inconnu : {id}"))
+}
+
+/// Preflight the album as it stands on disk against one profile. Reads every
+/// original's dimensions, so it is seconds on a big album: off the main
+/// thread, like the renders.
+#[tauri::command]
+async fn preflight(
+    profil: String,
+    state: State<'_, AppState>,
+) -> Result<colophon_core::prevol::PrevolReport, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let profil = printer_profile(&profil)?;
+    tauri::async_runtime::spawn_blocking(move || colophon_core::prevol::prevol(&dir, profil))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -407,7 +494,10 @@ pub fn run() {
             cancel_export,
             caption_suggestion,
             detected_focal,
-            curation
+            curation,
+            list_printers,
+            preflight,
+            list_densities
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -17,6 +17,7 @@ const devAlbum: string | undefined = process.env.COLOPHON_ALBUM;
  */
 function albumDevServer(dir: string): Plugin {
   const read = (...p: string[]) => readFileSync(join(dir, ...p));
+  const engineBinary = join(__dirname, "../../target/release/colophon");
   return {
     name: "colophon-album-dev-server",
     apply: "serve",
@@ -67,6 +68,42 @@ function albumDevServer(dir: string): Plugin {
           // an album built before the export simply has no discard list
           res.setHeader("Content-Type", "application/json");
           res.end("[]");
+        }
+      });
+      // The preflight and the printer list, run by the engine itself. The
+      // destination screen is the one view that shows nothing without them,
+      // so without this it could only be worked on inside the bundle.
+      server.middlewares.use("/__dev/printers", (_req, res) => {
+        try {
+          res.setHeader("Content-Type", "application/json");
+          res.end(execFileSync(engineBinary, ["--profils-json"], { encoding: "utf8" }));
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
+      server.middlewares.use("/__dev/prevol", (req, res) => {
+        const profil =
+          new URL(req.url ?? "", "http://x").searchParams.get("profil") ??
+          "cloudprinter";
+        try {
+          // Non-zero exit is the normal answer of a failing preflight: the
+          // report is on stdout either way, and it is the report we want.
+          const out = execFileSync(
+            engineBinary,
+            ["--prevol", "--profil", profil, "-o", dir],
+            { encoding: "utf8" },
+          );
+          res.setHeader("Content-Type", "application/json");
+          res.end(out);
+        } catch (e: any) {
+          if (e?.stdout) {
+            res.setHeader("Content-Type", "application/json");
+            res.end(e.stdout);
+            return;
+          }
+          res.statusCode = 500;
+          res.end(String(e));
         }
       });
       server.middlewares.use("/__dev/thumb", (req, res) => {

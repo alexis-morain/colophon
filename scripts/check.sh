@@ -16,6 +16,11 @@ if [ -d "$TESTSETS" ]; then
   for set in corse-2013 mauritanie-2019 random-2024; do
     [ -d "$TESTSETS/$set" ] || continue
     out=".albums/check/$set"
+    # From scratch, every time. album.origin.json is never rewritten, being
+    # the reprise's reference: composing into a folder an earlier run left
+    # behind measures today's album against last month's proposal, and the
+    # reprise then reads a hand correction nobody ever made.
+    rm -rf "$out"
     ./target/release/colophon "$TESTSETS/$set" -o "$out" --format carre-21 \
       >/dev/null 2>&1
     if ! ./target/release/colophon --audit -o "$out" > "$out/audit.json"; then

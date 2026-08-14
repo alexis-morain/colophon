@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  BuildBilan,
   buildAlbum,
   cancelBuild,
   cancelExport,
@@ -52,9 +53,10 @@ import {
   triEntries,
   TriEntry,
 } from "./edits";
+import { BilanView } from "./BilanView";
 import { SpreadView } from "./SpreadView";
 import { TemplatePicker } from "./TemplatePicker";
-import { TriView } from "./TriView";
+import { RevueView, TriView } from "./TriView";
 import { Drawer } from "./Drawer";
 import { PlanchesView, LockGlyph } from "./PlanchesView";
 import { CoverView } from "./CoverView";
@@ -80,6 +82,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [building, setBuilding] = useState<string[] | null>(null);
+  // The end-of-build report; the book opens behind it, it dismisses once.
+  const [bilan, setBilan] = useState<BuildBilan | null>(null);
+  // Index into the sorting view's entries while the keyboard review is up.
+  const [revue, setRevue] = useState<number | null>(null);
   const [busyTitle, setBusyTitle] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [view, setView] = useState<View>("livre");
@@ -113,6 +119,7 @@ export default function App() {
     setView("livre");
     setError(null);
     setStatus(null);
+    setBilan(null);
   }, []);
 
   const openAlbum = useCallback(async () => {
@@ -230,8 +237,9 @@ export default function App() {
     );
     try {
       const result = await buildAlbum(dir, format, spreads, densite, title);
-      adopt(result);
+      adopt(result.opened);
       setCuration(await fetchCuration().catch(() => []));
+      setBilan(result.bilan);
     } catch (e) {
       if (String(e).includes("annulée")) setStatus("Composition annulée");
       else setError(String(e));
@@ -392,8 +400,58 @@ export default function App() {
       // chords still pass: ⌘S from inside a caption field must save.
       const t = e.target as HTMLElement | null;
       const key = e.key.toLowerCase();
+      // The end-of-build report holds the keyboard: Enter or Escape opens
+      // the book, nothing may reach the editor behind it. Enter on a focused
+      // button stays native, both its actions dismiss the report anyway.
+      if (bilan) {
+        if (
+          e.key === "Escape" ||
+          (e.key === "Enter" && !(t && t.tagName === "BUTTON"))
+        ) {
+          e.preventDefault();
+          setBilan(null);
+        }
+        return;
+      }
+      // The keyboard review owns the plain keys, even from a focused button:
+      // arrows browse, R rescues, X confirms the discard and moves on,
+      // Escape leaves. ⌘-chords keep their app meaning below.
+      if (view === "tri" && revue !== null && !e.metaKey && album) {
+        const entries = triEntries(album, curation, opened?.thumb_srcs ?? []);
+        const last = entries.length - 1;
+        const i = Math.max(0, Math.min(revue, last));
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setRevue(null);
+          return;
+        }
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          setStatus(null);
+          setRevue(Math.max(0, i - 1));
+          return;
+        }
+        if (e.key === "ArrowRight" || key === "x") {
+          e.preventDefault();
+          if (i >= last) {
+            setRevue(null);
+            setStatus("Revue terminée, chaque écart est vu");
+          } else {
+            setStatus(null);
+            setRevue(i + 1);
+          }
+          return;
+        }
+        if (key === "r") {
+          e.preventDefault();
+          if (entries[i]) rescue(entries[i]);
+          return;
+        }
+        return;
+      }
       if (t && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(t.tagName)) {
-        const appChord = e.metaKey && ["s", "o", "1", "2", "3"].includes(key);
+        const appChord =
+          e.metaKey && ["s", "o", "1", "2", "3", "4"].includes(key);
         if (!appChord) return;
         if (key === "s") {
           // Blur commits the field being edited; save once that landed.
@@ -438,8 +496,21 @@ export default function App() {
       // The destination screen has no spread under the cursor: it keeps the
       // global shortcuts and nothing else.
       if (view === "envoi") return;
-      // The sorting view keeps the global shortcuts, nothing spread-bound.
+      // The sorting view keeps the global shortcuts, plus Enter to start
+      // the keyboard review; nothing spread-bound.
       if (view === "tri") {
+        if (e.key === "Enter" && album) {
+          e.preventDefault();
+          const entries = triEntries(album, curation, opened?.thumb_srcs ?? []);
+          if (entries.length) {
+            const at = triSelected
+              ? entries.findIndex((x) => x.src === triSelected)
+              : 0;
+            setStatus(null);
+            setRevue(Math.max(0, at));
+          }
+          return;
+        }
         if (e.key === "Escape") setTriSelected(null);
         return;
       }
@@ -578,7 +649,34 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [total, openAlbum, save, undo, redo, apply, index, selected, album, view]);
+  }, [
+    total,
+    openAlbum,
+    save,
+    undo,
+    redo,
+    apply,
+    index,
+    selected,
+    album,
+    view,
+    bilan,
+    revue,
+    curation,
+    opened,
+    rescue,
+    triSelected,
+  ]);
+
+  // The review dies with its subject: leaving the sorting view, or rescuing
+  // the last photo, closes it. There is nothing left to review.
+  useEffect(() => {
+    if (revue === null) return;
+    const left = album
+      ? triEntries(album, curation, opened?.thumb_srcs ?? []).length
+      : 0;
+    if (view !== "tri" || left === 0) setRevue(null);
+  }, [revue, view, album, curation, opened]);
 
   if (!album || total === 0 || building) {
     return (
@@ -589,6 +687,24 @@ export default function App() {
         busyTitle={busyTitle}
         error={error}
         onCancelBuild={() => void cancelBuild()}
+      />
+    );
+  }
+
+  if (bilan) {
+    return (
+      <BilanView
+        bilan={bilan}
+        album={album}
+        curation={curation}
+        onOpen={() => setBilan(null)}
+        onTri={() => {
+          // Straight into the keyboard review: the link promises a review,
+          // not a grid to hunt through.
+          setBilan(null);
+          setView("tri");
+          setRevue(0);
+        }}
       />
     );
   }
@@ -615,6 +731,9 @@ export default function App() {
           setSelected(null);
           setTriSelected(null);
           if (v !== "livre" && index === COVER) setIndex(0);
+          // The clicked tab keeps focus and would eat the view's own keys,
+          // Enter first among them: give the keyboard back to the view.
+          (document.activeElement as HTMLElement | null)?.blur?.();
         }}
         onTemplate={(t) => apply((a) => changeTemplate(a, index, t))}
         onLock={
@@ -645,6 +764,14 @@ export default function App() {
           selected={triSelected}
           onSelect={setTriSelected}
           onRescue={rescue}
+          onRevue={() => {
+            if (!entries.length) return;
+            const at = triSelected
+              ? entries.findIndex((x) => x.src === triSelected)
+              : 0;
+            setStatus(null);
+            setRevue(Math.max(0, at));
+          }}
         />
       ) : view === "envoi" ? (
         <EnvoiView
@@ -714,6 +841,24 @@ export default function App() {
           entries={entries}
           open={drawerOpen}
           onToggle={() => setDrawerOpen((o) => !o)}
+        />
+      )}
+      {view === "tri" && revue !== null && entries.length > 0 && (
+        <RevueView
+          entries={entries}
+          index={revue}
+          status={status}
+          onIndex={(i) => {
+            if (i >= entries.length) {
+              setRevue(null);
+              setStatus("Revue terminée, chaque écart est vu");
+            } else {
+              setStatus(null);
+              setRevue(i);
+            }
+          }}
+          onRescue={rescue}
+          onClose={() => setRevue(null)}
         />
       )}
       {view === "tri" ? (

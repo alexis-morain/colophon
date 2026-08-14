@@ -80,6 +80,16 @@ const DEV_DENSITES: DensitePreset[] = [
   },
 ];
 
+/** The three counts only the engine knows at the end of a build; the
+ *  discard detail comes from curation.json. Shown once, before the book. */
+export type BuildBilan = {
+  photos_scanned: number;
+  photos_kept: number;
+  chapters: number;
+};
+
+export type BuiltAlbum = { opened: OpenedAlbum; bilan: BuildBilan };
+
 /** Build an album from a photo folder, then open it. Long: seconds cold. */
 export async function buildAlbum(
   photosDir: string,
@@ -87,9 +97,9 @@ export async function buildAlbum(
   spreads: number,
   densite: string,
   title: string | null,
-): Promise<OpenedAlbum> {
+): Promise<BuiltAlbum> {
   if (!inTauri) return devBuild();
-  return invoke<OpenedAlbum>("build_album_from_folder", {
+  return invoke<BuiltAlbum>("build_album_from_folder", {
     photosDir,
     format,
     spreads,
@@ -115,7 +125,7 @@ export async function onBuildProgress(
  * styled without the shell, then the dev album opens as the result. */
 const devProgressListeners = new Set<(line: string) => void>();
 
-async function devBuild(): Promise<OpenedAlbum> {
+async function devBuild(): Promise<BuiltAlbum> {
   const emit = (line: string) => devProgressListeners.forEach((cb) => cb(line));
   const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const photos = 575;
@@ -139,7 +149,10 @@ async function devBuild(): Promise<OpenedAlbum> {
     emit(line);
   }
   await tick(200);
-  return openAlbum("__dev__");
+  return {
+    opened: await openAlbum("__dev__"),
+    bilan: { photos_scanned: photos, photos_kept: 152, chapters: 9 },
+  };
 }
 
 export async function openAlbum(path: string): Promise<OpenedAlbum> {

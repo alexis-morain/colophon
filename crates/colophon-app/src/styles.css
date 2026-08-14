@@ -468,6 +468,22 @@ kbd {
   color: var(--muted);
 }
 
+.tri-head {
+  display: flex;
+  gap: 22px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tri-lede {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 .tri-section {
   margin: 0 0 26px;
 }
@@ -550,6 +566,91 @@ kbd {
 
 .tri-rescue:hover {
   background: #a94523;
+}
+
+/* ---- keyboard review ---------------------------------------------------- */
+
+/* One discarded photo at a time, over everything: the review is a decision
+   posture, not a browsing one. The reason sits on the image, where the
+   culling tools taught photographers to read it. */
+.revue {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: var(--ink);
+}
+
+.revue-stage {
+  position: relative;
+  margin: 0;
+  min-height: 0;
+}
+
+/* Absolute against the stage: a percentage height would chase the auto row
+   of a nested grid and never resolve. object-fit letterboxes the rest. */
+.revue-stage img {
+  position: absolute;
+  inset: 28px;
+  width: calc(100% - 56px);
+  height: calc(100% - 56px);
+  object-fit: contain;
+}
+
+.revue-reason {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  padding: 6px 12px;
+  background: rgba(23, 21, 15, 0.85);
+  border-left: 2px solid var(--accent);
+  font-family: var(--font-display);
+  font-size: 14px;
+}
+
+.revue-pos {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 6px 10px;
+  background: rgba(23, 21, 15, 0.85);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.revue-foot {
+  display: flex;
+  gap: 22px;
+  align-items: baseline;
+  padding: 12px 20px 14px;
+  border-top: 1px solid var(--rule);
+  font-size: 12.5px;
+}
+
+.revue-name {
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.revue-status {
+  color: var(--accent);
+}
+
+.revue-keys {
+  display: flex;
+  gap: 18px;
+  align-items: baseline;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.revue-hint {
+  color: var(--muted);
 }
 
 .views {
@@ -910,6 +1011,58 @@ kbd {
   display: flex;
   gap: 22px;
   align-items: baseline;
+}
+
+/* ---- end-of-build report ----------------------------------------------- */
+
+/* Two numbers carried by a sentence, then the discards as a ruled list:
+   the count column reads like a colophon page, not a stat row. */
+.bilan-lead {
+  margin: 0;
+  max-width: 32rem;
+  font-family: var(--font-display);
+  font-size: 19px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.bilan-lead strong {
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.bilan-reasons {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  max-width: 32rem;
+}
+
+.bilan-reasons li {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.bilan-reasons li:last-child {
+  border-bottom: 1px solid var(--rule);
+}
+
+.bilan-count {
+  min-width: 3ch;
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bilan-label {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 /* Each format is an open double page at its true proportions; the fold is

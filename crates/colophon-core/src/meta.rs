@@ -33,12 +33,19 @@ pub fn read(path: &Path) -> PhotoMeta {
         return meta;
     };
 
-    for tag in [exif::Tag::DateTimeOriginal, exif::Tag::DateTime] {
+    // Only DateTimeOriginal is a shooting date. Bare DateTime (0x0132) is
+    // the date of the last file change, and export tools do write it: one
+    // photo copied on June 14th carried « 2026:06:14 » there and dated a
+    // whole chapter in the future. It still beats mtime as a sort key, so
+    // it fills `taken`, but it earns no trust.
+    for (tag, reliable) in
+        [(exif::Tag::DateTimeOriginal, true), (exif::Tag::DateTime, false)]
+    {
         if let Some(f) = exif.get_field(tag, exif::In::PRIMARY) {
             let s = f.display_value().to_string();
             if let Ok(dt) = NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
                 meta.taken = dt;
-                meta.taken_reliable = true;
+                meta.taken_reliable = reliable;
                 break;
             }
         }

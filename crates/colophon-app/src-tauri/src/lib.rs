@@ -41,6 +41,22 @@ struct OpenedAlbum {
     thumb_srcs: Vec<String>,
 }
 
+/// What the composition just did, told in numbers: the front shows it once,
+/// when the build ends, before the book opens. The discard detail comes from
+/// curation.json, already served; these three counts exist nowhere else.
+#[derive(Serialize)]
+struct BuildBilan {
+    photos_scanned: usize,
+    photos_kept: usize,
+    chapters: usize,
+}
+
+#[derive(Serialize)]
+struct BuiltAlbum {
+    opened: OpenedAlbum,
+    bilan: BuildBilan,
+}
+
 /// Read an album folder (or its album.json) into the album and its thumb index.
 /// Kept free of Tauri types so it can be tested on a real album folder.
 fn load_album(path: &Path) -> Result<(PathBuf, Album, ThumbIndex), String> {
@@ -224,7 +240,7 @@ async fn build_album_from_folder(
     title: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
-) -> Result<OpenedAlbum, String> {
+) -> Result<BuiltAlbum, String> {
     let trim = colophon_core::format::parse(&format).map_err(|e| e.to_string())?;
     let densite = colophon_core::layout::Densite::par_id(&densite)
         .ok_or_else(|| format!("densité inconnue : {densite}"))?;
@@ -238,7 +254,7 @@ async fn build_album_from_folder(
     let build_out = out.clone();
     state.cancel_build.store(false, Ordering::Relaxed);
     let flag = state.cancel_build.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let report = tauri::async_runtime::spawn_blocking(move || {
         colophon_core::build_album(
             &photos,
             &build_out,
@@ -259,7 +275,15 @@ async fn build_album_from_folder(
     .map_err(|e| e.to_string())?
     .map_err(|e| format!("{e:#}"))?;
 
-    open_album(out.to_string_lossy().to_string(), state)
+    let opened = open_album(out.to_string_lossy().to_string(), state)?;
+    Ok(BuiltAlbum {
+        opened,
+        bilan: BuildBilan {
+            photos_scanned: report.photos_scanned,
+            photos_kept: report.photos_kept,
+            chapters: report.chapters,
+        },
+    })
 }
 
 /// Recompose the open album from its photo folder, preserving every spread

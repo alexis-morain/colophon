@@ -7,8 +7,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TriEntry } from "./edits";
 import { cachedThumb, loadThumb } from "./thumbs";
 
-/** Sections in display order, with human labels. */
-const REASONS: [string, string][] = [
+/** Sections in display order, with human labels. The end-of-build report
+ *  reuses them, so the two screens name every reason the same way. */
+export const REASONS: [string, string][] = [
   ["retiree", "Retirées à la main"],
   ["hors_budget", "Hors budget : bonnes photos, album plein"],
   ["meme_moment", "Même moment, quasi la même photo"],
@@ -24,11 +25,13 @@ export function TriView({
   selected,
   onSelect,
   onRescue,
+  onRevue,
 }: {
   entries: TriEntry[];
   selected: string | null;
   onSelect: (src: string | null) => void;
   onRescue: (entry: TriEntry) => void;
+  onRevue: () => void;
 }) {
   const sections = useMemo(() => {
     const by = new Map<string, TriEntry[]>();
@@ -52,6 +55,21 @@ export function TriView({
 
   return (
     <div className="tri" onClick={() => onSelect(null)}>
+      <div className="tri-head">
+        <p className="tri-lede">
+          {entries.length} photo{entries.length > 1 ? "s" : ""} hors de
+          l'album, chacune avec sa raison. Un double-clic repêche.
+        </p>
+        <button
+          className="cta small"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRevue();
+          }}
+        >
+          Passer en revue&ensp;<kbd>Entrée</kbd>
+        </button>
+      </div>
       {sections.map(({ key, label, list }) => (
         <section key={key} className="tri-section">
           <h2>
@@ -112,6 +130,89 @@ function Cell({
         Repêcher
       </button>
     </figure>
+  );
+}
+
+const REASON_LABEL = new Map(REASONS);
+
+/**
+ * The keyboard review, taken from the culling tools photographers use: one
+ * discarded photo at a time, full screen, its reason printed on the image.
+ * Arrows browse, R rescues, X confirms the discard and moves on, Escape
+ * leaves. The keys live in App's central handler; this component draws.
+ */
+export function RevueView({
+  entries,
+  index,
+  status,
+  onIndex,
+  onRescue,
+  onClose,
+}: {
+  entries: TriEntry[];
+  index: number;
+  status: string | null;
+  onIndex: (i: number) => void;
+  onRescue: (entry: TriEntry) => void;
+  onClose: () => void;
+}) {
+  const i = Math.max(0, Math.min(index, entries.length - 1));
+  const entry = entries[i];
+  const [url, setUrl] = useState<string | undefined>(() =>
+    cachedThumb(entry.src),
+  );
+
+  useEffect(() => {
+    let alive = true;
+    setUrl(cachedThumb(entry.src));
+    loadThumb(entry.src).then(
+      (u) => alive && setUrl(u),
+      () => {},
+    );
+    // The next photo loads behind the current one, so → never waits.
+    const next = entries[i + 1];
+    if (next) loadThumb(next.src).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [entry.src, entries, i]);
+
+  const name = entry.src.split("/").pop() ?? entry.src;
+  return (
+    <div className="revue">
+      <figure className="revue-stage">
+        {url && <img src={url} alt={name} />}
+        <span className="revue-reason">
+          {REASON_LABEL.get(entry.reason) ?? entry.reason}
+        </span>
+        <span className="revue-pos">
+          {i + 1} / {entries.length}
+        </span>
+      </figure>
+      <footer className="revue-foot">
+        <span className="revue-name">
+          {name}
+          {entry.kept
+            ? `, gardée à sa place : ${entry.kept.split("/").pop()}`
+            : ""}
+        </span>
+        {status && <span className="revue-status">{status}</span>}
+        <span className="revue-keys">
+          <button className="link" onClick={() => onRescue(entry)}>
+            Repêcher&ensp;<kbd>R</kbd>
+          </button>
+          <button className="link" onClick={() => onIndex(i + 1)}>
+            Écart confirmé&ensp;<kbd>X</kbd>
+          </button>
+          <span className="revue-hint">
+            <kbd>←</kbd> <kbd>→</kbd> parcourir
+          </span>
+          <button className="link" onClick={onClose}>
+            sortir&ensp;<kbd>Échap</kbd>
+          </button>
+        </span>
+      </footer>
+    </div>
   );
 }
 

@@ -281,7 +281,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         let spreads: Vec<model::Spread> = trial
             .iter()
             .zip(captions)
-            .flat_map(|(c, caption)| composer.compose(c, Some(caption), &root))
+            .flat_map(|(c, caption)| composer.compose(c, caption, &root))
             .collect();
 
         let got = spreads.len();
@@ -508,15 +508,23 @@ pub fn date_fr(d: chrono::NaiveDate, with_year: bool) -> String {
     }
 }
 
-/// The dates of one chapter, the line every chapter has carried so far.
-pub fn chapter_dates(c: &pipeline::Chapter) -> String {
-    let s = c.start.date();
-    let e = c.end.date();
-    if s == e {
+/// The dates of one chapter, read from the photos whose EXIF is trusted.
+/// The others fell back to the file's mtime, which is a copy date, not a
+/// shooting date: printing it once produced « 6 décembre – 14 juin 2026 »
+/// on an album of 2024. A chapter with no trusted date shows none.
+pub fn chapter_dates(c: &pipeline::Chapter) -> Option<String> {
+    let mut dates = c
+        .photos
+        .iter()
+        .filter(|p| p.meta.taken_reliable)
+        .map(|p| p.meta.taken.date());
+    let first = dates.next()?;
+    let (s, e) = dates.fold((first, first), |(lo, hi), d| (lo.min(d), hi.max(d)));
+    Some(if s == e {
         date_fr(s, true)
     } else {
         format!("{} \u{2013} {}", date_fr(s, false), date_fr(e, true))
-    }
+    })
 }
 
 /// The town a chapter was shot in, when its photos agree on one.
@@ -534,15 +542,23 @@ pub fn chapter_place(c: &pipeline::Chapter) -> Option<&'static str> {
 /// as the one before it drops the name: a week in Calvi is one place, not
 /// eight chapters shouting « Calvi », and repeating it teaches the reader
 /// to stop reading the line.
-pub fn chapter_captions(chapters: &[pipeline::Chapter]) -> Vec<String> {
+///
+/// A chapter may also have nothing worth printing: no trusted date and no
+/// agreed town. Its opening spread then carries no line at all, which is
+/// the one honest option left, and the linter's missing-caption counter
+/// keeps watching the album's first spread.
+pub fn chapter_captions(chapters: &[pipeline::Chapter]) -> Vec<Option<String>> {
     let mut out = Vec::with_capacity(chapters.len());
     let mut previous: Option<&str> = None;
     for c in chapters {
         let dates = chapter_dates(c);
         let place = chapter_place(c);
-        out.push(match place {
-            Some(name) if previous != Some(name) => format!("{name}, {dates}"),
-            _ => dates,
+        out.push(match (place, dates) {
+            (Some(name), Some(dates)) if previous != Some(name) => {
+                Some(format!("{name}, {dates}"))
+            }
+            (Some(name), None) if previous != Some(name) => Some(name.to_string()),
+            (_, dates) => dates,
         });
         // A chapter that named nowhere does not reset the run: crossing an
         // unlocated day and coming back is still the same stay.

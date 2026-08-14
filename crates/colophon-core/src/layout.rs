@@ -10,7 +10,8 @@
 
 use crate::analyze;
 use crate::audit::{
-    ASPECT_BETRAYAL, DUP_HAMMING, FACE_MARGIN, FACE_MIN_SHARE, MIN_EFFECTIVE_PPI,
+    ASPECT_BETRAYAL, DUP_HAMMING, DUP_PHASH, FACE_MARGIN, FACE_MIN_SHARE,
+    MIN_EFFECTIVE_PPI, OPENING_MIN_PHOTOS,
 };
 use crate::model::{Album, Slot, Spread};
 use crate::pdf::{self, Rect, SpreadGeometry};
@@ -19,7 +20,7 @@ use crate::print;
 
 /// Score above which a photo qualifies for a page of its own,
 /// expressed as a quantile of the chapter's scores.
-const FEATURE_QUANTILE: f64 = 0.85;
+const FEATURE_QUANTILE: f64 = 0.9;
 
 /// A cover-crop that throws away more than this much of the frame is a
 /// butchered photo: give it margins instead of a full page.
@@ -28,13 +29,17 @@ const MIN_VISIBLE: f64 = 0.72;
 /// A chapter opens on a photo from this top quantile of its own scores.
 /// Same bar as the linter's ouverture_faible counter.
 const OPENING_QUANTILE: f64 = 0.75;
-/// Below this many photos a chapter is too small for the opening rule.
-const OPENING_MIN_PHOTOS: usize = 4;
 
-/// After this many spreads without a full page, promote one.
+/// After this many spreads without a breathing page, promote one.
 const FORCE_FULL_AFTER: usize = 5;
+/// And never two breathing pages closer than this: an album where every
+/// other spread is a solo has no rhythm either.
+const MIN_BREAK_SPACING: usize = 4;
 /// How far ahead the forced promotion may pull a full-page photo from.
 const FULL_SEARCH_WINDOW: usize = 4;
+/// How far ahead the chunker may regroup photos of the same aspect class,
+/// so extreme formats (18,5:9 des téléphones) still find a partner.
+const GROUP_WINDOW: usize = 8;
 /// Never a fourth spread of the same template family in a row.
 const REPEAT_LIMIT: usize = 3;
 
@@ -101,10 +106,13 @@ impl Composer {
                 feature = true;
             }
 
-            // A standout photo earns a page to itself, but never two in a row.
+            // A standout photo earns a page to itself, with room between
+            // two of them: an album alternating solo and grid has no
+            // rhythm either.
             if take == 0
                 && !last_was_feature
                 && remaining != 2
+                && self.since_break >= MIN_BREAK_SPACING
                 && photos[i].meta.taken_reliable
                 && photos[i].effective_score() >= feature_threshold
             {
@@ -139,12 +147,39 @@ impl Composer {
             }
 
             if take == 0 {
-                take = chunk_size(&photos[i..], self.beat);
+                let hint = chunk_size(&photos[i..], self.beat);
+                // Fill the spread from the window ahead: photos of the same
+                // aspect class, none a near-twin of another. Two 18,5:9
+                // shots three photos apart still make a duo_pano, and the
+                // twin of a kept photo drifts to a later spread instead of
+                // shrinking this one to a parade of solos.
+                let end = (i + GROUP_WINDOW.max(hint)).min(photos.len());
+                let class0 = aspect_class(&photos[i]);
+                let window: Vec<Photo> = photos[i..end].to_vec();
+                let mut front: Vec<Photo> = Vec::new();
+                let mut back: Vec<Photo> = Vec::new();
+                for p in window {
+                    let twin = front.iter().any(|q| {
+                        analyze::hamming(p.analysis.dhash, q.analysis.dhash)
+                            <= DUP_HAMMING
+                            || analyze::hamming(p.analysis.phash, q.analysis.phash)
+                                <= DUP_PHASH
+                    });
+                    if front.len() < hint && aspect_class(&p) == class0 && !twin {
+                        front.push(p);
+                    } else {
+                        back.push(p);
+                    }
+                }
+                take = front.len();
+                front.extend(back);
+                photos.splice(i..end, front);
+
                 // A chapter must never compose into a single spread.
                 if i == 0 && take == remaining && remaining >= 2 {
                     take = remaining.div_ceil(2);
                 }
-                // Near-duplicates never share a spread: cut before the twin.
+                // Safety net: never a near-twin pair on one spread.
                 take = take.min(dup_prefix(&photos[i..i + take.min(remaining)]));
                 take = clamp_take(take, remaining);
             }
@@ -287,6 +322,23 @@ fn promote_opening(photos: &mut [Photo]) {
     }
 }
 
+/// Coarse aspect classes for the chunk regrouping: étroit, portrait,
+/// carré, paysage, pano. Photos of one class always share a template.
+fn aspect_class(p: &Photo) -> u8 {
+    let a = p.analysis.aspect();
+    if a < 0.6 {
+        0
+    } else if a < 0.95 {
+        1
+    } else if a <= 1.15 {
+        2
+    } else if a <= 1.6 {
+        3
+    } else {
+        4
+    }
+}
+
 /// The margined single-photo family nearest to a photo's aspect. Last
 /// resort when even the solo cells fail their checks: something must hold
 /// the photo, and the linter will say what it cost.
@@ -352,7 +404,8 @@ fn dup_prefix(chunk: &[Photo]) -> usize {
     for j in 1..chunk.len() {
         for k in 0..j {
             let d = analyze::hamming(chunk[j].analysis.dhash, chunk[k].analysis.dhash);
-            if d <= DUP_HAMMING {
+            let p = analyze::hamming(chunk[j].analysis.phash, chunk[k].analysis.phash);
+            if d <= DUP_HAMMING || p <= DUP_PHASH {
                 return j;
             }
         }

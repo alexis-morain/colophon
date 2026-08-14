@@ -15,6 +15,7 @@ const REASONS: [string, string][] = [
   ["doublon", "Doublons de rafale ou de scène"],
   ["jumeau", "Quasi identiques"],
   ["panorama", "Panoramas : trop larges pour une page"],
+  ["definition", "Définition trop faible pour ce format"],
   ["parasite", "Parasites : captures, images reçues"],
 ];
 

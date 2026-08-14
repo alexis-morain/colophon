@@ -18,6 +18,9 @@ use std::path::{Path, PathBuf};
 
 /// Two photos this close in dHash on one spread read as duplicates.
 pub const DUP_HAMMING: u32 = 24;
+/// Same rule on the DCT pHash: either hash agreeing is enough. Kept tight
+/// (8 bits): low-frequency DCT makes any two seascapes look related at 12.
+pub const DUP_PHASH: u32 = 8;
 /// Faces keep at least this share of the visible window between them and
 /// every cropped edge; below it a face reads as cut.
 pub const FACE_MARGIN: f64 = 0.04;
@@ -33,8 +36,9 @@ pub const MIN_EFFECTIVE_PPI: f64 = 250.0;
 const FLAT_RUN: usize = 6;
 /// The same template family this many times in a row reads as a repetition.
 const REPEAT_RUN: usize = 4;
-/// A chapter needs at least this many photos for the opening-quartile rule.
-const OPENING_MIN_PHOTOS: usize = 4;
+/// A chapter needs at least this many photos for the opening-quartile rule:
+/// below that a dedicated opening page would eat the whole chapter.
+pub const OPENING_MIN_PHOTOS: usize = 6;
 /// The chapter opening must score in this top quantile of its chapter.
 const OPENING_QUANTILE: f64 = 0.75;
 
@@ -117,6 +121,7 @@ struct PhotoInfo {
     w: f64,
     h: f64,
     dhash: u64,
+    phash: u64,
     colorsig: [u8; 12],
     score: f64,
     faces: Vec<[f64; 4]>,
@@ -182,6 +187,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
                     w: f64::from(analysis.width),
                     h: f64::from(analysis.height),
                     dhash: analysis.dhash,
+                    phash: analysis.phash,
                     colorsig: analysis.colorsig,
                     score: analysis.score(),
                     faces,
@@ -250,14 +256,15 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
         for i in 0..spread.slots.len() {
             for j in i + 1..spread.slots.len() {
                 let (a, b) = (&infos[&spread.slots[i].src], &infos[&spread.slots[j].src]);
-                let dist = analyze::hamming(a.dhash, b.dhash);
-                if dist <= DUP_HAMMING {
+                let d = analyze::hamming(a.dhash, b.dhash);
+                let p = analyze::hamming(a.phash, b.phash);
+                if d <= DUP_HAMMING || p <= DUP_PHASH {
                     doublons.push(Finding {
                         planche: si + 1,
                         case_idx: Some(i),
                         src: Some(spread.slots[j].src.clone()),
                         info: format!(
-                            "cases {i} et {j} à {dist} bits (couleur {})",
+                            "cases {i} et {j} à {d} bits (pHash {p}, couleur {})",
                             analyze::color_distance(&a.colorsig, &b.colorsig)
                         ),
                     });

@@ -1,11 +1,15 @@
-//! Per-photo analysis on thumbnails: perceptual hash (dHash), sharpness
-//! (variance of Laplacian) and exposure (clipped-histogram penalty).
+//! Per-photo analysis on thumbnails: perceptual hashes (dHash for
+//! gradients, DCT pHash for structure), sharpness (variance of Laplacian)
+//! and exposure (clipped-histogram penalty).
 
 use image::{imageops::FilterType, DynamicImage, GrayImage};
 
 #[derive(Debug, Clone)]
 pub struct Analysis {
     pub dhash: u64,
+    /// DCT perceptual hash (image_hasher, MIT). Second opinion on
+    /// near-duplicates: structure-based where dHash reads gradients.
+    pub phash: u64,
     /// Mean RGB per quadrant (2x2 grid): coarse color fingerprint that
     /// catches same-scene shots the gradient hash misses.
     pub colorsig: [u8; 12],
@@ -37,6 +41,7 @@ pub fn analyze(img: &DynamicImage) -> Analysis {
     let gray = img.to_luma8();
     Analysis {
         dhash: dhash(&gray),
+        phash: phash(img),
         colorsig: colorsig(img),
         sharpness: laplacian_variance(&gray),
         exposure: exposure_score(&gray),
@@ -83,6 +88,21 @@ fn dhash(gray: &GrayImage) -> u64 {
 
 pub fn hamming(a: u64, b: u64) -> u32 {
     (a ^ b).count_ones()
+}
+
+/// Classic 64-bit pHash: DCT preprocessing over a mean hash.
+fn phash(img: &DynamicImage) -> u64 {
+    let hasher = image_hasher::HasherConfig::new()
+        .hash_alg(image_hasher::HashAlg::Mean)
+        .hash_size(8, 8)
+        .preproc_dct()
+        .to_hasher();
+    let hash = hasher.hash_image(img);
+    let mut bits: u64 = 0;
+    for (i, b) in hash.as_bytes().iter().take(8).enumerate() {
+        bits |= u64::from(*b) << (i * 8);
+    }
+    bits
 }
 
 fn laplacian_variance(gray: &GrayImage) -> f64 {

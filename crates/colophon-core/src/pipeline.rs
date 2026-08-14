@@ -314,7 +314,13 @@ pub fn allocate_budget(chapters: &[Chapter], total: usize) -> Vec<usize> {
 }
 
 /// Cap each chapter to its strongest photos, keeping chronological order.
+/// Diversity-aware: a weaker but different photo beats a stronger
+/// near-twin of something already kept, otherwise the shown set fills up
+/// with the same postcard and the composer spends the album keeping the
+/// copies apart.
 pub fn cap_chapter(chapter: &mut Chapter, max: usize) {
+    use crate::analyze::hamming;
+    use crate::audit::{DUP_HAMMING, DUP_PHASH};
     if chapter.photos.len() <= max {
         return;
     }
@@ -325,7 +331,33 @@ pub fn cap_chapter(chapter: &mut Chapter, max: usize) {
             .partial_cmp(&chapter.photos[a].effective_score())
             .unwrap()
     });
-    let mut keep: Vec<usize> = idx.into_iter().take(max).collect();
+    // True twins never refill an empty seat: a chapter short on diversity
+    // shows fewer photos, that is what curation is for.
+    const REFILL_HAMMING: u32 = 16;
+    const REFILL_PHASH: u32 = 8;
+    let mut keep: Vec<usize> = Vec::with_capacity(max);
+    for pass in 0..2 {
+        for &i in &idx {
+            if keep.len() >= max {
+                break;
+            }
+            if keep.contains(&i) {
+                continue;
+            }
+            let (d_max, p_max) = if pass == 0 {
+                (DUP_HAMMING, DUP_PHASH)
+            } else {
+                (REFILL_HAMMING, REFILL_PHASH)
+            };
+            let twin = keep.iter().any(|&k| {
+                let (a, b) = (&chapter.photos[i].analysis, &chapter.photos[k].analysis);
+                hamming(a.dhash, b.dhash) <= d_max || hamming(a.phash, b.phash) <= p_max
+            });
+            if !twin {
+                keep.push(i);
+            }
+        }
+    }
     keep.sort();
     chapter.photos = keep.into_iter().map(|i| chapter.photos[i].clone()).collect();
 }

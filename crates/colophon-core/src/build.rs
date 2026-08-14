@@ -150,6 +150,32 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         focal: focal_of(&p.path),
     }));
 
+    // Photos too small to print even in the smallest cell of THIS format
+    // (250 ppi floor). A 1 000 px frame holds a mosaic cell at 21 cm and
+    // nothing at all at 30 cm: the split depends on the page size.
+    let scratch = model::Album::new(&title, &root, opts.trim);
+    let g = pdf::geometry(&scratch);
+    let min_cell = pdf::slots_for("octo", 8, &g)
+        .into_iter()
+        .min_by(|a, b| (a.w * a.h).partial_cmp(&(b.w * b.h)).unwrap())
+        .expect("octo a des cases");
+    let (photos, lowres): (Vec<_>, Vec<_>) = photos.into_iter().partition(|p| {
+        crate::print::PRINT_DPI / crate::print::print_scale(&min_cell, p.orig.0, p.orig.1)
+            >= crate::audit::MIN_EFFECTIVE_PPI
+    });
+    if !lowres.is_empty() {
+        say(&format!(
+            "définition: {} photos trop petites pour ce format",
+            lowres.len()
+        ));
+    }
+    discards.extend(lowres.iter().map(|p| model::Discard {
+        src: rel(&p.path),
+        reason: "definition".into(),
+        kept: None,
+        focal: focal_of(&p.path),
+    }));
+
     let (kept, dups) = pipeline::dedup(photos);
     say(&format!("dedup: {} kept", kept.len()));
     discards.extend(dups.iter().map(|(lost, won)| model::Discard {
@@ -160,7 +186,9 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     }));
 
     let spreads_target = opts.spreads.max(8);
-    let max_chapters = (spreads_target / 3).clamp(4, 26);
+    // A chapter costs a dedicated opening page: too many chapters and the
+    // album turns into a procession of solos.
+    let max_chapters = (spreads_target / 4).clamp(4, 20);
 
     let chapters = pipeline::chapters(kept);
     let natural = chapters.len();
@@ -194,28 +222,41 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     let mut album = model::Album::new(&title, &root, opts.trim);
     let mut budget = spreads_target * layout::PHOTOS_PER_SPREAD_X10 / 10;
     let mut photos_kept = 0;
+    // Keep the attempt closest to the target: on fragmented sets the
+    // spread count can refuse to follow the budget, and the last attempt
+    // is then the worst one, not the best.
+    let mut best: Option<(usize, Vec<model::Spread>, usize)> = None;
     for attempt in 0..5 {
         let mut trial = base.clone();
         let caps = pipeline::allocate_budget(&trial, budget);
         for (c, cap) in trial.iter_mut().zip(caps) {
             pipeline::cap_chapter(c, cap);
         }
-        photos_kept = trial.iter().map(|c| c.photos.len()).sum();
+        let kept = trial.iter().map(|c| c.photos.len()).sum();
 
         let mut composer = layout::Composer::new(&album);
-        album.spreads = trial
+        let spreads: Vec<model::Spread> = trial
             .iter()
             .flat_map(|c| composer.compose(c, Some(chapter_caption(c)), &root))
             .collect();
 
-        let got = album.spreads.len();
+        let got = spreads.len();
         let off = got.abs_diff(spreads_target) * 100 / spreads_target.max(1);
+        if best.as_ref().is_none_or(|(b, _, _)| off < *b) {
+            best = Some((off, spreads, kept));
+        }
         if off <= 6 || attempt == 4 || got == 0 {
             break;
         }
-        // Aim the next budget at the target, damped so it cannot oscillate.
+        // Aim the next budget at the target, damped so it cannot oscillate,
+        // and never starved below two photos per requested spread: fewer
+        // photos never means fewer spreads once chapters run on minimums.
         let aimed = budget * spreads_target / got;
-        budget = (budget + aimed) / 2;
+        budget = ((budget + aimed) / 2).max(spreads_target * 2);
+    }
+    if let Some((_, spreads, kept)) = best {
+        album.spreads = spreads;
+        photos_kept = kept;
     }
 
     say(&format!(

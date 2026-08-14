@@ -3,6 +3,7 @@
 //! the desktop app are both thin shells over this crate.
 
 pub mod analyze;
+pub mod audit;
 pub mod build;
 pub mod face;
 pub mod format;

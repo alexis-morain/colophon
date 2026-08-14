@@ -10,6 +10,11 @@ pub struct Photo {
     pub path: PathBuf,
     pub meta: PhotoMeta,
     pub analysis: Analysis,
+    /// Original pixel size, EXIF orientation applied. The composer uses it
+    /// to keep every cell at a printable effective resolution.
+    pub orig: (u32, u32),
+    /// Detected face boxes, normalized [x, y, w, h], top-left origin.
+    pub faces: Vec<[f64; 4]>,
     /// Face-anchored crop focal point, when at least one face was found.
     pub focal: Option<[f64; 2]>,
 }
@@ -77,6 +82,21 @@ fn settle(pairs: Vec<DropPair>) -> Vec<DropPair> {
             (dropped, winner)
         })
         .collect()
+}
+
+/// Aspect beyond which no template can hold the photo without betraying its
+/// orientation: wider than a pano cell can absorb, narrower than an étroit
+/// cell can. Stitched panoramas land here; the sorting view shows them.
+pub const PRINTABLE_ASPECT_MAX: f64 = 2.8;
+
+/// Photos no page can hold without butchering them, set aside as
+/// `panorama` for the sorting view. Rescuing one remains possible: the
+/// editor crops it like any other photo, but that is the user's choice.
+pub fn split_unprintable(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
+    photos.into_iter().partition(|p| {
+        let a = p.analysis.aspect();
+        (1.0 / PRINTABLE_ASPECT_MAX..=PRINTABLE_ASPECT_MAX).contains(&a)
+    })
 }
 
 /// Screenshots, memes and forwarded images lack a camera fingerprint.
@@ -234,24 +254,43 @@ pub fn chapters(photos: Vec<Photo>) -> Vec<Chapter> {
     chapters
 }
 
-/// Merge adjacent chapters until at most `max` remain, always closing the
-/// smallest time gap first so the strongest natural boundaries survive.
-/// A year of scattered photos collapses into month-ish runs; a one-week
-/// trip with clear day gaps is left untouched.
+/// A chapter below this many photos cannot open properly nor fill two
+/// spreads: it gets absorbed into a neighbour.
+pub const MIN_CHAPTER_PHOTOS: usize = 4;
+
+/// Merge adjacent chapters until at most `max` remain and none is starving,
+/// always closing the smallest time gap first so the strongest natural
+/// boundaries survive. A year of scattered photos collapses into month-ish
+/// runs; a one-week trip with clear day gaps is left untouched.
 pub fn merge_chapters(mut chapters: Vec<Chapter>, max: usize) -> Vec<Chapter> {
-    while chapters.len() > max.max(1) {
-        let mut best = 1usize;
-        let mut best_gap = i64::MAX;
-        for i in 1..chapters.len() {
-            let gap = (chapters[i].start - chapters[i - 1].end).num_seconds();
-            if gap < best_gap {
-                best_gap = gap;
-                best = i;
-            }
+    loop {
+        if chapters.len() <= 1 {
+            break;
         }
+        let too_many = chapters.len() > max.max(1);
+        let starving = chapters
+            .iter()
+            .position(|c| c.photos.len() < MIN_CHAPTER_PHOTOS);
+        if !too_many && starving.is_none() {
+            break;
+        }
+        // Boundaries eligible for closing: all of them when over the cap,
+        // otherwise only the ones around the first starving chapter.
+        let gap = |i: usize| (chapters[i].start - chapters[i - 1].end).num_seconds();
+        let best = if too_many {
+            (1..chapters.len()).min_by_key(|&i| gap(i)).unwrap()
+        } else {
+            let s = starving.unwrap();
+            let candidates = [s, s + 1];
+            candidates
+                .into_iter()
+                .filter(|&i| i >= 1 && i < chapters.len())
+                .min_by_key(|&i| gap(i))
+                .unwrap()
+        };
         let absorbed = chapters.remove(best);
         let prev = &mut chapters[best - 1];
-        prev.end = absorbed.end;
+        prev.end = prev.end.max(absorbed.end);
         prev.photos.extend(absorbed.photos);
     }
     chapters
@@ -267,7 +306,9 @@ pub fn allocate_budget(chapters: &[Chapter], total: usize) -> Vec<usize> {
         .zip(&weights)
         .map(|(c, w)| {
             let share = (total as f64 * w / sum).round() as usize;
-            share.clamp(2, c.photos.len().max(2))
+            // At least four photos: enough to open on a strong image and
+            // still fill a second spread, so no chapter is a single planche.
+            share.clamp(MIN_CHAPTER_PHOTOS, c.photos.len().max(MIN_CHAPTER_PHOTOS))
         })
         .collect()
 }

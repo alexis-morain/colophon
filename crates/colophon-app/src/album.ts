@@ -39,14 +39,36 @@ export const TEMPLATES: [string, number][] = [
   ["solo_verso", 1],
   ["solo_paysage", 1],
   ["solo_paysage_verso", 1],
+  ["solo_pano", 1],
+  ["solo_pano_verso", 1],
+  ["solo_etroit", 1],
+  ["solo_etroit_verso", 1],
+  ["solo_carre", 1],
+  ["solo_carre_verso", 1],
   ["duo", 2],
+  ["duo_portrait", 2],
+  ["duo_paysage", 2],
+  ["duo_etroit", 2],
+  ["duo_pano", 2],
   ["trio", 3],
   ["trio_verso", 3],
+  ["trio_portrait", 3],
+  ["trio_portrait_verso", 3],
   ["quad", 4],
+  ["quad_portrait", 4],
+  ["quad_etroit", 4],
+  ["quad_pano", 4],
   ["six", 6],
   ["six_verso", 6],
   ["octo", 8],
 ];
+
+/** Cell aspects, port of `pdf.rs::CELL_*`. */
+const CELL_LANDSCAPE = 4 / 3;
+const CELL_PORTRAIT = 0.75;
+const CELL_PANO = 2;
+const CELL_ETROIT = 0.5;
+const CELL_CARRE = 1;
 
 export function templateCapacity(name: string): number {
   return TEMPLATES.find(([t]) => t === name)?.[1] ?? 1;
@@ -161,29 +183,93 @@ function slotsBottomUp(template: string, n: number, g: Canvas): Rect[] {
       v = [fullPage(leadRight, g)];
       break;
     case "solo":
-      v = [fitted(lead, 0.75)];
+      v = [fitted(lead, CELL_PORTRAIT)];
       break;
     case "solo_paysage":
-      v = [fitted(lead, 4 / 3)];
+      v = [fitted(lead, CELL_LANDSCAPE)];
+      break;
+    case "solo_pano":
+      v = [fitted(lead, CELL_PANO)];
+      break;
+    case "solo_etroit":
+      v = [fitted(lead, CELL_ETROIT)];
+      break;
+    case "solo_carre":
+      v = [fitted(lead, CELL_CARRE)];
       break;
     case "duo":
       v = [pageBox(false, g), pageBox(true, g)];
       break;
+    case "duo_portrait":
+      v = [
+        fitted(pageBox(false, g), CELL_PORTRAIT),
+        fitted(pageBox(true, g), CELL_PORTRAIT),
+      ];
+      break;
+    case "duo_paysage":
+      v = [
+        fitted(pageBox(false, g), CELL_LANDSCAPE),
+        fitted(pageBox(true, g), CELL_LANDSCAPE),
+      ];
+      break;
+    case "duo_etroit":
+      v = [
+        fitted(pageBox(false, g), CELL_ETROIT),
+        fitted(pageBox(true, g), CELL_ETROIT),
+      ];
+      break;
+    case "duo_pano":
+      v = [
+        fitted(pageBox(false, g), CELL_PANO),
+        fitted(pageBox(true, g), CELL_PANO),
+      ];
+      break;
     case "trio": {
-      const stack = grid(facing, 1, 2, g.gutter);
+      const stack = grid(facing, 1, 2, g.gutter).map((c) =>
+        fitted(c, CELL_LANDSCAPE),
+      );
       v = leadRight
         ? [...stack, fullPage(true, g)]
         : [fullPage(false, g), ...stack];
       break;
     }
+    case "trio_portrait": {
+      const pair = grid(facing, 2, 1, g.gutter).map((c) =>
+        fitted(c, CELL_PORTRAIT),
+      );
+      v = leadRight
+        ? [...pair, fullPage(true, g)]
+        : [fullPage(false, g), ...pair];
+      break;
+    }
     case "quad": {
       const lc = grid(pageBox(false, g), 1, 2, g.gutter);
       const rc = grid(pageBox(true, g), 1, 2, g.gutter);
-      v = [lc[0], rc[0], lc[1], rc[1]];
+      v = [lc[0], rc[0], lc[1], rc[1]].map((c) => fitted(c, CELL_LANDSCAPE));
+      break;
+    }
+    case "quad_portrait":
+      v = [
+        ...grid(pageBox(false, g), 2, 1, g.gutter),
+        ...grid(pageBox(true, g), 2, 1, g.gutter),
+      ].map((c) => fitted(c, CELL_PORTRAIT));
+      break;
+    case "quad_etroit":
+      v = [
+        ...grid(pageBox(false, g), 2, 1, g.gutter),
+        ...grid(pageBox(true, g), 2, 1, g.gutter),
+      ].map((c) => fitted(c, CELL_ETROIT));
+      break;
+    case "quad_pano": {
+      const lc = grid(pageBox(false, g), 1, 2, g.gutter);
+      const rc = grid(pageBox(true, g), 1, 2, g.gutter);
+      v = [lc[0], rc[0], lc[1], rc[1]].map((c) => fitted(c, CELL_PANO));
       break;
     }
     case "six": {
-      const stack = grid(lead, 1, 2, g.gutter);
+      const stack = grid(lead, 1, 2, g.gutter).map((c) =>
+        fitted(c, CELL_LANDSCAPE),
+      );
       const mosaic = grid(facing, 2, 2, g.gutter);
       v = leadRight ? [...mosaic, ...stack] : [...stack, ...mosaic];
       break;

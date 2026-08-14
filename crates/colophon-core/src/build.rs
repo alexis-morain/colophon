@@ -88,8 +88,17 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
                 }
             };
             let analysis = analyze::analyze(&img);
-            let focal = face::focal_point(det.as_mut(), &img);
-            Some(Photo { path: path.clone(), meta, analysis, focal })
+            let faces = face::face_boxes(det.as_mut(), &img);
+            let focal = face::focal_from_boxes(&faces);
+            // Original size, oriented. Header read only, no decode. Falls
+            // back to the thumbnail size, which understates the pixels and
+            // keeps the composer conservative about big cells.
+            let orig = image::image_dimensions(path)
+                .map(|(w, h)| {
+                    if (5..=8).contains(&meta.orientation) { (h, w) } else { (w, h) }
+                })
+                .unwrap_or((analysis.width, analysis.height));
+            Some(Photo { path: path.clone(), meta, analysis, orig, faces, focal })
         })
         .flatten()
         .collect();
@@ -123,6 +132,20 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     discards.extend(junk.iter().map(|p| model::Discard {
         src: rel(&p.path),
         reason: "parasite".into(),
+        kept: None,
+        focal: focal_of(&p.path),
+    }));
+
+    let (photos, panos) = pipeline::split_unprintable(photos);
+    if !panos.is_empty() {
+        say(&format!(
+            "panoramas: {} photos trop larges ou trop étroites pour une page",
+            panos.len()
+        ));
+    }
+    discards.extend(panos.iter().map(|p| model::Discard {
+        src: rel(&p.path),
+        reason: "panorama".into(),
         kept: None,
         focal: focal_of(&p.path),
     }));
@@ -179,7 +202,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         }
         photos_kept = trial.iter().map(|c| c.photos.len()).sum();
 
-        let mut composer = layout::Composer::new(album.page_aspect());
+        let mut composer = layout::Composer::new(&album);
         album.spreads = trial
             .iter()
             .flat_map(|c| composer.compose(c, Some(chapter_caption(c)), &root))

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "dump_geometry", "print"])]
+    #[arg(required_unless_present_any = ["formats", "dump_geometry", "print", "audit"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -44,6 +44,12 @@ struct Cli {
     /// preview, and the photo folder must still be in place.
     #[arg(long)]
     print: bool,
+
+    /// Lint the album already built in --out: count the defect classes
+    /// (visage coupé, orientation trahie, doublons sur une planche…) and
+    /// print the JSON report. Exits non-zero when a counter passes son seuil.
+    #[arg(long)]
+    audit: bool,
 }
 
 /// Built once at startup so `--help` can show the format table.
@@ -63,6 +69,15 @@ fn main() -> Result<()> {
     if cli.dump_geometry {
         let album = Album::new("geometry", std::path::Path::new("."), trim);
         println!("{}", serde_json::to_string_pretty(&pdf::dump_geometry(&album))?);
+        return Ok(());
+    }
+
+    if cli.audit {
+        let report = colophon_core::audit::audit(&cli.out)?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        if !report.ok {
+            std::process::exit(1);
+        }
         return Ok(());
     }
 

@@ -99,14 +99,41 @@ pub const TEMPLATES: &[(&str, usize)] = &[
     ("solo_verso", 1),
     ("solo_paysage", 1),
     ("solo_paysage_verso", 1),
+    ("solo_pano", 1),
+    ("solo_pano_verso", 1),
+    ("solo_etroit", 1),
+    ("solo_etroit_verso", 1),
+    ("solo_carre", 1),
+    ("solo_carre_verso", 1),
     ("duo", 2),
+    ("duo_portrait", 2),
+    ("duo_paysage", 2),
+    ("duo_etroit", 2),
+    ("duo_pano", 2),
     ("trio", 3),
     ("trio_verso", 3),
+    ("trio_portrait", 3),
+    ("trio_portrait_verso", 3),
     ("quad", 4),
+    ("quad_portrait", 4),
+    ("quad_etroit", 4),
+    ("quad_pano", 4),
     ("six", 6),
     ("six_verso", 6),
     ("octo", 8),
 ];
+
+/// Cell aspect of the margined landscape cells (stacks, quads).
+pub const CELL_LANDSCAPE: f64 = 4.0 / 3.0;
+/// Cell aspect of the portrait cells (solo, duo_portrait, pairs).
+pub const CELL_PORTRAIT: f64 = 0.75;
+/// Cell aspect of the panorama cells.
+pub const CELL_PANO: f64 = 2.0;
+/// Cell aspect of the narrow cells, for 18,5:9-style phone portraits.
+pub const CELL_ETROIT: f64 = 0.5;
+/// Cell aspect of the square cell, for square-ish photos on non-square
+/// pages where no other cell comes close.
+pub const CELL_CARRE: f64 = 1.0;
 
 /// How many photos a template holds.
 pub fn template_capacity(name: &str) -> usize {
@@ -191,29 +218,49 @@ fn caption_box(at: Point, g: &SpreadGeometry) -> Rect {
     Rect { x: at.x, y: at.y - g.margin * 0.15, w: g.margin * 3.5, h: g.margin * 0.6 }
 }
 
-/// Where the chapter caption goes: the first spot no image covers, tried in
-/// reading order. A caption printed over a full-bleed photo is unreadable,
-/// and moving it costs nothing next to adding a plaque behind it.
-pub fn caption_anchor(rects: &[Rect], g: &SpreadGeometry) -> Point {
+/// The first caption spot no image covers, tried in reading order, or None
+/// when every candidate is covered. The linter counts the None case: it means
+/// the caption will print over a photo.
+pub fn caption_anchor_free(rects: &[Rect], g: &SpreadGeometry) -> Option<Point> {
+    caption_candidates(g)
+        .into_iter()
+        .find(|at| {
+            let b = caption_box(*at, g);
+            rects.iter().all(|r| !overlaps(r, &b))
+        })
+}
+
+fn caption_candidates(g: &SpreadGeometry) -> [Point; 4] {
     let half = g.media_w / 2.0;
     let low = g.margin * 0.36; // 5 mm on a 210 mm page
     let high = g.media_h - g.margin * 0.75;
     let left = g.margin * 0.57; // 8 mm
     let right = half + g.gutter / 2.0;
-
-    let candidates = [
+    [
         Point { x: left, y: low },
         Point { x: right, y: low },
         Point { x: left, y: high },
         Point { x: right, y: high },
-    ];
-    for at in candidates {
-        let b = caption_box(at, g);
-        if rects.iter().all(|r| !overlaps(r, &b)) {
-            return at;
-        }
-    }
-    candidates[0]
+    ]
+}
+
+/// Where the chapter caption goes: the first spot no image covers, tried in
+/// reading order. A caption printed over a full-bleed photo is unreadable,
+/// and moving it costs nothing next to adding a plaque behind it.
+pub fn caption_anchor(rects: &[Rect], g: &SpreadGeometry) -> Point {
+    caption_anchor_free(rects, g).unwrap_or_else(|| caption_candidates(g)[0])
+}
+
+/// The part of an image a cover-crop into `rect` shows, in image pixels:
+/// `(x0, y0, vw, vh)`, top-left origin. Same arithmetic as the renderer;
+/// the composer and the linter reason about face cuts with it.
+pub fn crop_window(rect: &Rect, iw: f64, ih: f64, focal: [f64; 2]) -> (f64, f64, f64, f64) {
+    let s = (rect.w / iw).max(rect.h / ih);
+    let vw = rect.w / s;
+    let vh = rect.h / s;
+    let x0 = ((iw - vw) * focal[0].clamp(0.0, 1.0)).clamp(0.0, (iw - vw).max(0.0));
+    let y0 = ((ih - vh) * focal[1].clamp(0.0, 1.0)).clamp(0.0, (ih - vh).max(0.0));
+    (x0, y0, vw, vh)
 }
 
 fn overlaps(a: &Rect, b: &Rect) -> bool {
@@ -233,17 +280,40 @@ pub fn slots_for(template: &str, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
     let mut v = match template.trim_end_matches("_verso") {
         // one photo, full bleed, on a single page
         "full1" => vec![full_page(lead_right, g)],
-        // one photo, margined: portrait cell, then landscape cell
-        "solo" => vec![fitted(lead, 0.75)],
-        "solo_paysage" => vec![fitted(lead, 4.0 / 3.0)],
+        // one photo, margined: portrait, landscape or panorama cell
+        "solo" => vec![fitted(lead, CELL_PORTRAIT)],
+        "solo_paysage" => vec![fitted(lead, CELL_LANDSCAPE)],
+        "solo_pano" => vec![fitted(lead, CELL_PANO)],
+        "solo_etroit" => vec![fitted(lead, CELL_ETROIT)],
+        "solo_carre" => vec![fitted(lead, CELL_CARRE)],
         // one per page, facing each other
         "duo" => {
             let (l, r) = (page_box(false, g), page_box(true, g));
             vec![l, r]
         }
-        // a full page facing two stacked
+        // two portraits or two landscapes facing each other
+        "duo_portrait" => vec![
+            fitted(page_box(false, g), CELL_PORTRAIT),
+            fitted(page_box(true, g), CELL_PORTRAIT),
+        ],
+        "duo_paysage" => vec![
+            fitted(page_box(false, g), CELL_LANDSCAPE),
+            fitted(page_box(true, g), CELL_LANDSCAPE),
+        ],
+        "duo_etroit" => vec![
+            fitted(page_box(false, g), CELL_ETROIT),
+            fitted(page_box(true, g), CELL_ETROIT),
+        ],
+        "duo_pano" => vec![
+            fitted(page_box(false, g), CELL_PANO),
+            fitted(page_box(true, g), CELL_PANO),
+        ],
+        // a full page facing two stacked landscape cells
         "trio" => {
-            let stack = grid(facing, 1, 2, g.gutter);
+            let stack: Vec<Rect> = grid(facing, 1, 2, g.gutter)
+                .into_iter()
+                .map(|c| fitted(c, CELL_LANDSCAPE))
+                .collect();
             let mut v = Vec::with_capacity(3);
             if lead_right {
                 v.extend(stack);
@@ -254,15 +324,76 @@ pub fn slots_for(template: &str, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
             }
             v
         }
-        // 2 x 2 across the spread, one column per page
+        // a full page facing two portraits side by side
+        "trio_portrait" => {
+            let pair: Vec<Rect> = grid(facing, 2, 1, g.gutter)
+                .into_iter()
+                .map(|c| fitted(c, CELL_PORTRAIT))
+                .collect();
+            let mut v = Vec::with_capacity(3);
+            if lead_right {
+                v.extend(pair);
+                v.push(full_page(true, g));
+            } else {
+                v.push(full_page(false, g));
+                v.extend(pair);
+            }
+            v
+        }
+        // 2 x 2 landscape cells across the spread, one column per page
         "quad" => {
             let (l, r) = (page_box(false, g), page_box(true, g));
             let (lc, rc) = (grid(l, 1, 2, g.gutter), grid(r, 1, 2, g.gutter));
-            vec![lc[0], rc[0], lc[1], rc[1]]
+            vec![
+                fitted(lc[0], CELL_LANDSCAPE),
+                fitted(rc[0], CELL_LANDSCAPE),
+                fitted(lc[1], CELL_LANDSCAPE),
+                fitted(rc[1], CELL_LANDSCAPE),
+            ]
         }
-        // two stacked facing a four-up mosaic
+        // four portraits, two per page side by side
+        "quad_portrait" => {
+            let mut v: Vec<Rect> = grid(page_box(false, g), 2, 1, g.gutter)
+                .into_iter()
+                .map(|c| fitted(c, CELL_PORTRAIT))
+                .collect();
+            v.extend(
+                grid(page_box(true, g), 2, 1, g.gutter)
+                    .into_iter()
+                    .map(|c| fitted(c, CELL_PORTRAIT)),
+            );
+            v
+        }
+        // four narrow portraits, two per page side by side
+        "quad_etroit" => {
+            let mut v: Vec<Rect> = grid(page_box(false, g), 2, 1, g.gutter)
+                .into_iter()
+                .map(|c| fitted(c, CELL_ETROIT))
+                .collect();
+            v.extend(
+                grid(page_box(true, g), 2, 1, g.gutter)
+                    .into_iter()
+                    .map(|c| fitted(c, CELL_ETROIT)),
+            );
+            v
+        }
+        // four panoramas, two stacked per page
+        "quad_pano" => {
+            let (l, r) = (page_box(false, g), page_box(true, g));
+            let (lc, rc) = (grid(l, 1, 2, g.gutter), grid(r, 1, 2, g.gutter));
+            vec![
+                fitted(lc[0], CELL_PANO),
+                fitted(rc[0], CELL_PANO),
+                fitted(lc[1], CELL_PANO),
+                fitted(rc[1], CELL_PANO),
+            ]
+        }
+        // two stacked landscapes facing a four-up mosaic
         "six" => {
-            let stack = grid(lead, 1, 2, g.gutter);
+            let stack: Vec<Rect> = grid(lead, 1, 2, g.gutter)
+                .into_iter()
+                .map(|c| fitted(c, CELL_LANDSCAPE))
+                .collect();
             let mosaic = grid(facing, 2, 2, g.gutter);
             let mut v = Vec::with_capacity(6);
             if lead_right {

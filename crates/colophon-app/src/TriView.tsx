@@ -14,6 +14,7 @@ const REASONS: [string, string][] = [
   ["meme_moment", "Même moment, quasi la même photo"],
   ["doublon", "Doublons de rafale ou de scène"],
   ["jumeau", "Quasi identiques"],
+  ["panorama", "Panoramas : trop larges pour une page"],
   ["parasite", "Parasites : captures, images reçues"],
 ];
 

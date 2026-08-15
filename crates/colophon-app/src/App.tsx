@@ -61,6 +61,7 @@ import { PlanchesView, LockGlyph } from "./PlanchesView";
 import { CoverView } from "./CoverView";
 import { EnvoiView } from "./EnvoiView";
 import { RaccourcisView } from "./Raccourcis";
+import { Chevron, CoverGlyph } from "./icons";
 import { installMenu, MenuActions, RecentAlbum } from "./menu";
 import { readRecents, pushRecent } from "./recents";
 import { cachedThumb, loadThumb, resetThumbs } from "./thumbs";
@@ -1424,14 +1425,15 @@ function BookFoot({
           aria-label="Planche précédente"
           title="←"
         >
-          ‹
+          <Chevron dir="left" />
         </button>
         <button
           className={"ruler-cover" + (index === COVER ? " current" : "")}
           onClick={() => onSeek(COVER)}
           title="Couverture"
+          aria-label="Couverture"
         >
-          C
+          <CoverGlyph />
         </button>
         <nav className="ruler" aria-label="Aller à une planche">
           {album.spreads.map((s, i) => (
@@ -1461,7 +1463,7 @@ function BookFoot({
           aria-label="Planche suivante"
           title="→ ou espace"
         >
-          ›
+          <Chevron dir="right" />
         </button>
         <span className="foot-pos">
           {index === COVER ? "C" : index + 1} / {total}

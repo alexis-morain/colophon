@@ -104,6 +104,20 @@ export function SpreadView({
   useEffect(() => setDraft(null), [spread, selected]);
   useEffect(() => setEditingCaption(false), [spread]);
 
+  // Text is only measured in the embedded face: once it lands (local file,
+  // milliseconds), measure everything again.
+  const [fontReady, setFontReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    document.fonts.load('100px "Source Sans 3"').then(
+      () => alive && setFontReady(true),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Photo captions wider than their slot, and text lines wider than the
   // page: named to the reader, never cut.
   useEffect(() => {
@@ -139,7 +153,7 @@ export function SpreadView({
       }
     }
     onOverflow(problems[0] ?? null);
-  }, [spread, rects, canvas, mm, onOverflow]);
+  }, [spread, rects, canvas, mm, onOverflow, fontReady]);
 
   const textAt = textAnchor(canvas);
 
@@ -398,9 +412,11 @@ function CaptionPopover({
 }
 
 /** Width of a string in spread millimetres at a print size in mm: measured
- *  at a big fixed font (glyph widths scale linearly), then scaled down. */
+ *  at a big fixed size (glyph widths scale linearly), then scaled down.
+ *  The face is the one the PDF embeds: the overflow warning and the print
+ *  agree on every glyph. */
 function measureMm(text: string, sizeMm: number): number {
-  return (measure(text, "100px Helvetica, Arial, sans-serif") * sizeMm) / 100;
+  return (measure(text, '100px "Source Sans 3", sans-serif') * sizeMm) / 100;
 }
 
 /**

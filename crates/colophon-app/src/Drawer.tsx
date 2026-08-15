@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { TriEntry } from "./edits";
+import { Chevron } from "./icons";
 import { reasonPhrase } from "./reasons";
 import { LazyThumb } from "./TriView";
 
@@ -36,7 +37,7 @@ export function Drawer({
           aria-expanded={open}
         >
           <span className="drawer-chevron" aria-hidden="true">
-            {open ? "▾" : "▴"}
+            <Chevron dir={open ? "down" : "up"} />
           </span>
           Photos en réserve · {entries.length}
         </button>

@@ -1727,16 +1727,34 @@ function Empty({
                   </button>
                 </p>
 
-                <label className="setup-field">
-                  <span className="setup-label">titre</span>
-                  <input
-                    className="setup-input"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder={folderName}
-                    autoFocus
-                  />
-                </label>
+                <div className="setup-duo">
+                  <label className="setup-field">
+                    <span className="setup-label">titre</span>
+                    <input
+                      className="setup-input"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder={folderName}
+                      autoFocus
+                    />
+                  </label>
+                  <label className="setup-field">
+                    <span className="setup-label">planches</span>
+                    <span className="setup-spreads">
+                      <input
+                        className="setup-input narrow"
+                        type="number"
+                        min={8}
+                        max={200}
+                        value={spreads}
+                        onChange={(e) => setSpreads(Number(e.target.value) || 48)}
+                      />
+                      <span className="setup-hint">
+                        soit {spreads * 2} pages
+                      </span>
+                    </span>
+                  </label>
+                </div>
 
                 <div className="setup-field">
                   <span className="setup-label">format de page</span>
@@ -1770,27 +1788,10 @@ function Empty({
                     ))}
                   </div>
                   <span className="setup-hint">
-                    Le rythme guide toute la composition et se rejoue à chaque
-                    recomposition. Chaque planche reste modifiable une par une.
+                    Le rythme se rejoue à chaque recomposition ; chaque planche
+                    reste modifiable une par une.
                   </span>
                 </div>
-
-                <label className="setup-field">
-                  <span className="setup-label">planches</span>
-                  <span className="setup-spreads">
-                    <input
-                      className="setup-input narrow"
-                      type="number"
-                      min={8}
-                      max={200}
-                      value={spreads}
-                      onChange={(e) => setSpreads(Number(e.target.value) || 48)}
-                    />
-                    <span className="setup-hint">
-                      soit {spreads * 2} pages, l’imprimeur compte en pages
-                    </span>
-                  </span>
-                </label>
 
                 <p className="setup-actions">
                   <button className="cta" type="submit">
@@ -1868,7 +1869,7 @@ function FormatCard({
   active: boolean;
   onPick: () => void;
 }) {
-  const pageH = 44;
+  const pageH = 32;
   const pageW = (f.w / f.h) * pageH;
   return (
     <button

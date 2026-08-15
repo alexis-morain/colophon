@@ -1141,12 +1141,19 @@ kbd {
 
 /* ---- creation form ----------------------------------------------------- */
 
-/* Compact on purpose: the whole form, submit included, must hold inside a
-   1280 × 720 window without scrolling. */
+/* Compact on purpose: the whole form aims to hold inside a 1280 × 720
+   window, and the sticky submit stays visible even when it does not. */
 .setup {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   max-width: 40rem;
+}
+
+.setup-duo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
 }
 
 .setup-heading {
@@ -1214,8 +1221,14 @@ kbd {
   font-size: var(--fs-13);
 }
 
+/* Glued to the bottom of the scroll when the form runs long: the way to
+   submit is never below the fold. */
 .setup-actions {
+  position: sticky;
+  bottom: 0;
   margin: 4px 0 0;
+  padding: 10px 0;
+  background: var(--ink);
   display: flex;
   gap: 20px;
   align-items: baseline;
@@ -1287,7 +1300,7 @@ kbd {
   gap: 3px;
   justify-items: center;
   align-content: end;
-  padding: 12px 12px 9px;
+  padding: 8px 10px 6px;
   border: 1px solid var(--rule);
   background: transparent;
   transition: border-color var(--turn), background var(--turn);
@@ -2456,7 +2469,7 @@ button.envoi-defaut:focus-visible {
   display: flex;
   gap: 2px;
   margin-top: 4px;
-  height: 30px;
+  height: 24px;
 }
 
 .densite-page {

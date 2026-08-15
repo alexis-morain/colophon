@@ -12,7 +12,7 @@ export const inTauri =
 /** Native folder picker. In the browser, the dev server's folder is implied. */
 export async function pickAlbumFolder(): Promise<string | null> {
   if (!inTauri) return "__dev__";
-  return pickFolder("Choisir un dossier d'album");
+  return pickFolder("Choisir un dossier d’album");
 }
 
 /** Native folder picker for a folder of photos to compose from. In the
@@ -39,7 +39,7 @@ export async function listFormats(): Promise<FormatPreset[]> {
 }
 
 const DEV_FORMATS: FormatPreset[] = [
-  { name: "carre-21", w: 210, h: 210, about: "carré 21 × 21, le format d'album courant" },
+  { name: "carre-21", w: 210, h: 210, about: "carré 21 × 21, le format d’album courant" },
   { name: "carre-30", w: 300, h: 300, about: "carré 30 × 30, grand format de table" },
   { name: "portrait-a4", w: 210, h: 297, about: "A4 portrait" },
   { name: "paysage-a4", w: 297, h: 210, about: "A4 paysage" },
@@ -339,7 +339,7 @@ export async function exportPdf(
   const { downloadDir, join } = await import("@tauri-apps/api/path");
   const name = (title.trim() || "album").replace(/[\\/:]+/g, "-");
   const dest = await save({
-    title: "Enregistrer le PDF de l'album",
+    title: "Enregistrer le PDF de l’album",
     defaultPath: await join(await downloadDir(), `${name}.pdf`),
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });

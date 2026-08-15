@@ -5,7 +5,7 @@
 
 import { BuildBilan } from "./bridge";
 import { Album, Discard } from "./album";
-import { REASONS } from "./TriView";
+import { REASONS } from "./reasons";
 
 export function BilanView({
   bilan,
@@ -43,7 +43,7 @@ export function BilanView({
           <h1 className="setup-heading">« {album.title} » est composé</h1>
           <p className="bilan-lead">
             <strong>{bilan.photos_scanned}</strong> photos lues,{" "}
-            <strong>{bilan.photos_kept}</strong> dans l'album, soit {pct} % du
+            <strong>{bilan.photos_kept}</strong> dans l’album, soit {pct} % du
             dossier&nbsp;: {spreads} planches en {bilan.chapters} chapitre
             {bilan.chapters > 1 ? "s" : ""}.
           </p>
@@ -61,18 +61,18 @@ export function BilanView({
 
           <p className="setup-hint">
             {setAside > 0
-              ? "Rien n'est supprimé : chaque photo écartée attend dans la " +
+              ? "Rien n’est supprimé : chaque photo écartée attend dans la " +
                 "vue Tri, avec sa raison, et un double-clic la repêche."
-              : "Toutes les photos du dossier sont dans l'album."}
+              : "Toutes les photos du dossier sont dans l’album."}
           </p>
 
           <p className="setup-actions">
             <button className="cta" autoFocus onClick={onOpen}>
-              Ouvrir l'album
+              Ouvrir l’album
             </button>
             {setAside > 0 && (
               <button className="link" onClick={onTri}>
-                passer les {setAside} écartées en revue
+                Passer les {setAside} écartées en revue
               </button>
             )}
           </p>

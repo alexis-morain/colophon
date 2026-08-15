@@ -6,22 +6,11 @@
 
 import { useState } from "react";
 import { TriEntry } from "./edits";
+import { reasonPhrase } from "./reasons";
 import { LazyThumb } from "./TriView";
 
 /** Reasons that read as « good photo, just not placed ». */
 const UNPLACED = new Set(["hors_budget", "retiree"]);
-
-const REASON_LABELS: Record<string, string> = {
-  retiree: "retirée à la main",
-  rejetee: "rejetée dans votre logiciel photo",
-  hors_budget: "hors budget : bonne photo, album plein",
-  meme_moment: "même moment, quasi la même photo",
-  doublon: "doublon de rafale ou de scène",
-  jumeau: "quasi identique à une photo gardée",
-  panorama: "panorama : trop large pour une page",
-  definition: "définition trop faible pour ce format",
-  parasite: "parasite : capture, image reçue",
-};
 
 export function Drawer({
   entries,
@@ -73,7 +62,7 @@ export function Drawer({
         )}
         {open && (
           <span className="drawer-hint">
-            glissez une photo sur une case du livre pour l'y placer
+            glissez une photo sur une case du livre pour l’y placer
           </span>
         )}
       </header>
@@ -82,8 +71,8 @@ export function Drawer({
           {list.length === 0 ? (
             <p className="drawer-empty">
               {tab === "non-placees"
-                ? "Aucune photo en attente : tout ce qui mérite l'album y est."
-                : "Rien d'écarté par la curation."}
+                ? "Aucune photo en attente : tout ce qui mérite l’album y est."
+                : "Rien d’écarté par la curation."}
             </p>
           ) : (
             list.map((e) => (
@@ -99,9 +88,9 @@ export function Drawer({
                   );
                   ev.dataTransfer.effectAllowed = "copy";
                 }}
-                title={`${e.src.split("/").pop()} · ${
-                  REASON_LABELS[e.reason] ?? e.reason
-                }${e.kept ? ` (gardée : ${e.kept.split("/").pop()})` : ""}`}
+                title={`${e.src.split("/").pop()} · ${reasonPhrase(e.reason)}${
+                  e.kept ? ` (gardée : ${e.kept.split("/").pop()})` : ""
+                }`}
               >
                 <LazyThumb src={e.src} />
               </figure>

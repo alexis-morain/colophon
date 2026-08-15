@@ -5,21 +5,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TriEntry } from "./edits";
+import { REASONS, reasonLabel } from "./reasons";
 import { cachedThumb, loadThumb } from "./thumbs";
-
-/** Sections in display order, with human labels. The end-of-build report
- *  reuses them, so the two screens name every reason the same way. */
-export const REASONS: [string, string][] = [
-  ["retiree", "Retirées à la main"],
-  ["rejetee", "Rejetées dans votre logiciel photo"],
-  ["hors_budget", "Hors budget : bonnes photos, album plein"],
-  ["meme_moment", "Même moment, quasi la même photo"],
-  ["doublon", "Doublons de rafale ou de scène"],
-  ["jumeau", "Quasi identiques"],
-  ["panorama", "Panoramas : trop larges pour une page"],
-  ["definition", "Définition trop faible pour ce format"],
-  ["parasite", "Parasites : captures, images reçues"],
-];
 
 export function TriView({
   entries,
@@ -49,7 +36,7 @@ export function TriView({
   if (entries.length === 0) {
     return (
       <div className="tri tri-empty">
-        <p>Rien à trier : toutes les photos du dossier sont dans l'album.</p>
+        <p>Rien à trier : toutes les photos du dossier sont dans l’album.</p>
       </div>
     );
   }
@@ -59,7 +46,7 @@ export function TriView({
       <div className="tri-head">
         <p className="tri-lede">
           {entries.length} photo{entries.length > 1 ? "s" : ""} hors de
-          l'album, chacune avec sa raison. Un double-clic repêche.
+          l’album, chacune avec sa raison. Un double-clic repêche.
         </p>
         <button
           className="cta small"
@@ -120,21 +107,9 @@ function Cell({
       title={entry.kept ? `${name}, gardée : ${entry.kept.split("/").pop()}` : name}
     >
       <LazyThumb src={entry.src} />
-      <button
-        className="tri-rescue"
-        tabIndex={selected ? 0 : -1}
-        onClick={(e) => {
-          e.stopPropagation();
-          onRescue();
-        }}
-      >
-        Repêcher
-      </button>
     </figure>
   );
 }
-
-const REASON_LABEL = new Map(REASONS);
 
 /**
  * The keyboard review, taken from the culling tools photographers use: one
@@ -183,9 +158,7 @@ export function RevueView({
     <div className="revue">
       <figure className="revue-stage">
         {url && <img src={url} alt={name} />}
-        <span className="revue-reason">
-          {REASON_LABEL.get(entry.reason) ?? entry.reason}
-        </span>
+        <span className="revue-reason">{reasonLabel(entry.reason)}</span>
         <span className="revue-pos">
           {i + 1} / {entries.length}
         </span>
@@ -209,7 +182,7 @@ export function RevueView({
             <kbd>←</kbd> <kbd>→</kbd> parcourir
           </span>
           <button className="link" onClick={onClose}>
-            sortir&ensp;<kbd>Échap</kbd>
+            Sortir&ensp;<kbd>Échap</kbd>
           </button>
         </span>
       </footer>

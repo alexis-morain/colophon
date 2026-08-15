@@ -9,10 +9,17 @@
   --text: #ede6d8;
   --muted: #a2998a;
   --accent: #c2532b;
+  --accent-hover: #a94523;
+  --on-accent: #fdf6f0;
   --rule: rgba(237, 230, 216, 0.14);
 
   --font-display: "Charter", "Iowan Old Style", Palatino, Georgia, serif;
   --font-ui: "Avenir Next", Avenir, Futura, system-ui, sans-serif;
+
+  /* One sheet, one shadow: contact plus ambient, a page on a dark table. */
+  --shadow-paper:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 26px 64px -22px rgba(0, 0, 0, 0.8);
 
   --turn: 180ms cubic-bezier(0.2, 0, 0, 1);
 
@@ -62,13 +69,16 @@ kbd {
   /* One clamped column: the drawer's strip must scroll inside it, never
      widen it (a hundred 88 px cells would push the book off screen). */
   grid-template-columns: minmax(0, 100%);
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   height: 100%;
 }
 
+/* Three zones, three natures: the album (title), the places (tabs, centred,
+   alone), the file actions (right, quiet). The spread's own context lives
+   next to the spread, in the context line. */
 .bar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto 1fr;
   align-items: baseline;
   gap: 20px;
   padding: 34px 28px 14px 84px; /* room for the macOS traffic lights */
@@ -77,6 +87,10 @@ kbd {
 
 .bar h1 {
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-display);
   font-size: 21px;
   font-weight: 600;
@@ -90,6 +104,10 @@ kbd {
   align-items: baseline;
   color: var(--muted);
   font-size: 12.5px;
+}
+
+.bar .actions {
+  justify-self: end;
 }
 
 .bar .template {
@@ -156,13 +174,19 @@ kbd {
   border-color: var(--muted);
 }
 
+/* Anchored to the context line near the bottom of the window: the panel
+   opens upward, one wrapping row of named families. */
 .tpl-panel {
   position: absolute;
   z-index: 30;
-  top: calc(100% + 8px);
+  bottom: calc(100% + 8px);
   left: 0;
-  display: grid;
-  grid-template-columns: repeat(4, auto);
+  display: flex;
+  flex-wrap: wrap;
+  /* Shrink-to-fit would stop at the anchor button's width: say the real
+     intent, one row that wraps past ~640 px. */
+  width: max-content;
+  max-width: min(640px, 84vw);
   gap: 2px;
   padding: 10px;
   background: var(--ink-raised);
@@ -240,7 +264,10 @@ kbd {
   height: 100%;
   display: grid;
   place-items: center;
-  animation: turn var(--turn) both;
+  /* No fill mode: a retained transform would turn this element into the
+     containing block of every position: fixed descendant (the caption
+     popover anchors to the viewport through it). */
+  animation: turn var(--turn);
 }
 
 @keyframes turn {
@@ -264,10 +291,7 @@ kbd {
   width: min(100cqw, calc(100cqh * var(--spread-aspect)));
   overflow: hidden;
   background: var(--paper);
-  /* contact shadow plus ambient: a sheet resting on a dark table */
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.55),
-    0 26px 64px -22px rgba(0, 0, 0, 0.8);
+  box-shadow: var(--shadow-paper);
 }
 
 .canvas {
@@ -288,19 +312,29 @@ kbd {
 }
 
 /* Editing states. The outline sits inside the slot so the geometry of the
-   page never shifts; the accent is the same terracotta as everywhere. */
+   page never shifts; the accent is the same terracotta as everywhere. The
+   selection reads twice: the border on the chosen case, a light veil on
+   every other one. */
 .slot.editable {
   cursor: pointer;
 }
 
 .slot.selected {
-  outline: 3px solid var(--accent);
-  outline-offset: -3px;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.paper.has-selection .slot:not(.selected)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(246, 242, 233, 0.4);
+  pointer-events: none;
 }
 
 .slot.dropping {
-  outline: 3px dashed var(--accent);
-  outline-offset: -3px;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
 }
 
 .slot.dropping img {
@@ -562,34 +596,6 @@ kbd {
   display: block;
 }
 
-/* Hidden until the cell is hovered or selected: always one click away,
-   never four hundred orange bands at once. */
-.tri-rescue {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 7px 0;
-  background: var(--accent);
-  color: #fdf6f0;
-  font-size: 12.5px;
-  font-weight: 600;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--turn);
-}
-
-.tri-cell:hover .tri-rescue,
-.tri-cell.selected .tri-rescue,
-.tri-rescue:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.tri-rescue:hover {
-  background: #a94523;
-}
-
 /* ---- keyboard review ---------------------------------------------------- */
 
 /* One discarded photo at a time, over everything: the review is a decision
@@ -741,19 +747,21 @@ kbd {
   height: 100%;
 }
 
+/* A 16 px hit target around a 1 px line: the geometry of the tick itself
+   never moves, only the reachable zone grew. */
 .ruler-tick {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 9px;
-  margin-left: -4.5px;
+  width: 16px;
+  margin-left: -8px;
   padding: 0;
 }
 
 .ruler-tick::after {
   content: "";
   position: absolute;
-  left: 4px;
+  left: 7.5px;
   top: 12px;
   bottom: 12px;
   width: 1px;
@@ -768,6 +776,7 @@ kbd {
 }
 
 .ruler-tick.chapter::after {
+  left: 7px;
   top: 9px;
   bottom: 9px;
   width: 2px;
@@ -869,7 +878,7 @@ kbd {
   display: grid;
   height: 100%;
   overflow-y: auto;
-  padding: 40px clamp(40px, 9vw, 140px);
+  padding: 28px clamp(40px, 9vw, 140px);
 }
 
 .empty-block {
@@ -901,7 +910,7 @@ kbd {
 }
 
 .kicker {
-  margin: 0 0 26px;
+  margin: 0 0 18px;
   padding-left: 14px;
   border-left: 2px solid var(--accent);
   font-family: var(--font-display);
@@ -931,17 +940,22 @@ kbd {
 .cta {
   padding: 11px 22px;
   background: var(--accent);
-  color: #fdf6f0;
+  color: var(--on-accent);
   font-weight: 600;
   transition: background var(--turn), transform var(--turn);
 }
 
-.cta:hover {
-  background: #a94523;
+.cta:hover:not(:disabled) {
+  background: var(--accent-hover);
 }
 
 .cta:active {
   transform: translateY(1px);
+}
+
+.cta:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .cta.small {
@@ -955,18 +969,140 @@ kbd {
   font-size: 12.5px;
 }
 
+/* ---- recent albums ------------------------------------------------------ */
+
+.recents {
+  margin-top: 30px;
+}
+
+.recents-title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.recents-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 30rem;
+}
+
+.recent {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px 7px 12px;
+  border-left: 2px solid transparent;
+  transition: background var(--turn), border-color var(--turn);
+}
+
+.recent:hover {
+  background: var(--ink-raised);
+  border-left-color: var(--accent);
+}
+
+.recent-nom {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--text);
+}
+
+.recent-dir {
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- the shortcuts overlay ---------------------------------------------- */
+
+.raccourcis {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(23, 21, 15, 0.6);
+}
+
+.raccourcis-panel {
+  width: min(780px, 90vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  padding: 20px 26px 26px;
+  background: var(--ink-raised);
+  border: 1px solid var(--rule);
+  box-shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.9);
+}
+
+.raccourcis-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.raccourcis-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.raccourcis-groupes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 4px 36px;
+}
+
+.raccourcis-groupe h3 {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.raccourcis-groupe dl {
+  margin: 0;
+}
+
+.raccourcis-ligne {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 12.5px;
+}
+
+.raccourcis-ligne dt {
+  color: var(--text);
+}
+
+.raccourcis-ligne dd {
+  margin: 0;
+  color: var(--muted);
+}
+
 /* ---- creation form ----------------------------------------------------- */
 
+/* Compact on purpose: the whole form, submit included, must hold inside a
+   1280 × 720 window without scrolling. */
 .setup {
   display: grid;
-  gap: 22px;
+  gap: 16px;
   max-width: 40rem;
 }
 
 .setup-heading {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(26px, 3.2vw, 36px);
+  font-size: clamp(24px, 2.6vw, 30px);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -1163,9 +1299,7 @@ kbd {
 .format-large-spread {
   position: relative;
   background: var(--paper);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.55),
-    0 18px 44px -18px rgba(0, 0, 0, 0.8);
+  box-shadow: var(--shadow-paper);
   transition: width var(--turn), height var(--turn);
 }
 
@@ -1227,6 +1361,7 @@ kbd {
 }
 
 .build-stage-label {
+  color: var(--text);
   animation: stage-in 260ms cubic-bezier(0.2, 0, 0, 1) both;
 }
 
@@ -1247,8 +1382,25 @@ kbd {
   font-size: 12px;
 }
 
-.buildlog {
+/* The engine's raw log, folded away by default: the stage label above
+   already tells the story in French. */
+.build-details {
   margin: 0 0 8px;
+}
+
+.build-details summary {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.build-details summary:hover {
+  color: var(--text);
+}
+
+.buildlog {
+  margin: 8px 0 0;
   padding: 14px 16px;
   background: var(--ink-raised);
   border-left: 2px solid var(--accent);
@@ -1276,8 +1428,41 @@ kbd {
   font-size: 12.5px;
 }
 
-.app > .warn {
+.app > .warn,
+.app > .fault {
   margin: 0;
+}
+
+/* An error banner: the French sentence leads, the raw detail folds away. */
+.fault-quoi {
+  margin: 0;
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--text);
+}
+
+.fault-detail {
+  margin-top: 4px;
+}
+
+.fault-detail summary {
+  cursor: pointer;
+  font-size: 12px;
+  width: fit-content;
+}
+
+.fault-detail summary:hover {
+  color: var(--text);
+}
+
+.fault-detail pre {
+  margin: 6px 0 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---- badges and locks --------------------------------------------------- */
@@ -1498,6 +1683,44 @@ kbd {
   );
 }
 
+/* The cover, page zero of the light table: one page wide (half a spread),
+   centred, same row height as the spreads around it. */
+.planche-cover .mini-cover {
+  position: relative;
+  width: 50%;
+  margin: 0 auto;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.mini-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.mini-cover-title {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 8%;
+  font-family: var(--font-display);
+  font-size: 9px;
+  color: #fdf6f0;
+  text-shadow: 0 1px 4px rgba(23, 21, 15, 0.66);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.mini-cover:not(:has(img)) .mini-cover-title {
+  color: #3a342c;
+  text-shadow: none;
+}
+
 .planche-meta {
   display: flex;
   align-items: center;
@@ -1549,9 +1772,7 @@ kbd {
   width: 100%;
   display: flex;
   background: var(--paper);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.55),
-    0 26px 64px -22px rgba(0, 0, 0, 0.8);
+  box-shadow: var(--shadow-paper);
 }
 
 .cover-back {
@@ -1792,17 +2013,6 @@ kbd {
   border-color: var(--accent);
 }
 
-.ruler {
-  touch-action: none;
-}
-
-.ruler-tick.droptick::after {
-  background: var(--accent);
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-}
-
 .foot-line {
   display: block;
   min-width: 0;
@@ -1816,41 +2026,72 @@ kbd {
   margin-left: 10px;
 }
 
-.foot-captioning {
-  display: inline-flex;
-  align-items: baseline;
+/* ---- the context line ---------------------------------------------------- */
+
+/* The book view's spread context, on its own line between the planche and
+   the foot: template, badges, padlock, the hint of the moment. Fixed
+   height, so the planche above never moves. */
+.context-line {
+  height: 36px;
+  display: flex;
+  align-items: center;
   gap: 14px;
-  max-width: 100%;
+  padding: 0 28px;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 12px;
 }
 
-.foot-caption-label {
-  display: inline-flex;
+.context-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- the caption popover ------------------------------------------------- */
+
+/* Anchored under the selected case (above it near the window's bottom):
+   the caption edits where the caption prints. */
+.caption-popover {
+  position: fixed;
+  z-index: 35;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  width: 320px;
+  padding: 8px 12px;
+  background: var(--ink-raised);
+  border: 1px solid var(--rule);
+  box-shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.9);
+}
+
+.caption-popover-label {
+  flex: 1;
+  display: flex;
   align-items: baseline;
   gap: 8px;
   color: var(--muted);
   font-size: 12px;
 }
 
-.foot-caption {
+.caption-popover-input {
+  flex: 1;
+  min-width: 0;
   font: inherit;
   font-size: 12.5px;
   color: var(--text);
-  background: var(--ink-raised);
+  background: var(--ink);
   border: 1px solid var(--rule);
-  padding: 1px 8px;
-  width: 240px;
+  padding: 2px 8px;
 }
 
-.foot-caption:focus {
+.caption-popover-input:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.foot-caption-hints {
-  color: var(--muted);
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.caption-popover .link {
   white-space: nowrap;
 }
 
@@ -2089,9 +2330,13 @@ button.envoi-defaut:focus-visible {
 .envoi-exporter {
   padding: 10px 20px;
   background: var(--accent);
-  color: var(--paper);
+  color: var(--on-accent);
   font-size: 14px;
-  transition: opacity var(--turn);
+  transition: background var(--turn), opacity var(--turn);
+}
+
+.envoi-exporter:hover:not(:disabled) {
+  background: var(--accent-hover);
 }
 
 .envoi-exporter:disabled {
@@ -2119,9 +2364,11 @@ button.envoi-defaut:focus-visible {
 
 /* Three choices side by side, each one saying what it does and showing it.
    Wider than tall: the shape of a double page, which is what is on offer. */
+/* As many columns as there are paces on offer: no reserved empty track. */
 .densites {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 10px;
 }
 
@@ -2160,7 +2407,7 @@ button.envoi-defaut:focus-visible {
   display: flex;
   gap: 2px;
   margin-top: 4px;
-  height: 34px;
+  height: 30px;
 }
 
 .densite-page {

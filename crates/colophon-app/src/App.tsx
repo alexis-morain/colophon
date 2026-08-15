@@ -4,7 +4,6 @@ import {
   buildAlbum,
   cancelBuild,
   cancelExport,
-  captionSuggestion,
   confirmDialog,
   exportPdf,
   fetchCuration,
@@ -61,12 +60,50 @@ import { Drawer } from "./Drawer";
 import { PlanchesView, LockGlyph } from "./PlanchesView";
 import { CoverView } from "./CoverView";
 import { EnvoiView } from "./EnvoiView";
+import { RaccourcisView } from "./Raccourcis";
+import { installMenu, MenuActions, RecentAlbum } from "./menu";
+import { readRecents, pushRecent } from "./recents";
 import { cachedThumb, loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
 
 /** Full album snapshots: a 50-spread album is a few tens of kilobytes. */
 type History = { album: Album; past: Album[]; future: Album[] };
 const HISTORY_CAP = 50;
+
+/** An error told to the user: a French sentence first, the raw detail behind
+ *  a disclosure. Raw `String(e)` never reaches the screen on its own. */
+type Fault = { quoi: string; detail: string };
+
+const fault = (quoi: string, e: unknown): Fault => ({
+  quoi,
+  detail: String(e),
+});
+
+/** The banner a Fault renders as: the sentence, the detail folded away. */
+function FaultBlock({
+  fault,
+  onDismiss,
+}: {
+  fault: Fault;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div className="warn fault">
+      <p className="fault-quoi">
+        {fault.quoi}
+        {onDismiss && (
+          <button className="link" onClick={onDismiss}>
+            Fermer
+          </button>
+        )}
+      </p>
+      <details className="fault-detail">
+        <summary>Détail technique</summary>
+        <pre>{fault.detail}</pre>
+      </details>
+    </div>
+  );
+}
 
 type View = "livre" | "tri" | "planches" | "envoi";
 
@@ -79,7 +116,7 @@ export default function App() {
   const [savedAlbum, setSavedAlbum] = useState<Album | null>(null);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Fault | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [building, setBuilding] = useState<string[] | null>(null);
   // The end-of-build report; the book opens behind it, it dismisses once.
@@ -99,6 +136,10 @@ export default function App() {
   // Loaded once and shared: the cover editor draws its sheet for the same
   // supplier the destination screen preflights against.
   const [printers, setPrinters] = useState<Printer[] | null>(null);
+  // The keyboard cheat-sheet overlay (⌘/, menu Aide).
+  const [shortcuts, setShortcuts] = useState(false);
+  // The recent-albums list: welcome screen and Fichier menu read it.
+  const [recents, setRecents] = useState<RecentAlbum[]>(readRecents);
 
   useEffect(() => {
     listPrinters().then(setPrinters, () => setPrinters([]));
@@ -120,7 +161,27 @@ export default function App() {
     setError(null);
     setStatus(null);
     setBilan(null);
+    // The browser harness's « __dev__ » album never enters the list.
+    if (inTauri && result.dir) {
+      setRecents(pushRecent({ dir: result.dir, title: result.album.title }));
+    }
   }, []);
+
+  /** Open one of the recent albums, by its remembered path. */
+  const openRecent = useCallback(
+    async (dir: string) => {
+      try {
+        const result = await openAlbumAt(dir);
+        adopt(result);
+        setCuration(await fetchCuration().catch(() => []));
+      } catch (e) {
+        setError(
+          fault("Cet album n’a pas pu être rouvert. A-t-il été déplacé ?", e),
+        );
+      }
+    },
+    [adopt],
+  );
 
   const openAlbum = useCallback(async () => {
     const picked = await pickAlbumFolder();
@@ -130,7 +191,7 @@ export default function App() {
       adopt(result);
       setCuration(await fetchCuration().catch(() => []));
     } catch (e) {
-      setError(String(e));
+      setError(fault("L’album n’a pas pu être ouvert.", e));
     }
   }, [adopt]);
 
@@ -186,7 +247,7 @@ export default function App() {
       setStatus("Enregistré");
       return true;
     } catch (e) {
-      setStatus(String(e));
+      setError(fault("L’enregistrement a échoué : rien n’a été écrit.", e));
       return false;
     }
   }, []);
@@ -209,11 +270,11 @@ export default function App() {
             : `PDF enregistré : ${written[0]}`,
       );
     } catch (e) {
-      setStatus(
-        String(e).includes("export annulé")
-          ? "Export annulé, aucun fichier écrit"
-          : String(e),
-      );
+      if (String(e).includes("export annulé")) {
+        setStatus("Export annulé, aucun fichier écrit");
+      } else {
+        setError(fault("Le rendu du PDF a échoué.", e));
+      }
     } finally {
       setRendering(false);
     }
@@ -242,7 +303,7 @@ export default function App() {
       setBilan(result.bilan);
     } catch (e) {
       if (String(e).includes("annulée")) setStatus("Composition annulée");
-      else setError(String(e));
+      else setError(fault("La composition a échoué.", e));
     } finally {
       off();
       setBuilding(null);
@@ -258,9 +319,9 @@ export default function App() {
     if (!hist || building) return;
     if (
       !(await confirmDialog(
-        "Recomposer l'album ? Les planches éditées à la main ou verrouillées " +
+        "Recomposer l’album ? Les planches éditées à la main ou verrouillées " +
           "sont conservées telles quelles, les autres sont recomposées. " +
-          "L'historique d'annulation repart de zéro.",
+          "L’historique d’annulation repart de zéro.",
       ))
     ) {
       return;
@@ -278,7 +339,7 @@ export default function App() {
       setStatus("Album recomposé, planches éditées conservées");
     } catch (e) {
       if (String(e).includes("annulée")) setStatus("Recomposition annulée");
-      else setError(String(e));
+      else setError(fault("La recomposition a échoué.", e));
     } finally {
       off();
       setBuilding(null);
@@ -345,12 +406,177 @@ export default function App() {
       apply(() => next);
       setStatus(
         before
-          ? "Photo placée · l'ancienne repart dans la réserve"
+          ? "Photo placée · l’ancienne repart dans la réserve"
           : "Photo placée",
       );
     },
     [album, index, apply],
   );
+
+  /** Change view the one canonical way: selections drop, and only the book
+   *  view knows the cover. */
+  const gotoView = useCallback(
+    (v: View) => {
+      setView(v);
+      setSelected(null);
+      setTriSelected(null);
+      if (v !== "livre" && index === COVER) setIndex(0);
+      // The clicked tab keeps focus and would eat the view's own keys,
+      // Enter first among them: give the keyboard back to the view.
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    },
+    [index],
+  );
+
+  /** True when the keyboard focus sits in a text field: the field owns its
+   *  own undo history and its own editing keys. */
+  const inField = () => {
+    const el = document.activeElement;
+    return el !== null && /^(INPUT|TEXTAREA)$/.test(el.tagName);
+  };
+
+  // Every command of the app, by name. The window's keydown handler and the
+  // native menu both land here, so a chord and its menu item are one code
+  // path with one guard each.
+  const raw: Record<string, () => void> = {
+    nouveau: () => void closeAlbum(),
+    ouvrir: () => void openAlbum(),
+    enregistrer: () => {
+      // Blur commits the field being edited; save once that landed.
+      const el = document.activeElement as HTMLElement | null;
+      if (el && inField()) {
+        el.blur();
+        setTimeout(() => void save(), 0);
+      } else {
+        void save();
+      }
+    },
+    exporter: () => {
+      if (album) gotoView("envoi");
+    },
+    fermerAlbum: () => void closeAlbum(),
+    annuler: () => {
+      if (inField()) document.execCommand("undo");
+      else undo();
+    },
+    retablir: () => {
+      if (inField()) document.execCommand("redo");
+      else redo();
+    },
+    "vue-livre": () => album && gotoView("livre"),
+    "vue-tri": () => album && gotoView("tri"),
+    "vue-planches": () => album && gotoView("planches"),
+    "vue-envoi": () => album && gotoView("envoi"),
+    couverture: () => {
+      if (!album) return;
+      setView("livre");
+      setSelected(null);
+      setTriSelected(null);
+      setIndex(COVER);
+    },
+    revue: () => {
+      if (!album) return;
+      const entries = triEntries(album, curation, opened?.thumb_srcs ?? []);
+      if (!entries.length) return;
+      setView("tri");
+      setStatus(null);
+      setRevue(0);
+    },
+    reserve: () => {
+      if (!album) return;
+      setView("livre");
+      setDrawerOpen((o) => !o);
+    },
+    gabarit: () => {
+      if (album && view === "livre" && index >= 0) {
+        window.dispatchEvent(new Event("colophon:gabarit"));
+      }
+    },
+    dupliquer: () => {
+      if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
+      apply((a) => duplicateSpread(a, index));
+      setIndex(index + 1);
+      setStatus(`Planche ${index + 1} dupliquée`);
+    },
+    figer: () => {
+      if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
+      const was = album.spreads[index]?.locked;
+      apply((a) => toggleLock(a, index));
+      setStatus(
+        was
+          ? "Planche libérée"
+          : "Planche figée : elle survivra à toute recomposition",
+      );
+    },
+    "inserer-vide": () => {
+      if (!album || view !== "livre" && view !== "planches") return;
+      const at = Math.max(index, 0);
+      apply((a) => insertSpread(a, at, "vide"));
+      setIndex(at + 1);
+      setStatus("Planche vide insérée : une respiration");
+    },
+    "inserer-texte": () => {
+      if (!album || view !== "livre" && view !== "planches") return;
+      const at = Math.max(index, 0);
+      apply((a) => insertSpread(a, at, "texte"));
+      setIndex(at + 1);
+      setStatus("Planche de texte insérée : double-clic pour l’ouvrir et écrire");
+    },
+    "supprimer-planche": () => {
+      if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
+      apply((a) => removeSpread(a, index));
+      setStatus(`Planche ${index + 1} supprimée (⌘Z la ramène)`);
+    },
+    raccourcis: () => setShortcuts((s) => !s),
+  };
+  const rawRef = useRef(raw);
+  rawRef.current = raw;
+
+  // A chord can reach the app twice, once through the window's keydown and
+  // once through the menu accelerator, depending on how WebKit routes key
+  // equivalents. Whoever speaks second within the window is the same
+  // keypress: one action runs.
+  const lastFire = useRef({ action: "", source: "", t: 0 });
+  const fire = useCallback((source: "kbd" | "menu", action: string) => {
+    const now = performance.now();
+    const l = lastFire.current;
+    if (l.action === action && l.source !== source && now - l.t < 150) return;
+    lastFire.current = { action, source, t: now };
+    rawRef.current[action]?.();
+  }, []);
+
+  // The native menu follows the app state: rebuilt when the album opens or
+  // closes and when the recents change, cheap both times.
+  const openRecentRef = useRef(openRecent);
+  openRecentRef.current = openRecent;
+  const albumOpen = album !== null;
+  useEffect(() => {
+    if (!inTauri) return;
+    const actions: MenuActions = {
+      nouveau: () => fire("menu", "nouveau"),
+      ouvrir: () => fire("menu", "ouvrir"),
+      ouvrirRecent: (dir) => void openRecentRef.current(dir),
+      enregistrer: () => fire("menu", "enregistrer"),
+      exporter: () => fire("menu", "exporter"),
+      fermerAlbum: () => fire("menu", "fermerAlbum"),
+      annuler: () => fire("menu", "annuler"),
+      retablir: () => fire("menu", "retablir"),
+      vue: (v) => fire("menu", `vue-${v}`),
+      couverture: () => fire("menu", "couverture"),
+      revue: () => fire("menu", "revue"),
+      reserve: () => fire("menu", "reserve"),
+      gabarit: () => fire("menu", "gabarit"),
+      dupliquer: () => fire("menu", "dupliquer"),
+      figer: () => fire("menu", "figer"),
+      insererVide: () => fire("menu", "inserer-vide"),
+      insererTexte: () => fire("menu", "inserer-texte"),
+      supprimerPlanche: () => fire("menu", "supprimer-planche"),
+      raccourcis: () => fire("menu", "raccourcis"),
+    };
+    installMenu(() => actions, albumOpen, recents).catch(() => {
+      // A shell without the menu permission still has the window shortcuts.
+    });
+  }, [albumOpen, recents, fire]);
 
   // A removed spread can leave the position past the end.
   useEffect(() => {
@@ -368,9 +594,10 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty]);
 
-  // Transient status line; errors stay put.
+  // Transient status line: every message expires the same way; errors have
+  // their own banner and never travel through here.
   useEffect(() => {
-    if (!status || status.length > 60) return;
+    if (!status) return;
     const t = setTimeout(() => setStatus(null), 4000);
     return () => clearTimeout(t);
   }, [status]);
@@ -449,49 +676,58 @@ export default function App() {
         }
         return;
       }
+      // The shortcuts overlay holds the keyboard until it closes.
+      if (shortcuts) {
+        if (e.key === "Escape" || (e.metaKey && key === "/")) {
+          e.preventDefault();
+          setShortcuts(false);
+        }
+        return;
+      }
       if (t && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(t.tagName)) {
+        // A focused field keeps its letters and its own editing chords,
+        // native ⌘Z included; a few app chords still pass.
         const appChord =
           e.metaKey && ["s", "o", "1", "2", "3", "4"].includes(key);
         if (!appChord) return;
-        if (key === "s") {
-          // Blur commits the field being edited; save once that landed.
+        if (t.tagName === "BUTTON") t.blur();
+      }
+      // App chords: one name each, the same names the menu speaks, so a
+      // keypress and its menu item are one code path.
+      if (e.metaKey) {
+        const chord =
+          key === "n"
+            ? "nouveau"
+            : key === "o"
+              ? "ouvrir"
+              : key === "s"
+                ? "enregistrer"
+                : key === "z"
+                  ? e.shiftKey
+                    ? "retablir"
+                    : "annuler"
+                  : key === "e" && e.shiftKey
+                    ? "exporter"
+                    : key === "d"
+                      ? "dupliquer"
+                      : key === "l"
+                        ? "figer"
+                        : key === "/"
+                          ? "raccourcis"
+                          : key === "1"
+                            ? "vue-livre"
+                            : key === "2"
+                              ? "vue-tri"
+                              : key === "3"
+                                ? "vue-planches"
+                                : key === "4"
+                                  ? "vue-envoi"
+                                  : null;
+        if (chord) {
           e.preventDefault();
-          t.blur();
-          setTimeout(() => void save(), 0);
+          fire("kbd", chord);
           return;
         }
-        t.blur();
-      }
-      if (e.metaKey && key === "o") {
-        e.preventDefault();
-        void openAlbum();
-        return;
-      }
-      if (e.metaKey && key === "s") {
-        e.preventDefault();
-        void save();
-        return;
-      }
-      if (e.metaKey && key === "z") {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-        return;
-      }
-      if (e.metaKey && (key === "1" || key === "2" || key === "3" || key === "4")) {
-        e.preventDefault();
-        setView(
-          key === "1"
-            ? "livre"
-            : key === "2"
-              ? "tri"
-              : key === "3"
-                ? "planches"
-                : "envoi",
-        );
-        setSelected(null);
-        setTriSelected(null);
-        return;
       }
       // The destination screen has no spread under the cursor: it keeps the
       // global shortcuts and nothing else.
@@ -516,22 +752,6 @@ export default function App() {
       }
       if (!total || !album) return;
 
-      // Spread manipulation, book view and light table alike.
-      if (e.metaKey && key === "d" && index >= 0) {
-        e.preventDefault();
-        apply((a) => duplicateSpread(a, index));
-        setIndex(index + 1);
-        setStatus(`Planche ${index + 1} dupliquée`);
-        return;
-      }
-      if (e.metaKey && key === "l" && index >= 0) {
-        e.preventDefault();
-        const was = album.spreads[index]?.locked;
-        apply((a) => toggleLock(a, index));
-        setStatus(was ? "Planche libérée" : "Planche figée : elle survivra à toute recomposition");
-        return;
-      }
-
       if (view === "planches") {
         if ((e.key === "Backspace" || e.key === "Delete") && index >= 0) {
           e.preventDefault();
@@ -539,9 +759,16 @@ export default function App() {
           setStatus(`Planche ${index + 1} supprimée (⌘Z la ramène)`);
           return;
         }
-        if (e.key === "Escape") return;
+        // Escape behaves like everywhere else: it lets go of the current
+        // selection instead of being swallowed.
+        if (e.key === "Escape") {
+          setSelected(null);
+          setTriSelected(null);
+          return;
+        }
+        // The cover is the light table's page zero: ← reaches it.
         const step = (d: number) =>
-          setIndex((i) => Math.min(total - 1, Math.max(0, i + d)));
+          setIndex((i) => Math.min(total - 1, Math.max(COVER, i + d)));
         if (e.key === "ArrowRight") step(1);
         if (e.key === "ArrowLeft") step(-1);
         if (e.key === "Enter") setView("livre");
@@ -560,7 +787,7 @@ export default function App() {
         if (to < 0 || to >= total) return;
         const blocked = moveBlocker(album, index, selected, to);
         if (blocked === "target_full") {
-          setStatus(`Planche ${to + 1} pleine : aucun gabarit n'accepte une photo de plus`);
+          setStatus(`Planche ${to + 1} pleine : aucun gabarit n’accepte une photo de plus`);
         } else if (blocked === "source_breaks") {
           setStatus("Refusé : il faudrait sacrifier une autre photo de cette planche");
         } else if (blocked === null) {
@@ -651,10 +878,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [
     total,
-    openAlbum,
-    save,
-    undo,
-    redo,
     apply,
     index,
     selected,
@@ -666,6 +889,8 @@ export default function App() {
     opened,
     rescue,
     triSelected,
+    fire,
+    shortcuts,
   ]);
 
   // The review dies with its subject: leaving the sorting view, or rescuing
@@ -678,16 +903,54 @@ export default function App() {
     if (view !== "tri" || left === 0) setRevue(null);
   }, [revue, view, album, curation, opened]);
 
-  if (!album || total === 0 || building) {
+  if (!album || building) {
     return (
-      <Empty
-        onOpen={openAlbum}
-        onCreate={createAlbum}
-        building={building}
-        busyTitle={busyTitle}
-        error={error}
-        onCancelBuild={() => void cancelBuild()}
-      />
+      <>
+        <Empty
+          onOpen={openAlbum}
+          onCreate={createAlbum}
+          building={building}
+          busyTitle={busyTitle}
+          error={error}
+          onDismissError={() => setError(null)}
+          onCancelBuild={() => void cancelBuild()}
+          recents={inTauri ? recents : []}
+          onOpenRecent={(dir) => void openRecent(dir)}
+        />
+        {shortcuts && <RaccourcisView onClose={() => setShortcuts(false)} />}
+      </>
+    );
+  }
+
+  // The album emptied itself, one deletion at a time. Never a mute return
+  // to the welcome screen: the way back is spelled out.
+  if (total === 0) {
+    return (
+      <div className="empty">
+        <div className="empty-block">
+          <p className="kicker">Colophon</p>
+          <div className="setup">
+            <h1 className="setup-heading">L’album est vide</h1>
+            <p className="lede">
+              La dernière planche vient d’être supprimée. Rien n’est perdu :
+              chaque suppression s’annule.
+            </p>
+            <p className="setup-actions">
+              <button
+                className="cta"
+                autoFocus
+                disabled={(hist?.past.length ?? 0) === 0}
+                onClick={undo}
+              >
+                Ramener la dernière planche (⌘Z)
+              </button>
+              <button className="link" onClick={() => void closeAlbum()}>
+                Composer un autre album
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -713,50 +976,23 @@ export default function App() {
   const spread = onCover ? null : album.spreads[Math.min(index, total - 1)];
   const entries = triEntries(album, curation, opened?.thumb_srcs ?? []);
   const triEntry = entries.find((e) => e.src === triSelected) ?? null;
-  const selectedSlot =
-    spread && selected !== null ? (spread.slots[selected] ?? null) : null;
 
   return (
     <div className="app">
       <Bar
         album={album}
-        spread={spread}
         dirty={dirty}
         canUndo={(hist?.past.length ?? 0) > 0}
         canRedo={(hist?.future.length ?? 0) > 0}
         view={view}
         triCount={entries.length}
-        onView={(v) => {
-          setView(v);
-          setSelected(null);
-          setTriSelected(null);
-          if (v !== "livre" && index === COVER) setIndex(0);
-          // The clicked tab keeps focus and would eat the view's own keys,
-          // Enter first among them: give the keyboard back to the view.
-          (document.activeElement as HTMLElement | null)?.blur?.();
-        }}
-        onTemplate={(t) => apply((a) => changeTemplate(a, index, t))}
-        onLock={
-          spread
-            ? () => {
-                const was = spread.locked;
-                apply((a) => toggleLock(a, index));
-                setStatus(
-                  was
-                    ? "Planche libérée"
-                    : "Planche figée : elle survivra à toute recomposition",
-                );
-              }
-            : undefined
-        }
+        onView={gotoView}
         onUndo={undo}
         onRedo={redo}
         onSave={() => void save()}
-        onPdf={inTauri ? () => void regenPdf() : undefined}
-        pdfBusy={rendering}
         onRecompose={inTauri ? () => void recompose() : undefined}
-        onOpen={openAlbum}
-        onClose={closeAlbum}
+        onOpen={inTauri ? undefined : openAlbum}
+        onClose={inTauri ? undefined : closeAlbum}
       />
       {view === "tri" ? (
         <TriView
@@ -791,7 +1027,7 @@ export default function App() {
       ) : view === "planches" ? (
         <PlanchesView
           album={album}
-          current={Math.max(index, 0)}
+          current={index}
           onSelect={setIndex}
           onOpen={(at) => {
             setIndex(at);
@@ -825,6 +1061,9 @@ export default function App() {
                   onCrop={(slot, focal, zoom) =>
                     apply((a) => setSlotCrop(a, index, slot, focal, zoom))
                   }
+                  onCaption={(slot, text) =>
+                    apply((a) => setSlotCaption(a, index, slot, text))
+                  }
                   onSpreadCaption={(c) =>
                     apply((a) => setSpreadCaption(a, index, c))
                   }
@@ -835,6 +1074,29 @@ export default function App() {
             )}
           </div>
         </main>
+      )}
+      {view === "livre" && (
+        <ContextLine
+          album={album}
+          spread={spread}
+          onCover={onCover}
+          selected={selected}
+          onTemplate={(t) => apply((a) => changeTemplate(a, index, t))}
+          spreadIndex={index}
+          onLock={
+            spread
+              ? () => {
+                  const was = spread.locked;
+                  apply((a) => toggleLock(a, index));
+                  setStatus(
+                    was
+                      ? "Planche libérée"
+                      : "Planche figée : elle survivra à toute recomposition",
+                  );
+                }
+              : undefined
+          }
+        />
       )}
       {view === "livre" && !onCover && (
         <Drawer
@@ -886,7 +1148,7 @@ export default function App() {
             setStatus(
               kind === "vide"
                 ? "Planche vide insérée : une respiration"
-                : "Planche de texte insérée : double-clic pour l'ouvrir et écrire",
+                : "Planche de texte insérée : double-clic pour l’ouvrir et écrire",
             );
           }}
           onDuplicate={() => {
@@ -913,71 +1175,58 @@ export default function App() {
           overflow={overflow}
           rendering={rendering}
           onCancelExport={() => void cancelExport()}
-          selectedSlot={selectedSlot}
-          onCaption={
-            selected !== null && index >= 0
-              ? (text) => apply((a) => setSlotCaption(a, index, selected, text))
-              : undefined
-          }
           onSeek={(i) => setIndex(Math.min(total - 1, Math.max(COVER, i)))}
-          onMoveSpread={(from, to) => {
-            apply((a) => moveSpread(a, from, to));
-            setIndex(to);
-            setStatus(`Planche déplacée en position ${to + 1}`);
-          }}
         />
       )}
       {opened && !opened.root_present && (
         <p className="warn">
-          Dossier photo introuvable ({album.root}). L'aperçu tourne sur le cache
-          de vignettes, l'export pleine résolution ne marchera pas.
+          Dossier photo introuvable ({album.root}). L’aperçu tourne sur le cache
+          de vignettes, l’export pleine résolution ne marchera pas.
         </p>
       )}
+      {error && <FaultBlock fault={error} onDismiss={() => setError(null)} />}
+      {shortcuts && <RaccourcisView onClose={() => setShortcuts(false)} />}
     </div>
   );
 }
 
+/**
+ * The bar tells three things apart, left to right: which album (the title),
+ * where you are (the tabs, centred, nothing else among them), what you can
+ * do to the file (a few quiet actions; everything else lives in the menu).
+ * The context of the current spread is not the bar's business any more: it
+ * sits on its own line next to the planche, in the book view.
+ */
 function Bar({
   album,
-  spread,
   dirty,
   canUndo,
   canRedo,
   view,
   triCount,
   onView,
-  onTemplate,
-  onLock,
   onUndo,
   onRedo,
   onSave,
-  onPdf,
-  pdfBusy,
   onRecompose,
   onOpen,
   onClose,
 }: {
   album: Album;
-  spread: Spread | null;
   dirty: boolean;
   canUndo: boolean;
   canRedo: boolean;
   view: View;
   triCount: number;
   onView: (v: View) => void;
-  onTemplate: (t: string) => void;
-  onLock?: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onSave: () => void;
-  onPdf?: () => void;
-  pdfBusy?: boolean;
   onRecompose?: () => void;
-  onOpen: () => void;
-  onClose: () => void;
+  /** Browser harness only: the shell reaches these through the menu. */
+  onOpen?: () => void;
+  onClose?: () => void;
 }) {
-  const photoSpread =
-    spread && spread.template !== "vide" && spread.template !== "texte";
   return (
     <header className="bar">
       <h1>{album.title}</h1>
@@ -986,6 +1235,7 @@ function Bar({
           <button
             className={"view-tab" + (view === "livre" ? " active" : "")}
             onClick={() => onView("livre")}
+            aria-keyshortcuts="Meta+1"
             title="⌘1"
           >
             Livre
@@ -993,6 +1243,7 @@ function Bar({
           <button
             className={"view-tab" + (view === "tri" ? " active" : "")}
             onClick={() => onView("tri")}
+            aria-keyshortcuts="Meta+2"
             title="⌘2"
           >
             Tri · {triCount}
@@ -1000,6 +1251,7 @@ function Bar({
           <button
             className={"view-tab" + (view === "planches" ? " active" : "")}
             onClick={() => onView("planches")}
+            aria-keyshortcuts="Meta+3"
             title="⌘3"
           >
             Planches
@@ -1007,38 +1259,12 @@ function Bar({
           <button
             className={"view-tab" + (view === "envoi" ? " active" : "")}
             onClick={() => onView("envoi")}
+            aria-keyshortcuts="Meta+4"
             title="⌘4 · le contrôle avant impression"
           >
             Envoi
           </button>
         </span>
-        {view === "livre" && spread && photoSpread && (
-          <TemplatePicker album={album} spread={spread} onPick={onTemplate} />
-        )}
-        {view === "livre" && spread && (
-          <span className="spread-flags">
-            {spread.edited && (
-              <span
-                className="badge-edited"
-                title="Éditée à la main : survit à toute recomposition"
-              />
-            )}
-            {onLock && (
-              <button
-                className={"lock" + (spread.locked ? " locked" : "")}
-                onClick={onLock}
-                aria-pressed={spread.locked ?? false}
-                title={
-                  spread.locked
-                    ? "Figée : survit à toute recomposition. Cliquer pour libérer (⌘L)"
-                    : "Figer cette planche face aux recompositions (⌘L)"
-                }
-              >
-                <LockGlyph open={!spread.locked} />
-              </button>
-            )}
-          </span>
-        )}
       </p>
       <p className="actions">
         <button className="link" onClick={onUndo} disabled={!canUndo} title="⌘Z">
@@ -1052,7 +1278,7 @@ function Bar({
           <button
             className="link"
             onClick={onRecompose}
-            title="Recompose l'album ; les planches éditées ou verrouillées sont conservées"
+            title="Recompose l’album ; les planches éditées ou verrouillées sont conservées"
           >
             Recomposer
           </button>
@@ -1065,33 +1291,108 @@ function Bar({
         >
           Enregistrer
         </button>
-        {onPdf && (
-          <button
-            className="link"
-            onClick={onPdf}
-            disabled={pdfBusy}
-            title="Rend le PDF puis l'enregistre où vous voulez"
-          >
-            {pdfBusy ? "PDF…" : "PDF"}
-          </button>
+        {onClose && onOpen && (
+          <>
+            <span className="actions-sep" aria-hidden="true" />
+            <button
+              className="link"
+              onClick={onClose}
+              title="Fermer et composer un autre album"
+            >
+              Nouveau
+            </button>
+            <button className="link" onClick={onOpen} title="⌘O">
+              Ouvrir
+            </button>
+          </>
         )}
-        <span className="actions-sep" aria-hidden="true" />
-        <button className="link" onClick={onClose} title="Fermer et composer un autre album">
-          Nouveau
-        </button>
-        <button className="link" onClick={onOpen} title="⌘O">
-          Ouvrir
-        </button>
       </p>
     </header>
   );
 }
 
 /**
+ * The book view's context line, between the planche and its foot: which
+ * template, edited badge, padlock, and the hint of the moment (crop gestures
+ * on a selection, the drawer's whereabouts on the cover). Fixed height, so
+ * the planche above never moves.
+ */
+function ContextLine({
+  album,
+  spread,
+  onCover,
+  selected,
+  spreadIndex,
+  onTemplate,
+  onLock,
+}: {
+  album: Album;
+  spread: Spread | null;
+  onCover: boolean;
+  selected: number | null;
+  spreadIndex: number;
+  onTemplate: (t: string) => void;
+  onLock?: () => void;
+}) {
+  const photoSpread =
+    spread && spread.template !== "vide" && spread.template !== "texte";
+  return (
+    <div className="context-line">
+      {onCover ? (
+        <span className="context-hint">
+          La couverture : titre et sous-titre en place, glissez la photo pour
+          la recadrer. Le tiroir de photos revient sur les planches.
+        </span>
+      ) : (
+        spread && (
+          <>
+            {photoSpread && (
+              <TemplatePicker
+                album={album}
+                spread={spread}
+                index={spreadIndex}
+                onPick={onTemplate}
+              />
+            )}
+            <span className="spread-flags">
+              {spread.edited && (
+                <span
+                  className="badge-edited"
+                  title="Éditée à la main : survit à toute recomposition"
+                />
+              )}
+              {onLock && (
+                <button
+                  className={"lock" + (spread.locked ? " locked" : "")}
+                  onClick={onLock}
+                  aria-pressed={spread.locked ?? false}
+                  title={
+                    spread.locked
+                      ? "Figée : survit à toute recomposition. Cliquer pour libérer (⌘L)"
+                      : "Figer cette planche face aux recompositions (⌘L)"
+                  }
+                >
+                  <LockGlyph open={!spread.locked} />
+                </button>
+              )}
+            </span>
+            <span className="context-hint">
+              {selected !== null
+                ? "Recadrage : glisser déplace, molette zoome, ⌥ affine, ⌫ retire la photo"
+                : ""}
+            </span>
+          </>
+        )
+      )}
+    </div>
+  );
+}
+
+/**
  * The book's foot: page-turn arrows, a ruler graduated one tick per spread
- * (chapter starts marked in accent, their caption on hover, drag a tick to
- * move that spread), the cover tick, the position, and a fixed line that
- * hosts hints, statuses and the caption editor of the selected photo.
+ * (chapter starts marked in accent, their caption on hover), the cover
+ * tick, the position, and a fixed line for statuses. The ruler navigates
+ * and nothing else: reordering lives in the Planches view, its one home.
  * Constant height, whatever shows: the spread above never moves.
  */
 function BookFoot({
@@ -1102,10 +1403,7 @@ function BookFoot({
   overflow,
   rendering,
   onCancelExport,
-  selectedSlot,
-  onCaption,
   onSeek,
-  onMoveSpread,
 }: {
   album: Album;
   index: number;
@@ -1114,23 +1412,8 @@ function BookFoot({
   overflow: string | null;
   rendering: boolean;
   onCancelExport: () => void;
-  selectedSlot: Slot | null;
-  onCaption?: (text: string) => void;
   onSeek: (i: number) => void;
-  onMoveSpread: (from: number, to: number) => void;
 }) {
-  const ruler = useRef<HTMLElement>(null);
-  const drag = useRef<{ from: number; startX: number; moved: boolean } | null>(null);
-  const [dropTick, setDropTick] = useState<number | null>(null);
-
-  const tickAt = (clientX: number): number => {
-    const el = ruler.current;
-    if (!el || total < 2) return 0;
-    const r = el.getBoundingClientRect();
-    const f = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-    return Math.round(f * (total - 1));
-  };
-
   return (
     <footer className="foot">
       <div className="foot-nav">
@@ -1150,55 +1433,18 @@ function BookFoot({
         >
           C
         </button>
-        <nav
-          ref={ruler}
-          className="ruler"
-          aria-label="Aller à une planche, glisser un trait pour déplacer sa planche"
-          onPointerMove={(e) => {
-            const d = drag.current;
-            if (!d) return;
-            if (!d.moved && Math.abs(e.clientX - d.startX) < 5) return;
-            d.moved = true;
-            setDropTick(tickAt(e.clientX));
-          }}
-          onPointerUp={(e) => {
-            const d = drag.current;
-            drag.current = null;
-            setDropTick(null);
-            if (!d) return;
-            if (d.moved) {
-              const to = tickAt(e.clientX);
-              if (to !== d.from) onMoveSpread(d.from, to);
-            } else {
-              onSeek(d.from);
-            }
-          }}
-          onPointerCancel={() => {
-            drag.current = null;
-            setDropTick(null);
-          }}
-        >
+        <nav className="ruler" aria-label="Aller à une planche">
           {album.spreads.map((s, i) => (
             <button
               key={i}
               className={
                 "ruler-tick" +
                 (s.caption ? " chapter" : "") +
-                (i === index ? " current" : "") +
-                (dropTick === i ? " droptick" : "")
+                (i === index ? " current" : "")
               }
               style={{ left: `${total > 1 ? (i / (total - 1)) * 100 : 0}%` }}
-              title={
-                (s.caption ? `${s.caption} · ` : "") +
-                `planche ${i + 1} · glisser pour la déplacer`
-              }
-              onPointerDown={(e) => {
-                if (e.button !== 0) return;
-                drag.current = { from: i, startX: e.clientX, moved: false };
-                (e.currentTarget.closest(".ruler") as HTMLElement)?.setPointerCapture(
-                  e.pointerId,
-                );
-              }}
+              title={(s.caption ? `${s.caption} · ` : "") + `planche ${i + 1}`}
+              onClick={() => onSeek(i)}
             />
           ))}
           {index >= 0 && (
@@ -1226,90 +1472,16 @@ function BookFoot({
           <span className="foot-render">
             {status ?? "Rendu du PDF d’impression…"}{" "}
             <button className="link" onClick={onCancelExport}>
-              Annuler l'export
+              Annuler l’export
             </button>
           </span>
-        ) : selectedSlot && onCaption ? (
-          <CaptionEditor slot={selectedSlot} onCaption={onCaption} status={status} />
         ) : (
           <span className={overflow && !status ? "foot-overflow" : undefined}>
-            {status ??
-              overflow ??
-              (index === COVER
-                ? "La couverture : titre et sous-titre en place, glissez la photo pour la recadrer."
-                : "")}
+            {status ?? overflow ?? ""}
           </span>
         )}
       </div>
     </footer>
-  );
-}
-
-/**
- * The caption editor of the selected photo, living in the foot's fixed
- * line: an input, the EXIF suggestion one click away, and the crop hints.
- */
-function CaptionEditor({
-  slot,
-  onCaption,
-  status,
-}: {
-  slot: Slot;
-  onCaption: (text: string) => void;
-  status: string | null;
-}) {
-  const [value, setValue] = useState(slot.caption ?? "");
-  const [suggestion, setSuggestion] = useState<string | null>(null);
-
-  useEffect(() => {
-    setValue(slot.caption ?? "");
-    setSuggestion(null);
-    let alive = true;
-    captionSuggestion(slot.src).then(
-      (s) => alive && setSuggestion(s),
-      () => {},
-    );
-    return () => {
-      alive = false;
-    };
-  }, [slot]);
-
-  return (
-    <span className="foot-captioning">
-      <label className="foot-caption-label">
-        Légende
-        <input
-          className="foot-caption"
-          value={value}
-          placeholder="aucune"
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={() => value.trim() !== (slot.caption ?? "") && onCaption(value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            if (e.key === "Escape") {
-              setValue(slot.caption ?? "");
-              e.currentTarget.blur();
-            }
-          }}
-        />
-      </label>
-      {suggestion && !value && (
-        <button
-          className="link"
-          onClick={() => {
-            setValue(suggestion);
-            onCaption(suggestion);
-          }}
-          title="Date EXIF de la photo, proposée, jamais imposée"
-        >
-          proposer « {suggestion} »
-        </button>
-      )}
-      <span className="foot-caption-hints">
-        {status ??
-          "Glisser recadre · molette zoome · double-clic recentre · ⌥ affine · ⌫ retire"}
-      </span>
-    </span>
   );
 }
 
@@ -1338,10 +1510,10 @@ function PlanchesFoot({
           {spread?.caption ? ` · ${spread.caption}` : ""}
         </span>
         <button className="link" onClick={() => onInsert("vide")} title="Après la planche courante">
-          + planche vide
+          + Planche vide
         </button>
         <button className="link" onClick={() => onInsert("texte")} title="Après la planche courante">
-          + planche de texte
+          + Planche de texte
         </button>
         <span className="actions-sep" aria-hidden="true" />
         <button className="link" onClick={onDuplicate} title="⌘D">
@@ -1425,13 +1597,27 @@ function MiniThumb({ src }: { src: string }) {
   );
 }
 
+/** French names for the engine's format identifiers. The identifier stays
+ *  in the data; the screen speaks French. */
+const FORMAT_LABELS: Record<string, string> = {
+  "carre-21": "Carré 21 × 21",
+  "carre-30": "Carré 30 × 30",
+  "portrait-a4": "Portrait A4",
+  "paysage-a4": "Paysage A4",
+  "paysage-28x21": "Paysage 28 × 21",
+  "portrait-20x25": "Portrait 20 × 25",
+};
+
 function Empty({
   onOpen,
   onCreate,
   building,
   busyTitle,
   error,
+  onDismissError,
   onCancelBuild,
+  recents,
+  onOpenRecent,
 }: {
   onOpen: () => void;
   onCreate: (
@@ -1443,8 +1629,11 @@ function Empty({
   ) => void;
   building: string[] | null;
   busyTitle: string | null;
-  error: string | null;
+  error: Fault | null;
+  onDismissError: () => void;
   onCancelBuild: () => void;
+  recents: RecentAlbum[];
+  onOpenRecent: (dir: string) => void;
 }) {
   const [formats, setFormats] = useState<FormatPreset[]>([]);
   const [densities, setDensities] = useState<DensitePreset[]>([]);
@@ -1492,10 +1681,29 @@ function Empty({
             <p className="hint">
               ou{" "}
               <button className="link" onClick={onOpen}>
-                ouvrir un album existant
+                Ouvrir un album existant
               </button>{" "}
               (<kbd>⌘</kbd> <kbd>O</kbd>)
             </p>
+            {recents.length > 0 && (
+              <div className="recents">
+                <h2 className="recents-title">Albums récents</h2>
+                <ul className="recents-list">
+                  {recents.map((r) => (
+                    <li key={r.dir}>
+                      <button
+                        className="recent"
+                        onClick={() => onOpenRecent(r.dir)}
+                        title={r.dir}
+                      >
+                        <span className="recent-nom">{r.title}</span>
+                        <span className="recent-dir">{r.dir}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
 
@@ -1513,7 +1721,7 @@ function Empty({
                 <p className="setup-folder">
                   <code>{dir}</code>
                   <button type="button" className="link" onClick={() => void pick()}>
-                    changer de dossier
+                    Changer de dossier
                   </button>
                 </p>
 
@@ -1560,9 +1768,8 @@ function Empty({
                     ))}
                   </div>
                   <span className="setup-hint">
-                    Le rythme se choisit maintenant : il vaut pour tout l'album
-                    et pour ses recompositions. Chaque planche reste modifiable
-                    une par une ensuite.
+                    Le rythme guide toute la composition et se rejoue à chaque
+                    recomposition. Chaque planche reste modifiable une par une.
                   </span>
                 </div>
 
@@ -1578,14 +1785,14 @@ function Empty({
                       onChange={(e) => setSpreads(Number(e.target.value) || 48)}
                     />
                     <span className="setup-hint">
-                      soit {spreads * 2} pages, l'imprimeur compte en pages
+                      soit {spreads * 2} pages, l’imprimeur compte en pages
                     </span>
                   </span>
                 </label>
 
                 <p className="setup-actions">
                   <button className="cta" type="submit">
-                    Composer l'album
+                    Composer l’album
                   </button>
                   <button type="button" className="link" onClick={() => setDir(null)}>
                     Annuler
@@ -1599,13 +1806,13 @@ function Empty({
                 <h1 className="setup-heading">
                   {busyTitle
                     ? `Recomposition de « ${busyTitle} »`
-                    : `Composition de « ${title.trim() || folderName || "l'album"} »`}
+                    : `Composition de « ${title.trim() || folderName || "l’album"} »`}
                 </h1>
                 <BuildProgress lines={building} onCancel={onCancelBuild} />
                 <p className="setup-hint">
                   {busyTitle
                     ? "Les planches éditées à la main ou verrouillées sont conservées telles quelles."
-                    : "L'analyse des photos ne se fait qu'une fois : recomposer ce dossier sera bien plus rapide."}
+                    : "L’analyse des photos ne se fait qu’une fois : recomposer ce dossier sera bien plus rapide."}
                 </p>
               </div>
             )}
@@ -1614,7 +1821,7 @@ function Empty({
           </div>
         )}
 
-        {error && <p className="warn">{error}</p>}
+        {error && <FaultBlock fault={error} onDismiss={onDismissError} />}
       </div>
     </div>
   );
@@ -1672,7 +1879,9 @@ function FormatCard({
         <span className="format-page" style={{ width: pageW, height: pageH }} />
         <span className="format-page" style={{ width: pageW, height: pageH }} />
       </span>
-      <span className="format-name">{f.name.replace(/-/g, " ")}</span>
+      <span className="format-name">
+        {FORMAT_LABELS[f.name] ?? f.name.replace(/-/g, " ")}
+      </span>
       <span className="format-dims">
         {cm(f.w)} × {cm(f.h)} cm
       </span>
@@ -1807,16 +2016,19 @@ function BuildProgress({
             className="link"
             type="button"
             onClick={onCancel}
-            title="Arrête la composition ; rien n'est écrit"
+            title="Arrête la composition ; rien n’est écrit"
           >
             Annuler
           </button>
           <span className="build-pct">{Math.round(pct)} %</span>
         </span>
       </p>
-      <pre className="buildlog">
-        {log.length ? log.join("\n") : "lecture du dossier…"}
-      </pre>
+      <details className="build-details">
+        <summary>Détails techniques</summary>
+        <pre className="buildlog">
+          {log.length ? log.join("\n") : "lecture du dossier…"}
+        </pre>
+      </details>
     </div>
   );
 }

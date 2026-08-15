@@ -18,9 +18,10 @@ export function PlanchesView({
   onLock,
 }: {
   album: Album;
+  /** Index of the highlighted cell; -1 is the cover, page zero. */
   current: number;
   onSelect: (at: number) => void;
-  /** Double-click: open this spread in the book view. */
+  /** Double-click: open this spread (or the cover, -1) in the book view. */
   onOpen: (at: number) => void;
   onMove: (from: number, to: number) => void;
   onLock: (at: number) => void;
@@ -29,6 +30,12 @@ export function PlanchesView({
 
   return (
     <div className="planches" role="list">
+      <CoverCell
+        album={album}
+        current={current === -1}
+        onSelect={() => onSelect(-1)}
+        onOpen={() => onOpen(-1)}
+      />
       {album.spreads.map((spread, i) => (
         <PlancheCell
           key={i}
@@ -143,6 +150,52 @@ function PlancheCell({
             <LockGlyph open={!spread.locked} />
           </button>
         </span>
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * The cover as the light table's page zero: the whole book starts here, so
+ * the whole book shows here. Front panel only, at the page's own aspect;
+ * it neither drags nor receives drops, a cover has one possible place.
+ */
+function CoverCell({
+  album,
+  current,
+  onSelect,
+  onOpen,
+}: {
+  album: Album;
+  current: boolean;
+  onSelect: () => void;
+  onOpen: () => void;
+}) {
+  const cover = album.cover ?? { title: album.title };
+  return (
+    <figure
+      role="listitem"
+      className={"planche-cell planche-cover" + (current ? " current" : "")}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      title="Couverture · double-clic pour l’ouvrir"
+    >
+      <div
+        className="mini-cover"
+        style={{ aspectRatio: `${album.trim_mm.w} / ${album.trim_mm.h}` }}
+      >
+        {cover.photo && <MiniImg slot={cover.photo} />}
+        <span className="mini-cover-title">{cover.title || album.title}</span>
+      </div>
+      <figcaption className="planche-meta">
+        <span className="planche-num">C</span>
+        <span className="planche-chapter">Couverture</span>
       </figcaption>
     </figure>
   );

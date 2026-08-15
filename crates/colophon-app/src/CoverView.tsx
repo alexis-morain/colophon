@@ -112,7 +112,7 @@ export function CoverView({
             style={{ flex: spine }}
             title={
               `Dos ${spine.toFixed(1).replace(".", ",")} mm` +
-              (provisoire ? " (provisoire, en attente de l'imprimeur)" : "")
+              (provisoire ? " (provisoire, en attente de l’imprimeur)" : "")
             }
           >
             {spine >= SPINE_TEXT_MIN_MM && (
@@ -157,9 +157,9 @@ export function CoverView({
             <button
               className="cover-photo-change"
               onClick={() => setPicking(true)}
-              title="Choisir une autre photo de l'album"
+              title="Choisir une autre photo de l’album"
             >
-              changer la photo
+              Changer la photo
             </button>
           )}
         </div>
@@ -170,12 +170,12 @@ export function CoverView({
           <>
             Dos {spine.toFixed(1).replace(".", ",")} mm pour{" "}
             {album.spreads.length * 2} pages
-            {provisoire && ", valeur provisoire que la formule de l'imprimeur remplacera"}
+            {provisoire && ", valeur provisoire que la formule de l’imprimeur remplacera"}
             {spine < SPINE_TEXT_MIN_MM && " · trop mince pour porter un titre"}
           </>
         ) : (
           <>
-            {printer?.nom ?? "L'imprimeur"} fabrique le dos : la feuille part
+            {printer?.nom ?? "L’imprimeur"} fabrique le dos : la feuille part
             sans lui.
           </>
         )}{" "}
@@ -185,9 +185,9 @@ export function CoverView({
       {picking && (
         <div className="cover-picker" role="listbox">
           <header className="cover-picker-bar">
-            <span>Photo de couverture, parmi l'album</span>
+            <span>Photo de couverture, parmi l’album</span>
             <button className="link" onClick={() => setPicking(false)}>
-              fermer (Échap)
+              Fermer (Échap)
             </button>
           </header>
           <div className="cover-picker-grid">

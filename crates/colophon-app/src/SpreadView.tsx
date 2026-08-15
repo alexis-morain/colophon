@@ -31,7 +31,7 @@ import {
   slotsFor,
   textAnchor,
 } from "./album";
-import { detectedFocal } from "./bridge";
+import { captionSuggestion, detectedFocal } from "./bridge";
 import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
@@ -56,6 +56,7 @@ export function SpreadView({
   onSwap,
   onPlace,
   onCrop,
+  onCaption,
   onSpreadCaption,
   onText,
   onOverflow,
@@ -69,6 +70,8 @@ export function SpreadView({
   onPlace?: (slot: number, photo: Slot) => void;
   /** A crop gesture ended: commit focal + zoom for one slot. */
   onCrop?: (slot: number, focal: [number, number], zoom: number) => void;
+  /** The caption of one photo changed (the popover under the case). */
+  onCaption?: (slot: number, text: string) => void;
   /** The chapter caption was renamed in place. */
   onSpreadCaption?: (caption: string) => void;
   /** The free text of a `texte` spread changed. */
@@ -140,10 +143,18 @@ export function SpreadView({
 
   const textAt = textAnchor(canvas);
 
+  // The caption popover anchors under the selected case, in viewport
+  // coordinates (position: fixed): it may hang below the sheet without
+  // being clipped by the paper's overflow.
+  const hasSelection = selected !== null && selected !== undefined;
+  const selectedSlot = hasSelection ? (spread.slots[selected] ?? null) : null;
+  const selectedRect = hasSelection ? (rects[selected] ?? null) : null;
+  const paperBox = paper.current?.getBoundingClientRect() ?? null;
+
   return (
     <div
       ref={paper}
-      className="paper"
+      className={"paper" + (hasSelection ? " has-selection" : "")}
       style={
         {
           aspectRatio: `${trimW} / ${album.trim_mm.h}`,
@@ -281,6 +292,107 @@ export function SpreadView({
         )}
       </div>
       <div className="gutter" aria-hidden="true" />
+      {selectedSlot && selectedRect && paperBox && onCaption && (
+        <CaptionPopover
+          key={`${selectedSlot.src}-${selected}`}
+          slot={selectedSlot}
+          paperBox={paperBox}
+          rect={selectedRect}
+          bleed={album.bleed_mm}
+          mm={mm}
+          onCaption={(text) => onCaption(selected!, text)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The caption editor of the selected photo: a popover under its case (above
+ * it when the case touches the bottom of the window), an input, the EXIF
+ * suggestion one click away. Clicks inside stay inside: the selection holds.
+ */
+function CaptionPopover({
+  slot,
+  paperBox,
+  rect,
+  bleed,
+  mm,
+  onCaption,
+}: {
+  slot: Slot;
+  paperBox: DOMRect;
+  rect: Rect;
+  bleed: number;
+  mm: number;
+  onCaption: (text: string) => void;
+}) {
+  const [value, setValue] = useState(slot.caption ?? "");
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+
+  useEffect(() => {
+    setValue(slot.caption ?? "");
+    setSuggestion(null);
+    let alive = true;
+    captionSuggestion(slot.src).then(
+      (s) => alive && setSuggestion(s),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [slot]);
+
+  const HEIGHT = 46;
+  const left = Math.max(
+    8,
+    Math.min(
+      paperBox.left + (rect.x - bleed) * mm,
+      window.innerWidth - 328,
+    ),
+  );
+  const below = paperBox.top + (rect.y + rect.h - bleed) * mm + 8;
+  const top =
+    below + HEIGHT + 8 > window.innerHeight
+      ? paperBox.top + (rect.y - bleed) * mm - HEIGHT - 8
+      : below;
+
+  return (
+    <div
+      className="caption-popover"
+      style={{ left, top }}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <label className="caption-popover-label">
+        Légende
+        <input
+          className="caption-popover-input"
+          value={value}
+          placeholder="aucune"
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => value.trim() !== (slot.caption ?? "") && onCaption(value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              setValue(slot.caption ?? "");
+              e.currentTarget.blur();
+            }
+          }}
+        />
+      </label>
+      {suggestion && !value && (
+        <button
+          className="link"
+          onClick={() => {
+            setValue(suggestion);
+            onCaption(suggestion);
+          }}
+          title="Date EXIF de la photo, proposée, jamais imposée"
+        >
+          Proposer « {suggestion} »
+        </button>
+      )}
     </div>
   );
 }
@@ -663,7 +775,7 @@ function CropPhoto({
               title={
                 `Cette photo imprimerait vers ${warn.ppi} ppi ici, sous le plancher de ` +
                 `${MIN_EFFECTIVE_PPI}. Une case plus petite, un zoom réduit ou une autre ` +
-                `photo règlent le problème. L'export le signalera aussi.`
+                `photo règlent le problème. L’export le signalera aussi.`
               }
             >
               {warn.ppi} ppi
@@ -673,7 +785,7 @@ function CropPhoto({
             <span
               className="slot-warn"
               title={
-                "Photo très sombre : le papier la rendra plus sombre encore que l'écran. " +
+                "Photo très sombre : le papier la rendra plus sombre encore que l’écran. " +
                 "À garder en connaissance de cause, rien ne bloque."
               }
             >

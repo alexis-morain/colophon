@@ -11,6 +11,7 @@ import { cachedThumb, loadThumb } from "./thumbs";
  *  reuses them, so the two screens name every reason the same way. */
 export const REASONS: [string, string][] = [
   ["retiree", "Retirées à la main"],
+  ["rejetee", "Rejetées dans votre logiciel photo"],
   ["hors_budget", "Hors budget : bonnes photos, album plein"],
   ["meme_moment", "Même moment, quasi la même photo"],
   ["doublon", "Doublons de rafale ou de scène"],

@@ -46,6 +46,24 @@ const REPEAT_RUN: usize = 4;
 pub const OPENING_MIN_PHOTOS: usize = 6;
 /// The chapter opening must score in this top quantile of its chapter.
 const OPENING_QUANTILE: f64 = 0.75;
+/// Each star multiplies the score by this. A measurement made on pixels
+/// guesses at what a photo is worth; a star is the answer, so five of them
+/// roughly double the score and settle any comparison a sharpness reading
+/// would have won on its own. The composer and this linter both go through
+/// `rating_factor`: a photo the user starred must be free to open its
+/// chapter without the opening counter calling that opening weak.
+const RATING_STEP: f64 = 1.18;
+
+/// Score multiplier for the rating read off the file. Neutral for the
+/// unrated, which is nearly every photo of nearly every folder, and neutral
+/// for the rejected too: those never reach a score, the curation sets them
+/// aside before anything is compared (see `pipeline::split_rejected`).
+pub fn rating_factor(rating: Option<i8>) -> f64 {
+    match rating {
+        Some(stars @ 1..=5) => RATING_STEP.powi(i32::from(stars)),
+        _ => 1.0,
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct Finding {
@@ -152,7 +170,8 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
     let mut notes = Vec::new();
     if !root_ok {
         notes.push(format!(
-            "dossier de photos introuvable ({}) : résolution non mesurée",
+            "dossier de photos introuvable ({}) : résolution non mesurée, \
+             notes de l'utilisateur non lues",
             root.display()
         ));
     }
@@ -176,15 +195,15 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
                 .with_context(|| format!("vignette illisible pour {src}, régénérez l'album"))?;
             let analysis = analyze::analyze(&img);
             let faces = face::face_boxes(det.as_mut(), &img);
-            let (orig, taken) = if root_ok {
+            let (orig, taken, rating) = if root_ok {
                 let p = root.join(src);
                 let m = meta::read(&p);
                 let orig = crate::heic::dimensions(&p).ok().map(|(w, h)| {
                     if (5..=8).contains(&m.orientation) { (h, w) } else { (w, h) }
                 });
-                (orig, m.taken_reliable.then_some(m.taken))
+                (orig, m.taken_reliable.then_some(m.taken), m.rating)
             } else {
-                (None, None)
+                (None, None, None)
             };
             Ok((
                 src.clone(),
@@ -194,7 +213,10 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
                     dhash: analysis.dhash,
                     phash: analysis.phash,
                     colorsig: analysis.colorsig,
-                    score: analysis.score(),
+                    // Same score the composer ranked the chapter with, stars
+                    // included: the opening counter judges the choice that
+                    // was actually available to it.
+                    score: analysis.score() * rating_factor(rating),
                     faces,
                     orig,
                     taken,

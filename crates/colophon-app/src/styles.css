@@ -330,6 +330,28 @@ kbd {
   pointer-events: none;
 }
 
+/* Warning badges on a case: resolution under the floor, night-dark photo.
+   Same chip as the zoom readout, accent text; information while composing,
+   never a modal. The title carries the remedy, l'écran Envoi redira le
+   premier à l'export. */
+.slot-warns {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: flex;
+  gap: 1px;
+}
+
+.slot-warn {
+  padding: 2px 6px;
+  background: rgba(23, 21, 15, 0.72);
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  cursor: help;
+}
+
 /* A zoomed slot flags itself discreetly even unselected. */
 .slot.zoomed:not(.selected)::after {
   content: "";

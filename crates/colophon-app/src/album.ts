@@ -484,3 +484,39 @@ export function coverSheet(
 /** Below this a spine is a fold, not a surface: no title on it. Port of
  *  `cover.rs::SPINE_TEXT_MIN_MM`. */
 export const SPINE_TEXT_MIN_MM = 9;
+
+/** Longest side of a cached thumbnail. Port of `thumb.rs::THUMB_SIZE`.
+ *  A thumbnail below this size was never downscaled, so its pixel count is
+ *  the original's: the only case where the editor knows a photo's true
+ *  resolution without reopening the file. */
+export const THUMB_SIZE = 1600;
+
+/** Below this effective resolution a cell prints visibly soft. Port of
+ *  `audit.rs::MIN_EFFECTIVE_PPI`, the floor the preflight blocks on. */
+export const MIN_EFFECTIVE_PPI = 250;
+
+/**
+ * Effective print resolution of a photo in a cell, in ppi. Port of the
+ * preflight's own rule (`prevol.rs`, règle `resolution`): the cover-crop
+ * scale of `print.rs::print_scale`, times the manual zoom, which crops
+ * further into the same pixels.
+ */
+export function effectivePpi(
+  rect: { w: number; h: number },
+  pixelW: number,
+  pixelH: number,
+  zoom = 1,
+): number {
+  if (pixelW <= 0 || pixelH <= 0) return Infinity;
+  const mmPerPixel = Math.max(rect.w / pixelW, rect.h / pixelH);
+  return 25.4 / (mmPerPixel * Math.max(zoom, 1));
+}
+
+/** Mean luminance under which a photo prints noticeably darker than it
+ *  looks on screen, on the 0..255 scale `analyze.rs::exposure_score` works
+ *  in. Measured on the reference sets rather than guessed: at 60 it marks
+ *  4 of the 294 placed photos of corse-2013, mauritanie-2019 and
+ *  random-2024, all four real night shots. The engine's own dark penalty
+ *  starts at 70, which would have marked ordinary evening photos too, and
+ *  a badge that fires on ordinary photos teaches people to ignore badges. */
+export const DARK_MEAN_LUMA = 60;

@@ -158,6 +158,30 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         |p: &Path| focals.get(p).copied().unwrap_or_else(model::default_focal);
     let mut discards: Vec<model::Discard> = Vec::new();
 
+    // An explicit no comes first: a photo rejected in the user's
+    // cataloguing app leaves before anything is compared, whatever else the
+    // curation would have called it.
+    let (photos, rejected) = pipeline::split_rejected(photos);
+    if !rejected.is_empty() {
+        say(&format!(
+            "notes : {} photos rejetées dans votre logiciel photo, écartées",
+            rejected.len()
+        ));
+    }
+    discards.extend(rejected.iter().map(|p| model::Discard {
+        src: rel(&p.path),
+        reason: "rejetee".into(),
+        kept: None,
+        focal: focal_of(&p.path),
+    }));
+
+    let starred = photos.iter().filter(|p| p.meta.rating.is_some_and(|r| r >= 1)).count();
+    if starred > 0 {
+        say(&format!(
+            "notes : {starred} photos étoilées, la curation en tient compte"
+        ));
+    }
+
     let (photos, junk) = pipeline::split_junk(photos);
     if !junk.is_empty() {
         say(&format!(
@@ -422,6 +446,13 @@ pub fn write_album_json(dir: &Path, album: &model::Album) -> Result<PathBuf> {
     let tmp = dir.join("album.json.tmp");
     fs::write(&tmp, serde_json::to_string_pretty(album)?)
         .with_context(|| format!("write {}", tmp.display()))?;
+    // One step back, always: the previous version survives as .bak, next to
+    // the file and as hand-repairable as it. A save that fails half-way
+    // leaves the .bak of the version before, never a torn file. Best
+    // effort: a missing or unreadable album.json must not block the save.
+    if target.exists() {
+        let _ = fs::copy(&target, dir.join("album.json.bak"));
+    }
     fs::rename(&tmp, &target).with_context(|| format!("rename onto {}", target.display()))?;
     Ok(target)
 }
@@ -587,4 +618,39 @@ pub fn jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
         i += 2 + len;
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every save keeps one step back: album.json.bak carries the previous
+    /// version, the atomic rename still rules the file itself, and the very
+    /// first write leaves no .bak because there is nothing to keep.
+    #[test]
+    fn each_save_keeps_the_previous_version_as_bak() {
+        let dir = std::env::temp_dir().join(format!("colophon-bak-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let mut album = crate::model::Album::new(
+            "v1",
+            Path::new("/photos"),
+            crate::model::Size { w: 210.0, h: 210.0 },
+        );
+        write_album_json(&dir, &album).unwrap();
+        assert!(!dir.join("album.json.bak").exists(), "premier enregistrement, rien à garder");
+
+        album.title = "v2".into();
+        write_album_json(&dir, &album).unwrap();
+        let bak: crate::model::Album =
+            serde_json::from_str(&fs::read_to_string(dir.join("album.json.bak")).unwrap())
+                .unwrap();
+        let cur: crate::model::Album =
+            serde_json::from_str(&fs::read_to_string(dir.join("album.json")).unwrap()).unwrap();
+        assert_eq!(bak.title, "v1");
+        assert_eq!(cur.title, "v2");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

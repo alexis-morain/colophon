@@ -23,3 +23,17 @@ describe.skipIf(!existsSync(BINARY))("geometry parity with the engine", () => {
     expect(geometryProblems(dump, format)).toEqual([]);
   });
 });
+
+// The badge maths is a port too: print.rs::print_scale via prevol.rs.
+describe("effective print resolution (port of print_scale)", () => {
+  it("reads the cover-crop scale, and zoom crops further in", async () => {
+    const { effectivePpi } = await import("./album");
+    // 1000 px across a 100 mm cell: 0,1 mm per pixel, 254 ppi exactly.
+    expect(effectivePpi({ w: 100, h: 50 }, 1000, 1000)).toBeCloseTo(254, 5);
+    // The tighter side rules: same photo, taller cell, half the resolution.
+    expect(effectivePpi({ w: 100, h: 200 }, 1000, 1000)).toBeCloseTo(127, 5);
+    // Manual zoom eats pixels linearly; below 1 it never flatters.
+    expect(effectivePpi({ w: 100, h: 50 }, 1000, 1000, 2)).toBeCloseTo(127, 5);
+    expect(effectivePpi({ w: 100, h: 50 }, 1000, 1000, 0.5)).toBeCloseTo(254, 5);
+  });
+});

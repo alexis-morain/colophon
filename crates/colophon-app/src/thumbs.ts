@@ -56,4 +56,41 @@ export function resetThumbs() {
   for (const url of urls.values()) URL.revokeObjectURL(url);
   urls.clear();
   pending.clear();
+  luma.clear();
+}
+
+// Mean luminance per photo, computed once from the thumbnail already on
+// screen. Keyed by src and never evicted: one number per photo, against a
+// blob URL pool that holds whole images.
+const luma = new Map<string, number>();
+
+/**
+ * Mean luminance of a decoded thumbnail, 0..255, the same quantity
+ * `analyze.rs::exposure_score` averages. Sampled on a 64 px square: the
+ * engine works at 128, and the extra precision buys nothing for a threshold
+ * no photo of the reference sets sits near.
+ */
+export function meanLuma(src: string, img: HTMLImageElement): number | undefined {
+  const seen = luma.get(src);
+  if (seen !== undefined) return seen;
+  if (!img.complete || !img.naturalWidth) return undefined;
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return undefined;
+  ctx.drawImage(img, 0, 0, size, size);
+  let sum = 0;
+  try {
+    const { data } = ctx.getImageData(0, 0, size, size);
+    for (let i = 0; i < data.length; i += 4) {
+      sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+  } catch {
+    return undefined; // a tainted canvas is not worth an exception
+  }
+  const mean = sum / (size * size);
+  luma.set(src, mean);
+  return mean;
 }

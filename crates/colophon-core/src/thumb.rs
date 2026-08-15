@@ -47,7 +47,17 @@ impl ThumbCache {
         }
         let img = crate::heic::open(src).with_context(|| format!("decode {}", src.display()))?;
         let img = apply_orientation(img, orientation);
-        let thumb = img.thumbnail(THUMB_SIZE, THUMB_SIZE);
+        // Downscale only: `thumbnail` would upscale a small photo to the
+        // box, forging pixels the original never had and hiding its real
+        // size from every reader. The thumbnail of a small photo is the
+        // photo; a thumbnail under THUMB_SIZE is therefore always the
+        // original's exact pixel count, which is what lets the editor warn
+        // about resolution without reopening the file.
+        let thumb = if img.width().max(img.height()) > THUMB_SIZE {
+            img.thumbnail(THUMB_SIZE, THUMB_SIZE)
+        } else {
+            img
+        };
         thumb
             .to_rgb8()
             .save_with_format(&cached, image::ImageFormat::Jpeg)

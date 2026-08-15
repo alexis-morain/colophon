@@ -458,7 +458,12 @@ fn promote_opening(photos: &mut [Photo], holds_a_page: &dyn Fn(&Photo) -> bool) 
     if photos.len() < OPENING_MIN_PHOTOS {
         return;
     }
-    let scores: Vec<f64> = photos.iter().map(|p| p.analysis.score()).collect();
+    // The linter's opening counter scores the same way, stars included
+    // (`audit::rating_factor`): both must judge the same candidates.
+    let scores: Vec<f64> = photos
+        .iter()
+        .map(|p| p.analysis.score() * crate::audit::rating_factor(p.meta.rating))
+        .collect();
     let bar = quantile(&scores, OPENING_QUANTILE);
     // Strong first, big enough to print alone second. A 2 Mpx frame at the
     // top of the quantile makes a fine mosaic cell and a poor opening page,

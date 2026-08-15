@@ -20,15 +20,19 @@ import {
   Spread,
   TEXT_LEADING_MM,
   TEXT_SIZE_MM,
+  DARK_MEAN_LUMA,
+  MIN_EFFECTIVE_PPI,
+  THUMB_SIZE,
   ZOOM_MAX,
   ZOOM_MIN,
   captionAnchor,
+  effectivePpi,
   mediaCanvas,
   slotsFor,
   textAnchor,
 } from "./album";
 import { detectedFocal } from "./bridge";
-import { cachedThumb, loadThumb } from "./thumbs";
+import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
 type CropDraft = { slot: number; focal: [number, number]; zoom: number };
@@ -445,6 +449,38 @@ function CropPhoto({
     };
   }, [slot.src]);
 
+  // Warning badges, computed from the thumbnail already on screen (front
+  // only, no engine round-trip). Resolution is only asserted when it is
+  // known: a thumbnail under THUMB_SIZE was never downscaled, so its pixel
+  // count is the original's. A downscaled one proves the original is
+  // bigger, hence a computed ppi ABOVE the floor clears the photo but one
+  // below it proves nothing, and no badge shows. The preflight, which
+  // reopens the originals, remains the authority at export time.
+  const [warn, setWarn] = useState<{ ppi: number | null; dark: boolean }>({
+    ppi: null,
+    dark: false,
+  });
+  useEffect(() => {
+    const el = img.current;
+    if (!el || !url) return;
+    const inspect = () => {
+      if (!el.naturalWidth) return;
+      const known = Math.max(el.naturalWidth, el.naturalHeight) < THUMB_SIZE;
+      const p = effectivePpi(rect, el.naturalWidth, el.naturalHeight, zoom);
+      const luma = meanLuma(slot.src, el);
+      setWarn({
+        ppi: known && p < MIN_EFFECTIVE_PPI ? Math.round(p) : null,
+        dark: luma !== undefined && luma < DARK_MEAN_LUMA,
+      });
+    };
+    if (el.complete) {
+      inspect();
+      return;
+    }
+    el.addEventListener("load", inspect, { once: true });
+    return () => el.removeEventListener("load", inspect);
+  }, [url, slot.src, rect.w, rect.h, zoom]);
+
   // Wheel zoom needs a non-passive listener to swallow the page scroll.
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -618,6 +654,33 @@ function CropPhoto({
       )}
       {selected && (slot.zoom ?? 1) > 1.001 && (
         <span className="slot-zoom">×{zoom.toFixed(2).replace(".", ",")}</span>
+      )}
+      {editable && (warn.ppi !== null || warn.dark) && (
+        <span className="slot-warns">
+          {warn.ppi !== null && (
+            <span
+              className="slot-warn"
+              title={
+                `Cette photo imprimerait vers ${warn.ppi} ppi ici, sous le plancher de ` +
+                `${MIN_EFFECTIVE_PPI}. Une case plus petite, un zoom réduit ou une autre ` +
+                `photo règlent le problème. L'export le signalera aussi.`
+              }
+            >
+              {warn.ppi} ppi
+            </span>
+          )}
+          {warn.dark && (
+            <span
+              className="slot-warn"
+              title={
+                "Photo très sombre : le papier la rendra plus sombre encore que l'écran. " +
+                "À garder en connaissance de cause, rien ne bloque."
+              }
+            >
+              sombre
+            </span>
+          )}
+        </span>
       )}
     </div>
   );

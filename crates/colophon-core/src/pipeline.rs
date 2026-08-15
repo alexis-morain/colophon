@@ -24,7 +24,9 @@ impl Photo {
     /// screenshots, downloads or forwarded images: heavy penalty so they
     /// never outrank a real photo, without being dropped outright.
     pub fn effective_score(&self) -> f64 {
-        let mut score = self.analysis.score();
+        // Stars first: work the user already did on these photos outranks
+        // anything measured on the pixels.
+        let mut score = self.analysis.score() * crate::audit::rating_factor(self.meta.rating);
         if !self.meta.taken_reliable {
             score *= 0.25;
         }
@@ -99,13 +101,27 @@ pub fn split_unprintable(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
     })
 }
 
+/// Photos the user rejected in their cataloguing app: `xmp:Rating` at -1,
+/// which is what Lightroom writes for a rejected photo. The album does not
+/// argue with an explicit no, so they leave before any comparison happens.
+/// Returns them: the sorting view lists them like everything else and a
+/// rescue stays one click away, because the no was about a first pass, not
+/// about this album.
+pub fn split_rejected(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
+    photos.into_iter().partition(|p| p.meta.rating != Some(-1))
+}
+
 /// Screenshots, memes and forwarded images lack a camera fingerprint.
 /// A real photo carries an EXIF capture date; failing that, it needs both
 /// GPS and a camera model (iOS can stamp GPS onto saved images, so GPS
-/// alone proves nothing). Returns the junk itself: the sorting view shows it.
+/// alone proves nothing) — or a star, because a photo somebody sat down and
+/// rated is not a parasite whatever its EXIF says. Returns the junk itself:
+/// the sorting view shows it.
 pub fn split_junk(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
     photos.into_iter().partition(|p| {
-        p.meta.taken_reliable || (p.meta.gps.is_some() && p.meta.model.is_some())
+        p.meta.taken_reliable
+            || (p.meta.gps.is_some() && p.meta.model.is_some())
+            || p.meta.rating.is_some_and(|r| r >= 1)
     })
 }
 
@@ -360,4 +376,109 @@ pub fn cap_chapter(chapter: &mut Chapter, max: usize) {
     }
     keep.sort();
     chapter.photos = keep.into_iter().map(|i| chapter.photos[i].clone()).collect();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analyze::Analysis;
+    use crate::meta::PhotoMeta;
+
+    fn photo(name: &str, sharpness: f64, rating: Option<i8>) -> Photo {
+        Photo {
+            path: PathBuf::from(name),
+            meta: PhotoMeta {
+                taken: NaiveDateTime::parse_from_str(
+                    "2013-10-27 15:34:11",
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .unwrap(),
+                taken_reliable: true,
+                orientation: 1,
+                gps: None,
+                model: Some("Canon".into()),
+                rating,
+            },
+            analysis: Analysis {
+                dhash: 0,
+                phash: 0,
+                colorsig: [0; 12],
+                sharpness,
+                exposure: 1.0,
+                width: 1600,
+                height: 1200,
+            },
+            orig: (4000, 3000),
+            faces: Vec::new(),
+            focal: None,
+        }
+    }
+
+    /// The whole point of reading ratings: a photo the user starred beats a
+    /// sharper photo they said nothing about. Five stars are worth more than
+    /// doubling the sharpness reading.
+    #[test]
+    fn stars_outrank_a_sharper_unrated_photo() {
+        let starred = photo("etoilee.jpg", 40.0, Some(5));
+        let sharper = photo("nette.jpg", 90.0, None);
+        assert!(starred.effective_score() > sharper.effective_score());
+
+        // And a rating never drags a photo down: unrated is the neutral.
+        let one_star = photo("une.jpg", 40.0, Some(1));
+        let unrated = photo("aucune.jpg", 40.0, None);
+        assert!(one_star.effective_score() > unrated.effective_score());
+        assert_eq!(unrated.effective_score(), photo("x.jpg", 40.0, Some(0)).effective_score());
+    }
+
+    /// An explicit no is honoured: rejected photos leave before anything is
+    /// compared, and they leave alone.
+    #[test]
+    fn rejected_photos_leave_the_pipeline() {
+        let photos = vec![
+            photo("gardee.jpg", 40.0, None),
+            photo("rejetee.jpg", 90.0, Some(-1)),
+            photo("etoilee.jpg", 40.0, Some(4)),
+        ];
+        let (kept, rejected) = split_rejected(photos);
+        assert_eq!(kept.len(), 2);
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].path, PathBuf::from("rejetee.jpg"));
+    }
+
+    /// A photo without EXIF date, GPS or camera is a parasite — unless
+    /// somebody sat down and rated it, which no screenshot ever gets.
+    #[test]
+    fn a_starred_photo_is_never_a_parasite() {
+        let mut orphan = photo("sans-exif.jpg", 40.0, None);
+        orphan.meta.taken_reliable = false;
+        orphan.meta.model = None;
+        let mut starred = orphan.clone();
+        starred.path = PathBuf::from("notee.jpg");
+        starred.meta.rating = Some(2);
+
+        let (kept, junk) = split_junk(vec![orphan, starred]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].path, PathBuf::from("notee.jpg"));
+        assert_eq!(junk.len(), 1);
+    }
+
+    /// The chapter cap ranks on the same score, so a starred photo is not
+    /// trimmed in favour of an unrated one the pixels happen to prefer.
+    #[test]
+    fn the_chapter_cap_keeps_the_starred_photo() {
+        let mut chapter = Chapter {
+            photos: vec![
+                photo("a.jpg", 90.0, None),
+                photo("b.jpg", 80.0, None),
+                photo("etoilee.jpg", 30.0, Some(5)),
+            ],
+            start: NaiveDateTime::parse_from_str("2013-10-27 15:00:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap(),
+            end: NaiveDateTime::parse_from_str("2013-10-27 16:00:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap(),
+        };
+        // Every photo here shares one hash, so only the score separates them.
+        cap_chapter(&mut chapter, 2);
+        assert!(chapter.photos.iter().any(|p| p.path == PathBuf::from("etoilee.jpg")));
+    }
 }

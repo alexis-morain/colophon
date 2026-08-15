@@ -13,6 +13,7 @@ const UNPLACED = new Set(["hors_budget", "retiree"]);
 
 const REASON_LABELS: Record<string, string> = {
   retiree: "retirée à la main",
+  rejetee: "rejetée dans votre logiciel photo",
   hors_budget: "hors budget : bonne photo, album plein",
   meme_moment: "même moment, quasi la même photo",
   doublon: "doublon de rafale ou de scène",

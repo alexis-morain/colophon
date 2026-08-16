@@ -12,6 +12,7 @@ pub mod format;
 pub mod heic;
 pub mod icc;
 pub mod layout;
+pub mod log;
 pub mod meta;
 pub mod model;
 pub mod pdf;

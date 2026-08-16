@@ -263,6 +263,7 @@ async fn build_album_from_folder(
                 spreads: spreads.clamp(8, 200),
                 trim,
                 progress: Box::new(move |line| {
+                    colophon_core::log::line(line);
                     let _ = emitter.emit("build:progress", line);
                 }),
                 cancel: Box::new(move || flag.load(Ordering::Relaxed)),
@@ -273,7 +274,10 @@ async fn build_album_from_folder(
     })
     .await
     .map_err(|e| e.to_string())?
-    .map_err(|e| format!("{e:#}"))?;
+    .map_err(|e| {
+        colophon_core::log::line(&format!("composition en échec : {e:#}"));
+        format!("{e:#}")
+    })?;
 
     let opened = open_album(out.to_string_lossy().to_string(), state)?;
     Ok(BuiltAlbum {
@@ -338,6 +342,7 @@ async fn recompose_album(
         spreads: target,
         trim: album.trim_mm,
         progress: Box::new(move |line| {
+            colophon_core::log::line(line);
             let _ = emitter.emit("build:progress", line);
         }),
         cancel: Box::new(move || flag.load(Ordering::Relaxed)),
@@ -353,7 +358,10 @@ async fn recompose_album(
     })
     .await
     .map_err(|e| e.to_string())?
-    .map_err(|e| format!("{e:#}"))?;
+    .map_err(|e| {
+        colophon_core::log::line(&format!("recomposition en échec : {e:#}"));
+        format!("{e:#}")
+    })?;
 
     open_album(dir.to_string_lossy().to_string(), state)
 }
@@ -411,6 +419,7 @@ async fn export_pdf(
     let flag = state.cancel_export.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<String>, String> {
         let interior = Path::new(&dest);
+        colophon_core::log::line(&format!("export 300 dpi, profil {}", profil.id));
         colophon_core::render_print_pdf(
             &dir,
             profil,
@@ -420,7 +429,10 @@ async fn export_pdf(
             },
             &move || flag.load(Ordering::Relaxed),
         )
-        .map_err(|e| format!("{e:#}"))?;
+        .map_err(|e| {
+            colophon_core::log::line(&format!("export en échec : {e:#}"));
+            format!("{e:#}")
+        })?;
         let mut written = vec![dest.clone()];
 
         if profil.fichiers == colophon_core::printer::Fichiers::Deux {
@@ -431,9 +443,13 @@ async fn export_pdf(
                 .unwrap_or_else(|| "album".into());
             let cover = interior.with_file_name(format!("{stem}-couverture.pdf"));
             colophon_core::cover::render_cover_pdf(&dir, profil, &cover)
-                .map_err(|e| format!("couverture : {e:#}"))?;
+                .map_err(|e| {
+                    colophon_core::log::line(&format!("couverture en échec : {e:#}"));
+                    format!("couverture : {e:#}")
+                })?;
             written.push(cover.to_string_lossy().to_string());
         }
+        colophon_core::log::line("export terminé");
         Ok(written)
     })
     .await
@@ -504,6 +520,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(AppState::default());
+            // The file log the report channel will quote: errors and long
+            // stages, rotating, path-scrubbed. Failing to open it must not
+            // stop the app, an unlogged session beats no session.
+            if let Ok(dir) = app.path().app_data_dir() {
+                if let Err(e) = colophon_core::log::init(&dir) {
+                    eprintln!("log indisponible : {e}");
+                } else {
+                    colophon_core::log::line(&format!(
+                        "démarrage, version {}",
+                        app.package_info().version
+                    ));
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

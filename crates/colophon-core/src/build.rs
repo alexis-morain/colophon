@@ -139,7 +139,14 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
             let img = match cache.get(path, meta.orientation) {
                 Ok(i) => i,
                 Err(e) => {
-                    say(&format!("skip {}: {e:#}", path.display()));
+                    // File name only: this line travels to the app's
+                    // progress panel and to the file log, and a full path
+                    // names people and places.
+                    let nom = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    say(&format!("skip {nom}: {e:#}"));
                     return Some(Analysed::Unreadable(path.clone(), format!("{e:#}")));
                 }
             };

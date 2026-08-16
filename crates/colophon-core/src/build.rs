@@ -96,16 +96,35 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     if scanned.skipped_heic > 0 {
         say("note: HEIC decoding is not wired yet; those photos are left out for now");
     }
-    anyhow::ensure!(!scanned.images.is_empty(), "no usable images found");
+    // The folder gave nothing to work with: a named refusal, never an album
+    // of zero pages presented as a success. Nothing has been written yet.
+    if scanned.images.is_empty() {
+        let detail = match (scanned.skipped_heic, scanned.skipped_other) {
+            (0, 0) => "le dossier ne contient aucune image (JPEG, PNG ou HEIC)".to_string(),
+            (h, o) => format!(
+                "aucune image lisible : {h} HEIC que cette machine ne décode pas, \
+                 {o} fichiers dans des formats non pris en charge"
+            ),
+        };
+        anyhow::bail!("aucune photo exploitable : {detail}");
+    }
     let photos_scanned = scanned.images.len();
 
     // 2. metadata + thumbnails + analysis, in parallel. The longest phase by
     // far, so it reports counts as it goes: a progress bar with nothing to
     // say for ten seconds is a frozen app to the person watching.
+    // A file the decoder refuses is not dropped on the floor: it is kept,
+    // with its reason, and lands in the curation report like any other
+    // set-aside. An unreadable file the user cannot see is how an album
+    // quietly loses photos.
+    enum Analysed {
+        Photo(Box<Photo>),
+        Unreadable(PathBuf, String),
+    }
     let cache = thumb::ThumbCache::new(out)?;
     let total = scanned.images.len();
     let done = std::sync::atomic::AtomicUsize::new(0);
-    let photos: Vec<Photo> = scanned
+    let analysed: Vec<Analysed> = scanned
         .images
         .par_iter()
         .map_init(face::new_detector, |det, path| {
@@ -121,7 +140,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
                 Ok(i) => i,
                 Err(e) => {
                     say(&format!("skip {}: {e:#}", path.display()));
-                    return None;
+                    return Some(Analysed::Unreadable(path.clone(), format!("{e:#}")));
                 }
             };
             let analysis = analyze::analyze(&img);
@@ -135,12 +154,52 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
                     if (5..=8).contains(&meta.orientation) { (h, w) } else { (w, h) }
                 })
                 .unwrap_or((analysis.width, analysis.height));
-            Some(Photo { path: path.clone(), meta, analysis, orig, faces, focal })
+            Some(Analysed::Photo(Box::new(Photo {
+                path: path.clone(),
+                meta,
+                analysis,
+                orig,
+                faces,
+                focal,
+            })))
         })
         .flatten()
         .collect();
     anyhow::ensure!(!cancelled(), "composition annulée");
+    let mut photos: Vec<Photo> = Vec::with_capacity(analysed.len());
+    let mut unreadable: Vec<(PathBuf, String)> = Vec::new();
+    for a in analysed {
+        match a {
+            Analysed::Photo(p) => photos.push(*p),
+            Analysed::Unreadable(p, e) => unreadable.push((p, e)),
+        }
+    }
+    if !unreadable.is_empty() {
+        say(&format!(
+            "illisibles : {} fichiers refusés par le décodeur",
+            unreadable.len()
+        ));
+    }
     say(&format!("analyze: {} photos", photos.len()));
+
+    // Everything failed to decode: refuse loudly, before any album file
+    // exists. The file names are the whole diagnosis, so they are in the
+    // message (names only, never full paths).
+    if photos.is_empty() {
+        let noms: Vec<String> = unreadable
+            .iter()
+            .take(12)
+            .map(|(p, _)| {
+                p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+            })
+            .collect();
+        anyhow::bail!(
+            "aucune photo exploitable : les {} fichiers image du dossier sont \
+             illisibles ou tronqués ({})",
+            unreadable.len(),
+            noms.join(", ")
+        );
+    }
 
     // Capture times, for re-inserting pinned spreads chronologically.
     let times: std::collections::HashMap<String, chrono::NaiveDateTime> =
@@ -157,6 +216,16 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     let focal_of =
         |p: &Path| focals.get(p).copied().unwrap_or_else(model::default_focal);
     let mut discards: Vec<model::Discard> = Vec::new();
+
+    // Unreadable files enter the report first: the sorting view shows the
+    // file name without a thumbnail (there is nothing to draw), which is
+    // still infinitely better than pretending the file never existed.
+    discards.extend(unreadable.iter().map(|(p, _)| model::Discard {
+        src: rel(p),
+        reason: "illisible".into(),
+        kept: None,
+        focal: model::default_focal(),
+    }));
 
     // An explicit no comes first: a photo rejected in the user's
     // cataloguing app leaves before anything is compared, whatever else the
@@ -364,6 +433,26 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         opts.trim.h
     ));
 
+    // The album came out empty: every photo was set aside. Writing an
+    // album.json and a PDF of zero pages here would present a failure as a
+    // success, which is the one forbidden outcome. Refuse, with the counts
+    // that explain it, and write nothing. Pinned spreads are user work and
+    // count as content even without photos (a text page, say).
+    if !album.spreads.iter().any(|s| !s.slots.is_empty()) && opts.pinned.is_empty() {
+        let mut par_raison: std::collections::BTreeMap<&str, usize> =
+            std::collections::BTreeMap::new();
+        for d in &discards {
+            *par_raison.entry(d.reason.as_str()).or_default() += 1;
+        }
+        let resume: Vec<String> =
+            par_raison.iter().map(|(r, n)| format!("{n} {r}")).collect();
+        anyhow::bail!(
+            "aucune photo exploitable : les {photos_scanned} images du dossier \
+             ont toutes été écartées ({}) ; aucun album n'a été écrit",
+            resume.join(", ")
+        );
+    }
+
     // 5. album.json, plus the thumbnail index. Cache filenames hash the
     // absolute path and mtime, which no reader can recompute: without this
     // index an album folder is unreadable on another machine.
@@ -408,7 +497,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     anyhow::ensure!(!cancelled(), "composition annulée");
     say("pdf: rendu des planches");
     let mut writer = pdf::PdfWriter::new(&album);
-    for spread in &album.spreads {
+    for (i, spread) in album.spreads.iter().enumerate() {
         let assets: Vec<pdf::JpegAsset> = spread
             .slots
             .iter()
@@ -420,11 +509,15 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
                 Some(pdf::JpegAsset { data, width: w, height: h, focal: slot.focal, zoom: slot.zoom })
             })
             .collect();
-        if assets.len() == spread.slots.len() {
-            writer.add_spread(spread, &assets)?;
-        } else {
-            say("spread skipped: missing thumbnails");
-        }
+        // A spread that cannot be drawn is an error, not a page that
+        // silently vanishes from the book. Nothing is saved on the way out.
+        anyhow::ensure!(
+            assets.len() == spread.slots.len(),
+            "planche {} : vignette manquante, le PDF n'a pas été écrit ; \
+             recomposez l'album",
+            i + 1
+        );
+        writer.add_spread(spread, &assets)?;
     }
     let album_pdf = out.join("album.pdf");
     writer.save(&album_pdf)?;
@@ -469,6 +562,12 @@ pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
     let thumbs: std::collections::BTreeMap<String, String> =
         serde_json::from_str(&fs::read_to_string(dir.join("thumbs.json"))?)
             .context("thumbs.json illisible")?;
+    // An album of zero pages is not a document, whatever wrote it: refuse
+    // to render rather than hand back an empty PDF that looks like one.
+    anyhow::ensure!(
+        !album.spreads.is_empty(),
+        "l'album n'a aucune planche : rien à rendre"
+    );
 
     let mut writer = pdf::PdfWriter::new(&album);
     for (i, spread) in album.spreads.iter().enumerate() {
@@ -623,6 +722,84 @@ pub fn jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A throwaway photos folder and its (not yet created) output folder.
+    fn dossier_test(name: &str) -> (PathBuf, PathBuf) {
+        let base =
+            std::env::temp_dir().join(format!("colophon-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let photos = base.join("photos");
+        fs::create_dir_all(&photos).unwrap();
+        (photos, base.join("out"))
+    }
+
+    /// A refused build writes no album file at all. The thumbnail cache may
+    /// exist (it is a cache), the album must not.
+    fn rien_d_ecrit(out: &Path) {
+        for f in [
+            "album.json",
+            "album.origin.json",
+            "album.pdf",
+            "curation.json",
+            "thumbs.json",
+        ] {
+            assert!(!out.join(f).exists(), "{f} ne devrait pas avoir été écrit");
+        }
+    }
+
+    /// A tiny but valid JPEG: decodes fine, prints terribly. Striped so two
+    /// of them never read as twins.
+    fn petit_jpeg(path: &Path, seed: u32) {
+        let img = image::RgbImage::from_fn(80, 80, |x, y| {
+            if (x / (3 + seed) + y / (2 + seed)) % 2 == 0 {
+                image::Rgb([250 - (seed * 40) as u8, (seed * 60) as u8, 30])
+            } else {
+                image::Rgb([10, 80, 220])
+            }
+        });
+        img.save(path).unwrap();
+    }
+
+    /// The 16/08 case, first form: an empty folder. The old behaviour was a
+    /// 0-spread album.pdf and exit 0; the contract is a named error, a
+    /// non-zero exit and no file.
+    #[test]
+    fn un_dossier_vide_ne_produit_aucun_fichier() {
+        let (photos, out) = dossier_test("vide");
+        let err = build_album(&photos, &out, BuildOptions::default()).err().expect("le build aurait dû refuser");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("aucune photo exploitable"), "{msg}");
+        rien_d_ecrit(&out);
+    }
+
+    /// Second form: files with photo extensions the decoder refuses. The
+    /// error names the files, because the names are the whole diagnosis.
+    #[test]
+    fn un_dossier_de_fichiers_corrompus_est_refuse_et_nomme() {
+        let (photos, out) = dossier_test("corrompu");
+        fs::write(photos.join("cassee-1.jpg"), b"pas un jpeg du tout").unwrap();
+        fs::write(photos.join("cassee-2.jpg"), &[0xFF, 0xD8, 0xFF, 0x00]).unwrap();
+        let err = build_album(&photos, &out, BuildOptions::default()).err().expect("le build aurait dû refuser");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("aucune photo exploitable"), "{msg}");
+        assert!(msg.contains("cassee-1.jpg"), "les noms font le diagnostic : {msg}");
+        rien_d_ecrit(&out);
+    }
+
+    /// Third form: a mixed folder whose only readable photo cannot print
+    /// (80 px). Everything is set aside, so the build refuses with the
+    /// counts, instead of writing an album of zero pages.
+    #[test]
+    fn un_dossier_mixte_sans_photo_exploitable_est_refuse() {
+        let (photos, out) = dossier_test("mixte");
+        fs::write(photos.join("cassee.jpg"), b"tronquee").unwrap();
+        petit_jpeg(&photos.join("minuscule.jpg"), 1);
+        let err = build_album(&photos, &out, BuildOptions::default()).err().expect("le build aurait dû refuser");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("écartées"), "{msg}");
+        assert!(msg.contains("illisible"), "le compte des illisibles manque : {msg}");
+        rien_d_ecrit(&out);
+    }
 
     /// Every save keeps one step back: album.json.bak carries the previous
     /// version, the atomic rename still rules the file itself, and the very

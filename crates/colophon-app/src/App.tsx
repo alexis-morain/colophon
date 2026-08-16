@@ -303,7 +303,19 @@ export default function App() {
       setCuration(await fetchCuration().catch(() => []));
       setBilan(result.bilan);
     } catch (e) {
-      if (String(e).includes("annulée")) setStatus("Composition annulée");
+      const msg = String(e);
+      if (msg.includes("annulée")) setStatus("Composition annulée");
+      else if (msg.includes("aucune photo exploitable"))
+        // The engine refused rather than open an empty album. The gesture
+        // that gets the user out is choosing another folder, so say so.
+        setError(
+          fault(
+            "Ce dossier n’a donné aucune photo exploitable, rien n’a été créé. " +
+              "Choisissez un autre dossier, ou rouvrez celui-ci après y avoir " +
+              "ajouté des photos.",
+            e,
+          ),
+        );
       else setError(fault("La composition a échoué.", e));
     } finally {
       off();

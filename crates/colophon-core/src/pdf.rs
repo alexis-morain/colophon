@@ -359,8 +359,9 @@ fn caption_candidates(g: &SpreadGeometry) -> [Point; 4] {
     // Measured from the trimmed edge, not from the media: a caption placed
     // 5 mm from the media edge comes back from the press 5 mm minus the bleed
     // from the cut, and every supplier's safe zone rejects it. Anchored here,
-    // the baseline clears 7 mm on a 210 mm page — past Cloudprinter's 5 and
-    // Prodigi's 6.35.
+    // the baseline clears 7 mm on a 210 mm page: past Cloudprinter's 5, which
+    // is the supplier the album is composed for. Prodigi wants 10 and its
+    // preflight says so; that is the fallback profile speaking, not a bug.
     let low = g.bleed + g.margin * CAPTION_SAFE;
     let high = g.media_h - g.bleed - g.margin * 0.75;
     let left = g.bleed + g.margin * 0.57;
@@ -381,10 +382,11 @@ pub fn caption_anchor(rects: &[Rect], g: &SpreadGeometry) -> Point {
 }
 
 /// Share of the margin kept between a chapter caption and the trimmed edge.
-/// 7 mm on a 210 mm page: the widest safe zone among the suppliers we
-/// actually target. Lulu asks for 12.7 and is flagged by the preflight
-/// instead — composing for the strictest profile of all would push every
-/// caption into the middle of the page.
+/// 7 mm on a 210 mm page: clear of Cloudprinter's 5 mm safe zone, the
+/// supplier the album is composed for. Stricter fallbacks (Prodigi at 10,
+/// Lulu at 12.7) are flagged by their own preflight instead: composing for
+/// the strictest profile of all would push every caption into the middle of
+/// the page.
 pub const CAPTION_SAFE: f64 = 0.5;
 
 /// Photo captions: 7 pt, baseline this far under the slot's bottom edge.

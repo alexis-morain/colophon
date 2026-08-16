@@ -231,7 +231,7 @@ static PROFILS: &[PrinterProfile] = &[
         certitude: Certitude::Provisoire,
         reserves: &[
             "bornes du SKU carré 210 × 210 : le 294 × 294 s'arrête à 298 pages, un autre produit aura d'autres bornes",
-            "leur compte de pages inclut la couverture, or l'export d'un fichier unique ne la contient pas encore",
+            "profil de repli, non livrable en l'état : notre intérieur sort en planches doubles et leur reliure lit une page de PDF par page de livre, le prévol le refuse (règle planches_doubles)",
             "ils recommandent un contrôle X-4 en FOGRA39 tout en demandant des images RVB : notre intention de sortie reste sRGB",
         ],
     },

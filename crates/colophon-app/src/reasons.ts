@@ -1,4 +1,4 @@
-// The nine discard reasons, named once. Every screen that speaks of a
+// The ten discard reasons, named once. Every screen that speaks of a
 // discard (sorting view, end-of-build report, drawer, keyboard review)
 // reads this table: one wording, one order, no drift between surfaces.
 
@@ -13,6 +13,8 @@ export const REASONS: [string, string][] = [
   ["panorama", "Panoramas : trop larges pour une page"],
   ["definition", "Définition trop faible pour ce format"],
   ["parasite", "Parasites : captures, images reçues"],
+  // No thumbnail exists for these, the review shows the file name alone.
+  ["illisible", "Illisibles : fichiers endommagés ou tronqués"],
 ];
 
 const BY_KEY = new Map(REASONS);

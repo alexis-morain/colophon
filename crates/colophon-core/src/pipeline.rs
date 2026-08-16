@@ -125,11 +125,23 @@ pub fn split_junk(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
     })
 }
 
+/// Below this many decodable photos, the statistical curation loses its
+/// meaning: on three photos, "same scene within fifteen minutes" eats two
+/// of them. Under the threshold, `build` keeps only the certain rejects
+/// (unreadable file, true duplicate, too small to print), switches the
+/// statistical filters off, and sizes the album on the photos it has.
+pub const PETIT_DOSSIER: usize = 25;
+
 /// Collapse bursts and near-duplicates, keeping the best-scored photo of
 /// each run. Looks back over the last few kept photos so that an
 /// alternating burst (dark/bright/dark) still collapses.
 /// Also returns who lost against whom, for `curation.json`.
-pub fn dedup(mut photos: Vec<Photo>) -> (Vec<Photo>, Vec<DropPair>) {
+///
+/// With `certains_seulement`, only the two certain rules fire: a burst
+/// (seconds apart and visually close) and a twin (near-identical whatever
+/// the clock says). The two same-scene windows are judgement calls tuned on
+/// large sets, and a small folder cannot afford a judgement call.
+pub fn dedup(mut photos: Vec<Photo>, certains_seulement: bool) -> (Vec<Photo>, Vec<DropPair>) {
     photos.sort_by_key(|p| p.meta.taken);
     let mut out: Vec<Photo> = Vec::with_capacity(photos.len());
     let mut drops: Vec<DropPair> = Vec::new();
@@ -141,9 +153,10 @@ pub fn dedup(mut photos: Vec<Photo>) -> (Vec<Photo>, Vec<DropPair>) {
             let dist = hamming(p.analysis.dhash, prev.analysis.dhash);
             let cdist = color_distance(&p.analysis.colorsig, &prev.analysis.colorsig);
             (dt <= BURST_GAP_SECONDS && dist <= BURST_HAMMING)
-                || (dt <= SCENE_GAP_SECONDS && dist <= SCENE_HAMMING)
-                || (dt <= SCENE_GAP_SECONDS && dist <= 22 && cdist <= 12)
                 || (dist <= TWIN_HAMMING && cdist <= TWIN_COLOR)
+                || (!certains_seulement
+                    && ((dt <= SCENE_GAP_SECONDS && dist <= SCENE_HAMMING)
+                        || (dt <= SCENE_GAP_SECONDS && dist <= 22 && cdist <= 12)))
         });
         match dup_of {
             Some(i) => {

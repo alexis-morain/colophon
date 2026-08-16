@@ -251,7 +251,24 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         ));
     }
 
-    let (photos, junk) = pipeline::split_junk(photos);
+    // A small folder gets a smaller curation. The statistical filters
+    // (parasite, same-moment, scene windows) are tuned on hundreds of
+    // photos; under the threshold they eat the album instead of trimming
+    // it, so only the certain rejects apply and the spread budget follows
+    // the photos that are actually there.
+    let petit = photos.len() + rejected.len() < pipeline::PETIT_DOSSIER;
+    if petit {
+        say(&format!(
+            "petit dossier ({} photos) : seuls les rejets certains s'appliquent",
+            photos.len()
+        ));
+    }
+
+    let (photos, junk) = if petit {
+        (photos, Vec::new())
+    } else {
+        pipeline::split_junk(photos)
+    };
     if !junk.is_empty() {
         say(&format!(
             "junk: {} photos without EXIF date or GPS excluded (screenshots, forwards)",
@@ -305,7 +322,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         focal: focal_of(&p.path),
     }));
 
-    let (kept, dups) = pipeline::dedup(photos);
+    let (kept, dups) = pipeline::dedup(photos, petit);
     say(&format!("dedup: {} kept", kept.len()));
     discards.extend(dups.iter().map(|(lost, won)| model::Discard {
         src: rel(lost),
@@ -314,7 +331,16 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         focal: focal_of(lost),
     }));
 
-    let spreads_target = opts.spreads.max(8);
+    // A small folder aims the album at the photos it has, not at the 48
+    // spreads the caller asked for: three photos are one spread, not a
+    // request the composer chases across five attempts.
+    let spreads_target = if petit {
+        (kept.len() * 10)
+            .div_ceil(opts.densite.photos_per_spread_x10())
+            .max(1)
+    } else {
+        opts.spreads.max(8)
+    };
     // A chapter costs a dedicated opening page: too many chapters and the
     // album turns into a procession of solos.
     let max_chapters = (spreads_target / 4).clamp(4, 20);
@@ -323,7 +349,13 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     let natural = chapters.len();
     let mut base = pipeline::merge_chapters(chapters, max_chapters);
     let twins: Vec<_> = base.iter_mut().flat_map(pipeline::thin_twins).collect();
-    let moments: Vec<_> = base.iter_mut().flat_map(pipeline::cap_moments).collect();
+    // Same-moment capping is a statistical filter: off on small folders,
+    // where three frames of one minute may be the whole event.
+    let moments: Vec<_> = if petit {
+        Vec::new()
+    } else {
+        base.iter_mut().flat_map(pipeline::cap_moments).collect()
+    };
     if !twins.is_empty() || !moments.is_empty() {
         say(&format!(
             "thinning: {} near-identical frames, {} extra frames of the same moment",
@@ -348,21 +380,33 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     // orientation and their scores, so the budget is aimed rather than
     // computed: compose, measure, correct. Composition costs nothing, no
     // image is touched here.
+    // On a small folder the correction loop is off with the other
+    // statistical filters: chasing a spread target by trimming photos is
+    // how three photos become one planche. One pass, every photo placed,
+    // and the album is as long as it is.
     anyhow::ensure!(!cancelled(), "composition annulée");
     let mut album = model::Album::new(&title, &root, opts.trim);
     album.cover = opts.cover.clone();
     album.densite = opts.densite;
-    let mut budget = spreads_target * opts.densite.photos_per_spread_x10() / 10;
+    let total_kept: usize = base.iter().map(|c| c.photos.len()).sum();
+    let mut budget = if petit {
+        total_kept
+    } else {
+        spreads_target * opts.densite.photos_per_spread_x10() / 10
+    };
+    let attempts = if petit { 1 } else { 5 };
     let mut photos_kept = 0;
     // Keep the attempt closest to the target: on fragmented sets the
     // spread count can refuse to follow the budget, and the last attempt
     // is then the worst one, not the best.
     let mut best: Option<(usize, Vec<model::Spread>, usize)> = None;
-    for attempt in 0..5 {
+    for attempt in 0..attempts {
         let mut trial = base.clone();
-        let caps = pipeline::allocate_budget(&trial, budget);
-        for (c, cap) in trial.iter_mut().zip(caps) {
-            pipeline::cap_chapter(c, cap);
+        if !petit {
+            let caps = pipeline::allocate_budget(&trial, budget);
+            for (c, cap) in trial.iter_mut().zip(caps) {
+                pipeline::cap_chapter(c, cap);
+            }
         }
         let kept = trial.iter().map(|c| c.photos.len()).sum();
 
@@ -382,7 +426,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         if best.as_ref().is_none_or(|(b, _, _)| off < *b) {
             best = Some((off, spreads, kept));
         }
-        if off <= 6 || attempt == 4 || got == 0 {
+        if off <= 6 || attempt == attempts - 1 || got == 0 {
             break;
         }
         // Aim the next budget at the target, damped so it cannot oscillate,
@@ -799,6 +843,102 @@ mod tests {
         assert!(msg.contains("écartées"), "{msg}");
         assert!(msg.contains("illisible"), "le compte des illisibles manque : {msg}");
         rien_d_ecrit(&out);
+    }
+
+    /// A printable JPEG: 2000 px holds even a full page of 21 cm at 260 ppi,
+    /// so every template is open to it, and genuinely distinct per seed. The
+    /// perceptual hashes see an image as a tiny grid, so the picture IS a
+    /// tiny grid: an 8 × 8 board of pseudo-random colour cells. Two boards
+    /// from two seeds land ~32 dHash bits apart, beyond every duplicate
+    /// threshold including the composer's own 24-bit rule. Anything with
+    /// repeated structure (stripes, bands) collapses to the same hash.
+    /// Files are stamped an hour apart so they are not one burst.
+    fn jpeg_imprimable(path: &Path, seed: u32) {
+        let mut rng = seed.wrapping_mul(2654435761).wrapping_add(97);
+        let mut cells = [[0u8; 3]; 64];
+        for c in cells.iter_mut() {
+            for ch in c.iter_mut() {
+                rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                *ch = (rng >> 24) as u8;
+            }
+        }
+        let img = image::RgbImage::from_fn(2000, 2000, |x, y| {
+            image::Rgb(cells[((y / 250).min(7) * 8 + (x / 250).min(7)) as usize])
+        });
+        img.save(path).unwrap();
+        let f = fs::File::options().write(true).open(path).unwrap();
+        let t = std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::from_secs(1_700_000_000 + u64::from(seed) * 3600);
+        f.set_modified(t).unwrap();
+    }
+
+    /// Chantier 6, the 16/08 case: three photos used to lose two to the
+    /// « parasite » filter and make a one-spread album. A small folder now
+    /// keeps only the certain rejects: the three photos are all in the book.
+    #[test]
+    fn trois_photos_font_un_petit_album_complet() {
+        let (photos, out) = dossier_test("trois");
+        for i in 0..3 {
+            jpeg_imprimable(&photos.join(format!("photo-{i}.jpg")), i);
+        }
+        let report = build_album(&photos, &out, BuildOptions::default())
+            .expect("trois photos font un album, pas un refus");
+        let slots: usize =
+            report.album.spreads.iter().map(|s| s.slots.len()).sum();
+        assert_eq!(slots, 3, "les trois photos sont dans l'album");
+        assert!(
+            (1..=3).contains(&report.album.spreads.len()),
+            "{} planches pour 3 photos",
+            report.album.spreads.len()
+        );
+        assert!(out.join("album.pdf").exists());
+    }
+
+    /// Ten photos: the album is sized on the folder, not on the 48 spreads
+    /// asked by default. Every photo lands.
+    #[test]
+    fn dix_photos_font_un_album_proportionne() {
+        let (photos, out) = dossier_test("dix");
+        for i in 0..10 {
+            jpeg_imprimable(&photos.join(format!("photo-{i}.jpg")), i);
+        }
+        let report = build_album(&photos, &out, BuildOptions::default())
+            .expect("dix photos font un album");
+        let slots: usize =
+            report.album.spreads.iter().map(|s| s.slots.len()).sum();
+        assert_eq!(slots, 10, "les dix photos sont dans l'album");
+        assert!(
+            (2..=6).contains(&report.album.spreads.len()),
+            "{} planches pour 10 photos",
+            report.album.spreads.len()
+        );
+    }
+
+    /// The threshold itself, tested through the refusal messages so it costs
+    /// nothing: EXIF-less tiny photos die of « definition » below 25 (the
+    /// parasite filter is off) and of « parasite » at 25 (it is back on).
+    #[test]
+    fn la_bascule_du_petit_dossier_est_a_25_photos() {
+        let (photos, out) = dossier_test("bascule24");
+        for i in 0..24 {
+            petit_jpeg(&photos.join(format!("p-{i}.jpg")), i);
+        }
+        let err = build_album(&photos, &out, BuildOptions::default())
+            .err()
+            .expect("tout est trop petit pour imprimer");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("definition"), "{msg}");
+        assert!(!msg.contains("parasite"), "à 24, le filtre parasite est coupé : {msg}");
+
+        let (photos, out) = dossier_test("bascule25");
+        for i in 0..25 {
+            petit_jpeg(&photos.join(format!("p-{i}.jpg")), i);
+        }
+        let err = build_album(&photos, &out, BuildOptions::default())
+            .err()
+            .expect("tout est écarté");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("parasite"), "à 25, le filtre parasite revient : {msg}");
     }
 
     /// Every save keeps one step back: album.json.bak carries the previous

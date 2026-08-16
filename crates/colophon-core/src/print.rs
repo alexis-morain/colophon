@@ -5,7 +5,8 @@
 //! upscaled (missing pixels cannot be invented).
 
 use crate::model::Album;
-use crate::{meta, pdf, thumb};
+use crate::printer::{Fichiers, PrinterProfile};
+use crate::{cover, meta, pdf, thumb};
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -106,8 +107,14 @@ pub type CancelFlag<'a> = &'a (dyn Fn() -> bool + Sync);
 ///
 /// Unlike the preview render this fails loudly on any missing or unreadable
 /// original: a print file with a silently skipped page costs a reprint.
+///
+/// The supplier profile decides whether the cover travels in this file. Those
+/// who bind two files get the interior alone and their sheet from
+/// [`cover::render_cover_pdf`]; those who bind one get the front cover as the
+/// first page and the back cover as the last.
 pub fn render_print_pdf(
     dir: &Path,
+    profil: &PrinterProfile,
     out: &Path,
     progress: &dyn Fn(&str),
     cancel: CancelFlag,
@@ -132,6 +139,18 @@ pub fn render_print_pdf(
     let total: usize = album.spreads.iter().map(|s| s.slots.len()).sum();
     let mut done = 0usize;
     let mut writer = pdf::PdfWriter::new(&album);
+
+    // A supplier that binds a single file reads the first page of it as the
+    // front cover and the last as the back. Sending them the interior alone
+    // does not fail: it shifts the whole book by one page and comes back
+    // bound that way, which is the one kind of mistake this file cannot
+    // afford to make quietly.
+    let couverture_incluse = profil.fichiers == Fichiers::Un;
+    if couverture_incluse {
+        progress("cover: première de couverture");
+        cover::add_cover_page(&mut writer, &album, profil, cover::Face::Premiere)?;
+    }
+
     for (i, spread) in album.spreads.iter().enumerate() {
         let rects = pdf::slots_for(&spread.template, spread.slots.len(), &g);
         let mut assets = Vec::with_capacity(spread.slots.len());
@@ -148,6 +167,11 @@ pub fn render_print_pdf(
         writer.add_spread(spread, &assets)?;
     }
     anyhow::ensure!(!cancel(), "export annulé");
+
+    if couverture_incluse {
+        progress("cover: quatrième de couverture");
+        cover::add_cover_page(&mut writer, &album, profil, cover::Face::Quatrieme)?;
+    }
 
     // Temp file then rename: a crash mid-write never leaves a truncated PDF
     // where the caller will look for a finished one.
@@ -207,14 +231,17 @@ mod tests {
         });
         fs::write(dir.join("album.json"), serde_json::to_string(&album).unwrap()).unwrap();
 
+        // A two-file supplier, so this test stays about the interior render
+        // and nothing else.
+        let profil = PrinterProfile::par_id("cloudprinter").unwrap();
         let out = dir.join("out.pdf");
-        let err = render_print_pdf(&dir, &out, &|_| {}, &|| true).unwrap_err();
+        let err = render_print_pdf(&dir, profil, &out, &|_| {}, &|| true).unwrap_err();
         assert!(err.to_string().contains("annulé"), "{err}");
         assert!(!out.exists(), "un export annulé ne doit rien écrire");
         assert!(!out.with_extension("pdf.part").exists(), "pas de .part orphelin");
 
         // Same folder, no cancellation: the file lands, atomically.
-        render_print_pdf(&dir, &out, &|_| {}, &|| false).unwrap();
+        render_print_pdf(&dir, profil, &out, &|_| {}, &|| false).unwrap();
         assert!(out.exists());
         assert!(!out.with_extension("pdf.part").exists());
         fs::remove_dir_all(&dir).ok();

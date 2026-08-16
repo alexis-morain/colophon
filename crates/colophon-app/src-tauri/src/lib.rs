@@ -413,6 +413,7 @@ async fn export_pdf(
         let interior = Path::new(&dest);
         colophon_core::render_print_pdf(
             &dir,
+            profil,
             interior,
             &|line| {
                 let _ = app.emit("export:progress", line);

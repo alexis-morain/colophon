@@ -197,19 +197,132 @@ pub fn photo_rect(g: &CoverGeometry) -> Rect {
     }
 }
 
+/// Which face of the cover a single leaf carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Face {
+    /// Première de couverture: the photo, the title, the subtitle.
+    Premiere,
+    /// Quatrième de couverture: the dedication, and nothing else.
+    Quatrieme,
+}
+
+/// The cover as a single leaf, for a supplier that binds one file and reads
+/// its first and last page as the cover.
+///
+/// Not a flat sheet cut in two. A leaf is trimmed on all four sides and has
+/// no fold, so there is no spine here and no spine-side edge to protect: the
+/// supplier wraps the boards themselves and the width they need is theirs to
+/// know, which is exactly why they ask for a single file.
+pub fn page_geometry(album: &Album, profil: &PrinterProfile, face: Face) -> CoverGeometry {
+    let b = &profil.bleed_mm;
+    let (ext, haut, bas) = (b.exterieur, b.haut, b.bas);
+    let media_w = album.trim_mm.w + ext * 2.0;
+    let media_h = album.trim_mm.h + haut + bas;
+    let panel = Rect { x: ext, y: bas, w: album.trim_mm.w, h: album.trim_mm.h };
+    // The face this leaf does not carry is given no surface at all, so a
+    // caller that draws the wrong one draws nothing rather than something in
+    // the wrong corner.
+    let absent = Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 };
+    let (back, front) = match face {
+        Face::Premiere => (absent, panel),
+        Face::Quatrieme => (panel, absent),
+    };
+
+    CoverGeometry {
+        media_w,
+        media_h,
+        bleed_ext: ext,
+        bleed_haut: haut,
+        bleed_bas: bas,
+        back,
+        spine: None,
+        front,
+        safe: profil.safe_mm,
+    }
+}
+
+/// Draw one cover face as the next page of `writer`.
+///
+/// The same title, photo and dedication the flat sheet carries, on a leaf
+/// instead of a panel. Called by the interior render for the suppliers that
+/// take a single file, so that the first page of that file is the front
+/// cover and the last is the back.
+pub(crate) fn add_cover_page(
+    writer: &mut PdfWriter,
+    album: &Album,
+    profil: &PrinterProfile,
+    face: Face,
+) -> Result<()> {
+    let g = page_geometry(album, profil, face);
+    let cover = album.cover.clone().unwrap_or(Cover {
+        title: album.title.clone(),
+        subtitle: String::new(),
+        photo: None,
+        back_text: String::new(),
+    });
+
+    let mut content = String::new();
+    let mut xobjects = lopdf::dictionary! {};
+
+    match face {
+        Face::Premiere => {
+            // On a leaf the photo bleeds on all four sides: there is no fold
+            // to stop it at.
+            if let Some(slot) = &cover.photo {
+                let root = std::path::PathBuf::from(&album.root);
+                anyhow::ensure!(
+                    root.is_dir(),
+                    "dossier de photos introuvable : {} (déplacé ou disque absent ?)",
+                    root.display()
+                );
+                let src = root.join(&slot.src);
+                let rect = Rect { x: 0.0, y: 0.0, w: g.media_w, h: g.media_h };
+                let orientation = meta::read(&src).orientation;
+                let asset = print::print_asset(&src, orientation, &rect, slot.focal, slot.zoom)
+                    .with_context(|| format!("photo de couverture : {}", slot.src))?;
+                writer.draw_image(&mut content, &mut xobjects, 0, &asset, &rect);
+            }
+            draw_front(&mut content, &g, album, &cover);
+        }
+        Face::Quatrieme => draw_back(&mut content, &g, album, &cover),
+    }
+
+    writer.add_page(
+        Boxes { media: [g.media_w, g.media_h], trim: g.trim() },
+        content,
+        xobjects,
+    );
+    Ok(())
+}
+
 /// Type on the three panels. Sizes scale with the page so a 30 × 30 album
 /// does not wear a 21 × 21 album's title.
+///
+/// The three faces draw separately because they do not always share a sheet:
+/// a supplier that binds a single file gets the front and the back as two
+/// leaves of the interior, with no spine between them.
 fn draw_text(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cover) {
+    draw_front(content, g, album, cover);
+    draw_spine(content, g, album, cover);
+    draw_back(content, g, album, cover);
+}
+
+/// The title of the album, whether or not the cover editor has been opened.
+fn cover_title<'a>(album: &'a Album, cover: &'a Cover) -> &'a str {
+    if cover.title.is_empty() { album.title.as_str() } else { cover.title.as_str() }
+}
+
+/// Front: title block, bottom left, inside the trim by the same share the
+/// editor shows. Baselines stack upward from the subtitle.
+fn draw_front(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cover) {
     let scale = album.trim_mm.w / 210.0;
     let title_pt = TITLE_PT_AT_210 * scale;
     let subtitle_pt = SUBTITLE_PT_AT_210 * scale;
     let over_photo = cover.photo.is_some();
 
-    // Front: title block, bottom left, inside the trim by the same share the
-    // editor shows. Baselines stack upward from the subtitle.
     let x = g.front.x + g.front.w * TITLE_INSET;
     let y = g.front.y + g.front.h * TITLE_INSET;
-    let title = if cover.title.is_empty() { album.title.as_str() } else { cover.title.as_str() };
+    let title = cover_title(album, cover);
     let (subtitle_y, title_y) = if cover.subtitle.is_empty() {
         (y, y)
     } else {
@@ -217,11 +330,15 @@ fn draw_text(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cov
     };
     plate(content, x, subtitle_y, subtitle_pt, over_photo, &cover.subtitle);
     plate(content, x, title_y, title_pt, over_photo, title);
+}
 
-    // Spine: the title along the fold, running bottom to top, centred. Only
-    // when there is a surface to print on.
+/// Spine: the title along the fold, running bottom to top, centred. Only when
+/// there is a surface to print on, and never on a single leaf.
+fn draw_spine(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cover) {
+    let scale = album.trim_mm.w / 210.0;
     if let Some(spine) = &g.spine {
         if spine.w >= SPINE_TEXT_MIN_MM {
+            let title = cover_title(album, cover);
             let size = SPINE_PT_AT_210 * scale;
             let width = font::text_width_mm(title, size);
             let cx = spine.x + spine.w / 2.0 - size * PT_TO_MM * 0.35;
@@ -229,10 +346,13 @@ fn draw_text(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cov
             rotated(content, cx, cy, size, pdf::TEXT_INK, title);
         }
     }
+}
 
-    // Back: the quatrième, wrapped to the panel and centred in it, the way
-    // the cover editor shows it. A dedication is a short block on a wide
-    // white page; ranged left in a corner it reads like a caption.
+/// Back: the quatrième, wrapped to the panel and centred in it, the way the
+/// cover editor shows it. A dedication is a short block on a wide white page;
+/// ranged left in a corner it reads like a caption.
+fn draw_back(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cover) {
+    let scale = album.trim_mm.w / 210.0;
     if !cover.back_text.is_empty() {
         let size = BACK_TEXT_PT_AT_210 * scale;
         let box_w = g.back.w - 2.0 * (g.back.w * TITLE_INSET);
@@ -370,7 +490,16 @@ mod tests {
         let cp = PrinterProfile::par_id("cloudprinter").unwrap();
         let thin = geometry(&album_de(20), cp);
         let fat = geometry(&album_de(90), cp);
-        assert!(fat.media_w > thin.media_w + 10.0, "{} vs {}", fat.media_w, thin.media_w);
+        // The extra width is the extra spine, no more and no less: pinning a
+        // millimetre count here would only pin the coefficient of the day.
+        let attendu = cp.dos_mm(180, GRAMMAGE_DEFAUT).unwrap() - cp.dos_mm(40, GRAMMAGE_DEFAUT).unwrap();
+        assert!(attendu > 0.0, "un dos qui ne grossit pas ne se calcule pas");
+        assert!(
+            (fat.media_w - thin.media_w - attendu).abs() < 1e-9,
+            "{} vs {}, écart attendu {attendu}",
+            fat.media_w,
+            thin.media_w
+        );
         assert!((fat.media_h - thin.media_h).abs() < 1e-9, "la hauteur ne bouge pas");
     }
 
@@ -480,6 +609,102 @@ mod tests {
         let trim = mm(b"TrimBox");
         assert!((trim[0] - 3.0).abs() < 0.01, "{trim:?}");
         assert!((media[2] - trim[2] - 3.0).abs() < 0.01, "{trim:?}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A leaf is one panel, trimmed on four sides, with no spine and no fold.
+    /// The face it does not carry gets no surface, so nothing of the back
+    /// cover can land on the front.
+    #[test]
+    fn a_cover_leaf_is_one_panel_and_no_spine() {
+        let a = album_de(24);
+        let pr = PrinterProfile::par_id("prodigi").unwrap();
+
+        let devant = page_geometry(&a, pr, Face::Premiere);
+        assert!(devant.spine.is_none(), "une feuille volante n'a pas de dos");
+        // Prodigi builds the bleed itself: the leaf is the finished page.
+        assert!((devant.media_w - 210.0).abs() < 1e-9, "{}", devant.media_w);
+        assert!((devant.media_h - 210.0).abs() < 1e-9, "{}", devant.media_h);
+        assert!((devant.front.w - 210.0).abs() < 1e-9);
+        assert_eq!(devant.back.w, 0.0, "la quatrième n'est pas sur cette feuille");
+
+        let derriere = page_geometry(&a, pr, Face::Quatrieme);
+        assert!((derriere.back.w - 210.0).abs() < 1e-9);
+        assert_eq!(derriere.front.w, 0.0, "la première n'est pas sur cette feuille");
+
+        // A profile that asks for bleed gets it on all four edges, because a
+        // leaf is cut on all four: this is not half a flat sheet.
+        let gen = PrinterProfile::par_id("generique").unwrap();
+        let g = page_geometry(&a, gen, Face::Premiere);
+        assert!((g.media_w - (210.0 + 6.0)).abs() < 1e-9, "{}", g.media_w);
+        assert!((g.media_h - (210.0 + 6.0)).abs() < 1e-9, "{}", g.media_h);
+    }
+
+    /// The one that matters: a supplier who binds a single file must find the
+    /// front cover on page one and the back cover on the last page. Sending
+    /// the interior alone binds the whole book one page out of place, and the
+    /// file is valid, so nothing but this test catches it.
+    #[test]
+    fn a_single_file_supplier_gets_the_cover_inside_the_interior() {
+        // Its own name: `colophon-print-` is already taken by a print.rs test
+        // that removes the folder while this one is still writing into it.
+        let dir = std::env::temp_dir().join(format!("colophon-couv-int-{}", std::process::id()));
+        let photos = dir.join("photos");
+        fs::create_dir_all(&photos).unwrap();
+        let img = image::RgbImage::from_pixel(2400, 1600, image::Rgb([70, 110, 160]));
+        image::DynamicImage::ImageRgb8(img)
+            .save_with_format(photos.join("a.jpg"), image::ImageFormat::Jpeg)
+            .unwrap();
+
+        let mut album = album_de(4);
+        album.root = photos.to_string_lossy().to_string();
+        for spread in &mut album.spreads {
+            spread.slots = vec![crate::model::Slot::new("a.jpg".into(), [0.5, 0.5])];
+        }
+        album.cover = Some(Cover {
+            title: "Corse".into(),
+            subtitle: "septembre 2013".into(),
+            photo: Some(crate::model::Slot::new("a.jpg".into(), [0.5, 0.42])),
+            back_text: "Trois semaines sur la côte est.".into(),
+        });
+        fs::write(dir.join("album.json"), serde_json::to_string(&album).unwrap()).unwrap();
+
+        let largeurs = |profil: &'static PrinterProfile, nom: &str| -> Vec<f64> {
+            let out = dir.join(format!("album-print-{nom}.pdf"));
+            print::render_print_pdf(&dir, profil, &out, &|_| {}, &|| false).expect("rendu");
+            let doc = lopdf::Document::load(&out).expect("relecture");
+            let pages = doc.get_pages();
+            let mut ids: Vec<_> = pages.iter().collect();
+            ids.sort_by_key(|(n, _)| **n);
+            ids.iter()
+                .map(|(_, id)| {
+                    let page = doc.get_object(**id).unwrap().as_dict().unwrap();
+                    let media = page.get(b"MediaBox").unwrap().as_array().unwrap();
+                    f64::from(media[2].as_float().unwrap()) * 25.4 / 72.0
+                })
+                .collect()
+        };
+
+        // Prodigi: four spreads between two cover leaves. The leaves are one
+        // page wide, the spreads two, and that difference is what says the
+        // covers are covers and not the first and last plate of the book.
+        let pr = largeurs(PrinterProfile::par_id("prodigi").unwrap(), "prodigi");
+        assert_eq!(pr.len(), 6, "4 planches plus les deux couvertures : {pr:?}");
+        assert!((pr[0] - 210.0).abs() < 0.01, "première de couverture : {pr:?}");
+        assert!((pr[5] - 210.0).abs() < 0.01, "quatrième de couverture : {pr:?}");
+        // The spreads keep the album's own bleed, which is not yet the
+        // profile's: a leaf at 210 next to a spread at 426 is the file saying
+        // out loud that the interior does not answer to the supplier the way
+        // the cover now does.
+        for (i, w) in pr[1..5].iter().enumerate() {
+            assert!((w - 426.0).abs() < 0.01, "planche {} : {pr:?}", i + 1);
+        }
+
+        // Cloudprinter binds two files, so its interior stays an interior.
+        let cp = largeurs(PrinterProfile::par_id("cloudprinter").unwrap(), "cloudprinter");
+        assert_eq!(cp.len(), 4, "l'intérieur seul, la couverture est son fichier : {cp:?}");
+        assert!(cp.iter().all(|w| (w - 426.0).abs() < 0.01), "{cp:?}");
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -246,6 +246,9 @@ export type Printer = {
   bleed_mm: { haut: number; bas: number; exterieur: number; dos: number };
   safe_mm: number;
   fichiers: "un" | "deux";
+  /** The supplier reads one PDF page as one book page, which our
+   *  spread-composed interior does not do yet. */
+  pages_simples: boolean;
   dos: { mode: "fourni" } | { mode: "calcule"; mm_par_feuille: number; constante_mm: number; certitude: Certitude };
   pages_min: number;
   pages_max: number;
@@ -275,6 +278,9 @@ export type Fiche = {
   format_page_mm: [number, number];
   planches: number;
   pages_interieur: number;
+  /** Pages in the delivered PDF, cover leaves included when there is one
+   *  file: the count to declare at the order. */
+  pages_fichier: number;
   fond_perdu_mm: { haut: number; bas: number; exterieur: number; dos: number };
   zone_sure_mm: number;
   espace: "rgb" | "fogra39";

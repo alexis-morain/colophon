@@ -46,6 +46,11 @@ pub struct Fiche {
     pub format_page_mm: [f64; 2],
     pub planches: usize,
     pub pages_interieur: usize,
+    /// Pages in the delivered PDF: the interior, plus the two cover leaves
+    /// when the supplier binds a single file. This is the number that gets
+    /// declared at the order, and Prodigi holds an order whose declared count
+    /// disagrees with the file it received.
+    pub pages_fichier: usize,
     pub fond_perdu_mm: crate::printer::Bleed,
     pub zone_sure_mm: f64,
     pub espace: Espace,
@@ -124,18 +129,24 @@ pub fn check(
     let mut notes: Vec<String> = Vec::new();
     let g = pdf::geometry(album);
     let pages = album.spreads.len() * 2;
+    // What the supplier counts is the file, not the book block. A supplier
+    // who binds one file finds the cover in it, two pages the interior does
+    // not have, and their bounds are written against that total. Two is also
+    // the number that has to be declared at the order, and Prodigi puts an
+    // order on hold when it disagrees with the file.
+    let pages_fichier = pages + if profil.fichiers == Fichiers::Un { 2 } else { 0 };
 
     // 1. Pagination. A binding folds sheets: an odd count does not exist, and
     // every press has a range it will not leave.
-    if !profil.pagination_ok(pages) {
-        let cause = if pages % profil.pas_pagination != 0 {
+    if !profil.pagination_ok(pages_fichier) {
+        let cause = if pages_fichier % profil.pas_pagination != 0 {
             format!(
-                "l'intérieur fait {pages} pages, or {} ne relie que des multiples de {}",
+                "le fichier fait {pages_fichier} pages, or {} ne relie que des multiples de {}",
                 profil.nom, profil.pas_pagination
             )
         } else {
             format!(
-                "l'intérieur fait {pages} pages, hors des bornes de {} ({} à {})",
+                "le fichier fait {pages_fichier} pages, hors des bornes de {} ({} à {})",
                 profil.nom, profil.pages_min, profil.pages_max
             )
         };
@@ -150,6 +161,31 @@ pub fn check(
                 "ajoutez ou retirez des planches : une planche vaut deux pages, il en faut entre {} et {}",
                 profil.pages_min / 2,
                 profil.pages_max / 2
+            ),
+        });
+    }
+
+    // 1 bis. One PDF page, one book page. A supplier who binds a single file
+    // reads it that way, and our interior is composed of spreads: two book
+    // pages to the PDF page. The cover leaves now travel in the file, but
+    // between them the book still describes itself at half length, and no
+    // page count can be right for both the book and the file until the
+    // interior is emitted page by page.
+    if profil.pages_simples {
+        defauts.push(Defaut {
+            regle: "planches_doubles",
+            bloquant: true,
+            planche: None,
+            case_idx: None,
+            src: None,
+            cause: format!(
+                "l'intérieur est rendu en {} planches doubles, or {} relie une page de PDF par page de livre : le fichier décrit un livre de {} pages au lieu de {pages}",
+                album.spreads.len(),
+                profil.nom,
+                album.spreads.len()
+            ),
+            remede: format!(
+                "choisissez un imprimeur qui relie deux fichiers, ou attendez le rendu page par page ; la couverture, elle, voyage bien en première et dernière page ({pages_fichier} pages de livre)"
             ),
         });
     }
@@ -311,6 +347,7 @@ pub fn check(
             format_page_mm: [album.trim_mm.w, album.trim_mm.h],
             planches: album.spreads.len(),
             pages_interieur: pages,
+            pages_fichier,
             fond_perdu_mm: profil.bleed_mm,
             zone_sure_mm: profil.safe_mm,
             espace: profil.espace,
@@ -395,10 +432,16 @@ mod tests {
             .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
             .collect();
 
-        // Prodigi generates the bleed itself and takes 24 pages: nothing about
-        // the album bothers it, and it builds its own cover.
+        // Prodigi generates the bleed itself and takes 24 pages: nothing in
+        // the album's own numbers bothers it. What stops it is the shape of
+        // the interior, and that is the only thing it reports.
         let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims);
-        assert!(r.ok, "{:?}", r.defauts);
+        assert_eq!(
+            r.defauts.iter().map(|d| d.regle).collect::<Vec<_>>(),
+            vec!["planches_doubles"],
+            "{:?}",
+            r.defauts
+        );
 
         // Cloudprinter wants 3 mm of bleed we did not render: blocked.
         let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
@@ -410,6 +453,32 @@ mod tests {
         assert!(!r.ok);
         assert!(r.defauts.iter().any(|d| d.regle == "espace"));
         assert!(r.defauts.iter().any(|d| d.regle == "pagination"));
+    }
+
+    /// A supplier who binds one file counts the cover in it. Eleven spreads
+    /// make a 22-page book block and a 24-page file, which is exactly their
+    /// minimum: counting the block instead would refuse an album they accept,
+    /// and the same two pages the other way round would put a real order on
+    /// hold for a count that disagrees with the file.
+    #[test]
+    fn a_single_file_supplier_counts_its_cover() {
+        let dims: HashMap<String, (u32, u32)> = (0..11)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        let a = album_de(11, 0.0); // 22 pages inside, 24 in the file
+        let pr = PrinterProfile::par_id("prodigi").unwrap();
+        let r = check(&a, pr, &dims);
+        assert!(
+            !r.defauts.iter().any(|d| d.regle == "pagination"),
+            "24 pages de fichier tiennent dans les bornes : {:?}",
+            r.defauts
+        );
+
+        // Cloudprinter binds the cover separately, so 22 stays 22, under its
+        // own minimum of 24.
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let d = r.defauts.iter().find(|d| d.regle == "pagination").unwrap();
+        assert!(d.cause.contains("22 pages"), "{}", d.cause);
     }
 
     /// An odd page count cannot be bound, and the message says so in words.

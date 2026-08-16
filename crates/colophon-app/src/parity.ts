@@ -50,7 +50,7 @@ type Dump = {
  *  a profile whose coefficient changes has to break this file too. */
 const PARITY_DOS: Record<string, { dos: DosProfil; ext: number; haut: number; bas: number }> = {
   cloudprinter: {
-    dos: { mode: "calcule", mm_par_feuille: 0.22, constante_mm: 1.5 },
+    dos: { mode: "calcule", mm_par_feuille: 0.12, constante_mm: 6.0 },
     ext: 3,
     haut: 3,
     bas: 3,

@@ -84,7 +84,7 @@ export function EnvoiView({
               {report.fiche.planches} planches, {report.fiche.pages_interieur}{" "}
               pages, {report.fiche.fichiers === "deux"
                 ? "intérieur et couverture en deux fichiers"
-                : "un seul fichier"}
+                : `un seul fichier de ${report.fiche.pages_fichier} pages, couverture comprise`}
               .
             </p>
           </>
@@ -168,7 +168,7 @@ export function EnvoiView({
             <Ligne k="Livraison">
               {report.fiche.fichiers === "deux"
                 ? "deux fichiers : l’intérieur et la couverture à plat"
-                : "un seul fichier"}
+                : `un seul fichier de ${report.fiche.pages_fichier} pages : couverture en première et en dernière page`}
             </Ligne>
             {report.fiche.dos_mm !== undefined && (
               <Ligne k="Dos">

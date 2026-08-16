@@ -199,14 +199,18 @@ fn main() -> Result<()> {
     }
 
     if cli.print {
+        // The profile decides whether the cover rides in this file, so
+        // --print now answers to --profil like --cover and --prevol do.
+        let profil = profil(&cli.profil)?;
         let t0 = std::time::Instant::now();
         let out = colophon_core::render_print_pdf(
             &cli.out,
+            profil,
             &cli.out.join("album-print.pdf"),
             &|line| eprintln!("{line}"),
             &|| false,
         )?;
-        eprintln!("done in {:.1?}: {}", t0.elapsed(), out.display());
+        eprintln!("done in {:.1?}: {} ({})", t0.elapsed(), out.display(), profil.nom);
         return Ok(());
     }
 

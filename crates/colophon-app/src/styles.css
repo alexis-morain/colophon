@@ -1165,6 +1165,68 @@ kbd {
   color: var(--muted);
 }
 
+/* ---- the report panel (Aide → Signaler) --------------------------------- */
+
+.signaler-panel {
+  width: min(680px, 90vw);
+  display: flex;
+  flex-direction: column;
+}
+
+.signaler-intro {
+  margin: 0 0 12px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.signaler-erreur {
+  margin: 0 0 10px;
+  font-size: var(--fs-13);
+  color: var(--accent);
+}
+
+/* The report itself: monospace, scrollable, visibly a block that travels. */
+.signaler-rapport {
+  margin: 0;
+  padding: 12px 14px;
+  min-height: 120px;
+  max-height: 38vh;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--fond);
+  border: 1px solid var(--rule);
+  color: var(--text);
+}
+
+.signaler-piece {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 12px 0 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.signaler-actions {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.signaler-note {
+  margin: 10px 0 0;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  max-width: 62ch;
+}
+
 /* ---- creation form ----------------------------------------------------- */
 
 /* Compact on purpose: the whole form aims to hold inside a 1280 × 720

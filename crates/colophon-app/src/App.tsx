@@ -61,6 +61,8 @@ import { PlanchesView, LockGlyph } from "./PlanchesView";
 import { CoverView } from "./CoverView";
 import { EnvoiView } from "./EnvoiView";
 import { RaccourcisView } from "./Raccourcis";
+import { SignalerView } from "./SignalerView";
+import { SignalKind } from "./signaler";
 import { Chevron, CoverGlyph } from "./icons";
 import { installMenu, MenuActions, RecentAlbum } from "./menu";
 import { readRecents, pushRecent } from "./recents";
@@ -139,6 +141,8 @@ export default function App() {
   const [printers, setPrinters] = useState<Printer[] | null>(null);
   // The keyboard cheat-sheet overlay (⌘/, menu Aide).
   const [shortcuts, setShortcuts] = useState(false);
+  // The report panel (Aide → Signaler), one of the three issue variants.
+  const [signaler, setSignaler] = useState<SignalKind | null>(null);
   // The recent-albums list: welcome screen and Fichier menu read it.
   const [recents, setRecents] = useState<RecentAlbum[]>(readRecents);
 
@@ -541,6 +545,23 @@ export default function App() {
       setStatus(`Planche ${index + 1} supprimée (⌘Z la ramène)`);
     },
     raccourcis: () => setShortcuts((s) => !s),
+    // The three report variants. A bug needs nothing; the two layout
+    // complaints quote the spread on screen, the crop one its selected cell.
+    "signaler-bug": () => setSignaler("bug"),
+    "signaler-planche": () => {
+      if (!album || index < 0) {
+        setStatus("Ouvrez d’abord la planche à signaler (vue Livre ou Planches)");
+        return;
+      }
+      setSignaler("planche");
+    },
+    "signaler-recadrage": () => {
+      if (!album || index < 0 || selected === null) {
+        setStatus("Sélectionnez d’abord la case au recadrage raté (vue Livre)");
+        return;
+      }
+      setSignaler("recadrage");
+    },
   };
   const rawRef = useRef(raw);
   rawRef.current = raw;
@@ -557,6 +578,20 @@ export default function App() {
     lastFire.current = { action, source, t: now };
     rawRef.current[action]?.();
   }, []);
+
+  // The browser harness has no native menu: a window event stands in for
+  // the three Aide → Signaler items, the way the gabarit picker is asked
+  // for. Same table, same guards.
+  useEffect(() => {
+    const onSignal = (e: Event) => {
+      const kind = (e as CustomEvent<string>).detail;
+      if (kind === "bug" || kind === "planche" || kind === "recadrage") {
+        fire("menu", `signaler-${kind}`);
+      }
+    };
+    window.addEventListener("colophon:signaler", onSignal);
+    return () => window.removeEventListener("colophon:signaler", onSignal);
+  }, [fire]);
 
   // The native menu follows the app state: rebuilt when the album opens or
   // closes and when the recents change, cheap both times.
@@ -585,6 +620,9 @@ export default function App() {
       insererTexte: () => fire("menu", "inserer-texte"),
       supprimerPlanche: () => fire("menu", "supprimer-planche"),
       raccourcis: () => fire("menu", "raccourcis"),
+      signalerBug: () => fire("menu", "signaler-bug"),
+      signalerPlanche: () => fire("menu", "signaler-planche"),
+      signalerRecadrage: () => fire("menu", "signaler-recadrage"),
     };
     installMenu(() => actions, albumOpen, recents).catch(() => {
       // A shell without the menu permission still has the window shortcuts.
@@ -686,6 +724,15 @@ export default function App() {
           e.preventDefault();
           if (entries[i]) rescue(entries[i]);
           return;
+        }
+        return;
+      }
+      // The report panel holds the keyboard the way the cheat-sheet does;
+      // its focused controls keep their native keys.
+      if (signaler) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setSignaler(null);
         }
         return;
       }
@@ -904,6 +951,7 @@ export default function App() {
     triSelected,
     fire,
     shortcuts,
+    signaler,
   ]);
 
   // The review dies with its subject: leaving the sorting view, or rescuing
@@ -931,6 +979,15 @@ export default function App() {
           onOpenRecent={(dir) => void openRecent(dir)}
         />
         {shortcuts && <RaccourcisView onClose={() => setShortcuts(false)} />}
+        {signaler && (
+          <SignalerView
+            kind={signaler}
+            album={null}
+            index={-1}
+            selected={null}
+            onClose={() => setSignaler(null)}
+          />
+        )}
       </>
     );
   }
@@ -1199,6 +1256,15 @@ export default function App() {
       )}
       {error && <FaultBlock fault={error} onDismiss={() => setError(null)} />}
       {shortcuts && <RaccourcisView onClose={() => setShortcuts(false)} />}
+      {signaler && (
+        <SignalerView
+          kind={signaler}
+          album={album}
+          index={onCover ? -1 : Math.min(index, total - 1)}
+          selected={selected}
+          onClose={() => setSignaler(null)}
+        />
+      )}
     </div>
   );
 }

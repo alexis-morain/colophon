@@ -314,6 +314,75 @@ export async function listPrinters(): Promise<Printer[]> {
   return res.json();
 }
 
+/** One audit counter, counts only. The engine's report also carries the
+ *  finding details, which may name photos: the report panel never quotes
+ *  them, the numbers alone travel. */
+export type AuditCounter = { count: number; seuil: number; dur: boolean };
+
+export type AuditSummary = {
+  ok: boolean;
+  planches: number;
+  compteurs: Record<string, AuditCounter>;
+  notes?: string[];
+};
+
+/** The raw material of a problem report, gathered on this machine and shown
+ *  in full before anything is sent anywhere. */
+export type ReportData = {
+  version: string;
+  os: string;
+  /** Last log lines, paths already reduced to file names at write time. */
+  log: string;
+  /** Null without an album or when the audit fails: the report says so. */
+  audit: AuditSummary | null;
+};
+
+export async function reportData(): Promise<ReportData> {
+  if (inTauri) return invoke<ReportData>("report_data");
+  const compteur = (count: number, seuil: number, dur: boolean) => ({
+    count,
+    seuil,
+    dur,
+  });
+  return {
+    version: "dev",
+    os: "harnais navigateur",
+    log: [
+      "2026-08-16 10:02:11 démarrage, version dev",
+      "2026-08-16 10:02:40 scan: 575 photos",
+      "2026-08-16 10:02:44 layout: 48 planches",
+      "2026-08-16 10:03:02 export 300 dpi, profil cloudprinter",
+      "2026-08-16 10:05:19 export terminé",
+    ].join("\n"),
+    audit: {
+      ok: true,
+      planches: 48,
+      compteurs: {
+        visage_coupe: compteur(0, 0, true),
+        orientation_trahie: compteur(0, 0, true),
+        doublon_planche: compteur(0, 0, true),
+        sous_resolution: compteur(1, 3, false),
+        chapitre_orphelin: compteur(0, 0, false),
+        ouverture_faible: compteur(0, 2, false),
+        rythme_plat: compteur(0, 1, false),
+        legende_manquante: compteur(2, 4, false),
+        legende_sur_photo: compteur(0, 0, true),
+        repetition_gabarit: compteur(0, 0, true),
+      },
+    },
+  };
+}
+
+/** Open the pre-filled issue form. In the shell a guarded Rust command hands
+ *  the URL to the system browser; the harness opens a tab. */
+export async function openReportUrl(url: string): Promise<void> {
+  if (!inTauri) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  return invoke("open_report_url", { url });
+}
+
 /** Preflight the saved album against one profile. Seconds on a big album:
  *  it reopens every original to measure the effective resolution. */
 export async function preflight(profil: string): Promise<PrevolReport> {

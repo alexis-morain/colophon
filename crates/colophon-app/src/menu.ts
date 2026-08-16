@@ -34,6 +34,9 @@ export type MenuActions = {
   insererTexte(): void;
   supprimerPlanche(): void;
   raccourcis(): void;
+  signalerBug(): void;
+  signalerPlanche(): void;
+  signalerRecadrage(): void;
 };
 
 /**
@@ -187,6 +190,17 @@ export async function installMenu(
     items: [
       await item("raccourcis", "Raccourcis clavier", {
         accelerator: "CmdOrCtrl+/",
+      }),
+      await sep(),
+      // The three report variants mirror the repo's three issue templates.
+      // A bug can be reported without an album; the two layout complaints
+      // need one on screen.
+      await item("signalerBug", "Signaler un problème…"),
+      await item("signalerPlanche", "Signaler une planche ratée…", {
+        enabled: albumOpen,
+      }),
+      await item("signalerRecadrage", "Signaler un recadrage raté…", {
+        enabled: albumOpen,
       }),
     ],
   });

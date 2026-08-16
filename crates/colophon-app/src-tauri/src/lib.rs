@@ -495,6 +495,68 @@ fn printer_profile(
         .ok_or_else(|| format!("profil imprimeur inconnu : {id}"))
 }
 
+/// What the report panel cannot know by itself: version, platform, the
+/// scrubbed log tail and the audit counters of the open album. Everything is
+/// gathered here and shown in full before the user sends anything; nothing
+/// leaves the machine from this command.
+#[derive(Serialize)]
+struct ReportData {
+    version: String,
+    os: String,
+    /// Last log lines, paths already reduced to file names at write time.
+    log: String,
+    /// None without an album, or when the audit itself fails: the report
+    /// says so instead of blocking the channel.
+    audit: Option<colophon_core::audit::AuditReport>,
+}
+
+/// Gather the raw material of a problem report. The audit reopens every
+/// original to measure resolution, seconds on a big album: off the main
+/// thread, like the renders.
+#[tauri::command]
+async fn report_data(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ReportData, String> {
+    let dir = state.open.lock().unwrap().as_ref().map(|o| o.dir.clone());
+    let audit = match dir {
+        Some(d) => tauri::async_runtime::spawn_blocking(move || {
+            colophon_core::audit::audit(&d)
+                .map_err(|e| colophon_core::log::line(&format!("audit du rapport en échec : {e:#}")))
+                .ok()
+        })
+        .await
+        .map_err(|e| e.to_string())?,
+        None => None,
+    };
+    Ok(ReportData {
+        version: app.package_info().version.to_string(),
+        os: format!("{} ({})", std::env::consts::OS, std::env::consts::ARCH),
+        log: colophon_core::log::extrait(30),
+        audit,
+    })
+}
+
+/// Open the pre-filled issue form in the user's browser. The one URL this
+/// can ever open is the repo's issue page: the report channel must not be
+/// able to become a generic link-opener.
+#[tauri::command]
+fn open_report_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://github.com/alexis-morain/colophon/issues/new") {
+        return Err(format!("URL hors du dépôt : {url}"));
+    }
+    #[cfg(target_os = "macos")]
+    let run = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(target_os = "windows")]
+    let run = std::process::Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let run = std::process::Command::new("xdg-open").arg(&url).spawn();
+    run.map(|_| ())
+        .map_err(|e| format!("ouverture du navigateur : {e}"))
+}
+
 /// Preflight the album as it stands on disk against one profile. Reads every
 /// original's dimensions, so it is seconds on a big album: off the main
 /// thread, like the renders.
@@ -551,7 +613,9 @@ pub fn run() {
             curation,
             list_printers,
             preflight,
-            list_densities
+            list_densities,
+            report_data,
+            open_report_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -624,6 +688,21 @@ mod tests {
         let pdf = colophon_core::render_album_pdf(&dir).expect("rendu PDF");
         let bytes = std::fs::read(&pdf).unwrap();
         assert_eq!(&bytes[..5], b"%PDF-", "album.pdf n'est pas un PDF");
+    }
+
+    /// The report channel opens exactly one page: the repo's issue form.
+    /// Anything else, scheme included, is refused before any process spawns.
+    #[test]
+    fn report_url_guard_refuses_anything_but_the_issue_form() {
+        assert!(open_report_url("https://example.com/x".into()).is_err());
+        assert!(open_report_url(
+            "http://github.com/alexis-morain/colophon/issues/new?template=1-bug.yml".into()
+        )
+        .is_err());
+        assert!(open_report_url(
+            "https://github.com/autre/depot/issues/new".into()
+        )
+        .is_err());
     }
 
     #[test]

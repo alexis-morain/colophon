@@ -1,6 +1,9 @@
-/* Colophon desktop. The chrome is deliberately quiet: photographs carry the
-   colour, the interface stays warm-neutral so nothing bleeds onto them.
-   Everything is square-cornered, on purpose, like a trimmed page. */
+/* Colophon desktop, piste A. The chrome is deliberately quiet: a white
+   ground with cool neutrals, so the cream paper of the spreads is the only
+   warm object on screen and the photographs carry the colour. One accent,
+   terracotta. Everything is square-cornered, on purpose, like a trimmed
+   page. The keyboard review keeps a dark room of its own: photographs are
+   judged against black, like in any culling tool. */
 
 /* The UI face and the book face are the same file the PDF embeds: what the
    editor shows in a caption is the letterform the press prints. */
@@ -21,28 +24,44 @@
 }
 
 :root {
-  /* The palette. Chrome colours first, then the two inks a printed page
-     carries: strong for the words, soft for ghosts and placeholders. */
-  --ink: #17150f;
-  --ink-raised: #201d15;
-  --paper: #f6f2e9;
-  --text: #ede6d8;
-  --muted: #a2998a;
-  --accent: #c2532b;
-  --accent-hover: #a94523;
+  /* The chrome: white ground, cool neutrals, one terracotta deepened until
+     it reads at 4,5:1 on white in both directions. */
+  --fond: #ffffff;
+  --surface: #f2f3f4;
+  --text: #1e2022;
+  --muted: #63696f;
+  --accent: #b04a1f;
+  --accent-hover: #8f3c19;
   --on-accent: #fdf6f0;
   --rule: rgb(var(--text-rgb) / 0.14);
+
+  /* The printed page never changes theme: cream paper, warm inks, strong
+     for the words, soft for ghosts and placeholders. */
+  --paper: #f6f2e9;
   --paper-ink: #3a342c;
   --paper-ink-soft: #6b6459;
 
   /* Channel triplets, for the translucent shades derived from the palette:
-     every rgb()/rgba() in the file goes through one of these. */
+     every rgb()/rgba() in the file goes through one of these. --ink-rgb is
+     the warm ink shading the paper (folds, cells, chips over photos), not
+     a chrome colour. */
   --ink-rgb: 23 21 15;
   --paper-rgb: 246 242 233;
-  --text-rgb: 237 230 216;
-  --accent-rgb: 194 83 43;
+  --text-rgb: 30 32 34;
+  --accent-rgb: 176 74 31;
   --on-accent-rgb: 253 246 240;
   --paper-ink-rgb: 58 52 44;
+
+  /* Chips sitting on a photograph (zoom, ppi, sombre, changer la photo):
+     dark glass whatever the chrome, so they read on any image. */
+  --chip-texte: #ede6d8;
+  --chip-accent: #e08a5e;
+
+  /* The keyboard review's dark room, scoped onto .revue. */
+  --salle-fond: #1a1c1e;
+  --salle-texte: #e9eaeb;
+  --salle-sourdine: #9aa0a5;
+  --salle-filet: rgb(233 234 235 / 0.15);
 
   /* Diagram fills (format cards, pace previews): paper shaded twice. */
   --case-fill: #cfc6b6;
@@ -60,22 +79,24 @@
   --lh-ui: 1.45;
   --lh-read: 1.6;
 
-  --font-display: "Charter", "Iowan Old Style", Palatino, Georgia, serif;
+  /* Piste A: no serif in the chrome, weight makes the hierarchy. The
+     display token stays so a future identity can swap one line. */
+  --font-display: "Source Sans 3", "Avenir Next", Avenir, system-ui, sans-serif;
   --font-ui: "Source Sans 3", "Avenir Next", Avenir, system-ui, sans-serif;
   /* The face of the printed page, exactly what pdf.rs embeds. */
   --font-book: "Source Sans 3", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* One sheet, one shadow: contact plus ambient, a page on a dark table.
+  /* One sheet, one shadow: contact plus ambient, a page on a light table.
      One floating panel, one shadow. */
   --shadow-paper:
-    0 1px 2px rgb(0 0 0 / 0.55),
-    0 26px 64px -22px rgb(0 0 0 / 0.8);
-  --shadow-pop: 0 18px 44px -18px rgb(0 0 0 / 0.9);
+    0 1px 2px rgb(0 0 0 / 0.22),
+    0 26px 64px -22px rgb(0 0 0 / 0.3);
+  --shadow-pop: 0 18px 44px -18px rgb(0 0 0 / 0.3);
 
   --turn: 180ms cubic-bezier(0.2, 0, 0, 1);
 
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {
@@ -91,7 +112,7 @@ body,
 }
 
 body {
-  background: var(--ink);
+  background: var(--fond);
   color: var(--text);
   font-family: var(--font-ui);
   font-size: var(--fs-15);
@@ -241,7 +262,7 @@ kbd {
   max-width: min(640px, 84vw);
   gap: 2px;
   padding: 10px;
-  background: var(--ink-raised);
+  background: var(--surface);
   border: 1px solid var(--rule);
   box-shadow: var(--shadow-pop);
 }
@@ -278,10 +299,6 @@ kbd {
   position: relative;
   display: block;
   background: var(--paper);
-}
-
-.tpl-current .tpl-diagram {
-  background: rgb(var(--text-rgb) / 0.28);
 }
 
 .tpl-diagram-slot {
@@ -410,7 +427,7 @@ kbd {
   bottom: 0;
   padding: 2px 6px;
   background: rgb(var(--ink-rgb) / 0.72);
-  color: var(--text);
+  color: var(--chip-texte);
   font-family: var(--font-mono);
   font-size: var(--fs-11);
   pointer-events: none;
@@ -431,7 +448,7 @@ kbd {
 .slot-warn {
   padding: 2px 6px;
   background: rgb(var(--ink-rgb) / 0.72);
-  color: var(--accent);
+  color: var(--chip-accent);
   font-family: var(--font-ui);
   font-size: var(--fs-11);
   letter-spacing: 0.02em;
@@ -603,7 +620,7 @@ kbd {
   z-index: 2;
   margin: 0;
   padding: 12px 0 10px;
-  background: var(--ink);
+  background: var(--fond);
   font-family: var(--font-display);
   font-size: var(--fs-15);
   font-weight: 600;
@@ -629,7 +646,7 @@ kbd {
   margin: 0;
   aspect-ratio: 1;
   cursor: pointer;
-  background: var(--ink-raised);
+  background: var(--surface);
 }
 
 .tri-cell.selected {
@@ -653,13 +670,22 @@ kbd {
 /* One discarded photo at a time, over everything: the review is a decision
    posture, not a browsing one. The reason sits on the image, where the
    culling tools taught photographers to read it. */
+/* The one dark room of the light chrome: photographs are judged against
+   black. The chrome tokens are re-aimed for everything inside. */
 .revue {
+  --fond: var(--salle-fond);
+  --surface: var(--salle-fond);
+  --text: var(--salle-texte);
+  --muted: var(--salle-sourdine);
+  --rule: var(--salle-filet);
+  --accent: var(--chip-accent);
   position: fixed;
   inset: 0;
   z-index: 40;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  background: var(--ink);
+  background: var(--fond);
+  color: var(--text);
 }
 
 .revue-stage {
@@ -746,7 +772,7 @@ kbd {
 }
 
 .view-tab.active {
-  color: var(--ink);
+  color: var(--fond);
   background: var(--text);
   border-color: var(--text);
 }
@@ -909,7 +935,7 @@ kbd {
   width: 26px;
   height: 26px;
   display: block;
-  background: var(--ink-raised);
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -959,12 +985,12 @@ kbd {
   }
 }
 
+/* Piste A: the wordmark is a quiet tool label, not an editorial kicker. */
 .kicker {
   margin: 0 0 18px;
-  padding-left: 14px;
-  border-left: 2px solid var(--accent);
-  font-family: var(--font-display);
-  font-size: var(--fs-15);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
@@ -1050,7 +1076,7 @@ kbd {
 }
 
 .recent:hover {
-  background: var(--ink-raised);
+  background: var(--surface);
   border-left-color: var(--accent);
 }
 
@@ -1086,7 +1112,7 @@ kbd {
   max-height: 84vh;
   overflow-y: auto;
   padding: 20px 26px 26px;
-  background: var(--ink-raised);
+  background: var(--surface);
   border: 1px solid var(--rule);
   box-shadow: var(--shadow-pop);
 }
@@ -1193,7 +1219,7 @@ kbd {
   font-family: var(--font-display);
   font-size: var(--fs-18);
   color: var(--text);
-  background: var(--ink-raised);
+  background: var(--surface);
   border: 1px solid var(--rule);
   padding: 10px 12px;
   width: 100%;
@@ -1228,7 +1254,7 @@ kbd {
   bottom: 0;
   margin: 4px 0 0;
   padding: 10px 0;
-  background: var(--ink);
+  background: var(--fond);
   display: flex;
   gap: 20px;
   align-items: baseline;
@@ -1312,7 +1338,7 @@ kbd {
 
 .format-card.active {
   border-color: var(--accent);
-  background: var(--ink-raised);
+  background: var(--surface);
 }
 
 .format-preview {
@@ -1465,7 +1491,7 @@ kbd {
 .buildlog {
   margin: 8px 0 0;
   padding: 14px 16px;
-  background: var(--ink-raised);
+  background: var(--surface);
   border-left: 2px solid var(--accent);
   color: var(--muted);
   font-family: var(--font-mono);
@@ -1477,7 +1503,7 @@ kbd {
 kbd {
   font-family: var(--font-ui);
   padding: 1px 5px;
-  background: var(--ink-raised);
+  background: var(--surface);
   border: 1px solid var(--rule);
   color: var(--text);
 }
@@ -1486,7 +1512,7 @@ kbd {
   margin: 22px 0 0;
   padding: 10px 14px 10px 12px;
   border-left: 2px solid var(--accent);
-  background: var(--ink-raised);
+  background: var(--surface);
   color: var(--muted);
   font-size: var(--fs-13);
 }
@@ -1614,7 +1640,7 @@ kbd {
 }
 
 .drawer-tab.active {
-  color: var(--ink);
+  color: var(--fond);
   background: var(--text);
   border-color: var(--text);
 }
@@ -1646,7 +1672,7 @@ kbd {
   width: 88px;
   height: 88px;
   margin: 0;
-  background: var(--ink-raised);
+  background: var(--surface);
   cursor: grab;
 }
 
@@ -1689,7 +1715,7 @@ kbd {
 
 .planche-cell.current {
   border-color: var(--accent);
-  background: var(--ink-raised);
+  background: var(--surface);
 }
 
 .planche-cell.dropping {
@@ -1976,7 +2002,7 @@ kbd {
   right: 10px;
   padding: 3px 10px;
   background: rgb(var(--ink-rgb) / 0.62);
-  color: var(--text);
+  color: var(--chip-texte);
   font-size: var(--fs-12);
   opacity: 0;
   transition: opacity var(--turn);
@@ -2004,7 +2030,7 @@ kbd {
   max-height: 68vh;
   display: grid;
   grid-template-rows: auto 1fr;
-  background: var(--ink-raised);
+  background: var(--surface);
   border: 1px solid var(--rule);
   box-shadow: var(--shadow-pop);
 }
@@ -2032,7 +2058,7 @@ kbd {
   width: 100%;
   aspect-ratio: 1;
   padding: 0;
-  background: var(--ink);
+  background: var(--fond);
   border: 1px solid transparent;
   overflow: hidden;
 }
@@ -2123,7 +2149,7 @@ kbd {
   align-items: baseline;
   width: 320px;
   padding: 8px 12px;
-  background: var(--ink-raised);
+  background: var(--surface);
   border: 1px solid var(--rule);
   box-shadow: var(--shadow-pop);
 }
@@ -2143,7 +2169,7 @@ kbd {
   font: inherit;
   font-size: var(--fs-13);
   color: var(--text);
-  background: var(--ink);
+  background: var(--fond);
   border: 1px solid var(--rule);
   padding: 2px 8px;
 }
@@ -2255,7 +2281,7 @@ button.envoi-defaut {
 
 button.envoi-defaut:hover,
 button.envoi-defaut:focus-visible {
-  background: var(--ink-raised);
+  background: var(--surface);
   outline: none;
 }
 
@@ -2307,11 +2333,11 @@ button.envoi-defaut:focus-visible {
 }
 
 .envoi-imprimeur:hover {
-  background: var(--ink-raised);
+  background: var(--surface);
 }
 
 .envoi-imprimeur.active {
-  background: var(--ink-raised);
+  background: var(--surface);
   border-left-color: var(--accent);
 }
 
@@ -2450,7 +2476,7 @@ button.envoi-defaut:focus-visible {
 
 .densite.active {
   border-color: var(--accent);
-  background: var(--ink-raised);
+  background: var(--surface);
 }
 
 .densite-nom {

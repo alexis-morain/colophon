@@ -36,6 +36,12 @@ struct Cli {
     #[arg(long, default_value = "equilibree", value_name = "PACE")]
     densite: String,
 
+    /// Compose the two alternative proposals beside the album, the way the
+    /// app does. They land next to it as `album.<id>.json`; the audit gate
+    /// reads them one by one.
+    #[arg(long)]
+    variantes: bool,
+
     /// List the available page formats and exit
     #[arg(long)]
     formats: bool,
@@ -232,6 +238,11 @@ fn main() -> Result<()> {
             trim,
             densite,
             progress: Box::new(|line| eprintln!("{line}")),
+            variantes: if cli.variantes {
+                colophon_core::build::variantes_offertes(densite, cli.spreads.max(8))
+            } else {
+                Vec::new()
+            },
             ..Default::default()
         },
     )?;

@@ -34,6 +34,9 @@ pub struct BuildOptions {
     /// over what the album already said: taking the page away once must not
     /// have to be done again after every recomposition.
     pub colophon: bool,
+    /// Alternative proposals to compose beside the one asked for. Empty is
+    /// the plain path: one album, exactly as before.
+    pub variantes: Vec<VarianteSpec>,
 }
 
 impl Default for BuildOptions {
@@ -48,6 +51,61 @@ impl Default for BuildOptions {
             cover: None,
             densite: layout::Densite::default(),
             colophon: true,
+            variantes: Vec::new(),
+        }
+    }
+}
+
+/// One alternative proposal to compose beside the one the caller asked for.
+///
+/// The composer is deterministic and already parameterised: the same analysed
+/// photos, another pace and another spread budget, and it produces a visibly
+/// different book for the price of some arithmetic. Nothing here touches the
+/// composer's own thresholds, only the two numbers it is called with.
+#[derive(Debug, Clone)]
+pub struct VarianteSpec {
+    /// File suffix and handle: `album.<id>.json`. A bare word, no path.
+    pub id: String,
+    pub nom: String,
+    /// The one sentence that says what makes this proposal different.
+    pub about: String,
+    pub densite: layout::Densite,
+    pub spreads: usize,
+}
+
+/// A composed proposal, as the creation screen shows it: what it is called,
+/// what makes it different, how long it is, and three spreads to look at.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VarianteResume {
+    pub id: String,
+    pub nom: String,
+    pub about: String,
+    pub planches: usize,
+    pub photos: usize,
+    /// Sources of one photo from three spreads spread across the book, for
+    /// the thumbnails beside the sentence. Never a path: the same relative
+    /// source every slot carries.
+    pub apercu: Vec<String>,
+}
+
+impl VarianteResume {
+    fn de(spec: &VarianteSpec, album: &model::Album, photos: usize) -> Self {
+        // A quarter, a half and three quarters in: three spreads that say
+        // what the book looks like, rather than three from its opening.
+        let avec_photo: Vec<&model::Spread> =
+            album.spreads.iter().filter(|s| !s.slots.is_empty()).collect();
+        let apercu = [1, 2, 3]
+            .iter()
+            .filter_map(|q| avec_photo.get(avec_photo.len() * q / 4))
+            .filter_map(|s| s.slots.first().map(|sl| sl.src.clone()))
+            .collect();
+        Self {
+            id: spec.id.clone(),
+            nom: spec.nom.clone(),
+            about: spec.about.clone(),
+            planches: album.spreads.len(),
+            photos,
+            apercu,
         }
     }
 }
@@ -59,6 +117,9 @@ pub struct BuildReport {
     pub photos_scanned: usize,
     pub photos_kept: usize,
     pub chapters: usize,
+    /// The alternatives composed beside the album, empty when none were
+    /// asked for. Each is on disk as `album.<id>.json`.
+    pub variantes: Vec<VarianteResume>,
 }
 
 pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<BuildReport> {
@@ -396,87 +457,172 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     // statistical filters: chasing a spread target by trimming photos is
     // how three photos become one planche. One pass, every photo placed,
     // and the album is as long as it is.
+    //
+    // That last paragraph is why the app can propose several albums: the
+    // pipeline above is what costs, chaptering and layout are arithmetic on
+    // data already in memory. Composing three proposals costs three passes
+    // of the cheap half and one pass of the expensive one.
     anyhow::ensure!(!cancelled(), "composition annulée");
-    let mut album = model::Album::new(&title, &root, opts.trim);
-    album.cover = opts.cover.clone();
-    album.densite = opts.densite;
-    let total_kept: usize = base.iter().map(|c| c.photos.len()).sum();
-    let mut budget = if petit {
-        total_kept
-    } else {
-        spreads_target * opts.densite.photos_per_spread_x10() / 10
-    };
-    let attempts = if petit { 1 } else { 5 };
-    let mut photos_kept = 0;
-    // Keep the attempt closest to the target: on fragmented sets the
-    // spread count can refuse to follow the budget, and the last attempt
-    // is then the worst one, not the best.
-    let mut best: Option<(usize, Vec<model::Spread>, usize)> = None;
-    for attempt in 0..attempts {
-        let mut trial = base.clone();
-        if !petit {
-            let caps = pipeline::allocate_budget(&trial, budget);
-            for (c, cap) in trial.iter_mut().zip(caps) {
-                pipeline::cap_chapter(c, cap);
+
+    let compose_une = |densite: layout::Densite,
+                       cible: usize|
+     -> (model::Album, Vec<model::Discard>, usize) {
+        let mut album = model::Album::new(&title, &root, opts.trim);
+        album.cover = opts.cover.clone();
+        album.densite = densite;
+        let total_kept: usize = base.iter().map(|c| c.photos.len()).sum();
+        let mut budget = if petit {
+            total_kept
+        } else {
+            cible * densite.photos_per_spread_x10() / 10
+        };
+        let attempts = if petit { 1 } else { 5 };
+        let mut photos_kept = 0;
+        // Keep the attempt closest to the target: on fragmented sets the
+        // spread count can refuse to follow the budget, and the last attempt
+        // is then the worst one, not the best.
+        let mut best: Option<(usize, Vec<model::Spread>, usize)> = None;
+        for attempt in 0..attempts {
+            let mut trial = base.clone();
+            if !petit {
+                let caps = pipeline::allocate_budget(&trial, budget);
+                for (c, cap) in trial.iter_mut().zip(caps) {
+                    pipeline::cap_chapter(c, cap);
+                }
+            }
+            let kept = trial.iter().map(|c| c.photos.len()).sum();
+
+            let mut composer = layout::Composer::avec_densite(&album, densite);
+            // Captions are worked out for the run of chapters at once, not one
+            // by one: whether a place is worth naming depends on the chapter
+            // before it.
+            let captions = chapter_captions(&trial);
+            let spreads: Vec<model::Spread> = trial
+                .iter()
+                .zip(captions)
+                .flat_map(|(c, caption)| composer.compose(c, caption, &root))
+                .collect();
+
+            let got = spreads.len();
+            let off = got.abs_diff(cible) * 100 / cible.max(1);
+            if best.as_ref().is_none_or(|(b, _, _)| off < *b) {
+                best = Some((off, spreads, kept));
+            }
+            if off <= 6 || attempt == attempts - 1 || got == 0 {
+                break;
+            }
+            // Aim the next budget at the target, damped so it cannot oscillate,
+            // and never starved below two photos per requested spread: fewer
+            // photos never means fewer spreads once chapters run on minimums.
+            let aimed = budget * cible / got;
+            budget = ((budget + aimed) / 2).max(cible * 2);
+        }
+        if let Some((_, spreads, kept)) = best {
+            album.spreads = spreads;
+            photos_kept = kept;
+        }
+
+        // Re-insert the pinned spreads where their photos belong in time. A
+        // pinned spread's own photos are unknown to `times` (withdrawn above),
+        // so already-inserted pinned spreads are transparent to the scan and
+        // the original order between them holds.
+        if !opts.pinned.is_empty() {
+            let time_of = |s: &model::Spread| {
+                s.slots.first().and_then(|sl| times.get(&sl.src)).copied()
+            };
+            let mut last_at: Option<usize> = None;
+            for (spread, anchor) in &opts.pinned {
+                let at = match anchor {
+                    Some(t) => album
+                        .spreads
+                        .iter()
+                        .position(|s| time_of(s).is_some_and(|st| st > *t))
+                        .unwrap_or(album.spreads.len()),
+                    // No time at all (a text page opening the album): right
+                    // after the previous pinned spread, else at the front.
+                    None => last_at.map(|i| i + 1).unwrap_or(0),
+                };
+                album.spreads.insert(at, spread.clone());
+                last_at = Some(at);
             }
         }
-        let kept = trial.iter().map(|c| c.photos.len()).sum();
 
-        let mut composer = layout::Composer::avec_densite(&album, opts.densite);
-        // Captions are worked out for the run of chapters at once, not one
-        // by one: whether a place is worth naming depends on the chapter
-        // before it.
-        let captions = chapter_captions(&trial);
-        let spreads: Vec<model::Spread> = trial
+        // The colophon page, on by default: the software is called Colophon
+        // and did not print one. The facts travel in album.json, the page
+        // itself is an ordinary spread at the end of the book, so it counts
+        // in the pagination the suppliers sanction without a single special
+        // case. The Envoi screen takes it away in one click.
+        album.colophon = Some(crate::colophon::faits(
+            &base,
+            photos_kept,
+            photos_scanned,
+            chrono::Local::now().date_naive(),
+        ));
+        if let (true, Some(f)) = (opts.colophon, &album.colophon) {
+            album.spreads.push(crate::colophon::spread(
+                f,
+                opts.trim,
+                crate::printer::GRAMMAGE_DEFAUT,
+                env!("CARGO_PKG_VERSION"),
+            ));
+        }
+
+        // Photos that survived curation but not this proposal's own spread
+        // budget. Per proposal, because a tighter book sets more of them
+        // aside: the sorting view has to tell the truth about the album on
+        // screen, not about the one that was not chosen.
+        let shown: std::collections::HashSet<String> = album
+            .spreads
             .iter()
-            .zip(captions)
-            .flat_map(|(c, caption)| composer.compose(c, caption, &root))
+            .flat_map(|s| s.slots.iter().map(|sl| sl.src.clone()))
+            .collect();
+        let hors_budget: Vec<model::Discard> = base
+            .iter()
+            .flat_map(|c| c.photos.iter())
+            .filter_map(|photo| {
+                let src = rel(&photo.path);
+                (!shown.contains(&src)).then(|| model::Discard {
+                    src,
+                    reason: "hors_budget".into(),
+                    kept: None,
+                    focal: focal_of(&photo.path),
+                })
+            })
             .collect();
 
-        let got = spreads.len();
-        let off = got.abs_diff(spreads_target) * 100 / spreads_target.max(1);
-        if best.as_ref().is_none_or(|(b, _, _)| off < *b) {
-            best = Some((off, spreads, kept));
-        }
-        if off <= 6 || attempt == attempts - 1 || got == 0 {
-            break;
-        }
-        // Aim the next budget at the target, damped so it cannot oscillate,
-        // and never starved below two photos per requested spread: fewer
-        // photos never means fewer spreads once chapters run on minimums.
-        let aimed = budget * spreads_target / got;
-        budget = ((budget + aimed) / 2).max(spreads_target * 2);
-    }
-    if let Some((_, spreads, kept)) = best {
-        album.spreads = spreads;
-        photos_kept = kept;
-    }
+        (album, hors_budget, photos_kept)
+    };
 
-    // Re-insert the pinned spreads where their photos belong in time. A
-    // pinned spread's own photos are unknown to `times` (withdrawn above),
-    // so already-inserted pinned spreads are transparent to the scan and
-    // the original order between them holds.
-    if !opts.pinned.is_empty() {
-        let time_of = |s: &model::Spread| {
-            s.slots.first().and_then(|sl| times.get(&sl.src)).copied()
-        };
-        let mut last_at: Option<usize> = None;
-        for (spread, anchor) in &opts.pinned {
-            let at = match anchor {
-                Some(t) => album
-                    .spreads
-                    .iter()
-                    .position(|s| time_of(s).is_some_and(|st| st > *t))
-                    .unwrap_or(album.spreads.len()),
-                // No time at all (a text page opening the album): right
-                // after the previous pinned spread, else at the front.
-                None => last_at.map(|i| i + 1).unwrap_or(0),
-            };
-            album.spreads.insert(at, spread.clone());
-            last_at = Some(at);
+    // The proposal the caller asked for comes first and stays the default;
+    // the others are alternatives the creation screen shows beside it. An
+    // empty list is the old behaviour, one album, unchanged.
+    let specs: Vec<VarianteSpec> = std::iter::once(VarianteSpec {
+        id: "demandee".into(),
+        nom: "Comme demandé".into(),
+        about: String::new(),
+        densite: opts.densite,
+        spreads: spreads_target,
+    })
+    .chain(opts.variantes.iter().cloned())
+    .collect();
+
+    let mut composees: Vec<(VarianteSpec, model::Album, Vec<model::Discard>, usize)> =
+        Vec::with_capacity(specs.len());
+    for spec in specs {
+        anyhow::ensure!(!cancelled(), "composition annulée");
+        let (album, hors_budget, kept) = compose_une(spec.densite, spec.spreads);
+        if !composees.is_empty() {
+            say(&format!("variante {} : {} planches", spec.id, album.spreads.len()));
         }
-        say(&format!("pinned: {} planches conservées", opts.pinned.len()));
+        composees.push((spec, album, hors_budget, kept));
     }
+    // The first proposal is the one asked for, and the album this build
+    // opens. It is written under its own name too: the choice screen has to
+    // be able to come back to it after showing another.
+    let (album, hors_budget, photos_kept) = {
+        let (_, a, h, k) = &composees[0];
+        (a.clone(), h.clone(), *k)
+    };
 
     say(&format!(
         "chapters: {} (from {natural} natural, {photos_kept} photos kept)",
@@ -508,50 +654,40 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
             resume.join(", ")
         );
     }
-
-    // The colophon page, on by default: the software is called Colophon and
-    // did not print one. The facts travel in album.json, the page itself is
-    // an ordinary spread at the end of the book, so it counts in the
-    // pagination the suppliers sanction without a single special case. The
-    // Envoi screen takes it away in one click.
-    album.colophon = Some(crate::colophon::faits(
-        &base,
-        photos_kept,
-        photos_scanned,
-        chrono::Local::now().date_naive(),
-    ));
-    if let (true, Some(f)) = (opts.colophon, &album.colophon) {
-        album.spreads.push(crate::colophon::spread(
-            f,
-            opts.trim,
-            crate::printer::GRAMMAGE_DEFAUT,
-            env!("CARGO_PKG_VERSION"),
-        ));
-    }
-
     // 5. album.json, plus the thumbnail index. Cache filenames hash the
     // absolute path and mtime, which no reader can recompute: without this
     // index an album folder is unreadable on another machine.
-    // Photos that survived curation but not the spread budget.
-    let shown: std::collections::HashSet<String> = album
-        .spreads
-        .iter()
-        .flat_map(|s| s.slots.iter().map(|sl| sl.src.clone()))
-        .collect();
-    for chapter in &base {
-        for photo in &chapter.photos {
-            let src = rel(&photo.path);
-            if !shown.contains(&src) {
-                discards.push(model::Discard {
-                    src,
-                    reason: "hors_budget".into(),
-                    kept: None,
-                    focal: focal_of(&photo.path),
-                });
-            }
+    //
+    // Curation splits in two here: what every proposal set aside for the same
+    // reason (junk, panoramas, definition, duplicates, twins), and what each
+    // proposal's own spread budget left out. The sorting view has to tell the
+    // truth about the album on screen, not about the one nobody chose.
+    let commun = discards.clone();
+    discards.extend(hors_budget);
+    say(&format!("curation: {} photos set aside", discards.len()));
+
+    // The proposals not chosen, written beside the default one. They cost one
+    // JSON file each, the thumbnails being shared, and the alternative to
+    // keeping them is recomposing the folder from scratch. The first save
+    // takes them away: past a hand edit they stop being an offer and become a
+    // stale copy of somebody's work.
+    let mut variantes: Vec<VarianteResume> = Vec::new();
+    for (i, (spec, autre, hors, kept)) in composees.iter().enumerate() {
+        let mut curation = commun.clone();
+        curation.extend(hors.iter().cloned());
+        fs::write(
+            out.join(format!("album.{}.json", spec.id)),
+            serde_json::to_string_pretty(autre)?,
+        )?;
+        fs::write(
+            out.join(format!("curation.{}.json", spec.id)),
+            serde_json::to_string_pretty(&curation)?,
+        )?;
+        // The one asked for is the album itself, not an alternative beside it.
+        if i > 0 {
+            variantes.push(VarianteResume::de(spec, autre, *kept));
         }
     }
-    say(&format!("curation: {} photos set aside", discards.len()));
 
     let album_json = write_album_json(out, &album)?;
     // The composer's proposal, kept aside as the reference `--reprise`
@@ -605,7 +741,64 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         album_pdf,
         photos_scanned,
         photos_kept,
+        variantes,
     })
+}
+
+/// The two proposals shown beside the one the creation screen asked for.
+/// One question, three answers: a lighter book at the same length, and the
+/// same trip in fewer pages. Both use pace values the linter is green on
+/// (`Densite::offertes`), and neither touches a composer threshold.
+pub fn variantes_offertes(densite: layout::Densite, spreads: usize) -> Vec<VarianteSpec> {
+    let autre = layout::Densite::offertes()
+        .iter()
+        .copied()
+        .find(|d| *d != densite)
+        .unwrap_or(densite);
+    vec![
+        VarianteSpec {
+            id: "autre-rythme".into(),
+            nom: autre.nom().to_string(),
+            about: autre.about().to_string(),
+            densite: autre,
+            spreads,
+        },
+        VarianteSpec {
+            id: "resserree".into(),
+            nom: "Plus court".into(),
+            // Says what it does and not what it flatters: a third fewer
+            // spreads means a third fewer photographs, and a cheaper book.
+            about: "Un tiers de planches en moins, donc moins de photos retenues. \
+                    Un livre qui se feuillette d'un trait, et qui coûte moins cher \
+                    à imprimer."
+                .into(),
+            densite,
+            // A third shorter, floored so a small album cannot collapse under
+            // the eight spreads the composer works from.
+            spreads: (spreads * 2 / 3).max(8),
+        },
+    ]
+}
+
+/// Delete the proposals nobody chose. Called at the first save: past a hand
+/// edit they stop being an offer and become a stale copy of somebody's work.
+/// Missing files are not an error, this runs on every save.
+pub fn oublier_variantes(dir: &Path) -> usize {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut n = 0;
+    for e in entries.flatten() {
+        let nom = e.file_name().to_string_lossy().to_string();
+        let variante = (nom.starts_with("album.") || nom.starts_with("curation."))
+            && nom.ends_with(".json")
+            && nom.matches('.').count() == 2
+            && nom != "album.origin.json";
+        if variante && fs::remove_file(e.path()).is_ok() {
+            n += 1;
+        }
+    }
+    n
 }
 
 /// Write `album.json` atomically: temp file then rename, so a crash halfway

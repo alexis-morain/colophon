@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BuildBilan,
   buildAlbum,
+  chooseVariante,
+  VarianteResume,
   cancelBuild,
   cancelExport,
   confirmDialog,
@@ -131,6 +133,10 @@ export default function App() {
   const [building, setBuilding] = useState<string[] | null>(null);
   // The end-of-build report; the book opens behind it, it dismisses once.
   const [bilan, setBilan] = useState<BuildBilan | null>(null);
+  // The proposals composed beside the album, and which one is on screen.
+  // Both die with the report screen: past it there is one album.
+  const [variantes, setVariantes] = useState<VarianteResume[]>([]);
+  const [variante, setVariante] = useState<string | null>(null);
   // Index into the sorting view's entries while the keyboard review is up.
   const [revue, setRevue] = useState<number | null>(null);
   const [busyTitle, setBusyTitle] = useState<string | null>(null);
@@ -252,6 +258,11 @@ export default function App() {
   // must be part of what lands on disk.
   const histRef = useRef<History | null>(null);
   histRef.current = hist;
+  // The report screen's own state, read from callbacks that must not be
+  // rebuilt every time a proposal is swapped in.
+  const bilanRef = useRef<BuildBilan | null>(null);
+  const variantesRef = useRef<VarianteResume[]>([]);
+  variantesRef.current = variantes;
   const save = useCallback(async () => {
     const h = histRef.current;
     if (!h) return false;
@@ -265,6 +276,35 @@ export default function App() {
       return false;
     }
   }, []);
+
+  /**
+   * Show another of the proposals composed from the same photos. The album on
+   * screen is swapped whole, curation included: a tighter book sets more
+   * photos aside, and the sorting view has to describe the album that is
+   * open. Reversible until the first save, which takes the others away.
+   */
+  const basculerVariante = useCallback(
+    async (id: string | null) => {
+      try {
+        const result = await chooseVariante(id ?? "demandee");
+        // `adopt` clears the report screen, which is precisely the screen the
+        // user is standing on: put it back, with the count of the proposal
+        // now open. What was read and how many chapters do not change from
+        // one proposal to the next; how many photos were kept does.
+        const base = bilanRef.current;
+        adopt(result);
+        setCuration(await fetchCuration().catch(() => []));
+        setVariante(id);
+        const v = id ? variantesRef.current.find((x) => x.id === id) : null;
+        if (base) {
+          setBilan(v ? { ...base, photos_kept: v.photos } : base);
+        }
+      } catch (e) {
+        setError(fault("Cette proposition n’a pas pu être ouverte.", e));
+      }
+    },
+    [adopt],
+  );
 
   /**
    * Put the colophon page in or take it out, from the Envoi screen. The page
@@ -347,6 +387,9 @@ export default function App() {
       adopt(result.opened);
       setCuration(await fetchCuration().catch(() => []));
       setBilan(result.bilan);
+      bilanRef.current = result.bilan;
+      setVariantes(result.variantes ?? []);
+      setVariante(null);
     } catch (e) {
       const msg = String(e);
       if (msg.includes("annulée")) setStatus("Composition annulée");
@@ -1129,6 +1172,9 @@ export default function App() {
         bilan={bilan}
         album={album}
         curation={curation}
+        variantes={variantes}
+        choisie={variante}
+        onChoisir={(id) => void basculerVariante(id)}
         onOpen={() => setBilan(null)}
         onTri={() => {
           // Straight into the keyboard review: the link promises a review,

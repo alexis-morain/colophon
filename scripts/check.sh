@@ -22,7 +22,7 @@ if [ -d "$TESTSETS" ]; then
     # reprise then reads a hand correction nobody ever made.
     rm -rf "$out"
     ./target/release/colophon "$TESTSETS/$set" -o "$out" --format carre-21 \
-      >/dev/null 2>&1
+      --variantes >/dev/null 2>&1
     if ! ./target/release/colophon --audit -o "$out" > "$out/audit.json"; then
       echo "audit : compteurs au-dessus des seuils sur $set" >&2
       python3 -c "
@@ -47,7 +47,24 @@ r = json.load(open('$out/reprise.json'))
 if r['planches_touchees'] != 0:
     print(f\"  reprise {r['planches_touchees']} planches sur un album neuf\", file=sys.stderr)
     sys.exit(1)"
-    echo "audit $set : ok"
+    # The two proposals shown beside the album go through the same linter:
+    # an option the composer offers is an album somebody will print, and a
+    # variant green nowhere is a variant that must not be offered.
+    for v in autre-rythme resserree; do
+      cp "$out/album.$v.json" "$out/album.json"
+      if ! ./target/release/colophon --audit -o "$out" > "$out/audit-$v.json"; then
+        echo "audit : la variante $v de $set passe un seuil" >&2
+        python3 -c "
+import json
+r = json.load(open('$out/audit-$v.json'))
+for k, c in r['compteurs'].items():
+    if c['count'] > c['seuil']:
+        print(f\"  {k}: {c['count']} (seuil {c['seuil']})\")" >&2
+        exit 1
+      fi
+    done
+    cp "$out/album.demandee.json" "$out/album.json"
+    echo "audit $set : ok (3 propositions)"
   done
 fi
 

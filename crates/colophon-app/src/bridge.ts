@@ -88,7 +88,34 @@ export type BuildBilan = {
   chapters: number;
 };
 
-export type BuiltAlbum = { opened: OpenedAlbum; bilan: BuildBilan };
+/** One proposal composed beside the album, as the creation screen shows it. */
+export type VarianteResume = {
+  /** Handle: `album.<id>.json` on disk. Empty for the one asked for. */
+  id: string;
+  nom: string;
+  about: string;
+  planches: number;
+  photos: number;
+  /** Three photo sources spread across the book, for the thumbnails. */
+  apercu: string[];
+};
+
+export type BuiltAlbum = {
+  opened: OpenedAlbum;
+  bilan: BuildBilan;
+  variantes: VarianteResume[];
+};
+
+/** Swap in one of the proposals composed beside the album. Reversible until
+ *  the first save, which takes the unchosen ones off the disk. */
+export async function chooseVariante(id: string): Promise<OpenedAlbum> {
+  if (!inTauri) {
+    throw new Error(
+      "Les propositions vivent dans le dossier de l’album, que le serveur de dev ne sert qu’une fois.",
+    );
+  }
+  return invoke<OpenedAlbum>("choose_variante", { id });
+}
 
 /** Build an album from a photo folder, then open it. Long: seconds cold. */
 export async function buildAlbum(
@@ -149,9 +176,37 @@ async function devBuild(): Promise<BuiltAlbum> {
     emit(line);
   }
   await tick(200);
+  const opened = await openAlbum("__dev__");
+  // Three proposals from the harness's one album: the counts and the wording
+  // are what the screen has to lay out, the photos are the same.
+  const avecPhoto = opened.album.spreads.filter((s) => s.slots.length > 0);
+  const apercu = [1, 2, 3]
+    .map((q) => avecPhoto[Math.floor((avecPhoto.length * q) / 4)])
+    .filter(Boolean)
+    .map((s) => s.slots[0].src);
   return {
-    opened: await openAlbum("__dev__"),
+    opened,
     bilan: { photos_scanned: photos, photos_kept: 152, chapters: 9 },
+    variantes: [
+      {
+        id: "autre-rythme",
+        nom: "Aérée",
+        about:
+          "Une ou deux photos par double page, souvent une seule en grand. Moins de photos retenues, chacune plus grande.",
+        planches: opened.album.spreads.length,
+        photos: 101,
+        apercu,
+      },
+      {
+        id: "resserree",
+        nom: "Plus court",
+        about:
+          "Un tiers de planches en moins, donc moins de photos retenues. Un livre qui se feuillette d’un trait, et qui coûte moins cher à imprimer.",
+        planches: Math.round(opened.album.spreads.length * 0.68),
+        photos: 68,
+        apercu,
+      },
+    ],
   };
 }
 

@@ -55,6 +55,9 @@ struct BuildBilan {
 struct BuiltAlbum {
     opened: OpenedAlbum,
     bilan: BuildBilan,
+    /// The proposals composed beside the one that is open, each on disk.
+    /// The creation screen shows them side by side; picking one swaps it in.
+    variantes: Vec<colophon_core::build::VarianteResume>,
 }
 
 /// Read an album folder (or its album.json) into the album and its thumb index.
@@ -184,7 +187,11 @@ fn save_album(album: Album, state: State<'_, AppState>) -> Result<(), String> {
     let opened = guard.as_ref().ok_or("aucun album ouvert")?;
     colophon_core::write_album_json(&opened.dir, &album)
         .map(|_| ())
-        .map_err(|e| format!("{e:#}"))
+        .map_err(|e| format!("{e:#}"))?;
+    // The proposals nobody chose go here: past a hand edit they stop being an
+    // offer and become a stale copy of somebody's work.
+    colophon_core::build::oublier_variantes(&opened.dir);
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -268,6 +275,10 @@ async fn build_album_from_folder(
                 }),
                 cancel: Box::new(move || flag.load(Ordering::Relaxed)),
                 densite,
+                // One question, three answers. The analysis is what costs;
+                // composing two more proposals from the same photos is
+                // arithmetic, and it turns a wait into a choice.
+                variantes: colophon_core::build::variantes_offertes(densite, spreads.clamp(8, 200)),
                 ..Default::default()
             },
         )
@@ -287,7 +298,45 @@ async fn build_album_from_folder(
             photos_kept: report.photos_kept,
             chapters: report.chapters,
         },
+        variantes: report.variantes,
     })
+}
+
+/// Swap in one of the proposals composed beside the album, by its id. The
+/// file becomes `album.json` and its own curation becomes `curation.json`;
+/// the proposal being replaced stays on disk under its own name, so the
+/// choice is reversible until the first save.
+///
+/// The id is a bare word from a `VarianteSpec`, and it is checked as one:
+/// this joins a file name onto the open album's folder.
+#[tauri::command]
+fn choose_variante(id: String, state: State<'_, AppState>) -> Result<OpenedAlbum, String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(format!("identifiant de variante invalide : {id}"));
+    }
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let album = dir.join(format!("album.{id}.json"));
+    if !album.is_file() {
+        return Err(format!(
+            "cette proposition n'est plus sur le disque : elle a été effacée au premier enregistrement"
+        ));
+    }
+    let text = std::fs::read_to_string(&album).map_err(|e| format!("lecture : {e}"))?;
+    let parsed: Album =
+        serde_json::from_str(&text).map_err(|e| format!("proposition illisible : {e}"))?;
+    colophon_core::write_album_json(&dir, &parsed).map_err(|e| format!("{e:#}"))?;
+    // Curation follows the album: a tighter proposal sets more photos aside,
+    // and the sorting view must describe the book on screen.
+    let curation = dir.join(format!("curation.{id}.json"));
+    if curation.is_file() {
+        std::fs::copy(&curation, dir.join("curation.json"))
+            .map_err(|e| format!("curation : {e}"))?;
+    }
+    colophon_core::log::line(&format!("proposition {id} retenue"));
+    open_album(dir.to_string_lossy().to_string(), state)
 }
 
 /// Recompose the open album from its photo folder, preserving every spread
@@ -358,6 +407,10 @@ async fn recompose_album(
             .spreads
             .iter()
             .any(|s| s.template == colophon_core::colophon::TEMPLATE),
+        // A recomposition is not a choice of album: the user already made
+        // that one, and a second offer would throw away every hand edit that
+        // the pinned spreads were kept for.
+        variantes: Vec::new(),
     };
     tauri::async_runtime::spawn_blocking(move || {
         colophon_core::build_album(&root, &build_out, opts)
@@ -910,6 +963,7 @@ pub fn run() {
             report_data,
             open_report_url,
             origin_spread,
+            choose_variante,
             colophon_spread,
             list_albums,
             delete_album,

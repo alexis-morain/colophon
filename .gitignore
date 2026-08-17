@@ -3,3 +3,9 @@
 /.albums
 .DS_Store
 __pycache__/
+
+# Rendus d'icône : régénérés par scripts/icone.sh depuis les SVG de
+# design/marques. La planche de comparaison, elle, est versionnée : c'est
+# elle qui sert à choisir.
+/design/rendu/*
+!/design/rendu/comparaison.png

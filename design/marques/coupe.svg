@@ -1,0 +1,28 @@
+<!-- Marque 3, « la coupe ».
+
+     Les traits de coupe d'un imprimeur, et entre eux la page. C'est la
+     marque la plus austère des trois, et la plus juste sur le fond : tout
+     ce que fait ce logiciel se mesure depuis la coupe, du fond perdu à la
+     zone sûre, et c'est la seule chose qui distingue un PDF prêt à
+     imprimer d'un PDF.
+
+     Un professionnel la lit immédiatement ; les autres y voient un cadre.
+     Les deux lectures conviennent. À 32 px les traits tiennent parce
+     qu'ils sont alignés sur la grille des pixels aux tailles usuelles. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#f6f2e9"/>
+  <!-- La page : le rognage final, en aplat. -->
+  <rect x="144" y="144" width="224" height="224" fill="#b04a1f"/>
+  <!-- Les quatre traits de coupe, en dehors du fond perdu, comme sur une
+       épreuve. Épaisseur 12 pour survivre à la réduction. -->
+  <g fill="#3a342c">
+    <rect x="52" y="134" width="64" height="20"/>
+    <rect x="134" y="52" width="20" height="64"/>
+    <rect x="396" y="134" width="64" height="20"/>
+    <rect x="358" y="52" width="20" height="64"/>
+    <rect x="52" y="358" width="64" height="20"/>
+    <rect x="134" y="396" width="20" height="64"/>
+    <rect x="396" y="358" width="64" height="20"/>
+    <rect x="358" y="396" width="20" height="64"/>
+  </g>
+</svg>

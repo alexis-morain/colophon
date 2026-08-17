@@ -1,0 +1,26 @@
+<!-- Marque 2, « la grille ».
+
+     Un C composé de cases, c'est-à-dire la lettre obtenue en enlevant des
+     photos d'une planche plutôt qu'en dessinant une lettre. La forme dit ce
+     que fait le logiciel : il place des rectangles, et ce qu'on lit ensuite
+     n'était pas dessiné.
+
+     Cinq cases sur une grille de trois par trois, centrées dans le carré
+     de l'icône : le C est optiquement décalé si on centre la grille de
+     trois colonnes dont une est vide. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#f6f2e9"/>
+  <g fill="#b04a1f">
+    <!-- rangée haute : deux cases, la troisième manque, c'est l'ouverture -->
+    <rect x="144" y="80" width="112" height="112"/>
+    <rect x="256" y="80" width="112" height="112"/>
+    <!-- rangée médiane : la seule case de gauche, le dos de la lettre -->
+    <rect x="144" y="200" width="112" height="112"/>
+    <!-- rangée basse : deux cases, symétriques de la haute -->
+    <rect x="144" y="320" width="112" height="112"/>
+    <rect x="256" y="320" width="112" height="112"/>
+  </g>
+  <!-- Rien à droite du milieu : c'est ce vide qui fait la lettre. Un
+       contour en pointillé y a été essayé et retiré, il brouillait la
+       forme à 32 px sans rien apprendre à personne. -->
+</svg>

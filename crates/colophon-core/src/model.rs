@@ -24,6 +24,14 @@ pub struct Album {
     /// existed, and read as the default.
     #[serde(default, skip_serializing_if = "crate::layout::Densite::is_default")]
     pub densite: crate::layout::Densite,
+    /// What the composition knew about the album, kept for the colophon
+    /// page. Stored rather than recomputed: the counts, the span, the towns
+    /// and the cameras all cost a full reopen of every original, and the
+    /// facts do not change when the album is edited. Absent on albums
+    /// composed before the page existed, and the page is then simply not
+    /// offered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub colophon: Option<crate::colophon::Faits>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -205,6 +213,7 @@ impl Album {
             spreads: Vec::new(),
             cover: None,
             densite: crate::layout::Densite::default(),
+            colophon: None,
         }
     }
 

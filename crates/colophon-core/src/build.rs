@@ -30,6 +30,10 @@ pub struct BuildOptions {
     /// kept by every recomposition: changing pace halfway through would
     /// rebuild the album around the spreads the user had already pinned.
     pub densite: layout::Densite,
+    /// Print the colophon page. On by default, and a recomposition carries
+    /// over what the album already said: taking the page away once must not
+    /// have to be done again after every recomposition.
+    pub colophon: bool,
 }
 
 impl Default for BuildOptions {
@@ -43,6 +47,7 @@ impl Default for BuildOptions {
             pinned: Vec::new(),
             cover: None,
             densite: layout::Densite::default(),
+            colophon: true,
         }
     }
 }
@@ -502,6 +507,26 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
              ont toutes été écartées ({}) ; aucun album n'a été écrit",
             resume.join(", ")
         );
+    }
+
+    // The colophon page, on by default: the software is called Colophon and
+    // did not print one. The facts travel in album.json, the page itself is
+    // an ordinary spread at the end of the book, so it counts in the
+    // pagination the suppliers sanction without a single special case. The
+    // Envoi screen takes it away in one click.
+    album.colophon = Some(crate::colophon::faits(
+        &base,
+        photos_kept,
+        photos_scanned,
+        chrono::Local::now().date_naive(),
+    ));
+    if let (true, Some(f)) = (opts.colophon, &album.colophon) {
+        album.spreads.push(crate::colophon::spread(
+            f,
+            opts.trim,
+            crate::printer::GRAMMAGE_DEFAUT,
+            env!("CARGO_PKG_VERSION"),
+        ));
     }
 
     // 5. album.json, plus the thumbnail index. Cache filenames hash the

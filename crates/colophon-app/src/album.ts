@@ -38,6 +38,11 @@ export type Album = {
   bleed_mm: number;
   spreads: Spread[];
   cover?: Cover;
+  /** What the composition measured, kept for the colophon page. Absent on
+   *  albums composed before the page existed: the page is then not offered,
+   *  because nothing here can be invented after the fact. The shape is
+   *  opaque to the front, which only asks the engine to render it. */
+  colophon?: unknown;
 };
 
 export type OpenedAlbum = {
@@ -90,6 +95,8 @@ export const TEMPLATES: [string, number][] = [
   // the template picker and of every count-driven rule.
   ["vide", 0],
   ["texte", 0],
+  // The last page of the book, written by the machine about itself.
+  ["colophon", 0],
 ];
 
 /** Cell aspects, port of `pdf.rs::CELL_*`. */
@@ -215,7 +222,8 @@ function fitted(b: Rect, aspect: number): Rect {
 /** The engine's own geometry, origin bottom-left as in the PDF. */
 function slotsBottomUp(template: string, n: number, g: Canvas): Rect[] {
   // Photo-less spreads hold no rectangles at all.
-  if (template === "vide" || template === "texte") return [];
+  if (template === "vide" || template === "texte" || template === COLOPHON_TEMPLATE)
+    return [];
   const verso = template.endsWith("_verso");
   const leadRight = !verso;
   const lead = pageBox(leadRight, g);
@@ -416,6 +424,17 @@ export const TEXT_LEADING_MM = 6.4;
  *  bottom-up; the flip happens here like in slotsFor). */
 export function textAnchor(g: Canvas): { x: number; y: number } {
   return { x: g.w / 2 + g.gutter / 2, y: g.h - g.h * 0.62 };
+}
+
+/** The colophon spread: template name, type size and anchor. Port of
+ *  `colophon.rs` and `pdf.rs::colophon_anchor`. Quieter than a text page and
+ *  low on the recto: it is the last thing in the book, not a statement. */
+export const COLOPHON_TEMPLATE = "colophon";
+export const COLOPHON_SIZE_MM = 8.5 * 0.352778;
+export const COLOPHON_LEADING_MM = 4.6;
+
+export function colophonAnchor(g: Canvas): { x: number; y: number } {
+  return { x: g.w / 2 + g.gutter / 2, y: g.h - g.h * 0.3 };
 }
 
 /** Reference paper weight of the spine coefficients. Port of printer.rs. */

@@ -95,6 +95,16 @@ pub fn prevol(dir: &Path, profil: &'static PrinterProfile) -> Result<PrevolRepor
 /// Original pixel sizes, EXIF orientation applied, keyed by slot source.
 /// Absent entries mean the folder moved: resolution then goes unchecked and
 /// the report says so rather than passing quietly.
+/// The album prints the colophon page. It is an ordinary spread, so it costs
+/// two pages like any other, which is exactly why the pagination rule has to
+/// know about it: it is the one spread a user can drop in a single click.
+fn a_un_colophon(album: &Album) -> bool {
+    album
+        .spreads
+        .iter()
+        .any(|s| s.template == crate::colophon::TEMPLATE)
+}
+
 fn original_dimensions(album: &Album) -> HashMap<String, (u32, u32)> {
     let root = PathBuf::from(&album.root);
     if !root.is_dir() {
@@ -157,11 +167,19 @@ pub fn check(
             case_idx: None,
             src: None,
             cause,
-            remede: format!(
-                "ajoutez ou retirez des planches : une planche vaut deux pages, il en faut entre {} et {}",
-                profil.pages_min / 2,
-                profil.pages_max / 2
-            ),
+            // The colophon page is two of those pages, and an album sitting
+            // exactly on the upper bound is pushed over by it. Say so where
+            // it is read, rather than letting somebody hunt for two pages
+            // through a book of a hundred spreads.
+            remede: if a_un_colophon(album) && profil.pagination_ok(pages_fichier - 2) {
+                "décochez la page de colophon dans l'écran Envoi : elle vaut deux pages, et sans elle le compte tombe juste".to_string()
+            } else {
+                format!(
+                    "ajoutez ou retirez des planches : une planche vaut deux pages, il en faut entre {} et {}",
+                    profil.pages_min / 2,
+                    profil.pages_max / 2
+                )
+            },
         });
     }
 
@@ -491,6 +509,53 @@ mod tests {
         assert!(d.cause.contains("22 pages"), "{}", d.cause);
         assert!(!d.cause.contains("ERR"), "aucun code dans le message");
         assert!(!d.remede.is_empty());
+    }
+
+    /// The colophon page is two pages like any spread. An album sitting on
+    /// the supplier's upper bound is pushed over it by that page, and the
+    /// remedy names the one click that fixes it rather than sending somebody
+    /// hunting through a hundred spreads.
+    #[test]
+    fn the_colophon_page_is_named_when_it_is_the_two_pages_too_many() {
+        let dims: HashMap<String, (u32, u32)> = (0..101)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        let pr = PrinterProfile::par_id("cloudprinter").unwrap(); // 24 à 200 pages
+
+        // 100 spreads = 200 pages, exactly the bound: nothing to report.
+        let a = album_de(100, 3.0);
+        let r = check(&a, pr, &dims);
+        assert!(!r.defauts.iter().any(|d| d.regle == "pagination"), "{:?}", r.defauts);
+
+        // The colophon page makes 202, and the remedy says which page to drop.
+        let mut avec = a.clone();
+        avec.spreads.push(crate::colophon::spread(
+            &crate::colophon::Faits {
+                photos_retenues: 100,
+                photos_scannees: 400,
+                debut: None,
+                fin: None,
+                lieux: Vec::new(),
+                appareils: Vec::new(),
+                compose_le: chrono::NaiveDate::from_ymd_opt(2026, 8, 17).unwrap(),
+            },
+            avec.trim_mm,
+            150.0,
+            "0.9.0",
+        ));
+        let r = check(&avec, pr, &dims);
+        let d = r.defauts.iter().find(|d| d.regle == "pagination").unwrap();
+        assert!(d.cause.contains("202 pages"), "{}", d.cause);
+        assert!(d.remede.contains("colophon"), "{}", d.remede);
+
+        // A count that is wrong for another reason keeps the general remedy.
+        let court = album_de(4, 3.0);
+        let d = check(&court, pr, &dims)
+            .defauts
+            .into_iter()
+            .find(|d| d.regle == "pagination")
+            .unwrap();
+        assert!(!d.remede.contains("colophon"), "{}", d.remede);
     }
 
     /// A small original in a full-page cell is caught, and the finding names

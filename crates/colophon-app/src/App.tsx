@@ -14,6 +14,7 @@ import {
   listFormats,
   listPrinters,
   onBuildProgress,
+  colophonSpread,
   openAlbum as openAlbumAt,
   originSpread,
   pickAlbumFolder,
@@ -42,6 +43,8 @@ import {
   removePhoto,
   removeSpread,
   renameAlbum,
+  setColophon,
+  hasColophon,
   rescuePhoto,
   restoreSpread,
   setCover,
@@ -262,6 +265,38 @@ export default function App() {
       return false;
     }
   }, []);
+
+  /**
+   * Put the colophon page in or take it out, from the Envoi screen. The page
+   * is an ordinary spread at the end of the book, so this is an ordinary
+   * edit: ⌘Z undoes it, ⌘S saves it, and the preflight recounts the pages on
+   * its own. The text is rendered by the engine from the facts the album
+   * carries; the window never writes that page itself.
+   */
+  const toggleColophon = useCallback(
+    async (on: boolean) => {
+      const current = histRef.current?.album;
+      if (!current) return;
+      try {
+        const spread = on ? await colophonSpread(current) : null;
+        if (on && !spread) {
+          setStatus(
+            "Cet album a été composé avant la page de colophon : recomposez-le pour l’obtenir",
+          );
+          return;
+        }
+        apply((a) => setColophon(a, spread));
+        setStatus(
+          on
+            ? "Page de colophon ajoutée : ⌘S l’enregistre, le prévol recompte les pages"
+            : "Page de colophon retirée",
+        );
+      } catch (e) {
+        setError(fault("La page de colophon n’a pas pu être changée.", e));
+      }
+    },
+    [apply],
+  );
 
   const regenPdf = useCallback(async () => {
     if (rendering || !hist || !(await save())) return;
@@ -1161,6 +1196,9 @@ export default function App() {
           onExport={() => void regenPdf()}
           exporting={rendering}
           dirty={dirty}
+          colophonPossible={album.colophon !== undefined && album.colophon !== null}
+          colophonActif={hasColophon(album)}
+          onColophon={(on) => void toggleColophon(on)}
         />
       ) : view === "planches" ? (
         <PlanchesView

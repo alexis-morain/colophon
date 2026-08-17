@@ -4,6 +4,7 @@
 
 import {
   Album,
+  COLOPHON_TEMPLATE,
   Cover,
   Discard,
   Slot,
@@ -368,6 +369,23 @@ export function renameAlbum(album: Album, title: string): Album {
     title: t,
     cover: album.cover && suivait ? { ...album.cover, title: t } : album.cover,
   };
+}
+
+/**
+ * Add or drop the colophon page. It lives at the end of the book and nowhere
+ * else: a page that says what the object is says it last. Passing null takes
+ * it away, which is the one click the Envoi screen offers.
+ */
+export function setColophon(album: Album, spread: Spread | null): Album {
+  const sans = album.spreads.filter((s) => s.template !== COLOPHON_TEMPLATE);
+  const spreads = spread ? [...sans, spread] : sans;
+  if (spreads.length === album.spreads.length && !spread) return album;
+  return { ...album, spreads };
+}
+
+/** The album prints its colophon page. */
+export function hasColophon(album: Album): boolean {
+  return album.spreads.some((s) => s.template === COLOPHON_TEMPLATE);
 }
 
 /**

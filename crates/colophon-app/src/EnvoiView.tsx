@@ -24,6 +24,9 @@ export function EnvoiView({
   onExport,
   exporting,
   dirty,
+  colophonPossible,
+  colophonActif,
+  onColophon,
 }: {
   album: Album;
   /** Loaded once by the window, shared with the cover editor. */
@@ -36,6 +39,11 @@ export function EnvoiView({
   exporting: boolean;
   /** Unsaved edits: the preflight reads the disk, so it would lie. */
   dirty: boolean;
+  /** The album carries the facts the page is made of. False on albums
+   *  composed before the page existed: nothing to offer, so nothing shows. */
+  colophonPossible: boolean;
+  colophonActif: boolean;
+  onColophon: (on: boolean) => void;
 }) {
   const [report, setReport] = useState<PrevolReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -196,6 +204,24 @@ export function EnvoiView({
               ))}
             </div>
           )}
+        </section>
+      )}
+
+      {colophonPossible && (
+        <section className="envoi-colophon">
+          <label>
+            <input
+              type="checkbox"
+              checked={colophonActif}
+              onChange={(e) => onColophon(e.target.checked)}
+            />
+            Imprimer la page de colophon
+          </label>
+          <p>
+            La dernière page du livre, écrite par le logiciel : combien de
+            photographies sur combien, quand, où, avec quels appareils. Deux
+            pages de plus, et jamais un chemin, une coordonnée ni une légende.
+          </p>
         </section>
       )}
 

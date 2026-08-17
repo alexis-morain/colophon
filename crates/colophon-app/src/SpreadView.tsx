@@ -30,6 +30,10 @@ import {
   mediaCanvas,
   slotsFor,
   textAnchor,
+  colophonAnchor,
+  COLOPHON_TEMPLATE,
+  COLOPHON_SIZE_MM,
+  COLOPHON_LEADING_MM,
 } from "./album";
 import { captionSuggestion, detectedFocal } from "./bridge";
 import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
@@ -156,6 +160,7 @@ export function SpreadView({
   }, [spread, rects, canvas, mm, onOverflow, fontReady]);
 
   const textAt = textAnchor(canvas);
+  const colophonAt = colophonAnchor(canvas);
 
   // The caption popover anchors under the selected case, in viewport
   // coordinates (position: fixed): it may hang below the sheet without
@@ -302,6 +307,22 @@ export function SpreadView({
             leadPx={TEXT_LEADING_MM * mm * 1.35}
             roomMm={canvas.w / 2 - canvas.margin - canvas.gutter / 2}
             onText={onText}
+          />
+        )}
+
+        {/* The colophon: the same block, quieter and lower, and read-only.
+            The engine writes it from what it measured; typing over it would
+            turn a statement of fact into a caption. The Envoi screen is the
+            one place it can be taken away. */}
+        {spread.template === COLOPHON_TEMPLATE && (
+          <TextBlock
+            text={spread.text ?? ""}
+            x={colophonAt.x * mm}
+            y={colophonAt.y * mm}
+            width={(canvas.w / 2 - canvas.margin - canvas.gutter / 2) * mm}
+            fontPx={Math.max(COLOPHON_SIZE_MM * mm * 1.35, 11)}
+            leadPx={COLOPHON_LEADING_MM * mm * 1.35}
+            roomMm={canvas.w / 2 - canvas.margin - canvas.gutter / 2}
           />
         )}
       </div>

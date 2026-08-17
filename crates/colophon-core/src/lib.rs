@@ -5,6 +5,7 @@
 pub mod analyze;
 pub mod audit;
 pub mod build;
+pub mod colophon;
 pub mod cover;
 pub mod face;
 pub mod font;

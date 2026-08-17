@@ -352,6 +352,12 @@ async fn recompose_album(
         // recomposition keeps it rather than quietly reverting to the
         // default one.
         densite: album.densite,
+        // Same reasoning for the colophon page: somebody who took it away
+        // must not have to take it away again after every recomposition.
+        colophon: album
+            .spreads
+            .iter()
+            .any(|s| s.template == colophon_core::colophon::TEMPLATE),
     };
     tauri::async_runtime::spawn_blocking(move || {
         colophon_core::build_album(&root, &build_out, opts)
@@ -555,6 +561,27 @@ fn open_report_url(url: String) -> Result<(), String> {
     let run = std::process::Command::new("xdg-open").arg(&url).spawn();
     run.map(|_| ())
         .map_err(|e| format!("ouverture du navigateur : {e}"))
+}
+
+/// The colophon page, built from the facts the album carries. `Ok(None)` on
+/// an album composed before the page existed: it holds no facts, and the
+/// Envoi screen offers nothing rather than inventing a page.
+///
+/// The version printed is the app's own, not the engine crate's: what the
+/// reader of a book wants is the name on the About screen.
+#[tauri::command]
+fn colophon_spread(
+    album: Album,
+    app: tauri::AppHandle,
+) -> Result<Option<colophon_core::model::Spread>, String> {
+    Ok(album.colophon.as_ref().map(|f| {
+        colophon_core::colophon::spread(
+            f,
+            album.trim_mm,
+            colophon_core::printer::GRAMMAGE_DEFAUT,
+            &app.package_info().version.to_string(),
+        )
+    }))
 }
 
 /// The composer's own version of one spread, for « rendre à l'automatique ».
@@ -883,6 +910,7 @@ pub fn run() {
             report_data,
             open_report_url,
             origin_spread,
+            colophon_spread,
             list_albums,
             delete_album,
             purge_thumb_caches,

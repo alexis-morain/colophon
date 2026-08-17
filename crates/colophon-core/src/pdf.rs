@@ -170,6 +170,8 @@ pub const TEMPLATES: &[(&str, usize)] = &[
     // every count-driven rule.
     ("vide", 0),
     ("texte", 0),
+    // The last page of the book, written by the machine about itself.
+    ("colophon", 0),
 ];
 
 /// Cell aspect of the margined landscape cells (stacks, quads).
@@ -411,6 +413,13 @@ pub fn text_anchor(g: &SpreadGeometry) -> Point {
     Point { x: g.media_w / 2.0 + g.gutter / 2.0, y: g.media_h * 0.62 }
 }
 
+/// Where the colophon's first line sits: same left margin as a text page,
+/// but low on the recto, under the whole empty page. It is the last thing in
+/// the book and it should read like it: quiet, at the foot, not a statement.
+pub fn colophon_anchor(g: &SpreadGeometry) -> Point {
+    Point { x: g.media_w / 2.0 + g.gutter / 2.0, y: g.media_h * 0.30 }
+}
+
 /// The part of an image a cover-crop into `rect` shows, in image pixels:
 /// `(x0, y0, vw, vh)`, top-left origin. Same arithmetic as the renderer;
 /// the composer and the linter reason about face cuts with it. `zoom` is
@@ -440,7 +449,7 @@ fn overlaps(a: &Rect, b: &Rect) -> bool {
 /// them is what keeps a long album from reading like a spreadsheet.
 pub fn slots_for(template: &str, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
     // Photo-less spreads hold no rectangles at all.
-    if template == "vide" || template == "texte" {
+    if template == "vide" || template == "texte" || template == crate::colophon::TEMPLATE {
         return Vec::new();
     }
     let verso = template.ends_with("_verso");
@@ -758,9 +767,20 @@ impl PdfWriter {
             );
         }
 
-        // Free-text page: lines exactly as typed, fixed leading.
+        // Free-text page: lines exactly as typed, fixed leading. The colophon
+        // is the same machinery, one notch quieter and lower on the page.
         if let Some(text) = &spread.text {
-            let at = text_anchor(&self.geom);
+            let colophon = spread.template == crate::colophon::TEMPLATE;
+            let at = if colophon {
+                colophon_anchor(&self.geom)
+            } else {
+                text_anchor(&self.geom)
+            };
+            let (size, leading) = if colophon {
+                (crate::colophon::SIZE_PT, crate::colophon::LEADING_MM)
+            } else {
+                (TEXT_SIZE_PT, TEXT_LEADING_MM)
+            };
             for (i, line) in text.lines().enumerate() {
                 if line.is_empty() {
                     continue;
@@ -768,8 +788,8 @@ impl PdfWriter {
                 text_op(
                     &mut content,
                     at.x,
-                    at.y - i as f64 * TEXT_LEADING_MM,
-                    TEXT_SIZE_PT,
+                    at.y - i as f64 * leading,
+                    size,
                     TEXT_INK,
                     line,
                 );

@@ -383,6 +383,25 @@ export async function openReportUrl(url: string): Promise<void> {
   return invoke("open_report_url", { url });
 }
 
+/** The colophon page, rendered from the facts the album carries. Null on an
+ *  album composed before the page existed: nothing can be invented after the
+ *  fact, so the Envoi screen simply does not offer it. */
+export async function colophonSpread(album: Album): Promise<Spread | null> {
+  if (!inTauri) {
+    // The harness has no engine; the shape is enough to work the screen.
+    if (!album.colophon) return null;
+    return {
+      template: "colophon",
+      slots: [],
+      text:
+        "Colophon\n\n152 photographies retenues sur 575, prises du 21 au 29 octobre 2013.\n" +
+        "Porto-Vecchio et Bonifacio.\nCanon EOS 550D.\n\n" +
+        "Composé le 17 août 2026 avec Colophon dev.\n210 × 210 mm, papier 150 g/m².",
+    };
+  }
+  return invoke<Spread | null>("colophon_spread", { album });
+}
+
 /** The composer's own version of one spread, for « rendre à l'automatique ».
  *  Null when the spread was inserted by hand: nothing automatic proposed it.
  *  Throws when the album predates album.origin.json, and the message says so.

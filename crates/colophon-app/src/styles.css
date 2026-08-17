@@ -135,6 +135,13 @@ kbd {
   font-size: 0.92em;
 }
 
+/* Checkboxes came out in the system blue, the one colour the palette does
+   not contain. One line puts them in the album's terracotta. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
 /* ---- reading shell ---------------------------------------------------- */
 
 .app {
@@ -2395,6 +2402,7 @@ kbd {
   grid-template-areas:
     "verdict imprimeurs"
     "defauts fiche"
+    "colophon fiche"
     "actions fiche";
   gap: 0 44px;
   align-content: start;
@@ -2403,7 +2411,8 @@ kbd {
 @media (max-width: 900px) {
   .envoi {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "verdict" "defauts" "actions" "imprimeurs" "fiche";
+    grid-template-areas:
+      "verdict" "defauts" "colophon" "actions" "imprimeurs" "fiche";
   }
 }
 
@@ -2601,6 +2610,30 @@ button.envoi-defaut:focus-visible {
 .envoi-notes p {
   margin: 0 0 8px;
   line-height: var(--lh-ui);
+}
+
+/* The one thing on this screen that changes the book rather than reporting
+   on it. Quiet, and above the export button: it costs two pages, and the
+   page count is what the sheet beside it is about. */
+.envoi-colophon {
+  grid-area: colophon;
+  margin-top: 26px;
+  max-width: 62ch;
+}
+
+.envoi-colophon label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: var(--fs-15);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.envoi-colophon p {
+  margin: 4px 0 0 22px;
+  font-size: var(--fs-12);
+  color: var(--muted);
 }
 
 .envoi-actions {

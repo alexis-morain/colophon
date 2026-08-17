@@ -721,9 +721,27 @@ export default function App() {
       apply((a) => removeSpread(a, index));
       setStatus(`Planche ${index + 1} supprimée (⌘Z la ramène)`);
     },
-    raccourcis: () => setShortcuts((s) => !s),
-    stockage: () => setStockage((s) => !s),
-    apropos: () => setApropos((a) => !a),
+    // The four overlays are one place at a time: opening one closes the
+    // others. Two panels stacked, neither trapping the keyboard, is how
+    // Échap stops doing what it says.
+    raccourcis: () => {
+      setStockage(false);
+      setApropos(false);
+      setSignaler(null);
+      setShortcuts((s) => !s);
+    },
+    stockage: () => {
+      setShortcuts(false);
+      setApropos(false);
+      setSignaler(null);
+      setStockage((s) => !s);
+    },
+    apropos: () => {
+      setShortcuts(false);
+      setStockage(false);
+      setSignaler(null);
+      setApropos((a) => !a);
+    },
     // The faithful preview: only in the book view, where there is a spread
     // to be faithful about.
     fidele: () => {
@@ -732,7 +750,12 @@ export default function App() {
     },
     // The three report variants. A bug needs nothing; the two layout
     // complaints quote the spread on screen, the crop one its selected cell.
-    "signaler-bug": () => setSignaler("bug"),
+    "signaler-bug": () => {
+      setShortcuts(false);
+      setStockage(false);
+      setApropos(false);
+      setSignaler("bug");
+    },
     "signaler-planche": () => {
       if (!album || index < 0) {
         setStatus("Ouvrez d’abord la planche à signaler (vue Livre ou Planches)");

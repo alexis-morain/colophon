@@ -99,6 +99,48 @@
   color-scheme: light;
 }
 
+/* ---- the dark chrome ---------------------------------------------------- */
+
+/* Follows the system, which is the only setting anybody actually wants for
+   this. Everything below is a chrome token: the printed page keeps its cream
+   and its warm inks in both themes, because paper does not have a theme, and
+   the keyboard review keeps its own dark room, which was dark before this
+   existed.
+   One block, no override attribute: there is no preference to force it with
+   yet, and a second palette nobody can reach is a second palette to keep
+   true. It goes in with the language selector, whose preferences screen does
+   not exist either. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Deeper than the review room (#1a1c1e), so entering the review still
+       reads as walking into a darker room rather than as nothing at all. */
+    --fond: #16181a;
+    --surface: #212427;
+    --text: #e7e9ea;
+    --muted: #a0a7ad;
+    /* The terracotta lifted until it clears 4,5:1 on both grounds: the same
+       ink would go to 2,4:1 down here and disappear. */
+    --accent: #e07a4a;
+    --accent-hover: #f08d5f;
+    --on-accent: #16181a;
+
+    --text-rgb: 231 233 234;
+    --accent-rgb: 224 122 74;
+    --on-accent-rgb: 22 24 26;
+
+    /* A shadow on a dark ground does nothing: what separates a sheet from
+       its background here is the sheet's own brightness, plus a thin ring. */
+    --shadow-paper:
+      0 0 0 1px rgb(255 255 255 / 0.06),
+      0 24px 60px -24px rgb(0 0 0 / 0.75);
+    --shadow-pop:
+      0 0 0 1px rgb(255 255 255 / 0.08),
+      0 18px 44px -18px rgb(0 0 0 / 0.8);
+
+    color-scheme: dark;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

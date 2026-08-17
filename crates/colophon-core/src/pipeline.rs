@@ -114,7 +114,7 @@ pub fn split_rejected(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
 /// Screenshots, memes and forwarded images lack a camera fingerprint.
 /// A real photo carries an EXIF capture date; failing that, it needs both
 /// GPS and a camera model (iOS can stamp GPS onto saved images, so GPS
-/// alone proves nothing) — or a star, because a photo somebody sat down and
+/// alone proves nothing), or a star, because a photo somebody sat down and
 /// rated is not a parasite whatever its EXIF says. Returns the junk itself:
 /// the sorting view shows it.
 pub fn split_junk(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
@@ -458,7 +458,7 @@ mod tests {
         assert_eq!(rejected[0].path, PathBuf::from("rejetee.jpg"));
     }
 
-    /// A photo without EXIF date, GPS or camera is a parasite — unless
+    /// A photo without EXIF date, GPS or camera is a parasite, unless
     /// somebody sat down and rated it, which no screenshot ever gets.
     #[test]
     fn a_starred_photo_is_never_a_parasite() {

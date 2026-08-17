@@ -1,5 +1,5 @@
 //! The reprise metric: how much of the machine's proposal a human had to
-//! correct by hand. It is the number the GO/NO-GO milestone hangs on — a
+//! correct by hand. It is the number the GO/NO-GO milestone hangs on: a
 //! draft nobody rewrites is a draft that ships.
 //!
 //! `album.origin.json` is the composer's untouched proposal, written once at

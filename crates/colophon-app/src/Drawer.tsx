@@ -1,6 +1,6 @@
 // The photo drawer of the book view: every photo the album does not show,
-// one drag away from any case. Two tabs — unplaced (good photos the budget
-// or a hand removal set aside) and discarded (curation calls) — with the
+// one drag away from any case. Two tabs, unplaced (good photos the budget
+// or a hand removal set aside) and discarded (curation calls), with the
 // reason on hover. The pool mechanics of SmartAlbums, kept to one strip:
 // the sorting view remains the place for a full audit.
 

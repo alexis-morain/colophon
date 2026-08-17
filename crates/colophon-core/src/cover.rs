@@ -44,7 +44,7 @@ const BACK_LEADING: f64 = 1.45;
 
 /// White, for type over a photo, and the hard shadow under it. A blurred
 /// halo is a screen effect; on paper it prints as a smudge, so the shadow is
-/// one hard offset instead — the same shape the editor now shows.
+/// one hard offset instead, the same shape the editor now shows.
 const PAPER: [f64; 3] = [0.99, 0.97, 0.94];
 const SHADOW: [f64; 3] = [0.09, 0.08, 0.06];
 const SHADOW_OFFSET: f64 = 0.45;

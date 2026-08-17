@@ -187,7 +187,7 @@ fn main() -> Result<()> {
         )?)?;
         let g = colophon_core::cover::geometry(&album, profil);
         eprintln!(
-            "done in {:.1?}: {} — {:.1} × {:.1} mm, dos {:.1} mm, fond perdu {:.1} mm",
+            "done in {:.1?}: {} ({:.1} × {:.1} mm, dos {:.1} mm, fond perdu {:.1} mm)",
             t0.elapsed(),
             out.display(),
             g.media_w,

@@ -3,8 +3,8 @@
 //! A PDF/X file says which colour it was made for, and says it by carrying
 //! the profile rather than by naming it: `sRGB IEC61966-2.1` as a string is
 //! an assertion, an OutputIntent with a `DestOutputProfile` is a measurement
-//! anyone downstream can redo. Same reasoning as the face in [`crate::font`]
-//! — what the file needs travels inside the file.
+//! anyone downstream can redo. Same reasoning as the face in [`crate::font`]:
+//! what the file needs travels inside the file.
 //!
 //! sRGB2014.icc, published by the International Color Consortium and
 //! redistributable without restriction (see `assets/sRGB2014-LICENSE.md`).
@@ -69,7 +69,7 @@ pub fn header() -> Result<Header> {
 fn parse(d: &[u8]) -> Result<Header> {
     ensure!(d.len() >= 132, "profil ICC tronqué : {} octets", d.len());
     // Bytes 36..40 are the mandatory `acsp` signature. Its absence means the
-    // asset is not an ICC profile at all — an HTML error page saved under the
+    // asset is not an ICC profile at all: an HTML error page saved under the
     // right name, which is exactly how this one nearly shipped.
     ensure!(&d[36..40] == b"acsp", "signature acsp absente : ce n'est pas un profil ICC");
 

@@ -2,7 +2,7 @@
 //!
 //! Every supplier differs on every field: bleed per edge, colour space, one
 //! file or two, who computes the spine, how many pages the binding accepts.
-//! None of that is ever hard-coded in the renderer — a profile is a value the
+//! None of that is ever hard-coded in the renderer: a profile is a value the
 //! export and the preflight both read.
 //!
 //! Some numbers are confirmed by the supplier, others are our own reading of
@@ -176,7 +176,7 @@ pub const GRAMMAGE_DEFAUT: f64 = 150.0;
 
 static PROFILS: &[PrinterProfile] = &[
     // Main supplier. Accepts FOGRA39 or RGB, binds from two files, and wants
-    // the spine from us — the exact coefficient is the pre-sales question.
+    // the spine from us. The exact coefficient is the pre-sales question.
     PrinterProfile {
         id: "cloudprinter",
         nom: "Cloudprinter",

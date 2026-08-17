@@ -20,8 +20,8 @@
 //! OutputIntent with a real ICC profile, well-formed XMP agreeing with
 //! `/Info`, no encryption, no borrowed resources), so a green PDF/A-2b run
 //! covers nearly all of what X-4 asks. The handful of rules that belong to
-//! X-4 alone — the `GTS_PDFX` output intent, the version in the XMP, TrimBox
-//! on every page, `/Trapped` — are checked by [`crate::pdf`]'s own tests,
+//! X-4 alone (the `GTS_PDFX` output intent, the version in the XMP, TrimBox
+//! on every page, `/Trapped`) are checked by [`crate::pdf`]'s own tests,
 //! which reopen the written file.
 //!
 //! What stays unmeasured here is the X-4 conformance *as a certified verdict*.

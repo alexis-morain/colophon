@@ -467,7 +467,7 @@ fn promote_opening(photos: &mut [Photo], holds_a_page: &dyn Fn(&Photo) -> bool) 
     let bar = quantile(&scores, OPENING_QUANTILE);
     // Strong first, big enough to print alone second. A 2 Mpx frame at the
     // top of the quantile makes a fine mosaic cell and a poor opening page,
-    // so the search prefers one that can hold a page — but the chapter opens
+    // so the search prefers one that can hold a page, but the chapter opens
     // strong whatever happens: on a big page format a whole chapter can fail
     // to hold one, and the linter counts a weak opening as a hard defect.
     let chosen = (0..photos.len())

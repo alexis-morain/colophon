@@ -17,7 +17,7 @@ pub struct PhotoMeta {
     /// Camera model from EXIF. Its absence is a strong junk signal.
     pub model: Option<String>,
     /// What the user already said about this photo: 1 to 5 stars, or -1 for
-    /// a photo they rejected. `None` when nobody ever rated it — which is
+    /// a photo they rejected. `None` when nobody ever rated it, which is
     /// the case for the overwhelming majority of folders, and reads as a
     /// neutral score, never as a zero.
     pub rating: Option<i8>,
@@ -97,7 +97,7 @@ pub fn read(path: &Path) -> PhotoMeta {
 const TAG_RATING: exif::Tag = exif::Tag(exif::Context::Tiff, 0x4746);
 
 /// How far into a file the XMP packet is looked for. Every writer puts it in
-/// the header — an APP1 segment for JPEG, the meta box for HEIC, an iTXt
+/// the header: an APP1 segment for JPEG, the meta box for HEIC, an iTXt
 /// chunk for PNG. Past this we would be scanning compressed pixels for
 /// something that is not in them.
 const XMP_SCAN_BYTES: usize = 256 * 1024;

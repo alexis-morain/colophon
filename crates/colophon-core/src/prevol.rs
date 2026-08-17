@@ -2,7 +2,7 @@
 //!
 //! Every check is read against a [`PrinterProfile`], never against a constant:
 //! the same album passes at one supplier and fails at the next, and that is
-//! the point. A blocking defect stops the export — a print run costs real
+//! the point. A blocking defect stops the export: a print run costs real
 //! money and a reprint costs it twice.
 //!
 //! Every message names **the spread and the cause**, in words, and says what

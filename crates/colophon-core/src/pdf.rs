@@ -307,7 +307,7 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
 }
 
 /// (rect w, rect h, image w, image h, focal x, focal y, zoom): the shapes a
-/// real album mixes — portrait in landscape cell, pano, off-center focal,
+/// real album mixes: portrait in landscape cell, pano, off-center focal,
 /// zoomed, and the degenerate zoom below 1 that must clamp to the fill.
 const CROP_SAMPLES: &[(f64, f64, f64, f64, f64, f64, f64)] = &[
     (100.0, 100.0, 2000.0, 1000.0, 0.5, 0.5, 1.0),

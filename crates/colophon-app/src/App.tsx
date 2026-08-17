@@ -65,7 +65,8 @@ import { SignalerView } from "./SignalerView";
 import { SignalKind } from "./signaler";
 import { Chevron, CoverGlyph } from "./icons";
 import { installMenu, MenuActions, RecentAlbum } from "./menu";
-import { readRecents, pushRecent } from "./recents";
+import { readRecents, pushRecent, forgetRecent, albumId } from "./recents";
+import { StockageView } from "./StockageView";
 import { cachedThumb, loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
 
@@ -143,6 +144,8 @@ export default function App() {
   const [shortcuts, setShortcuts] = useState(false);
   // The report panel (Aide → Signaler), one of the three issue variants.
   const [signaler, setSignaler] = useState<SignalKind | null>(null);
+  // The storage panel (Fichier → Stockage…): what the app wrote on the disk.
+  const [stockage, setStockage] = useState(false);
   // The recent-albums list: welcome screen and Fichier menu read it.
   const [recents, setRecents] = useState<RecentAlbum[]>(readRecents);
 
@@ -545,6 +548,7 @@ export default function App() {
       setStatus(`Planche ${index + 1} supprimée (⌘Z la ramène)`);
     },
     raccourcis: () => setShortcuts((s) => !s),
+    stockage: () => setStockage((s) => !s),
     // The three report variants. A bug needs nothing; the two layout
     // complaints quote the spread on screen, the crop one its selected cell.
     "signaler-bug": () => setSignaler("bug"),
@@ -589,8 +593,13 @@ export default function App() {
         fire("menu", `signaler-${kind}`);
       }
     };
+    const onStockage = () => fire("menu", "stockage");
     window.addEventListener("colophon:signaler", onSignal);
-    return () => window.removeEventListener("colophon:signaler", onSignal);
+    window.addEventListener("colophon:stockage", onStockage);
+    return () => {
+      window.removeEventListener("colophon:signaler", onSignal);
+      window.removeEventListener("colophon:stockage", onStockage);
+    };
   }, [fire]);
 
   // The native menu follows the app state: rebuilt when the album opens or
@@ -607,6 +616,7 @@ export default function App() {
       enregistrer: () => fire("menu", "enregistrer"),
       exporter: () => fire("menu", "exporter"),
       fermerAlbum: () => fire("menu", "fermerAlbum"),
+      stockage: () => fire("menu", "stockage"),
       annuler: () => fire("menu", "annuler"),
       retablir: () => fire("menu", "retablir"),
       vue: (v) => fire("menu", `vue-${v}`),
@@ -724,6 +734,14 @@ export default function App() {
           e.preventDefault();
           if (entries[i]) rescue(entries[i]);
           return;
+        }
+        return;
+      }
+      // The storage panel holds the keyboard like the two below it.
+      if (stockage) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setStockage(false);
         }
         return;
       }
@@ -952,6 +970,7 @@ export default function App() {
     fire,
     shortcuts,
     signaler,
+    stockage,
   ]);
 
   // The review dies with its subject: leaving the sorting view, or rescuing
@@ -986,6 +1005,13 @@ export default function App() {
             index={-1}
             selected={null}
             onClose={() => setSignaler(null)}
+          />
+        )}
+        {stockage && (
+          <StockageView
+            ouvertId={null}
+            onSupprime={(id) => setRecents(forgetRecent(id))}
+            onClose={() => setStockage(false)}
           />
         )}
       </>
@@ -1263,6 +1289,13 @@ export default function App() {
           index={onCover ? -1 : Math.min(index, total - 1)}
           selected={selected}
           onClose={() => setSignaler(null)}
+        />
+      )}
+      {stockage && (
+        <StockageView
+          ouvertId={opened?.dir ? albumId(opened.dir) : null}
+          onSupprime={(id) => setRecents(forgetRecent(id))}
+          onClose={() => setStockage(false)}
         />
       )}
     </div>

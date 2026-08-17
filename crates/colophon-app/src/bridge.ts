@@ -383,6 +383,123 @@ export async function openReportUrl(url: string): Promise<void> {
   return invoke("open_report_url", { url });
 }
 
+/** One album folder as the storage panel shows it. The three weights are
+ *  separated because they are not equally expensive to lose. */
+export type AlbumEntry = {
+  id: string;
+  title: string;
+  /** Page format in millimetres. Null when album.json could not be read. */
+  format: [number, number] | null;
+  spreads: number | null;
+  /** Seconds since the epoch. */
+  modified: number | null;
+  bytes_total: number;
+  bytes_thumbs: number;
+  bytes_pdf: number;
+  /** Set when album.json is unreadable: the row still shows and can be
+   *  deleted, which is exactly what such an album is good for. */
+  probleme: string | null;
+};
+
+export type StorageReport = {
+  dir: string;
+  total: number;
+  albums: AlbumEntry[];
+};
+
+/** What the app has written on this disk. Walks the data directory, so it
+ *  runs off the main thread on the Rust side. */
+export async function listAlbums(): Promise<StorageReport> {
+  if (!inTauri) return DEV_STORAGE;
+  return invoke<StorageReport>("list_albums");
+}
+
+const DEV_STORAGE: StorageReport = {
+  dir: "~/Library/Application Support/fr.morain.colophon",
+  total: 702 * 1024 * 1024,
+  albums: [
+    {
+      id: "random-2024-55846e90",
+      title: "random-2024",
+      format: [210, 210],
+      spreads: 44,
+      modified: 1786539600,
+      bytes_total: 200 * 1024 * 1024,
+      bytes_thumbs: 138 * 1024 * 1024,
+      bytes_pdf: 46 * 1024 * 1024,
+      probleme: null,
+    },
+    {
+      id: "corse-2013-88f933b1",
+      title: "Corse 2013",
+      format: [210, 210],
+      spreads: 48,
+      modified: 1786366800,
+      bytes_total: 183 * 1024 * 1024,
+      bytes_thumbs: 138 * 1024 * 1024,
+      bytes_pdf: 44 * 1024 * 1024,
+      probleme: null,
+    },
+    {
+      id: "mauritanie-2019-9ed43672",
+      title: "mauritanie-2019",
+      format: [297, 210],
+      spreads: 30,
+      modified: 1786107600,
+      bytes_total: 136 * 1024 * 1024,
+      bytes_thumbs: 104 * 1024 * 1024,
+      bytes_pdf: 31 * 1024 * 1024,
+      probleme: null,
+    },
+    {
+      id: "froid-2013-ea70098b",
+      title: "froid-2013",
+      format: null,
+      spreads: null,
+      modified: null,
+      bytes_total: 183 * 1024 * 1024,
+      bytes_thumbs: 138 * 1024 * 1024,
+      bytes_pdf: 44 * 1024 * 1024,
+      probleme: "album.json illisible : EOF while parsing a value",
+    },
+  ],
+};
+
+/** Delete one album folder and return the bytes freed. The photos it was
+ *  composed from are never touched: the Rust side cannot reach them. */
+export async function deleteAlbum(id: string): Promise<number> {
+  if (!inTauri) {
+    const i = DEV_STORAGE.albums.findIndex((a) => a.id === id);
+    if (i < 0) return 0;
+    const [gone] = DEV_STORAGE.albums.splice(i, 1);
+    DEV_STORAGE.total -= gone.bytes_total;
+    return gone.bytes_total;
+  }
+  return invoke<number>("delete_album", { id });
+}
+
+/** Empty every thumbnail cache, returning the bytes freed. The caches
+ *  rebuild themselves at the next open, they are the only thing that does. */
+export async function purgeThumbCaches(): Promise<number> {
+  if (!inTauri) {
+    let freed = 0;
+    for (const a of DEV_STORAGE.albums) {
+      freed += a.bytes_thumbs;
+      a.bytes_total -= a.bytes_thumbs;
+      a.bytes_thumbs = 0;
+    }
+    DEV_STORAGE.total -= freed;
+    return freed;
+  }
+  return invoke<number>("purge_thumb_caches");
+}
+
+/** Show the data directory in the system file manager. */
+export async function revealDataDir(): Promise<void> {
+  if (!inTauri) return;
+  return invoke("reveal_data_dir");
+}
+
 /** Preflight the saved album against one profile. Seconds on a big album:
  *  it reopens every original to measure the effective resolution. */
 export async function preflight(profil: string): Promise<PrevolReport> {

@@ -18,6 +18,25 @@ export function readRecents(): RecentAlbum[] {
   }
 }
 
+/** The folder name of an album path, which is the id the storage panel and
+ *  the Rust side both speak. Handles either separator. */
+export function albumId(dir: string): string {
+  const parts = dir.split(/[\\/]/).filter((p) => p !== "");
+  return parts[parts.length - 1] ?? "";
+}
+
+/** Drop an album the storage panel just deleted. A recent entry pointing at
+ *  a folder that no longer exists would fail loudly at the next click. */
+export function forgetRecent(id: string): RecentAlbum[] {
+  const list = readRecents().filter((r) => albumId(r.dir) !== id);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(list));
+  } catch {
+    /* a full or blocked storage only costs the list */
+  }
+  return list;
+}
+
 export function pushRecent(entry: RecentAlbum): RecentAlbum[] {
   const list = [
     entry,

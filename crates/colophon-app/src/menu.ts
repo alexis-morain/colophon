@@ -21,6 +21,7 @@ export type MenuActions = {
   enregistrer(): void;
   exporter(): void;
   fermerAlbum(): void;
+  stockage(): void;
   annuler(): void;
   retablir(): void;
   vue(v: "livre" | "tri" | "planches" | "envoi"): void;
@@ -125,6 +126,10 @@ export async function installMenu(
         accelerator: "Shift+CmdOrCtrl+E",
         enabled: albumOpen,
       }),
+      await sep(),
+      // Storage answers a question about the machine, not about the album:
+      // it opens with or without one, like the bug report does.
+      await item("stockage", "Stockage…"),
       await sep(),
       await item("fermerAlbum", "Fermer l’album", { enabled: albumOpen }),
     ],

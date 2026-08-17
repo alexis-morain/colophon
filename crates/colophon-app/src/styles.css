@@ -1227,6 +1227,111 @@ kbd {
   max-width: 62ch;
 }
 
+/* ---- the storage panel (Fichier → Stockage…) ---------------------------- */
+
+/* Wider than the report panel: each row carries a title, a detail line, a
+   breakdown and a weight, and none of them should wrap on a 1280 window. */
+.stockage-panel {
+  width: min(720px, 92vw);
+  display: flex;
+  flex-direction: column;
+}
+
+.stockage-total {
+  margin: 0 0 14px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.stockage-total strong {
+  font-size: var(--fs-18);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.stockage-note-ok {
+  margin: 0 0 10px;
+  font-size: var(--fs-13);
+  color: var(--text);
+}
+
+.stockage-liste {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+/* Weight right-aligned in a fixed column: the whole point of the panel is
+   comparing four numbers at a glance. */
+.stockage-ligne {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.5em auto;
+  gap: 16px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.stockage-ligne-texte {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stockage-titre {
+  font-size: var(--fs-15);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stockage-ouvert {
+  margin-left: 8px;
+  font-style: normal;
+  font-size: var(--fs-11);
+  color: var(--accent);
+}
+
+.stockage-detail,
+.stockage-repartition {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.stockage-ligne.abime .stockage-detail {
+  color: var(--accent);
+}
+
+.stockage-poids {
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  color: var(--text);
+  text-align: right;
+}
+
+.link.danger:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.stockage-vide {
+  padding: 16px 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.stockage-actions {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-top: 16px;
+}
+
 /* ---- creation form ----------------------------------------------------- */
 
 /* Compact on purpose: the whole form aims to hold inside a 1280 × 720

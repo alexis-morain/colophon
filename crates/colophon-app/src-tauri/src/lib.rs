@@ -557,6 +557,248 @@ fn open_report_url(url: String) -> Result<(), String> {
         .map_err(|e| format!("ouverture du navigateur : {e}"))
 }
 
+/// One album folder as the storage panel shows it. The three weights are
+/// separated because they are not equally expensive to lose: the cache
+/// rebuilds itself on the next open, the preview PDF re-renders in seconds,
+/// `album.json` is the user's work and nothing rebuilds it.
+#[derive(Serialize)]
+struct AlbumEntry {
+    /// Folder name inside `albums`, the only handle the front ever sends back.
+    id: String,
+    title: String,
+    /// Page format in millimetres, as the album carries it.
+    format: Option<[f64; 2]>,
+    spreads: Option<usize>,
+    /// Last modification of the folder, seconds since the epoch.
+    modified: Option<u64>,
+    bytes_total: u64,
+    bytes_thumbs: u64,
+    bytes_pdf: u64,
+    /// Set when `album.json` could not be read. The row still shows, with its
+    /// weight and its deletion button: an unreadable album is precisely the
+    /// one a user wants to get rid of.
+    probleme: Option<String>,
+}
+
+#[derive(Serialize)]
+struct StorageReport {
+    /// The data directory itself, shown in full: it is the one path the user
+    /// may need to type or reveal.
+    dir: String,
+    /// Everything under it, the log included, so the figure matches `du`.
+    total: u64,
+    albums: Vec<AlbumEntry>,
+}
+
+/// Bytes held by a directory tree. An unreadable entry counts as zero rather
+/// than failing the whole walk: a storage panel that shows nothing because of
+/// one bad permission would be worse than a figure slightly short.
+fn dir_size(dir: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|e| match e.file_type() {
+            Ok(t) if t.is_dir() => dir_size(&e.path()),
+            Ok(t) if t.is_file() => e.metadata().map(|m| m.len()).unwrap_or(0),
+            _ => 0,
+        })
+        .sum()
+}
+
+fn albums_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("dossier de données introuvable : {e}"))?
+        .join("albums"))
+}
+
+fn modified_secs(path: &Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
+}
+
+fn album_entry(dir: &Path) -> AlbumEntry {
+    let id = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let bytes_thumbs = dir_size(&dir.join(".cache").join("thumbs"));
+    let bytes_pdf = ["album.pdf", "album-print.pdf"]
+        .iter()
+        .filter_map(|n| std::fs::metadata(dir.join(n)).ok().map(|m| m.len()))
+        .sum();
+    let mut entry = AlbumEntry {
+        title: id.clone(),
+        id,
+        format: None,
+        spreads: None,
+        modified: modified_secs(&dir.join("album.json")).or_else(|| modified_secs(dir)),
+        bytes_total: dir_size(dir),
+        bytes_thumbs,
+        bytes_pdf,
+        probleme: None,
+    };
+    match std::fs::read_to_string(dir.join("album.json"))
+        .map_err(|e| e.to_string())
+        .and_then(|t| serde_json::from_str::<Album>(&t).map_err(|e| e.to_string()))
+    {
+        Ok(album) => {
+            if !album.title.trim().is_empty() {
+                entry.title = album.title.clone();
+            }
+            entry.format = Some([album.trim_mm.w, album.trim_mm.h]);
+            entry.spreads = Some(album.spreads.len());
+        }
+        Err(e) => entry.probleme = Some(format!("album.json illisible : {e}")),
+    }
+    entry
+}
+
+/// Every album the app has composed, heaviest first, with the weight of the
+/// data directory as a whole. Nothing here ever looks at a photo folder: the
+/// panel accounts for what the app itself wrote, and nothing else.
+#[tauri::command]
+async fn list_albums(app: tauri::AppHandle) -> Result<StorageReport, String> {
+    let data = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("dossier de données introuvable : {e}"))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let albums_root = data.join("albums");
+        let mut albums: Vec<AlbumEntry> = std::fs::read_dir(&albums_root)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                    .map(|e| album_entry(&e.path()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        albums.sort_by(|a, b| b.bytes_total.cmp(&a.bytes_total));
+        StorageReport {
+            dir: data.to_string_lossy().to_string(),
+            total: dir_size(&data),
+            albums,
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Resolve an album id against its root, or refuse. Two guards here, the
+/// third (the album is not the one open) belongs to the caller: the id is a
+/// bare folder name, and the resolved path really is a direct child of
+/// `albums`. A photo folder is never reachable from here, which is the guard
+/// that matters most: everything below deletes, and the photos are not ours
+/// to delete. Free of Tauri types so all of it can be tested on real folders.
+fn resolve_album_dir(root: &Path, id: &str) -> Result<PathBuf, String> {
+    if id.is_empty()
+        || id.starts_with('.')
+        || id.contains('/')
+        || id.contains('\\')
+        || id.contains("..")
+        || Path::new(id).components().count() != 1
+    {
+        return Err(format!("identifiant d’album invalide : {id}"));
+    }
+    let dir = root.join(id);
+    if !dir.is_dir() {
+        return Err(format!("album introuvable : {id}"));
+    }
+    // Canonicalised on both sides: a symlink planted in `albums` must not
+    // make the deletion escape the data directory.
+    let (root, dir) = (
+        root.canonicalize().map_err(|e| e.to_string())?,
+        dir.canonicalize().map_err(|e| e.to_string())?,
+    );
+    if dir.parent() != Some(root.as_path()) {
+        return Err(format!("album hors du dossier de données : {id}"));
+    }
+    Ok(dir)
+}
+
+/// Delete one album folder: the composition, its preview PDF and its cache.
+/// The photos it was composed from are not touched and cannot be, the folder
+/// this removes is the app's own.
+#[tauri::command]
+fn delete_album(app: tauri::AppHandle, id: String, state: State<'_, AppState>) -> Result<u64, String> {
+    let dir = resolve_album_dir(&albums_dir(&app)?, &id)?;
+    {
+        let guard = state.open.lock().unwrap();
+        if let Some(open) = guard.as_ref() {
+            let same = open
+                .dir
+                .canonicalize()
+                .map(|d| d == dir)
+                .unwrap_or(false);
+            if same {
+                return Err(
+                    "Cet album est ouvert. Fermez-le (Fichier → Fermer l’album) avant de le supprimer."
+                        .into(),
+                );
+            }
+        }
+    }
+    let freed = dir_size(&dir);
+    std::fs::remove_dir_all(&dir).map_err(|e| format!("suppression de {id} : {e}"))?;
+    colophon_core::log::line(&format!("album supprimé, {freed} octets libérés"));
+    Ok(freed)
+}
+
+/// Empty every thumbnail cache, the open album's included: the caches rebuild
+/// themselves at the next open, they are the only thing here that does.
+#[tauri::command]
+async fn purge_thumb_caches(app: tauri::AppHandle) -> Result<u64, String> {
+    let root = albums_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut freed = 0u64;
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            return freed;
+        };
+        for e in entries.flatten() {
+            if !e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let cache = e.path().join(".cache").join("thumbs");
+            if !cache.is_dir() {
+                continue;
+            }
+            let size = dir_size(&cache);
+            if std::fs::remove_dir_all(&cache).is_ok() {
+                freed += size;
+            }
+        }
+        colophon_core::log::line(&format!("caches de vignettes purgés, {freed} octets"));
+        freed
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Show the data directory in the system file manager. The path is the app's
+/// own, never one the front sends: like the report channel, this must not be
+/// able to become a generic opener.
+#[tauri::command]
+fn reveal_data_dir(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("dossier de données introuvable : {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("création du dossier : {e}"))?;
+    #[cfg(target_os = "macos")]
+    let run = std::process::Command::new("open").arg(&dir).spawn();
+    #[cfg(target_os = "windows")]
+    let run = std::process::Command::new("explorer").arg(&dir).spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let run = std::process::Command::new("xdg-open").arg(&dir).spawn();
+    run.map(|_| ())
+        .map_err(|e| format!("ouverture du dossier : {e}"))
+}
+
 /// Preflight the album as it stands on disk against one profile. Reads every
 /// original's dimensions, so it is seconds on a big album: off the main
 /// thread, like the renders.
@@ -615,7 +857,11 @@ pub fn run() {
             preflight,
             list_densities,
             report_data,
-            open_report_url
+            open_report_url,
+            list_albums,
+            delete_album,
+            purge_thumb_caches,
+            reveal_data_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -703,6 +949,84 @@ mod tests {
             "https://github.com/autre/depot/issues/new".into()
         )
         .is_err());
+    }
+
+    /// A scratch `albums` root with one album folder inside, plus a decoy
+    /// sibling standing in for the photo folder the deletion must never see.
+    fn albums_root(tag: &str) -> PathBuf {
+        let base = std::env::temp_dir().join(format!("colophon-albums-{tag}-{}", std::process::id()));
+        std::fs::remove_dir_all(&base).ok();
+        std::fs::create_dir_all(base.join("albums").join("corse-2013-abcd1234")).unwrap();
+        std::fs::create_dir_all(base.join("photos-de-la-famille")).unwrap();
+        base
+    }
+
+    /// The id is a folder name, nothing else. Everything that could climb out
+    /// of `albums` is refused before a single byte is read.
+    #[test]
+    fn an_album_id_can_never_be_a_path() {
+        let base = albums_root("id");
+        let root = base.join("albums");
+        for bad in [
+            "",
+            "..",
+            ".",
+            ".cache",
+            "../photos-de-la-famille",
+            "..\\photos-de-la-famille",
+            "corse/../..",
+            "/etc",
+            "sous/dossier",
+        ] {
+            assert!(
+                resolve_album_dir(&root, bad).is_err(),
+                "{bad:?} aurait dû être refusé"
+            );
+        }
+        assert!(resolve_album_dir(&root, "corse-2013-abcd1234").is_ok());
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// The resolved folder must be a direct child of `albums`. A symlink
+    /// planted there points at the photo folder: following it would delete
+    /// the user's photos, so the guard resolves both sides and compares.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_out_of_the_albums_folder_is_refused() {
+        let base = albums_root("lien");
+        let root = base.join("albums");
+        std::os::unix::fs::symlink(base.join("photos-de-la-famille"), root.join("piege")).unwrap();
+        let err = resolve_album_dir(&root, "piege").expect_err("le lien doit être refusé");
+        assert!(err.contains("hors du dossier de données"), "{err}");
+        assert!(base.join("photos-de-la-famille").is_dir());
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// A deletion frees exactly what the panel announced, and the album's
+    /// own root folder is the only thing that goes.
+    #[test]
+    fn deleting_an_album_frees_what_the_entry_announced() {
+        let base = albums_root("poids");
+        let dir = base.join("albums").join("corse-2013-abcd1234");
+        std::fs::create_dir_all(dir.join(".cache").join("thumbs")).unwrap();
+        std::fs::write(dir.join(".cache").join("thumbs").join("a.jpg"), vec![7u8; 4096]).unwrap();
+        std::fs::write(dir.join("album.pdf"), vec![0u8; 2048]).unwrap();
+        std::fs::write(dir.join("album.json"), "pas du json").unwrap();
+
+        let entry = album_entry(&dir);
+        assert_eq!(entry.bytes_thumbs, 4096);
+        assert_eq!(entry.bytes_pdf, 2048);
+        assert_eq!(entry.bytes_total, 4096 + 2048 + 11);
+        // An unreadable album.json still yields a row, weight included.
+        assert!(entry.probleme.is_some());
+        assert_eq!(entry.title, "corse-2013-abcd1234");
+
+        let resolved = resolve_album_dir(&base.join("albums"), &entry.id).unwrap();
+        let freed = dir_size(&resolved);
+        std::fs::remove_dir_all(&resolved).unwrap();
+        assert_eq!(freed, entry.bytes_total);
+        assert!(base.join("photos-de-la-famille").is_dir());
+        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]

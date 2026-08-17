@@ -438,6 +438,41 @@ export async function openReportUrl(url: string): Promise<void> {
   return invoke("open_report_url", { url });
 }
 
+/**
+ * Ask the release feed whether a newer version exists. Returns its version
+ * number, or null when there is nothing (and when there is no network, and
+ * when the feed cannot be read): an app that cannot reach GitHub is an app
+ * that works, and saying so out loud at every launch would be noise.
+ *
+ * Nothing is downloaded here. The download and the restart are a deliberate
+ * click, in the notice this returns.
+ */
+export async function checkUpdate(): Promise<{
+  version: string;
+  notes: string;
+  install: () => Promise<void>;
+} | null> {
+  if (!inTauri) return null;
+  try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const maj = await check();
+    if (!maj) return null;
+    return {
+      version: maj.version,
+      notes: maj.body ?? "",
+      install: async () => {
+        await maj.downloadAndInstall();
+        const { relaunch } = await import("@tauri-apps/plugin-process");
+        await relaunch();
+      },
+    };
+  } catch {
+    // Offline, feed unreachable, signature refused: all the same to the
+    // user, who did not ask. The next launch will try again.
+    return null;
+  }
+}
+
 /** What the About screen shows: the version, and the third-party notices
  *  generated from the two lock files and embedded in the binary. */
 export type AboutData = { version: string; notices: string };

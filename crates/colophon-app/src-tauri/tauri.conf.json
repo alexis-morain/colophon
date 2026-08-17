@@ -26,6 +26,17 @@
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVBNDdFQzhGQzNGMEU3RUMKUldUczUvRERqK3hINmdVMVRyQW1yYlY3UkV3Zi9TRGsrU2NSa1hIZ1dlMTZMaG41d3FGSWxYa3AK",
+      "endpoints": [
+        "https://github.com/alexis-morain/colophon/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

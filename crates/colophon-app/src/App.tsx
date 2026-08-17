@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BuildBilan,
   buildAlbum,
+  checkUpdate,
   chooseVariante,
   VarianteResume,
   cancelBuild,
@@ -167,12 +168,24 @@ export default function App() {
   const [fidele, setFidele] = useState(false);
   // À propos : version, licence, et les trois actifs sous licence tierce.
   const [apropos, setApropos] = useState(false);
+  // Une mise à jour disponible, quand il y en a une. Jamais téléchargée
+  // toute seule : le bandeau attend un clic, et se referme sans en attendre.
+  const [maj, setMaj] = useState<Awaited<ReturnType<typeof checkUpdate>>>(null);
+  const [majEnCours, setMajEnCours] = useState(false);
   const [pdfCle, setPdfCle] = useState(0);
   // The recent-albums list: welcome screen and Fichier menu read it.
   const [recents, setRecents] = useState<RecentAlbum[]>(readRecents);
 
   useEffect(() => {
     listPrinters().then(setPrinters, () => setPrinters([]));
+  }, []);
+
+  // Une seule interrogation, au lancement, en arrière-plan. Hors ligne, feed
+  // injoignable, signature refusée : tout cela rend null, et l'app ne dit
+  // rien. Personne n'a demandé, et une app qui ne joint pas GitHub est une
+  // app qui marche.
+  useEffect(() => {
+    checkUpdate().then(setMaj, () => {});
   }, []);
 
   const album = hist?.album ?? null;
@@ -1239,6 +1252,24 @@ export default function App() {
             onClose={() => setStockage(false)}
           />
         )}
+      {maj && (
+        <MajBandeau
+          version={maj.version}
+          enCours={majEnCours}
+          onInstaller={() => {
+            setMajEnCours(true);
+            maj
+              .install()
+              .catch((e) => {
+                setMajEnCours(false);
+                setError(
+                  fault("La mise à jour n'a pas pu être installée.", e),
+                );
+              });
+          }}
+          onPlusTard={() => setMaj(null)}
+        />
+      )}
         {apropos && <AProposView onClose={() => setApropos(false)} />}
       </>
     );
@@ -1546,6 +1577,24 @@ export default function App() {
           onClose={() => setStockage(false)}
         />
       )}
+      {maj && (
+        <MajBandeau
+          version={maj.version}
+          enCours={majEnCours}
+          onInstaller={() => {
+            setMajEnCours(true);
+            maj
+              .install()
+              .catch((e) => {
+                setMajEnCours(false);
+                setError(
+                  fault("La mise à jour n'a pas pu être installée.", e),
+                );
+              });
+          }}
+          onPlusTard={() => setMaj(null)}
+        />
+      )}
       {apropos && <AProposView onClose={() => setApropos(false)} />}
     </div>
   );
@@ -1560,6 +1609,7 @@ export default function App() {
  * name snaps back rather than leaving the book nameless: `renameAlbum`
  * refuses it, and the field must not show what the album does not carry.
  */
+
 function TitreAlbum({
   titre,
   onRename,
@@ -1607,6 +1657,43 @@ function TitreAlbum({
         }
       }}
     />
+  );
+}
+
+
+/**
+ * A newer version exists. A banner, not a dialog: nobody asked, and nothing
+ * should stand between somebody and their album. Nothing has been downloaded
+ * at this point; « Plus tard » dismisses it and the next launch asks again.
+ */
+function MajBandeau({
+  version,
+  enCours,
+  onInstaller,
+  onPlusTard,
+}: {
+  version: string;
+  enCours: boolean;
+  onInstaller: () => void;
+  onPlusTard: () => void;
+}) {
+  return (
+    <div className="maj" role="status">
+      <span className="maj-texte">
+        Colophon {version} est disponible.
+        {enCours
+          ? " Téléchargement en cours, l'app redémarrera toute seule."
+          : " Le téléchargement et le redémarrage prennent une minute."}
+      </span>
+      <span className="maj-actions">
+        <button className="cta small" onClick={onInstaller} disabled={enCours}>
+          {enCours ? "Installation…" : "Installer maintenant"}
+        </button>
+        <button className="link" onClick={onPlusTard} disabled={enCours}>
+          Plus tard
+        </button>
+      </span>
+    </div>
   );
 }
 

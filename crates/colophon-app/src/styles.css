@@ -1302,6 +1302,40 @@ input[type="radio"] {
   max-width: 62ch;
 }
 
+/* ---- the update banner --------------------------------------------------- */
+
+/* Along the bottom, above everything: a banner and not a dialog. Nobody
+   asked for it, so it never takes the keyboard and never covers the album,
+   and « Plus tard » is as easy to reach as « Installer ». */
+.maj {
+  position: fixed;
+  z-index: 60;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 28px;
+  background: var(--surface);
+  border-top: 1px solid var(--rule);
+  box-shadow: var(--shadow-pop);
+}
+
+.maj-texte {
+  font-size: var(--fs-13);
+  color: var(--text);
+  max-width: 72ch;
+}
+
+.maj-actions {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
 /* ---- À propos ----------------------------------------------------------- */
 
 .apropos-panel {

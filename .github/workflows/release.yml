@@ -88,9 +88,21 @@ jobs:
           cargo install cargo-about --locked --features cli
           ./scripts/notices.sh
 
+      # La clé privée vit dans le .env d'Alexis et dans ce secret, jamais
+      # dans le dépôt. Sans elle, le bundle sort quand même : ce sont les
+      # artefacts de mise à jour, et eux seuls, qui ne sont pas produits.
       - name: Bundle
         working-directory: crates/colophon-app
-        run: npm run tauri build -- --target ${{ matrix.cible }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        # `--config` ajoute la seule clé qui n'a pas sa place dans le
+        # fichier principal : les artefacts de mise à jour exigent la clé de
+        # signature, et un développeur qui compile chez lui ne l'a pas.
+        run: >
+          npm run tauri build --
+          --target ${{ matrix.cible }}
+          --config src-tauri/tauri.release.conf.json
 
       # Signature et notarisation : les deux seules étapes qui attendent un
       # compte. Elles se sautent proprement tant que les secrets sont vides,
@@ -125,6 +137,20 @@ jobs:
             -name "*.${{ matrix.extension }}" -type f | head -1)"
           [ -n "$src" ] || { echo "aucun ${{ matrix.extension }} produit" >&2; exit 1; }
           cp "$src" "publication/$nom"
+          # L'archive de mise à jour et sa signature, quand la clé était là.
+          # Le fichier .sig est ce que l'updater vérifie avant d'installer
+          # quoi que ce soit : sans lui, pas de mise à jour, et c'est voulu.
+          maj="$(find "target/${{ matrix.cible }}/release/bundle" \
+            \( -name "*.app.tar.gz" -o -name "*-setup.nsis.zip" -o -name "*.msi.zip" \) \
+            -type f | head -1)"
+          if [ -n "$maj" ] && [ -f "$maj.sig" ]; then
+            cp "$maj" "publication/Colophon-$v-${{ matrix.suffixe }}-maj.${maj##*.tar.}gz" 2>/dev/null \
+              || cp "$maj" "publication/Colophon-$v-${{ matrix.suffixe }}-maj.zip"
+            cp "$maj.sig" "publication/Colophon-$v-${{ matrix.suffixe }}-maj.sig"
+            echo "artefact de mise à jour signé : $(basename "$maj")"
+          else
+            echo "pas d'artefact de mise à jour : la clé de signature manque" >&2
+          fi
           cd publication
           if command -v shasum >/dev/null; then
             shasum -a 256 "$nom" > "$nom.sha256"
@@ -173,6 +199,53 @@ jobs:
           echo '```' >> notes.md
           cat publication/*.sha256 >> notes.md
           echo '```' >> notes.md
+
+      # Le manifeste que l'app interroge au lancement. Son URL est écrite
+      # dans tauri.conf.json : `releases/latest/download/latest.json`. Sans
+      # artefact signé il n'est pas écrit du tout, plutôt qu'écrit vide :
+      # un manifeste sans signature ferait échouer chaque vérification, et
+      # personne ne saurait pourquoi.
+      - name: Manifeste de mise à jour
+        shell: bash
+        run: |
+          set -eu
+          v="${GITHUB_REF_NAME#v}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          python3 - "$v" "$base" <<'PY'
+          import json, sys
+          from pathlib import Path
+          v, base = sys.argv[1], sys.argv[2]
+          cibles = {
+              "macos-arm64": "darwin-aarch64",
+              "macos-x64": "darwin-x86_64",
+              "windows-x64": "windows-x86_64",
+          }
+          pub = Path("publication")
+          platformes = {}
+          for suffixe, cle in cibles.items():
+              sig = pub / f"Colophon-{v}-{suffixe}-maj.sig"
+              if not sig.is_file():
+                  continue
+              archive = next(
+                  (p for p in pub.glob(f"Colophon-{v}-{suffixe}-maj.*")
+                   if p.suffix != ".sig"), None)
+              if archive is None:
+                  continue
+              platformes[cle] = {
+                  "signature": sig.read_text().strip(),
+                  "url": f"{base}/{archive.name}",
+              }
+          if not platformes:
+              print("aucun artefact signé : pas de latest.json", file=sys.stderr)
+              raise SystemExit(0)
+          notes = Path("notes.md").read_text(encoding="utf-8") if Path("notes.md").is_file() else ""
+          (pub / "latest.json").write_text(json.dumps({
+              "version": v,
+              "notes": notes.strip()[:2000],
+              "platforms": platformes,
+          }, indent=2, ensure_ascii=False), encoding="utf-8")
+          print(f"latest.json : {len(platformes)} plateformes")
+          PY
 
       - uses: softprops/action-gh-release@v2
         with:

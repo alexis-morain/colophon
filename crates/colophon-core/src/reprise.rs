@@ -130,16 +130,36 @@ pub struct RepriseReport {
 /// Measure one album folder against the proposal it started from.
 pub fn reprise(dir: &Path) -> Result<RepriseReport> {
     let album: Album = read_album(&dir.join("album.json"))?;
-    let origine_path = dir.join("album.origin.json");
-    if !origine_path.exists() {
+    let proposition = origine(dir)?;
+    Ok(compare(&album.title, &proposition, &album))
+}
+
+/// The composer's own version of one spread of the edited album, matched by
+/// content the way the metric matches them. `None` when the spread was
+/// inserted by hand: nothing automatic ever proposed it, so nothing can be
+/// given back. This is the read behind « rendre à l'automatique », and it
+/// reuses the pairing above on purpose: restoring a spread the metric would
+/// have paired elsewhere would turn one correction into two.
+pub fn spread_origine(origine: &Album, actuel: &Album, index: usize) -> Option<Spread> {
+    match_spreads(&origine.spreads, &actuel.spreads)
+        .into_iter()
+        .find(|(_, c)| *c == index)
+        .map(|(o, _)| origine.spreads[o].clone())
+}
+
+/// Read the composer's untouched proposal beside an album. It is written once
+/// at the first build and never rewritten, so an album composed before the
+/// reference existed simply has none.
+pub fn origine(dir: &Path) -> Result<Album> {
+    let path = dir.join("album.origin.json");
+    if !path.exists() {
         anyhow::bail!(
             "{} absent : cet album a été composé avant la mesure de reprise. \
              Recomposez le dossier pour en poser la référence.",
-            origine_path.display()
+            path.display()
         );
     }
-    let origine: Album = read_album(&origine_path)?;
-    Ok(compare(&album.title, &origine, &album))
+    read_album(&path)
 }
 
 fn read_album(path: &Path) -> Result<Album> {
@@ -612,6 +632,44 @@ mod tests {
         assert_eq!(r.planches_touchees, 1);
         assert_eq!(r.details[0].classes, vec![Classe::Ordre]);
         assert!(r.notes.iter().any(|n| n.starts_with("1 planches")));
+    }
+
+    /// « Rendre à l'automatique » gives back the composer's own spread, and
+    /// the metric stops counting it: the escape hatch has to be free, or
+    /// nobody undoing a bad edit would use it.
+    #[test]
+    fn a_spread_given_back_stops_counting_as_a_correction() {
+        let a = album(vec![
+            spread("duo", &["a.jpg", "b.jpg"]),
+            spread("solo", &["c.jpg"]),
+        ]);
+        let mut abimee = spread("trio", &["a.jpg", "b.jpg", "z.jpg"]);
+        abimee.slots[0].zoom = 2.4;
+        abimee.edited = true;
+        let mut b = album(vec![abimee, spread("solo", &["c.jpg"])]);
+        assert_eq!(compare("t", &a, &b).planches_touchees, 1);
+
+        let rendue = spread_origine(&a, &b, 0).expect("la planche 1 a une version automatique");
+        b.spreads[0] = rendue;
+        let r = compare("t", &a, &b);
+        assert_eq!(r.planches_touchees, 0);
+        assert_eq!(r.verdict, "bon");
+        assert!(r.notes.is_empty(), "ni badge ni verrou ne survit : {:?}", r.notes);
+    }
+
+    /// A spread inserted by hand has no automatic version, and the command
+    /// says so rather than inventing one.
+    #[test]
+    fn a_hand_inserted_spread_has_no_automatic_version() {
+        let a = album(vec![spread("solo", &["a.jpg"])]);
+        let b = album(vec![
+            spread("solo", &["a.jpg"]),
+            spread("texte", &[]),
+            spread("solo", &["nouvelle.jpg"]),
+        ]);
+        assert!(spread_origine(&a, &b, 0).is_some());
+        assert!(spread_origine(&a, &b, 1).is_none());
+        assert!(spread_origine(&a, &b, 2).is_none());
     }
 
     /// A locked but untouched spread is an approval, not a correction.

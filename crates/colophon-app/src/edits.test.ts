@@ -14,7 +14,9 @@ import {
   placePhoto,
   removePhoto,
   removeSpread,
+  renameAlbum,
   rescuePhoto,
+  restoreSpread,
   setSlotCaption,
   setSlotCrop,
   setSpreadText,
@@ -285,5 +287,57 @@ describe("placePhoto", () => {
   it("refuses a photo already on the spread", () => {
     const a = album(spread("duo", 2));
     expect(placePhoto(a, 0, 1, { src: "p0.jpg", focal: [0.5, 0.5] })).toBe(a);
+  });
+});
+
+describe("restoreSpread", () => {
+  it("gives back the composer's spread, badge and lock dropped", () => {
+    const origin = spread("duo", 2);
+    const abimee: Spread = {
+      ...spread("solo", 1),
+      edited: true,
+      locked: true,
+      caption: "ma légende",
+    };
+    const a = album(abimee);
+    const b = restoreSpread(a, 0, origin);
+    expect(b.spreads[0].template).toBe("duo");
+    expect(b.spreads[0].slots).toHaveLength(2);
+    expect(b.spreads[0].edited).toBe(false);
+    expect(b.spreads[0].locked).toBe(false);
+    expect(b.spreads[0].caption).toBeUndefined();
+    // The undo stack holds references: the input never moves.
+    expect(a.spreads[0].template).toBe("solo");
+    assertSound(b);
+  });
+
+  it("leaves an album alone when the index is past the end", () => {
+    const a = album(spread("duo", 2));
+    expect(restoreSpread(a, 4, spread("solo", 1))).toBe(a);
+  });
+});
+
+describe("renameAlbum", () => {
+  it("drags along a cover that never had a title of its own", () => {
+    const a = { ...album(spread("duo", 2)), cover: { title: "test" } };
+    const b = renameAlbum(a, "  Corse 2013 ");
+    expect(b.title).toBe("Corse 2013");
+    expect(b.cover?.title).toBe("Corse 2013");
+  });
+
+  it("leaves a cover its own title", () => {
+    const a = {
+      ...album(spread("duo", 2)),
+      cover: { title: "Un été", subtitle: "juillet" },
+    };
+    const b = renameAlbum(a, "Corse 2013");
+    expect(b.title).toBe("Corse 2013");
+    expect(b.cover?.title).toBe("Un été");
+  });
+
+  it("refuses an empty name rather than leaving the book nameless", () => {
+    const a = album(spread("duo", 2));
+    expect(renameAlbum(a, "   ")).toBe(a);
+    expect(renameAlbum(a, "test")).toBe(a);
   });
 });

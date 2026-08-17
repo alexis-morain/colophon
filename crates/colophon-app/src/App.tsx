@@ -15,6 +15,7 @@ import {
   listPrinters,
   onBuildProgress,
   openAlbum as openAlbumAt,
+  originSpread,
   pickAlbumFolder,
   pickPhotosFolder,
   Printer,
@@ -40,7 +41,9 @@ import {
   placePhoto,
   removePhoto,
   removeSpread,
+  renameAlbum,
   rescuePhoto,
+  restoreSpread,
   setCover,
   setSlotCaption,
   setSlotCrop,
@@ -528,6 +531,40 @@ export default function App() {
           : "Planche figée : elle survivra à toute recomposition",
       );
     },
+    // The way out of the lock. Asks first: it throws away hand work, and
+    // the spread it gives back may be nothing like the one on screen.
+    "rendre-auto": () => {
+      if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
+      const spread = album.spreads[index];
+      if (!spread) return;
+      void (async () => {
+        try {
+          const origin = await originSpread(album, index);
+          if (!origin) {
+            setStatus(
+              `Planche ${index + 1} : insérée à la main, elle n’a pas de version automatique`,
+            );
+            return;
+          }
+          const ok = await confirmDialog(
+            `Rendre la planche ${index + 1} à l’automatique ?\n\n` +
+              `Elle reprend la composition proposée au départ. Le recadrage, ` +
+              `les légendes et les photos changées à la main sur cette planche ` +
+              `sont perdus, et le cadenas tombe.\n\n⌘Z revient en arrière.`,
+          );
+          if (!ok) return;
+          apply((a) => restoreSpread(a, index, origin));
+          setStatus(`Planche ${index + 1} rendue à l’automatique (⌘Z la ramène)`);
+        } catch (e) {
+          setError(
+            fault(
+              "Cette planche n’a pas pu être rendue à l’automatique.",
+              e,
+            ),
+          );
+        }
+      })();
+    },
     "inserer-vide": () => {
       if (!album || view !== "livre" && view !== "planches") return;
       const at = Math.max(index, 0);
@@ -626,6 +663,7 @@ export default function App() {
       gabarit: () => fire("menu", "gabarit"),
       dupliquer: () => fire("menu", "dupliquer"),
       figer: () => fire("menu", "figer"),
+      rendreAuto: () => fire("menu", "rendre-auto"),
       insererVide: () => fire("menu", "inserer-vide"),
       insererTexte: () => fire("menu", "inserer-texte"),
       supprimerPlanche: () => fire("menu", "supprimer-planche"),
@@ -1086,6 +1124,10 @@ export default function App() {
         onUndo={undo}
         onRedo={redo}
         onSave={() => void save()}
+        onRename={(titre) => {
+          apply((a) => renameAlbum(a, titre));
+          setStatus("Titre modifié : ⌘S l’enregistre");
+        }}
         onRecompose={inTauri ? () => void recompose() : undefined}
         onOpen={inTauri ? undefined : openAlbum}
         onClose={inTauri ? undefined : closeAlbum}
@@ -1303,6 +1345,65 @@ export default function App() {
 }
 
 /**
+ * The album title, editable in place. It stayed frozen at the name of the
+ * photo folder for seven sessions; a book whose title cannot be changed after
+ * composition is a dead end, and the cover follows this field.
+ *
+ * Committed on Enter or on leaving the field, abandoned on Escape. An empty
+ * name snaps back rather than leaving the book nameless: `renameAlbum`
+ * refuses it, and the field must not show what the album does not carry.
+ */
+function TitreAlbum({
+  titre,
+  onRename,
+}: {
+  titre: string;
+  onRename: (titre: string) => void;
+}) {
+  const [brouillon, setBrouillon] = useState(titre);
+  const [edite, setEdite] = useState(false);
+  // A recomposition, an undo or another album replaces the title under us.
+  useEffect(() => {
+    if (!edite) setBrouillon(titre);
+  }, [titre, edite]);
+
+  const valider = (el: HTMLInputElement) => {
+    setEdite(false);
+    // A field left with the caret at the end stays scrolled there, and a long
+    // title would read from its middle for the rest of the session.
+    el.scrollLeft = 0;
+    if (brouillon.trim() === "" || brouillon.trim() === titre) {
+      setBrouillon(titre);
+      return;
+    }
+    onRename(brouillon);
+  };
+
+  return (
+    <input
+      className="bar-titre"
+      value={brouillon}
+      aria-label="Titre de l’album"
+      spellCheck={false}
+      onFocus={() => setEdite(true)}
+      onChange={(e) => setBrouillon(e.target.value)}
+      onBlur={(e) => valider(e.currentTarget)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          setBrouillon(titre);
+          setEdite(false);
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+/**
  * The bar tells three things apart, left to right: which album (the title),
  * where you are (the tabs, centred, nothing else among them), what you can
  * do to the file (a few quiet actions; everything else lives in the menu).
@@ -1320,6 +1421,7 @@ function Bar({
   onUndo,
   onRedo,
   onSave,
+  onRename,
   onRecompose,
   onOpen,
   onClose,
@@ -1334,6 +1436,7 @@ function Bar({
   onUndo: () => void;
   onRedo: () => void;
   onSave: () => void;
+  onRename: (titre: string) => void;
   onRecompose?: () => void;
   /** Browser harness only: the shell reaches these through the menu. */
   onOpen?: () => void;
@@ -1341,7 +1444,9 @@ function Bar({
 }) {
   return (
     <header className="bar">
-      <h1>{album.title}</h1>
+      <h1>
+        <TitreAlbum titre={album.title} onRename={onRename} />
+      </h1>
       <p className="meta">
         <span className="views" role="tablist">
           <button

@@ -354,6 +354,33 @@ export function setCover(album: Album, cover: Cover): Album {
   return { ...album, cover };
 }
 
+/**
+ * Rename the album. The cover follows when it was never given a title of its
+ * own: an untitled cover prints the album's name, and letting the two drift
+ * apart at the first rename would be the surprise, not the convenience.
+ */
+export function renameAlbum(album: Album, title: string): Album {
+  const t = title.trim();
+  if (t === "" || t === album.title) return album;
+  const suivait = !album.cover || album.cover.title.trim() === album.title;
+  return {
+    ...album,
+    title: t,
+    cover: album.cover && suivait ? { ...album.cover, title: t } : album.cover,
+  };
+}
+
+/**
+ * Give a spread back the version the composer proposed, badge and lock
+ * included. The lock had a way in and no way out; this is the way out.
+ * The origin spread comes from `album.origin.json` through the bridge, which
+ * is the only file that still holds it: everything else has been edited.
+ */
+export function restoreSpread(album: Album, at: number, origin: Spread): Album {
+  if (!album.spreads[at]) return album;
+  return withSpread(album, at, { ...origin, edited: false, locked: false });
+}
+
 /** Templates the spread can switch to right now, current one included.
  *  Photo-less templates (capacity 0) never enter the picker. */
 export function templateChoices(spread: Spread): [string, number][] {

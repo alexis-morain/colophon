@@ -4,7 +4,7 @@
 // the book view gets checked without rebuilding the Rust side.
 
 import { invoke } from "@tauri-apps/api/core";
-import { Album, Discard, OpenedAlbum } from "./album";
+import { Album, Discard, OpenedAlbum, Spread } from "./album";
 
 export const inTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -381,6 +381,22 @@ export async function openReportUrl(url: string): Promise<void> {
     return;
   }
   return invoke("open_report_url", { url });
+}
+
+/** The composer's own version of one spread, for « rendre à l'automatique ».
+ *  Null when the spread was inserted by hand: nothing automatic proposed it.
+ *  Throws when the album predates album.origin.json, and the message says so.
+ *  Nothing is written: the caller applies it through the undo stack. */
+export async function originSpread(
+  album: Album,
+  index: number,
+): Promise<Spread | null> {
+  if (!inTauri) {
+    throw new Error(
+      "La version automatique vit dans album.origin.json, que le serveur de dev ne sert pas.",
+    );
+  }
+  return invoke<Spread | null>("origin_spread", { album, index });
 }
 
 /** One album folder as the storage panel shows it. The three weights are

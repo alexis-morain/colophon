@@ -31,6 +31,7 @@ export type MenuActions = {
   gabarit(): void;
   dupliquer(): void;
   figer(): void;
+  rendreAuto(): void;
   insererVide(): void;
   insererTexte(): void;
   supprimerPlanche(): void;
@@ -180,6 +181,9 @@ export async function installMenu(
         accelerator: "CmdOrCtrl+L",
         enabled: albumOpen,
       }),
+      // The way out of the lock: sits right under it, where somebody who
+      // just froze a spread by mistake will look for it.
+      await item("rendreAuto", "Rendre à l’automatique…", { enabled: albumOpen }),
       await sep(),
       await item("insererVide", "Insérer une planche vide", { enabled: albumOpen }),
       await item("insererTexte", "Insérer une planche de texte", {

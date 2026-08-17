@@ -170,6 +170,32 @@ kbd {
   letter-spacing: 0.01em;
 }
 
+/* The title is a field that looks like a title: no box, no chrome, just the
+   rule appearing under the pointer to say it can be typed into. */
+.bar-titre {
+  width: 100%;
+  margin: 0;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-overflow: ellipsis;
+  transition: border-color var(--turn);
+}
+
+.bar-titre:hover {
+  border-bottom-color: var(--rule);
+}
+
+.bar-titre:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+  text-overflow: clip;
+}
+
 .bar .meta {
   margin: 0;
   display: flex;

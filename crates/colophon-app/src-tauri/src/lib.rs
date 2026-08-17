@@ -557,6 +557,30 @@ fn open_report_url(url: String) -> Result<(), String> {
         .map_err(|e| format!("ouverture du navigateur : {e}"))
 }
 
+/// The composer's own version of one spread, for « rendre à l'automatique ».
+/// The lock has a way in and needed a way out: this is it. `Ok(None)` means
+/// the spread was inserted by hand, nothing automatic ever proposed it; an
+/// `Err` means the album predates `album.origin.json` and the front says so.
+///
+/// Nothing is written here. The front applies the returned spread through the
+/// undo stack like any other edit, so the command is one ⌘Z away from undone.
+/// The album travels from the front rather than being reread from disk: the
+/// index the user clicked belongs to the album on screen, unsaved edits and
+/// all, and matching against a stale file would give back the wrong spread.
+#[tauri::command]
+fn origin_spread(
+    album: Album,
+    index: usize,
+    state: State<'_, AppState>,
+) -> Result<Option<colophon_core::model::Spread>, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let origine = colophon_core::reprise::origine(&dir).map_err(|e| format!("{e:#}"))?;
+    Ok(colophon_core::reprise::spread_origine(&origine, &album, index))
+}
+
 /// One album folder as the storage panel shows it. The three weights are
 /// separated because they are not equally expensive to lose: the cache
 /// rebuilds itself on the next open, the preview PDF re-renders in seconds,
@@ -858,6 +882,7 @@ pub fn run() {
             list_densities,
             report_data,
             open_report_url,
+            origin_spread,
             list_albums,
             delete_album,
             purge_thumb_caches,

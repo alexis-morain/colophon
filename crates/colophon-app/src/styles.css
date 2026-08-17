@@ -1260,6 +1260,139 @@ input[type="radio"] {
   max-width: 62ch;
 }
 
+/* ---- À propos ----------------------------------------------------------- */
+
+.apropos-panel {
+  width: min(640px, 90vw);
+  display: flex;
+  flex-direction: column;
+}
+
+.apropos-version {
+  margin: 0 0 8px;
+  font-size: var(--fs-15);
+}
+
+.apropos-quoi {
+  margin: 0 0 20px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.apropos-panel h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.apropos-actifs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.apropos-actifs li {
+  display: grid;
+  gap: 1px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.apropos-actif-nom {
+  font-size: var(--fs-13);
+}
+
+.apropos-actif-licence {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--accent);
+}
+
+.apropos-actif-quoi {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+/* The attribution CC BY 4.0 requires, verbatim and never abbreviated. */
+.apropos-attribution {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  background: var(--surface);
+  font-size: var(--fs-12);
+  line-height: var(--lh-ui);
+  color: var(--text);
+  max-width: 62ch;
+}
+
+.apropos-actions {
+  margin: 16px 0 0;
+}
+
+.apropos-notices {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  max-height: 40vh;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--fond);
+  border: 1px solid var(--rule);
+  color: var(--text);
+}
+
+/* ---- the faithful preview (pdf.js) -------------------------------------- */
+
+.pdf-stage {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  /* Never pushes the stage: the canvas is sized from the stage, and a canvas
+     that could grow its own container would grow without end. */
+  overflow: hidden;
+}
+
+/* The same shadow as the DOM spread, so switching between the two compares
+   the pages and not their frames. Painted straight, never faded in on the
+   render promise: that promise only settles on an animation frame, and a
+   window in the background never gets one, which left the page invisible. */
+.pdf-page {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  background: #fff;
+  box-shadow: var(--shadow-paper);
+}
+
+/* Sits first in the context line, before the template picker: it changes
+   what the whole stage shows, so it comes before what is on it. */
+.fidele-toggle {
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: var(--fs-12);
+  transition: border-color var(--turn), color var(--turn);
+}
+
+.fidele-toggle:hover {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+.fidele-toggle.actif {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ---- the storage panel (Fichier → Stockage…) ---------------------------- */
 
 /* Wider than the report panel: each row carries a title, a detail line, a

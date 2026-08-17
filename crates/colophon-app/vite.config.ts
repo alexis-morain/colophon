@@ -123,6 +123,30 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // The faithful preview reads the album's own PDF. Same closed set of
+      // two names as the Tauri command: the harness must not become a file
+      // reader either.
+      server.middlewares.use("/__dev/pdf", (req, res) => {
+        try {
+          const quoi = new URL(req.url ?? "", "http://x").searchParams.get("quoi");
+          const nom =
+            quoi === "album"
+              ? "album.pdf"
+              : quoi === "couverture"
+                ? "album-cover.pdf"
+                : null;
+          if (!nom) {
+            res.statusCode = 404;
+            res.end(`aperçu inconnu : ${quoi}`);
+            return;
+          }
+          res.setHeader("Content-Type", "application/pdf");
+          res.end(read(nom));
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
     },
   };
 }

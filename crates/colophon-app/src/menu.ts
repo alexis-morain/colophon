@@ -22,10 +22,12 @@ export type MenuActions = {
   exporter(): void;
   fermerAlbum(): void;
   stockage(): void;
+  apropos(): void;
   annuler(): void;
   retablir(): void;
   vue(v: "livre" | "tri" | "planches" | "envoi"): void;
   couverture(): void;
+  apercuFidele(): void;
   revue(): void;
   reserve(): void;
   gabarit(): void;
@@ -83,7 +85,9 @@ export async function installMenu(
   const appMenu = await Submenu.new({
     text: "Colophon",
     items: [
-      await PredefinedMenuItem.new({ item: { About: null }, text: "À propos de Colophon" }),
+      // Ours, not the system panel: the system panel cannot carry the
+      // GeoNames attribution, and that attribution is a licence condition.
+      await item("apropos", "À propos de Colophon"),
       await sep(),
       await PredefinedMenuItem.new({ item: "Hide", text: "Masquer Colophon" }),
       await PredefinedMenuItem.new({ item: "HideOthers", text: "Masquer les autres" }),
@@ -163,6 +167,13 @@ export async function installMenu(
       await vue("planches", "Planches", "3"),
       await vue("envoi", "Envoi", "4"),
       await item("couverture", "Couverture", { enabled: albumOpen }),
+      await sep(),
+      // The one view that is not a second renderer: it reads the PDF the
+      // press would read. Sits with the views, because that is what it is.
+      await item("apercuFidele", "Aperçu fidèle", {
+        accelerator: "CmdOrCtrl+Shift+P",
+        enabled: albumOpen,
+      }),
       await sep(),
       await item("revue", "Passer en revue", { enabled: albumOpen }),
       await item("reserve", "Photos en réserve", { enabled: albumOpen }),

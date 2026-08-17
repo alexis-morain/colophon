@@ -616,6 +616,78 @@ fn open_report_url(url: String) -> Result<(), String> {
         .map_err(|e| format!("ouverture du navigateur : {e}"))
 }
 
+/// What the About screen shows: the version, the licence, and the three
+/// assets that travel inside the binary under someone else's terms.
+///
+/// The GeoNames line is an obligation, not a courtesy: CC BY 4.0 grants the
+/// right to redistribute on the sole condition that the source is credited,
+/// so an attribution dropped by inattention is a licence violation.
+#[derive(Serialize)]
+struct AboutData {
+    version: String,
+    /// Third-party notices, generated from Cargo.lock and package-lock.json
+    /// and embedded in the binary. Empty when the file was not generated.
+    notices: String,
+}
+
+/// The notices, generated at build time by `scripts/notices.sh` from
+/// `Cargo.lock` and `package-lock.json`, and embedded here so the About
+/// screen works with no network and no files beside the app.
+const NOTICES: &str = include_str!("../notices.md");
+
+#[tauri::command]
+fn about_data(app: tauri::AppHandle) -> AboutData {
+    AboutData {
+        version: app.package_info().version.to_string(),
+        notices: NOTICES.to_string(),
+    }
+}
+
+/// Raw bytes of one of the album's own PDFs, for the faithful preview. The
+/// editor draws in the DOM and the press reads a PDF; those two can never be
+/// identical by construction, so the preview reads the PDF itself.
+///
+/// `quoi` is a closed set of two words, never a path: this command must not
+/// be able to become a file reader pointed at anything on the disk.
+#[tauri::command]
+fn album_pdf_bytes(quoi: String, state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
+    let nom = match quoi.as_str() {
+        "album" => "album.pdf",
+        "couverture" => "album-cover.pdf",
+        autre => return Err(format!("aperçu inconnu : {autre}")),
+    };
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let data = std::fs::read(dir.join(nom))
+        .map_err(|e| format!("{nom} illisible : {e}. Régénérez l’aperçu."))?;
+    Ok(tauri::ipc::Response::new(data))
+}
+
+/// Render the flat cover sheet into the album folder, for the faithful
+/// preview of the cover. Same renderer the export uses, same profile: what
+/// the screen shows is the sheet the supplier would receive.
+#[tauri::command]
+async fn render_cover_preview(
+    profil: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let profil = printer_profile(&profil)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = dir.join("album-cover.pdf");
+        colophon_core::cover::render_cover_pdf(&dir, profil, &out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|p| p.to_string_lossy().to_string())
+    .map_err(|e| format!("{e:#}"))
+}
+
 /// The colophon page, built from the facts the album carries. `Ok(None)` on
 /// an album composed before the page existed: it holds no facts, and the
 /// Envoi screen offers nothing rather than inventing a page.
@@ -964,6 +1036,9 @@ pub fn run() {
             open_report_url,
             origin_spread,
             choose_variante,
+            album_pdf_bytes,
+            about_data,
+            render_cover_preview,
             colophon_spread,
             list_albums,
             delete_album,

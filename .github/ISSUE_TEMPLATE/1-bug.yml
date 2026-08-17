@@ -1,0 +1,66 @@
+name: Bug
+description: Something crashed, froze, refused to run, or produced a broken file.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most of what this form asks for, the software prints for you: the
+        app's **Help → Report a problem** builds the whole diagnostic block,
+        version and OS included, and shows it to you before anything is
+        sent. From the command line, `colophon --audit -o <album>` prints
+        the same numbers.
+
+        No photograph, filename, path, GPS coordinate or caption of yours ever
+        goes into a report. If you paste something by hand, keep it that way.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+      placeholder: |
+        I clicked Export on a 48-spread album and the progress bar stopped at 31.
+        Expected a PDF, got a 0-byte file and no error.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      description: Numbered steps. If it happens on one folder only, say what is unusual about that folder (how many photos, mixed formats, very large files).
+      placeholder: |
+        1. Open a folder of ~600 JPEG
+        2. Format 30×30, 48 spreads
+        3. Export → print-ready PDF
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: Does it happen every time?
+      options:
+        - Every time
+        - Sometimes
+        - It happened once
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Diagnostic block
+      description: The output of `colophon --audit -o <album>`, plus your version and OS. It carries the album's counters, and nothing personal.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before you publish
+      options:
+        - label: I have read the diagnostic block and it contains nothing I mind sharing.
+          required: true

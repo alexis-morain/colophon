@@ -10,6 +10,7 @@ const GROUPES: [string, [string, string][]][] = [
       ["← → · espace", "Planche précédente, suivante"],
       ["Début / Fin", "Première, dernière planche"],
       ["P", "Photos en réserve"],
+      ["⇧⌘P", "Aperçu fidèle : la page telle que le PDF la contient"],
       ["Entrée (Tri)", "Passer en revue"],
     ],
   ],

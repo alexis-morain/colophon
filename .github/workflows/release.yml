@@ -1,0 +1,182 @@
+# Une release, déclenchée par un tag `v*`.
+#
+# Produit les binaires macOS (arm64 et x64) et Windows, leurs empreintes
+# SHA-256, et les notes tirées du CHANGELOG. Les noms de fichiers suivent la
+# convention que le site lit par l'API publique de GitHub :
+#
+#   Colophon-0.9.0-macos-arm64.dmg
+#   Colophon-0.9.0-macos-x64.dmg
+#   Colophon-0.9.0-windows-x64.msi
+#
+# C'est un contrat, pas un détail de présentation : renommer un fichier casse
+# le bouton de téléchargement du site.
+#
+# **Deux étapes attendent un compte Apple Developer** et resteront rouges
+# jusque-là : la signature Developer ID et la notarisation. Elles portent
+# « (compte Apple requis) » dans leur nom, parce qu'une étape rouge sans
+# explication est pire qu'une étape absente. Le DMG produit sans elles
+# s'installe, mais Gatekeeper le met en quarantaine chez tout le monde sauf
+# sur cette machine.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version à publier, sans le v (ex. 0.9.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            cible: aarch64-apple-darwin
+            suffixe: macos-arm64
+            extension: dmg
+          - os: macos-14
+            cible: x86_64-apple-darwin
+            suffixe: macos-x64
+            extension: dmg
+          - os: windows-2022
+            cible: x86_64-pc-windows-msvc
+            suffixe: windows-x64
+            extension: msi
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        shell: bash
+        run: |
+          v="${{ github.event.inputs.version }}"
+          [ -n "$v" ] || v="${GITHUB_REF_NAME#v}"
+          echo "v=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.cible }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: crates/colophon-app/package-lock.json
+
+      - name: npm ci
+        working-directory: crates/colophon-app
+        run: npm ci
+
+      # Les notices des licences tierces voyagent dans le binaire : l'écran
+      # À propos les lit depuis `include_str!`. Une release sans elles
+      # publierait une app en violation de licence.
+      - name: Notices des licences tierces
+        shell: bash
+        run: |
+          cargo install cargo-about --locked --features cli
+          ./scripts/notices.sh
+
+      - name: Bundle
+        working-directory: crates/colophon-app
+        run: npm run tauri build -- --target ${{ matrix.cible }}
+
+      # Signature et notarisation : les deux seules étapes qui attendent un
+      # compte. Elles se sautent proprement tant que les secrets sont vides,
+      # et le nom de l'étape dit pourquoi.
+      - name: Signature Developer ID (compte Apple requis)
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: echo "à brancher le jour où le certificat existe"
+
+      - name: Notarisation Apple (compte Apple requis)
+        if: runner.os == 'macOS' && env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: echo "à brancher le jour où le compte existe"
+
+      # Un seul nom par plateforme, celui que le site attend, plus son
+      # empreinte à côté : un téléchargement qu'on ne peut pas vérifier n'est
+      # pas un téléchargement sûr.
+      - name: Renommer et empreindre
+        shell: bash
+        run: |
+          set -eu
+          v="${{ steps.version.outputs.v }}"
+          nom="Colophon-$v-${{ matrix.suffixe }}.${{ matrix.extension }}"
+          mkdir -p publication
+          src="$(find "target/${{ matrix.cible }}/release/bundle" \
+            -name "*.${{ matrix.extension }}" -type f | head -1)"
+          [ -n "$src" ] || { echo "aucun ${{ matrix.extension }} produit" >&2; exit 1; }
+          cp "$src" "publication/$nom"
+          cd publication
+          if command -v shasum >/dev/null; then
+            shasum -a 256 "$nom" > "$nom.sha256"
+          else
+            certutil -hashfile "$nom" SHA256 > "$nom.sha256"
+          fi
+          cat "$nom.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: colophon-${{ matrix.suffixe }}
+          path: publication/*
+
+  publier:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: publication
+          merge-multiple: true
+
+      # Les notes de version sortent du CHANGELOG, jamais d'une liste de
+      # commits : ce que lit un utilisateur, c'est ce qui change pour lui.
+      - name: Notes de version depuis le CHANGELOG
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          python3 - "$v" <<'PY' > notes.md
+          import re, sys
+          from pathlib import Path
+          v = sys.argv[1]
+          texte = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          blocs = re.split(r"^## ", texte, flags=re.M)
+          for b in blocs:
+              if b.startswith(f"[{v}]"):
+                  print("\n".join(b.split("\n")[1:]).strip())
+                  break
+          else:
+              print(f"Version {v}.")
+          PY
+          echo >> notes.md
+          echo "## Empreintes SHA-256" >> notes.md
+          echo >> notes.md
+          echo '```' >> notes.md
+          cat publication/*.sha256 >> notes.md
+          echo '```' >> notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: publication/*
+          body_path: notes.md
+          draft: true
+          fail_on_unmatched_files: true

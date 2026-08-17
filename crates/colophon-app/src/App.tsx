@@ -23,6 +23,8 @@ import {
   pickPhotosFolder,
   Printer,
   recomposeAlbum,
+  renderCoverPreview,
+  renderPdf,
   saveAlbum,
 } from "./bridge";
 import {
@@ -75,6 +77,8 @@ import { Chevron, CoverGlyph } from "./icons";
 import { installMenu, MenuActions, RecentAlbum } from "./menu";
 import { readRecents, pushRecent, forgetRecent, albumId } from "./recents";
 import { StockageView } from "./StockageView";
+import { AProposView } from "./AProposView";
+import { ApercuFidele, forgetPdfs } from "./pdfview";
 import { cachedThumb, loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
 
@@ -158,6 +162,12 @@ export default function App() {
   const [signaler, setSignaler] = useState<SignalKind | null>(null);
   // The storage panel (Fichier → Stockage…): what the app wrote on the disk.
   const [stockage, setStockage] = useState(false);
+  // The faithful preview: the book view reads the PDF instead of drawing it.
+  // `pdfCle` counts re-renders, so pdf.js drops a document it has parsed.
+  const [fidele, setFidele] = useState(false);
+  // À propos : version, licence, et les trois actifs sous licence tierce.
+  const [apropos, setApropos] = useState(false);
+  const [pdfCle, setPdfCle] = useState(0);
   // The recent-albums list: welcome screen and Fichier menu read it.
   const [recents, setRecents] = useState<RecentAlbum[]>(readRecents);
 
@@ -181,6 +191,8 @@ export default function App() {
     setError(null);
     setStatus(null);
     setBilan(null);
+    setFidele(false);
+    forgetPdfs();
     // The browser harness's « __dev__ » album never enters the list.
     if (inTauri && result.dir) {
       setRecents(pushRecent({ dir: result.dir, title: result.album.title }));
@@ -260,6 +272,10 @@ export default function App() {
   histRef.current = hist;
   // The report screen's own state, read from callbacks that must not be
   // rebuilt every time a proposal is swapped in.
+  const fideleRef = useRef(false);
+  fideleRef.current = fidele;
+  const profilRef = useRef(profil);
+  profilRef.current = profil;
   const bilanRef = useRef<BuildBilan | null>(null);
   const variantesRef = useRef<VarianteResume[]>([]);
   variantesRef.current = variantes;
@@ -276,6 +292,49 @@ export default function App() {
       return false;
     }
   }, []);
+
+  /**
+   * Turn the faithful preview on or off. Entering it re-renders the PDF when
+   * the album has moved since the last one: the whole point of this mode is
+   * that what is on screen is the file, so showing a stale file would be
+   * worse than showing the DOM.
+   *
+   * The cover is its own render, per printer profile: the spine width comes
+   * from the supplier, and a preview of somebody else's spine is a lie.
+   */
+  const basculerFidele = useCallback(async () => {
+    if (fideleRef.current) {
+      setFidele(false);
+      return;
+    }
+    setRendering(true);
+    setStatus("Rendu de l’aperçu fidèle…");
+    try {
+      // The browser harness has no engine: it shows whatever PDF the dev
+      // album folder holds, which is the right thing to work the mode on and
+      // the wrong thing to trust, so it says so.
+      if (inTauri) {
+        if (!(await save())) return;
+        await renderPdf();
+        // The cover is its own file and its own render. A failure there (a
+        // photo folder that moved, say) must not cost the whole preview: the
+        // interior is what the mode is mostly about.
+        await renderCoverPreview(profilRef.current).catch(() => {});
+      }
+      forgetPdfs();
+      setPdfCle((k) => k + 1);
+      setFidele(true);
+      setStatus(
+        inTauri
+          ? "Aperçu fidèle : ce que la presse recevra, au pixel près"
+          : "Aperçu fidèle : le PDF du dossier de dev, pas forcément à jour",
+      );
+    } catch (e) {
+      setError(fault("L’aperçu fidèle n’a pas pu être rendu.", e));
+    } finally {
+      setRendering(false);
+    }
+  }, [save]);
 
   /**
    * Show another of the proposals composed from the same photos. The album on
@@ -664,6 +723,13 @@ export default function App() {
     },
     raccourcis: () => setShortcuts((s) => !s),
     stockage: () => setStockage((s) => !s),
+    apropos: () => setApropos((a) => !a),
+    // The faithful preview: only in the book view, where there is a spread
+    // to be faithful about.
+    fidele: () => {
+      if (!album || view !== "livre") return;
+      void basculerFidele();
+    },
     // The three report variants. A bug needs nothing; the two layout
     // complaints quote the spread on screen, the crop one its selected cell.
     "signaler-bug": () => setSignaler("bug"),
@@ -732,6 +798,8 @@ export default function App() {
       exporter: () => fire("menu", "exporter"),
       fermerAlbum: () => fire("menu", "fermerAlbum"),
       stockage: () => fire("menu", "stockage"),
+      apropos: () => fire("menu", "apropos"),
+      apercuFidele: () => fire("menu", "fidele"),
       annuler: () => fire("menu", "annuler"),
       retablir: () => fire("menu", "retablir"),
       vue: (v) => fire("menu", `vue-${v}`),
@@ -754,6 +822,13 @@ export default function App() {
       // A shell without the menu permission still has the window shortcuts.
     });
   }, [albumOpen, recents, fire]);
+
+  // The faithful preview belongs to the book view and to the album it was
+  // rendered from: leaving either drops it rather than showing a page of a
+  // file nobody is looking at any more.
+  useEffect(() => {
+    if (view !== "livre") setFidele(false);
+  }, [view]);
 
   // A removed spread can leave the position past the end.
   useEffect(() => {
@@ -853,6 +928,14 @@ export default function App() {
         }
         return;
       }
+      // À propos holds the keyboard like the panels below it.
+      if (apropos) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setApropos(false);
+        }
+        return;
+      }
       // The storage panel holds the keyboard like the two below it.
       if (stockage) {
         if (e.key === "Escape") {
@@ -902,7 +985,9 @@ export default function App() {
                     : "annuler"
                   : key === "e" && e.shiftKey
                     ? "exporter"
-                    : key === "d"
+                    : key === "p" && e.shiftKey
+                      ? "fidele"
+                      : key === "d"
                       ? "dupliquer"
                       : key === "l"
                         ? "figer"
@@ -1087,6 +1172,7 @@ export default function App() {
     shortcuts,
     signaler,
     stockage,
+    apropos,
   ]);
 
   // The review dies with its subject: leaving the sorting view, or rescuing
@@ -1130,6 +1216,7 @@ export default function App() {
             onClose={() => setStockage(false)}
           />
         )}
+        {apropos && <AProposView onClose={() => setApropos(false)} />}
       </>
     );
   }
@@ -1265,7 +1352,17 @@ export default function App() {
       ) : (
         <main className="stage">
           <div className="turn" key={index}>
-            {onCover ? (
+            {fidele ? (
+              <ApercuFidele
+                onCover={onCover}
+                page={index + 1}
+                cle={pdfCle}
+                album={album}
+                onErreur={(m) =>
+                  setError(fault("L’aperçu fidèle n’a pas pu être rendu.", m))
+                }
+              />
+            ) : onCover ? (
               <CoverView
                 album={album}
                 printer={printers?.find((p) => p.id === profil) ?? null}
@@ -1305,6 +1402,8 @@ export default function App() {
           selected={selected}
           onTemplate={(t) => apply((a) => changeTemplate(a, index, t))}
           spreadIndex={index}
+          fidele={fidele}
+          onFidele={() => void basculerFidele()}
           onLock={
             spread
               ? () => {
@@ -1424,6 +1523,7 @@ export default function App() {
           onClose={() => setStockage(false)}
         />
       )}
+      {apropos && <AProposView onClose={() => setApropos(false)} />}
     </div>
   );
 }
@@ -1626,6 +1726,8 @@ function ContextLine({
   spreadIndex,
   onTemplate,
   onLock,
+  fidele,
+  onFidele,
 }: {
   album: Album;
   spread: Spread | null;
@@ -1634,11 +1736,29 @@ function ContextLine({
   spreadIndex: number;
   onTemplate: (t: string) => void;
   onLock?: () => void;
+  /** The faithful preview is on, and the toggle that turns it off. */
+  fidele: boolean;
+  onFidele: () => void;
 }) {
   const photoSpread =
     spread && spread.template !== "vide" && spread.template !== "texte";
   return (
     <div className="context-line">
+      {/* The one control that leaves the DOM behind. Always here, on the
+          cover as on a spread: the question « est-ce vraiment ça qui va
+          s'imprimer ? » is asked of every page. */}
+      <button
+        className={"fidele-toggle" + (fidele ? " actif" : "")}
+        onClick={onFidele}
+        aria-pressed={fidele}
+        title={
+          fidele
+            ? "Retour au rendu de l’éditeur, celui qu’on peut modifier (⇧⌘P)"
+            : "Afficher la page telle que le PDF la contient, rendue par pdf.js (⇧⌘P)"
+        }
+      >
+        {fidele ? "Aperçu fidèle" : "Voir le PDF"}
+      </button>
       {onCover ? (
         <span className="context-hint">
           La couverture : titre et sous-titre en place, glissez la photo pour

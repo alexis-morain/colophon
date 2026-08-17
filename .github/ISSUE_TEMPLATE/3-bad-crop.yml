@@ -1,0 +1,73 @@
+name: A bad crop
+description: A photo is framed badly inside its cell. A cut head, a lost subject, a horizon in the wrong place.
+labels: ["crop"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Faces are supposed to stay clear of every cropped edge, and a portrait
+        is never supposed to land in a landscape cell. If you are looking at a
+        counter-example, the guarantee has a hole in it and we want the case.
+
+        The app fills this form for you: select the cell in the book view
+        and pick **Help → Report a bad crop**. From the command line,
+        `colophon --audit -o <album>` prints the album's numbers.
+
+  - type: input
+    id: spread
+    attributes:
+      label: Which spread and which cell
+      placeholder: "Spread 12, the large cell on the left"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What went wrong
+      options:
+        - A face or a head is cut by the edge
+        - The subject is out of frame or off-centre
+        - A portrait photo landed in a landscape cell, or the reverse
+        - The horizon or an important line is badly placed
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: Detail
+      description: What the photo shows and what the crop did to it. No need to name the file, and please do not.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: fixed
+    attributes:
+      label: Did the manual crop get you out of it?
+      description: Drag to move, wheel to zoom, double-click to recentre on the detected focal point.
+      options:
+        - Yes
+        - Yes, but the detected focal point kept fighting me
+        - No
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Diagnostic block
+      description: The output of `colophon --audit -o <album>`, plus anything you can see about the cell (its shape, the photo's orientation).
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: screenshot
+    attributes:
+      label: Picture of the cell
+      description: Optional. It is your photograph, so attach it only on purpose.
+      options:
+        - label: I have attached it, on purpose.
+          required: false

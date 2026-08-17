@@ -1,0 +1,66 @@
+# Le gate, à chaque poussée, sur les trois plateformes.
+#
+# `scripts/check.sh` est la seule définition de ce qui est vert : ce fichier ne
+# fait que l'installer et le lancer. Une règle qui n'existerait que dans la CI
+# serait une règle que personne ne peut vérifier avant de pousser.
+#
+# Les jeux de photos de référence ne sont pas dans le dépôt (des dizaines de
+# giga-octets de photos de famille) : le linter et le PDF → PNG se sautent
+# tout seuls quand ils ne les trouvent pas, en le disant. Ce que la CI garde,
+# ce sont les tests unitaires, la compilation, le typage et la parité.
+
+name: check
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dépendances système (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: crates/colophon-app/package-lock.json
+
+      - name: npm ci
+        working-directory: crates/colophon-app
+        run: npm ci
+
+      - name: Pillow, pour le PDF → PNG
+        run: python3 -m pip install --user --break-system-packages Pillow || true
+
+      # Bash sur Windows aussi : check.sh est le gate, pas une variante par
+      # plateforme. Le code de sortie se lit tel quel, jamais à travers un tube.
+      - name: check.sh
+        shell: bash
+        run: ./scripts/check.sh

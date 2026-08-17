@@ -1,0 +1,68 @@
+name: A bad spread
+description: The composer laid out a spread you would not show anyone.
+labels: ["layout"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most useful report you can send. The composer is judged on
+        its worst spread, and every recurring complaint here turns into a new
+        counter in the linter, which is what stops it coming back.
+
+        The app writes this report for you: put the offending spread on
+        screen and pick **Help → Report a bad spread**. From the command
+        line, `colophon --audit -o <album>` prints the numbers this form
+        asks for.
+
+  - type: input
+    id: spread
+    attributes:
+      label: Which spread
+      description: Its number in the book.
+      placeholder: "23"
+    validations:
+      required: true
+
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What is wrong with it
+      description: Say it the way you would to a friend. "Two nearly identical photos side by side", "the strongest photo of the trip is a thumbnail", "three heads in a row at the same size", "it opens the chapter on a blurry one".
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What it should have done
+      description: Optional, but it helps. Which photo deserved the space, what should have been dropped.
+
+  - type: dropdown
+    id: fixable
+    attributes:
+      label: Could you fix it in the editor?
+      description: A defect with no manual way out is a much worse bug than an ugly spread.
+      options:
+        - Yes, and it took a few seconds
+        - Yes, but it was tedious
+        - No, I could not get the result I wanted
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Diagnostic block
+      description: The output of `colophon --audit -o <album>`. It carries the album's counters; add anything you can see about the spread (template, which cells).
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: screenshot
+    attributes:
+      label: Picture of the spread
+      description: Entirely optional. It is a picture of your photographs, so attach one only on purpose, never out of habit.
+      options:
+        - label: I have attached a picture of the spread, on purpose.
+          required: false

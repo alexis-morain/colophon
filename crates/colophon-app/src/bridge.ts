@@ -438,6 +438,51 @@ export async function openReportUrl(url: string): Promise<void> {
   return invoke("open_report_url", { url });
 }
 
+/** What the About screen shows: the version, and the third-party notices
+ *  generated from the two lock files and embedded in the binary. */
+export type AboutData = { version: string; notices: string };
+
+export async function aboutData(): Promise<AboutData> {
+  if (!inTauri) {
+    return {
+      version: "dev",
+      notices:
+        "Les notices sont générées à la compilation (scripts/notices.sh) et " +
+        "embarquées dans le binaire : le harnais navigateur n’en a pas.",
+    };
+  }
+  return invoke<AboutData>("about_data");
+}
+
+/** Re-render album.pdf, the preview file, from the saved album.json. Seconds
+ *  on a fifty-spread album: it draws from the thumbnail cache. */
+export async function renderPdf(): Promise<string> {
+  if (!inTauri) {
+    throw new Error("Le rendu du PDF se fait dans l’application, pas au navigateur.");
+  }
+  return invoke<string>("render_pdf");
+}
+
+/** Raw bytes of one of the album's own PDFs, for the faithful preview. The
+ *  two names are a closed set on the Rust side: no path travels here. */
+export async function albumPdfBytes(
+  quoi: "album" | "couverture",
+): Promise<ArrayBuffer> {
+  if (inTauri) return invoke<ArrayBuffer>("album_pdf_bytes", { quoi });
+  const res = await fetch(`/__dev/pdf?quoi=${quoi}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.arrayBuffer();
+}
+
+/** Render the flat cover sheet into the album folder, for its preview. Same
+ *  renderer the export uses, same profile. */
+export async function renderCoverPreview(profil: string): Promise<string> {
+  if (!inTauri) {
+    throw new Error("La couverture se rend dans l’application, pas au navigateur.");
+  }
+  return invoke<string>("render_cover_preview", { profil });
+}
+
 /** The colophon page, rendered from the facts the album carries. Null on an
  *  album composed before the page existed: nothing can be invented after the
  *  fact, so the Envoi screen simply does not offer it. */

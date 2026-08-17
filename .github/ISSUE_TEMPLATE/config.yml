@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: A suggestion, or a question
+    url: https://github.com/alexis-morain/colophon/discussions
+    about: Ideas, questions and "has anyone tried printing at X" go to Discussions. Nothing gets lost there and it keeps the issue tracker readable.
+  - name: A security problem
+    url: https://github.com/alexis-morain/colophon/security/advisories/new
+    about: Report it privately here rather than in a public issue.

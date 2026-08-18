@@ -94,14 +94,14 @@ pub fn geometry(album: &Album) -> SpreadGeometry {
 
 /// The whole of one page, bleed included. Nothing ever spans both: an image
 /// across the fold is swallowed by the binding.
-fn full_page(right: bool, g: &SpreadGeometry) -> Rect {
+pub(crate) fn full_page(right: bool, g: &SpreadGeometry) -> Rect {
     let half = g.media_w / 2.0;
     Rect { x: if right { half } else { 0.0 }, y: 0.0, w: half, h: g.media_h }
 }
 
 /// The margined content box of one page. Half a gutter is kept on the fold
 /// side so two facing images do not kiss across the binding.
-fn page_box(right: bool, g: &SpreadGeometry) -> Rect {
+pub(crate) fn page_box(right: bool, g: &SpreadGeometry) -> Rect {
     let half = g.media_w / 2.0;
     let w = half - g.margin - g.gutter / 2.0;
     Rect {
@@ -113,7 +113,7 @@ fn page_box(right: bool, g: &SpreadGeometry) -> Rect {
 }
 
 /// Cells of a grid inside a box, in reading order: top row first, left to right.
-fn grid(b: Rect, cols: usize, rows: usize, gap: f64) -> Vec<Rect> {
+pub(crate) fn grid(b: Rect, cols: usize, rows: usize, gap: f64) -> Vec<Rect> {
     let cw = (b.w - (cols - 1) as f64 * gap) / cols as f64;
     let ch = (b.h - (rows - 1) as f64 * gap) / rows as f64;
     let mut out = Vec::with_capacity(cols * rows);
@@ -128,65 +128,22 @@ fn grid(b: Rect, cols: usize, rows: usize, gap: f64) -> Vec<Rect> {
 }
 
 /// A cell of the given aspect ratio, centered in a box.
-fn fitted(b: Rect, aspect: f64) -> Rect {
+pub(crate) fn fitted(b: Rect, aspect: f64) -> Rect {
     let w = b.w.min(b.h * aspect);
     let h = w / aspect;
     Rect { x: b.x + (b.w - w) / 2.0, y: b.y + (b.h - h) / 2.0, w, h }
 }
 
-/// Every template the composer can emit, with the number of photos it holds.
-/// The front end ports these geometries; `--dump-geometry` compares the two.
-pub const TEMPLATES: &[(&str, usize)] = &[
-    ("full1", 1),
-    ("full1_verso", 1),
-    ("solo", 1),
-    ("solo_verso", 1),
-    ("solo_paysage", 1),
-    ("solo_paysage_verso", 1),
-    ("solo_pano", 1),
-    ("solo_pano_verso", 1),
-    ("solo_etroit", 1),
-    ("solo_etroit_verso", 1),
-    ("solo_carre", 1),
-    ("solo_carre_verso", 1),
-    ("duo", 2),
-    ("duo_portrait", 2),
-    ("duo_paysage", 2),
-    ("duo_etroit", 2),
-    ("duo_pano", 2),
-    ("trio", 3),
-    ("trio_verso", 3),
-    ("trio_portrait", 3),
-    ("trio_portrait_verso", 3),
-    ("quad", 4),
-    ("quad_portrait", 4),
-    ("quad_etroit", 4),
-    ("quad_pano", 4),
-    ("six", 6),
-    ("six_verso", 6),
-    ("octo", 8),
-    // Photo-less spreads the editor inserts: a breathing page and a free
-    // text page. Zero capacity keeps them out of the template picker and of
-    // every count-driven rule.
-    ("vide", 0),
-    ("texte", 0),
-    // The last page of the book, written by the machine about itself, and
-    // the first one, which says what the book is before it starts.
-    ("colophon", 0),
-    ("garde", 0),
-];
+/// Every template the composer can emit, with the number of photos it
+/// holds. Derived from the generated catalogue (`gabarit::catalogue`): the
+/// list is data, and this is a view of it, kept for every caller that
+/// walks names and capacities.
+pub static TEMPLATES: std::sync::LazyLock<Vec<(&'static str, usize)>> =
+    std::sync::LazyLock::new(|| {
+        crate::gabarit::catalogue().iter().map(|s| (s.nom, s.capacite)).collect()
+    });
 
-/// Cell aspect of the margined landscape cells (stacks, quads).
-pub const CELL_LANDSCAPE: f64 = 4.0 / 3.0;
-/// Cell aspect of the portrait cells (solo, duo_portrait, pairs).
-pub const CELL_PORTRAIT: f64 = 0.75;
-/// Cell aspect of the panorama cells.
-pub const CELL_PANO: f64 = 2.0;
-/// Cell aspect of the narrow cells, for 18,5:9-style phone portraits.
-pub const CELL_ETROIT: f64 = 0.5;
-/// Cell aspect of the square cell, for square-ish photos on non-square
-/// pages where no other cell comes close.
-pub const CELL_CARRE: f64 = 1.0;
+pub use crate::gabarit::{CELL_CARRE, CELL_ETROIT, CELL_LANDSCAPE, CELL_PANO, CELL_PORTRAIT};
 
 /// How many photos a template holds.
 pub fn template_capacity(name: &str) -> usize {
@@ -234,12 +191,89 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
             let rects = slots_for(name, *n, &g);
             let at = caption_anchor(&rects, &g);
             let slots: Vec<[f64; 4]> = rects.iter().map(|r| [r.x, r.y, r.w, r.h]).collect();
+            // The caption anchor moves with the rectangles, and a spread may
+            // hold fewer photos than its template's capacity: one anchor per
+            // count, index = photo count (0 falls back like slots_for does).
+            let captions: Vec<[f64; 2]> = (0..=*n)
+                .map(|k| {
+                    let r = slots_for(name, k, &g);
+                    let a = caption_anchor(&r, &g);
+                    [a.x, a.y]
+                })
+                .collect();
             (
                 name.to_string(),
-                serde_json::json!({ "slots": slots, "caption": [at.x, at.y] }),
+                serde_json::json!({
+                    "slots": slots,
+                    "caption": [at.x, at.y],
+                    "captions": captions,
+                }),
             )
         })
         .collect();
+
+    // The catalogue's own order: a JSON map sorts its keys, and the picker
+    // shows families in catalogue order, so the order travels separately.
+    let ordre: Vec<serde_json::Value> = TEMPLATES
+        .iter()
+        .map(|(name, n)| serde_json::json!([name, n]))
+        .collect();
+
+    // Fixed anchors and type constants the editor used to redeclare. All in
+    // millimetres (or ratios), converted here once.
+    const PT_MM: f64 = 0.352778;
+    let texte = text_anchor(&g);
+    let colophon = colophon_anchor(&g);
+    let garde = crate::garde::anchor(&g);
+    let anchors = serde_json::json!({
+        "texte": [texte.x, texte.y],
+        "colophon": [colophon.x, colophon.y],
+        "garde": [garde.x, garde.y],
+        "garde_place": crate::garde::place(&g),
+    });
+    let constantes = serde_json::json!({
+        "caption_size_mm": CAPTION_SIZE_PT * PT_MM,
+        "caption_safe": CAPTION_SAFE,
+        "photo_caption_size_mm": PHOTO_CAPTION_SIZE_PT * PT_MM,
+        "photo_caption_drop_mm": PHOTO_CAPTION_DROP_MM,
+        "text_size_mm": TEXT_SIZE_PT * PT_MM,
+        "text_leading_mm": TEXT_LEADING_MM,
+        "colophon_size_mm": crate::colophon::SIZE_PT * PT_MM,
+        "colophon_leading_mm": crate::colophon::LEADING_MM,
+        "garde_titre_mm": crate::garde::TITRE_PT * PT_MM,
+        "garde_titre_min_mm": crate::garde::TITRE_PT_MIN * PT_MM,
+        "garde_ligne_mm": crate::garde::LIGNE_PT * PT_MM,
+        "garde_ligne_leading_mm": crate::garde::LIGNE_LEADING_MM,
+        "garde_apres_titre_mm": crate::garde::APRES_TITRE_MM,
+        "titre_max": crate::garde::TITRE_MAX,
+        "spine_text_min_mm": crate::cover::SPINE_TEXT_MIN_MM,
+        "grammage_reference": crate::printer::GRAMMAGE_REFERENCE,
+        "grammage_defaut": crate::printer::GRAMMAGE_DEFAUT,
+        "min_effective_ppi": crate::audit::MIN_EFFECTIVE_PPI,
+        "thumb_size": crate::thumb::THUMB_SIZE,
+    });
+
+    // The half-title layout under a synthetic measure both sides can run:
+    // the shrink formula and the line rhythm are the algorithm under test,
+    // the embedded face stays the renderer's business.
+    let garde_mesure = |s: &str, pt: f64| s.chars().count() as f64 * pt * 0.2;
+    let garde_samples: Vec<serde_json::Value> = [
+        "Corse\n\nDu 27 octobre au 3 novembre 2013\nCalvi, Bastia",
+        "Un titre bien trop long pour tenir sur la page de garde sans fondre\n\nLigne",
+        "Seul",
+    ]
+    .iter()
+    .map(|text| {
+        let place = crate::garde::place(&g);
+        let lignes: Vec<serde_json::Value> = crate::garde::mise_en_page_avec(
+            text, place, garde_mesure,
+        )
+        .into_iter()
+        .map(|l| serde_json::json!([l.texte, l.taille_pt, l.dy_mm]))
+        .collect();
+        serde_json::json!({ "texte": text, "place": place, "lignes": lignes })
+    })
+    .collect();
 
     // Count -> [template, capacity], for every count a spread can reach.
     let fallbacks: serde_json::Map<String, serde_json::Value> = (1..=9usize)
@@ -303,8 +337,12 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
         "trim_mm": { "w": album.trim_mm.w, "h": album.trim_mm.h },
         "bleed_mm": album.bleed_mm,
         "canvas": { "w": g.media_w, "h": g.media_h, "margin": g.margin, "gutter": g.gutter },
+        "ordre": ordre,
         "templates": templates,
         "fallbacks": fallbacks,
+        "anchors": anchors,
+        "constantes": constantes,
+        "garde_samples": garde_samples,
         "crop_windows": crop_samples,
         "covers": covers,
     })
@@ -450,158 +488,16 @@ fn overlaps(a: &Rect, b: &Rect) -> bool {
 /// The `_verso` variants mirror the layout onto the other page; alternating
 /// them is what keeps a long album from reading like a spreadsheet.
 pub fn slots_for(template: &str, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
-    // Photo-less spreads hold no rectangles at all.
-    if template == "vide"
-        || template == "texte"
-        || template == crate::colophon::TEMPLATE
-        || template == crate::garde::TEMPLATE
-    {
-        return Vec::new();
+    match crate::gabarit::spec(template) {
+        Some(spec) => crate::gabarit::slots(spec, n, g),
+        // An album.json repaired by hand may name a template the catalogue
+        // does not know: one margined box, the honest fallback of always.
+        None => {
+            let mut v = vec![page_box(false, g)];
+            v.truncate(n.max(1));
+            v
+        }
     }
-    let verso = template.ends_with("_verso");
-    // A verso template puts its lead image on the left page.
-    let lead_right = !verso;
-    let lead = page_box(lead_right, g);
-    let facing = page_box(!lead_right, g);
-
-    let mut v = match template.trim_end_matches("_verso") {
-        // one photo, full bleed, on a single page
-        "full1" => vec![full_page(lead_right, g)],
-        // one photo, margined: portrait, landscape or panorama cell
-        "solo" => vec![fitted(lead, CELL_PORTRAIT)],
-        "solo_paysage" => vec![fitted(lead, CELL_LANDSCAPE)],
-        "solo_pano" => vec![fitted(lead, CELL_PANO)],
-        "solo_etroit" => vec![fitted(lead, CELL_ETROIT)],
-        "solo_carre" => vec![fitted(lead, CELL_CARRE)],
-        // one per page, facing each other
-        "duo" => {
-            let (l, r) = (page_box(false, g), page_box(true, g));
-            vec![l, r]
-        }
-        // two portraits or two landscapes facing each other
-        "duo_portrait" => vec![
-            fitted(page_box(false, g), CELL_PORTRAIT),
-            fitted(page_box(true, g), CELL_PORTRAIT),
-        ],
-        "duo_paysage" => vec![
-            fitted(page_box(false, g), CELL_LANDSCAPE),
-            fitted(page_box(true, g), CELL_LANDSCAPE),
-        ],
-        "duo_etroit" => vec![
-            fitted(page_box(false, g), CELL_ETROIT),
-            fitted(page_box(true, g), CELL_ETROIT),
-        ],
-        "duo_pano" => vec![
-            fitted(page_box(false, g), CELL_PANO),
-            fitted(page_box(true, g), CELL_PANO),
-        ],
-        // a full page facing two stacked landscape cells
-        "trio" => {
-            let stack: Vec<Rect> = grid(facing, 1, 2, g.gutter)
-                .into_iter()
-                .map(|c| fitted(c, CELL_LANDSCAPE))
-                .collect();
-            let mut v = Vec::with_capacity(3);
-            if lead_right {
-                v.extend(stack);
-                v.push(full_page(true, g));
-            } else {
-                v.push(full_page(false, g));
-                v.extend(stack);
-            }
-            v
-        }
-        // a full page facing two portraits side by side
-        "trio_portrait" => {
-            let pair: Vec<Rect> = grid(facing, 2, 1, g.gutter)
-                .into_iter()
-                .map(|c| fitted(c, CELL_PORTRAIT))
-                .collect();
-            let mut v = Vec::with_capacity(3);
-            if lead_right {
-                v.extend(pair);
-                v.push(full_page(true, g));
-            } else {
-                v.push(full_page(false, g));
-                v.extend(pair);
-            }
-            v
-        }
-        // 2 x 2 landscape cells across the spread, one column per page
-        "quad" => {
-            let (l, r) = (page_box(false, g), page_box(true, g));
-            let (lc, rc) = (grid(l, 1, 2, g.gutter), grid(r, 1, 2, g.gutter));
-            vec![
-                fitted(lc[0], CELL_LANDSCAPE),
-                fitted(rc[0], CELL_LANDSCAPE),
-                fitted(lc[1], CELL_LANDSCAPE),
-                fitted(rc[1], CELL_LANDSCAPE),
-            ]
-        }
-        // four portraits, two per page side by side
-        "quad_portrait" => {
-            let mut v: Vec<Rect> = grid(page_box(false, g), 2, 1, g.gutter)
-                .into_iter()
-                .map(|c| fitted(c, CELL_PORTRAIT))
-                .collect();
-            v.extend(
-                grid(page_box(true, g), 2, 1, g.gutter)
-                    .into_iter()
-                    .map(|c| fitted(c, CELL_PORTRAIT)),
-            );
-            v
-        }
-        // four narrow portraits, two per page side by side
-        "quad_etroit" => {
-            let mut v: Vec<Rect> = grid(page_box(false, g), 2, 1, g.gutter)
-                .into_iter()
-                .map(|c| fitted(c, CELL_ETROIT))
-                .collect();
-            v.extend(
-                grid(page_box(true, g), 2, 1, g.gutter)
-                    .into_iter()
-                    .map(|c| fitted(c, CELL_ETROIT)),
-            );
-            v
-        }
-        // four panoramas, two stacked per page
-        "quad_pano" => {
-            let (l, r) = (page_box(false, g), page_box(true, g));
-            let (lc, rc) = (grid(l, 1, 2, g.gutter), grid(r, 1, 2, g.gutter));
-            vec![
-                fitted(lc[0], CELL_PANO),
-                fitted(rc[0], CELL_PANO),
-                fitted(lc[1], CELL_PANO),
-                fitted(rc[1], CELL_PANO),
-            ]
-        }
-        // two stacked landscapes facing a four-up mosaic
-        "six" => {
-            let stack: Vec<Rect> = grid(lead, 1, 2, g.gutter)
-                .into_iter()
-                .map(|c| fitted(c, CELL_LANDSCAPE))
-                .collect();
-            let mosaic = grid(facing, 2, 2, g.gutter);
-            let mut v = Vec::with_capacity(6);
-            if lead_right {
-                v.extend(mosaic);
-                v.extend(stack);
-            } else {
-                v.extend(stack);
-                v.extend(mosaic);
-            }
-            v
-        }
-        // eight-up: a four-up mosaic on each page
-        "octo" => {
-            let mut v = grid(page_box(false, g), 2, 2, g.gutter);
-            v.extend(grid(page_box(true, g), 2, 2, g.gutter));
-            v
-        }
-        _ => grid(page_box(false, g), 1, 1, g.gutter),
-    };
-    v.truncate(n.max(1));
-    v
 }
 
 /// Slot colors of the template sheets, shared with scripts/pdf-png.py:
@@ -625,7 +521,7 @@ pub fn render_template_sheets(album: &Album, dir: &Path) -> Result<Vec<std::path
     use crate::model::{Slot, Spread};
     std::fs::create_dir_all(dir)?;
     let mut out = Vec::new();
-    for (name, n) in TEMPLATES {
+    for (name, n) in TEMPLATES.iter() {
         if *n == 0 {
             continue; // photo-less templates have no cells to check
         }

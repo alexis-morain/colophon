@@ -106,6 +106,35 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // The raw geometry dump the editor draws from: the album's own by
+      // default, any bare format via ?format=WxH&bleed=N (the creation
+      // screen previews formats before an album exists).
+      server.middlewares.use("/__dev/geometrie", (req, res) => {
+        const url = new URL(req.url ?? "", "http://x");
+        const format = url.searchParams.get("format");
+        const bleed = url.searchParams.get("bleed");
+        try {
+          let args: string[];
+          if (format) {
+            args = ["--dump-geometry", "--format", format];
+            if (bleed !== null) args.push("--bleed", bleed);
+          } else {
+            const album = JSON.parse(read("album.json").toString());
+            args = [
+              "--dump-geometry",
+              "--format",
+              `${album.trim_mm.w}x${album.trim_mm.h}`,
+              "--bleed",
+              String(album.bleed_mm),
+            ];
+          }
+          res.setHeader("Content-Type", "application/json");
+          res.end(execFileSync(engineBinary, args, { encoding: "utf8" }));
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
       // The proposed spread caption, computed by the engine on the album's
       // own EXIF: the ghost text is visible in a browser, not only in the
       // bundle.

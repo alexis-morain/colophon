@@ -5,7 +5,13 @@
 import { describe, expect, it } from "vitest";
 import { Album } from "./album";
 import { ReportData } from "./bridge";
+import fixture from "./geometrie.fixture.json";
+import { Dump, setGeometrie } from "./geometrie";
 import { setLangue } from "./i18n";
+
+// The report quotes slot geometry, which lives in the engine's dump: the
+// committed fixture stands in for it, its freshness held by the parity test.
+setGeometrie(fixture as unknown as Dump);
 import { basename, buildReport, fitReport, issueUrl } from "./signaler";
 
 // The assertions below read the French wording; the node test environment

@@ -117,11 +117,23 @@ pub struct Ligne {
 /// line is quiet. Reading the structure back from the text rather than from a
 /// field is what keeps `album.json` repairable with an editor.
 pub fn mise_en_page(text: &str, place_mm: f64) -> Vec<Ligne> {
+    mise_en_page_avec(text, place_mm, |s, pt| crate::font::text_width_mm(s, pt))
+}
+
+/// The same layout under a caller-supplied measure. The renderer measures in
+/// the embedded face; the geometry dump measures synthetically so the
+/// editor's port can be compared against the exact same arithmetic, shrink
+/// formula included, without sharing a font.
+pub fn mise_en_page_avec(
+    text: &str,
+    place_mm: f64,
+    mesure: impl Fn(&str, f64) -> f64,
+) -> Vec<Ligne> {
     let mut lignes = text.lines();
     let Some(titre) = lignes.next() else { return Vec::new() };
     let mut out = vec![Ligne {
         texte: titre.to_string(),
-        taille_pt: taille_titre(titre, place_mm),
+        taille_pt: taille_titre_avec(titre, place_mm, &mesure),
         dy_mm: 0.0,
     }];
     for (i, l) in lignes.filter(|l| !l.trim().is_empty()).enumerate() {
@@ -141,7 +153,15 @@ pub fn mise_en_page(text: &str, place_mm: f64) -> Vec<Ligne> {
 /// A title is never cut and never wrapped: the whole of what somebody typed
 /// prints, or the page is not a title page.
 pub fn taille_titre(titre: &str, place_mm: f64) -> f64 {
-    let large = crate::font::text_width_mm(titre, TITRE_PT);
+    taille_titre_avec(titre, place_mm, |s, pt| crate::font::text_width_mm(s, pt))
+}
+
+fn taille_titre_avec(
+    titre: &str,
+    place_mm: f64,
+    mesure: impl Fn(&str, f64) -> f64,
+) -> f64 {
+    let large = mesure(titre, TITRE_PT);
     if large <= place_mm || large <= 0.0 {
         return TITRE_PT;
     }

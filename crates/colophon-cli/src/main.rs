@@ -51,6 +51,11 @@ struct Cli {
     #[arg(long)]
     dump_geometry: bool,
 
+    /// Bleed of the dumped geometry, in millimetres. The dev album server
+    /// asks for the album's own bleed; the format previews ask for none.
+    #[arg(long, value_name = "MM", hide = true, default_value_t = 3.0)]
+    bleed: f64,
+
     /// Render album-print.pdf at full resolution (300 dpi) from the album
     /// already built in --out. Reopens the originals: slower than the
     /// preview, and the photo folder must still be in place.
@@ -130,7 +135,8 @@ fn main() -> Result<()> {
     let trim = format::parse(&cli.format)?;
 
     if cli.dump_geometry {
-        let album = Album::new("geometry", std::path::Path::new("."), trim);
+        let mut album = Album::new("geometry", std::path::Path::new("."), trim);
+        album.bleed_mm = cli.bleed;
         println!("{}", serde_json::to_string_pretty(&pdf::dump_geometry(&album))?);
         return Ok(());
     }

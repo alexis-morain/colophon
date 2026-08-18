@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import fixture from "./geometrie.fixture.json";
 import { geometryProblems, PARITY_FORMATS } from "./parity";
 
 const BINARY = fileURLToPath(
@@ -21,6 +22,17 @@ describe.skipIf(!existsSync(BINARY))("geometry parity with the engine", () => {
       }),
     );
     expect(geometryProblems(dump, format)).toEqual([]);
+  });
+
+  // The unit tests run on a committed fixture of this dump: stale fixture,
+  // stale tests, so the engine's current output must be the fixture.
+  it("the committed fixture is the engine's current dump", () => {
+    const fresh = JSON.parse(
+      execFileSync(BINARY, ["--dump-geometry", "--format", "carre-21"], {
+        encoding: "utf8",
+      }),
+    );
+    expect(fixture).toEqual(fresh);
   });
 });
 

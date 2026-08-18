@@ -9,7 +9,7 @@
 // untouched; this is a display filter only.
 
 import { useEffect, useRef, useState } from "react";
-import { Album, mediaCanvas, slotsFor, Spread, templateCapacity, TEMPLATES } from "./album";
+import { Album, mediaCanvas, slotsFor, Spread, templateCapacity, templates } from "./album";
 import { templateChoices } from "./edits";
 import { Cle, FR, t } from "./i18n";
 
@@ -32,7 +32,7 @@ export function templateLabel(template: string): string {
  *  variant exists, like the Composer's own flip. */
 function faceFor(family: string, index: number): string {
   const verso = `${family}_verso`;
-  if (index % 2 === 1 && TEMPLATES.some(([t]) => t === verso)) return verso;
+  if (index % 2 === 1 && templates().some(([t]: [string, number]) => t === verso)) return verso;
   return family;
 }
 

@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { Album, Discard, OpenedAlbum, Spread } from "./album";
+import { Dump, setGeometrie, setGeometrieFormat } from "./geometrie";
 
 export const inTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -114,7 +115,9 @@ export async function chooseVariante(id: string): Promise<OpenedAlbum> {
       "Les propositions vivent dans le dossier de l’album, que le serveur de dev ne sert qu’une fois.",
     );
   }
-  return invoke<OpenedAlbum>("choose_variante", { id });
+  const opened = await invoke<OpenedAlbum>("choose_variante", { id });
+  await chargeGeometrie();
+  return opened;
 }
 
 /** Build an album from a photo folder, then open it. Long: seconds cold. */
@@ -125,14 +128,20 @@ export async function buildAlbum(
   densite: string,
   title: string | null,
 ): Promise<BuiltAlbum> {
-  if (!inTauri) return devBuild();
-  return invoke<BuiltAlbum>("build_album_from_folder", {
+  if (!inTauri) {
+    const built = await devBuild();
+    await chargeGeometrie();
+    return built;
+  }
+  const built = await invoke<BuiltAlbum>("build_album_from_folder", {
     photosDir,
     format,
     spreads,
     densite,
     title,
   });
+  await chargeGeometrie();
+  return built;
 }
 
 /** Subscribe to the engine's progress lines. Returns the unsubscribe. */
@@ -211,7 +220,11 @@ async function devBuild(): Promise<BuiltAlbum> {
 }
 
 export async function openAlbum(path: string): Promise<OpenedAlbum> {
-  if (inTauri) return invoke<OpenedAlbum>("open_album", { path });
+  if (inTauri) {
+    const opened = await invoke<OpenedAlbum>("open_album", { path });
+    await chargeGeometrie();
+    return opened;
+  }
   const res = await fetch("/__dev/album");
   if (!res.ok) throw new Error(await res.text());
   if (!res.headers.get("content-type")?.includes("json")) {
@@ -219,7 +232,41 @@ export async function openAlbum(path: string): Promise<OpenedAlbum> {
       "Serveur de dev sans album : relancez avec COLOPHON_ALBUM=<dossier> npm run dev",
     );
   }
-  return res.json();
+  const opened = (await res.json()) as OpenedAlbum;
+  await chargeGeometrie();
+  return opened;
+}
+
+/**
+ * Load the engine's geometry dump for the album that just opened, before it
+ * reaches React: every rectangle the editor draws comes from this dump, so
+ * an album without it must not render at all.
+ */
+async function chargeGeometrie(): Promise<void> {
+  if (inTauri) {
+    setGeometrie(await invoke<Dump>("geometrie"));
+    return;
+  }
+  const res = await fetch("/__dev/geometrie");
+  if (!res.ok) throw new Error(await res.text());
+  setGeometrie(await res.json());
+}
+
+/** The dump for a bare page format (creation screen previews). */
+export async function chargeGeometrieFormat(
+  w: number,
+  h: number,
+  bleed: number,
+): Promise<void> {
+  if (inTauri) {
+    setGeometrieFormat(await invoke<Dump>("geometrie_format", { w, h, bleed }));
+    return;
+  }
+  const res = await fetch(
+    `/__dev/geometrie?format=${w}x${h}&bleed=${bleed}`,
+  );
+  if (!res.ok) throw new Error(await res.text());
+  setGeometrieFormat(await res.json());
 }
 
 export async function fetchThumb(src: string): Promise<ArrayBuffer> {

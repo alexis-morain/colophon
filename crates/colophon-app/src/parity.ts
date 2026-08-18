@@ -1,17 +1,25 @@
-// The one comparison between the engine's geometry dump and the TypeScript
-// port. Two callers share it: the /__dev/geometry endpoint (vite.config.ts)
-// and the Vitest parity test, so the check itself cannot drift either.
+// The one comparison between the engine's geometry dump and what the editor
+// still computes by itself. Two callers share it: the /__dev/geometry
+// endpoint (vite.config.ts) and the Vitest parity test, so the check itself
+// cannot drift either.
+//
+// Since the templates became data consumed from the dump, the slots are no
+// longer a port: what this file guards is the algorithmic residue (crop
+// windows, cover sheet, half-title layout under a synthetic measure) and
+// the dump-reading code itself (flip, truncation, per-count captions).
 
 import {
   captionAnchor,
   coverSheet,
   cropWindow,
   DosProfil,
+  gardeLayout,
   mediaCanvas,
   slotsFor,
-  TEMPLATES,
   templateForCount,
+  templates,
 } from "./album";
+import { Dump, setGeometrie } from "./geometrie";
 
 /** Page formats the parity run sweeps: every preset shape plus a free size. */
 export const PARITY_FORMATS = [
@@ -21,29 +29,6 @@ export const PARITY_FORMATS = [
   "paysage-a4",
   "240x180",
 ];
-
-type Dump = {
-  trim_mm: { w: number; h: number };
-  bleed_mm: number;
-  canvas: { w: number; h: number; margin: number; gutter: number };
-  templates: Record<string, { slots: number[][]; caption: number[] }>;
-  fallbacks?: Record<string, [string, number]>;
-  crop_windows?: {
-    rect: [number, number];
-    image: [number, number];
-    focal: [number, number];
-    zoom: number;
-    window: [number, number, number, number];
-  }[];
-  covers?: {
-    profil: string;
-    spreads: number;
-    sheet: [number, number];
-    spine: number;
-    /** `[x, width]` of the back panel then the front one. */
-    panels: [[number, number], [number, number]];
-  }[];
-};
 
 /** The spine parameters of the profiles the dump sweeps, as the engine holds
  *  them. Here rather than fetched: the parity test runs without a window, and
@@ -67,64 +52,105 @@ const PARITY_DOS: Record<string, { dos: DosProfil; ext: number; haut: number; ba
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 
-/** Every disagreement between the dump and the port, as human-readable lines. */
+/** The synthetic measure both sides run for the half-title samples: width
+ *  grows with the glyph count, enough to exercise the shrink formula. The
+ *  engine's copy lives in `dump_geometry`; the two must match. */
+const PT_MM = 0.352778;
+const mesureSynthetique = (s: string, tailleMm: number): number =>
+  [...s].length * (tailleMm / PT_MM) * 0.2;
+
+/** Every disagreement between the dump and the editor's remaining
+ *  arithmetic, as human-readable lines. Installs the dump, then checks that
+ *  the dump-fed lookups and the true ports agree with the engine. */
 export function geometryProblems(dump: Dump, label: string): string[] {
   const problems: string[] = [];
+  setGeometrie(dump);
   const album = { trim_mm: dump.trim_mm, bleed_mm: dump.bleed_mm } as Parameters<
     typeof mediaCanvas
   >[0];
   const g = mediaCanvas(album);
 
-  for (const key of ["w", "h", "margin", "gutter"] as const) {
-    if (!near(g[key], dump.canvas[key])) {
-      problems.push(`${label} canvas.${key}: rust ${dump.canvas[key]}, ts ${g[key]}`);
+  // The dump-reading code: flip, truncation, captions per count. The values
+  // come from the dump; what can drift is the reading of them.
+  for (const [name, cap] of templates()) {
+    const want = dump.templates[name];
+    if (!want) {
+      problems.push(`${label} ${name}: absent du dump`);
+      continue;
     }
-  }
-
-  for (const [name, want] of Object.entries(dump.templates)) {
-    const n = want.slots.length;
-    // The port works top-down; flip it back to compare with the PDF.
-    const got = slotsFor(name, n, g).map((r) => [r.x, g.h - (r.y + r.h), r.w, r.h]);
-    if (got.length !== n) {
-      problems.push(`${label} ${name}: rust ${n} slots, ts ${got.length}`);
+    const got = slotsFor(name, cap, g).map((r) => [r.x, g.h - (r.y + r.h), r.w, r.h]);
+    if (got.length !== want.slots.length) {
+      problems.push(`${label} ${name}: dump ${want.slots.length} slots, lecture ${got.length}`);
       continue;
     }
     want.slots.forEach((slot, i) => {
       slot.forEach((v, k) => {
         if (!near(v, got[i][k])) {
           problems.push(
-            `${label} ${name} slot ${i}[${"xywh"[k]}]: rust ${v}, ts ${got[i][k]}`,
+            `${label} ${name} slot ${i}[${"xywh"[k]}]: dump ${v}, lecture ${got[i][k]}`,
           );
         }
       });
     });
+    // A partially filled spread truncates, and its caption anchor moves.
+    const partiel = Math.max(1, cap - 1);
+    if (cap > 0 && slotsFor(name, partiel, g).length !== partiel) {
+      problems.push(`${label} ${name}: la troncature à ${partiel} ne tronque pas`);
+    }
+    const anchor = captionAnchor(name, partiel, g);
+    const wantAt = want.captions[Math.min(partiel, want.captions.length - 1)];
+    if (!near(anchor.x, wantAt[0]) || !near(g.h - anchor.y, wantAt[1])) {
+      problems.push(`${label} ${name} caption(${partiel}): dump ${wantAt}, lecture ${[anchor.x, g.h - anchor.y]}`);
+    }
+  }
 
-    const anchor = captionAnchor(name, n, g);
-    const tsCaption = [anchor.x, g.h - anchor.y];
-    want.caption.forEach((v, k) => {
-      if (!near(v, tsCaption[k])) {
-        problems.push(
-          `${label} ${name} caption[${"xy"[k]}]: rust ${v}, ts ${tsCaption[k]}`,
-        );
+  for (const [n, want] of Object.entries(dump.fallbacks)) {
+    const got = templateForCount(Number(n));
+    if (!got || got[0] !== want[0] || got[1] !== want[1]) {
+      problems.push(
+        `fallback(${n}): dump ${JSON.stringify(want)}, lecture ${JSON.stringify(got)}`,
+      );
+    }
+  }
+
+  // The half-title layout is still an algorithm here: replay the engine's
+  // samples under the shared synthetic measure, shrink formula included.
+  for (const sample of dump.garde_samples) {
+    const got = gardeLayout(sample.texte, sample.place, mesureSynthetique);
+    const tag = `${label} garde « ${sample.texte.split("\n")[0]} »`;
+    if (got.length !== sample.lignes.length) {
+      problems.push(`${tag}: rust ${sample.lignes.length} lignes, ts ${got.length}`);
+      continue;
+    }
+    sample.lignes.forEach(([texte, taillePt, dyMm], i) => {
+      const l = got[i];
+      if (l.texte !== texte) problems.push(`${tag} ligne ${i}: « ${texte} » vs « ${l.texte} »`);
+      if (!near(l.tailleMm, taillePt * PT_MM)) {
+        problems.push(`${tag} ligne ${i} taille: rust ${taillePt * PT_MM}, ts ${l.tailleMm}`);
+      }
+      if (!near(l.dyMm, dyMm)) {
+        problems.push(`${tag} ligne ${i} dy: rust ${dyMm}, ts ${l.dyMm}`);
       }
     });
   }
 
-  // The template list and the fallback rule are written twice too.
-  for (const [name, cap] of TEMPLATES) {
-    const want = dump.templates[name];
-    if (!want) problems.push(`${label} ${name}: unknown to rust`);
-    else if (want.slots.length !== cap) {
-      problems.push(`${label} ${name} capacity: rust ${want.slots.length}, ts ${cap}`);
-    }
-  }
-  for (const [n, want] of Object.entries(dump.fallbacks ?? {})) {
-    const got = templateForCount(Number(n));
-    if (!got || got[0] !== want[0] || got[1] !== want[1]) {
-      problems.push(
-        `fallback(${n}): rust ${JSON.stringify(want)}, ts ${JSON.stringify(got)}`,
-      );
-    }
+  // Crop windows: the drag arithmetic is written twice, and a drift here
+  // silently shifts every recadrage between the preview and the print.
+  for (const c of dump.crop_windows ?? []) {
+    const got = cropWindow(
+      { w: c.rect[0], h: c.rect[1] },
+      c.image[0],
+      c.image[1],
+      c.focal,
+      c.zoom,
+    );
+    c.window.forEach((v, k) => {
+      if (!near(v, got[k])) {
+        problems.push(
+          `${label} crop ${JSON.stringify(c.rect)}@${c.zoom}[${k}]: rust ${v}, ts ${got[k]}`,
+        );
+      }
+    });
   }
 
   // The cover sheet: the editor draws it and the printer receives it, from
@@ -162,22 +188,5 @@ export function geometryProblems(dump: Dump, label: string): string[] {
     });
   }
 
-  // The manual-crop arithmetic (focal + zoom) exists on both sides too.
-  for (const s of dump.crop_windows ?? []) {
-    const got = cropWindow(
-      { w: s.rect[0], h: s.rect[1] },
-      s.image[0],
-      s.image[1],
-      s.focal,
-      s.zoom,
-    );
-    s.window.forEach((v, k) => {
-      if (!near(v, got[k])) {
-        problems.push(
-          `crop(zoom ${s.zoom}, focal ${s.focal})[${"xywh"[k]}]: rust ${v}, ts ${got[k]}`,
-        );
-      }
-    });
-  }
   return problems;
 }

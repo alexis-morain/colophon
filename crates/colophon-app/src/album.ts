@@ -1,7 +1,11 @@
-// Album types and slot geometry. The rectangles below are a port of
-// `colophon-core::pdf::slots_for`: same constants, same formulas, so the book
-// view and the PDF agree. The PDF stays the reference; this is the working
-// preview until pdf.js renders the real thing.
+// Album types and slot geometry. Since the templates became data
+// (`gabarit::catalogue`), the editor draws every rectangle, anchor and type
+// constant from the engine's geometry dump (`geometrie.ts`), loaded before
+// the album renders: no dimension is declared twice any more. What remains
+// written here is the algorithmic residue the dump cannot carry (crop
+// windows, cover sheet, half-title layout), each pinned by the parity test.
+
+import { geometrie, geometrieCourante, onGeometrie } from "./geometrie";
 
 export type Slot = {
   src: string;
@@ -61,73 +65,25 @@ export type Discard = {
   focal: [number, number];
 };
 
-/** Every template with its photo count. Port of `pdf.rs::TEMPLATES`. */
-export const TEMPLATES: [string, number][] = [
-  ["full1", 1],
-  ["full1_verso", 1],
-  ["solo", 1],
-  ["solo_verso", 1],
-  ["solo_paysage", 1],
-  ["solo_paysage_verso", 1],
-  ["solo_pano", 1],
-  ["solo_pano_verso", 1],
-  ["solo_etroit", 1],
-  ["solo_etroit_verso", 1],
-  ["solo_carre", 1],
-  ["solo_carre_verso", 1],
-  ["duo", 2],
-  ["duo_portrait", 2],
-  ["duo_paysage", 2],
-  ["duo_etroit", 2],
-  ["duo_pano", 2],
-  ["trio", 3],
-  ["trio_verso", 3],
-  ["trio_portrait", 3],
-  ["trio_portrait_verso", 3],
-  ["quad", 4],
-  ["quad_portrait", 4],
-  ["quad_etroit", 4],
-  ["quad_pano", 4],
-  ["six", 6],
-  ["six_verso", 6],
-  ["octo", 8],
-  // Photo-less spreads the editor inserts; zero capacity keeps them out of
-  // the template picker and of every count-driven rule.
-  ["vide", 0],
-  ["texte", 0],
-  // The last page of the book, written by the machine about itself, and the
-  // first one, which says what the book is before it starts.
-  ["colophon", 0],
-  ["garde", 0],
-];
-
-/** Cell aspects, port of `pdf.rs::CELL_*`. */
-const CELL_LANDSCAPE = 4 / 3;
-const CELL_PORTRAIT = 0.75;
-const CELL_PANO = 2;
-const CELL_ETROIT = 0.5;
-const CELL_CARRE = 1;
+/** Every template with its photo count, in catalogue order, straight from
+ *  the engine's dump. */
+export function templates(): [string, number][] {
+  return geometrieCourante().ordre;
+}
 
 export function templateCapacity(name: string): number {
-  return TEMPLATES.find(([t]) => t === name)?.[1] ?? 1;
+  return templates().find(([t]) => t === name)?.[1] ?? 1;
 }
 
-/**
- * Port of `pdf.rs::template_for_count`. Counts without an exact template
- * (5, 7) drop to the largest one below: a grid with a hole in it is worse
- * than one photo fewer.
- */
+/** The engine's own count table (`fallbacks` in the dump). Counts without
+ *  an exact template (5, 7) drop to the largest one below. */
 export function templateForCount(n: number): [string, number] | null {
   if (n <= 0) return null;
-  if (n === 1) return ["solo", 1];
-  if (n === 2) return ["duo", 2];
-  if (n === 3) return ["trio", 3];
-  if (n <= 5) return ["quad", 4];
-  if (n <= 7) return ["six", 6];
-  return ["octo", 8];
+  const table = geometrieCourante().fallbacks;
+  return table[String(Math.min(n, 9))] ?? null;
 }
 
-/** Port of `pdf.rs::fallback_template`: where a spread lands after a loss. */
+/** Where a spread lands after a loss, `_verso` side kept when it exists. */
 export function fallbackTemplate(
   current: string,
   remaining: number,
@@ -137,7 +93,7 @@ export function fallbackTemplate(
   const [family, capacity] = fam;
   const verso = `${family}_verso`;
   const keepVerso =
-    current.endsWith("_verso") && TEMPLATES.some(([t]) => t === verso);
+    current.endsWith("_verso") && templates().some(([t]) => t === verso);
   return { template: keepVerso ? verso : family, capacity };
 }
 
@@ -153,241 +109,63 @@ export type Canvas = {
   bleed: number;
 };
 
-/** Full media canvas of a spread: two trimmed pages plus bleed all round. */
+/** Full media canvas of a spread, from the dump: two trimmed pages plus
+ *  bleed all round, and the margins the engine derived. */
 export function mediaCanvas(album: Album): Canvas {
-  const margin = Math.min(album.trim_mm.w, album.trim_mm.h) * (14 / 210);
-  return {
-    w: album.trim_mm.w * 2 + album.bleed_mm * 2,
-    h: album.trim_mm.h + album.bleed_mm * 2,
-    margin,
-    gutter: margin / 2,
-    bleed: album.bleed_mm,
-  };
+  const d = geometrie(album.trim_mm, album.bleed_mm);
+  return { ...d.canvas, bleed: d.bleed_mm };
 }
 
 /**
  * Share of the margin kept between a chapter caption and the trimmed edge.
- * Port of `pdf.rs::CAPTION_SAFE`.
+ * Hydrated from the dump, like every constant below.
  */
-export const CAPTION_SAFE = 0.5;
+export let CAPTION_SAFE = 0.5;
 
-/** Slot rectangles for a template, top-left origin, ready for CSS. */
+/** The trim behind a canvas: exact, because the canvas was built from it
+ *  by additions a subtraction undoes without loss. */
+function trimOf(g: Canvas): { w: number; h: number } {
+  return { w: (g.w - 2 * g.bleed) / 2, h: g.h - 2 * g.bleed };
+}
+
+/** Slot rectangles for a template, top-left origin, ready for CSS: the
+ *  engine's own rectangles, truncated like `slots_for` truncates. */
 export function slotsFor(template: string, n: number, g: Canvas): Rect[] {
-  return slotsBottomUp(template, n, g).map((r) => ({
-    x: r.x,
-    y: g.h - (r.y + r.h),
-    w: r.w,
-    h: r.h,
+  const d = geometrie(trimOf(g), g.bleed);
+  const t = d.templates[template];
+  // A template the catalogue does not know (album.json repaired by hand):
+  // the engine falls back to one margined box, and so does the view.
+  const slots = t
+    ? t.slots
+    : [
+        [
+          g.margin,
+          g.margin,
+          g.w / 2 - g.margin - g.gutter / 2,
+          g.h - 2 * g.margin,
+        ],
+      ];
+  return slots.slice(0, Math.max(n, 1)).map(([x, y, w, h]) => ({
+    x,
+    y: g.h - (y + h),
+    w,
+    h,
   }));
 }
 
-/** The whole of one page, bleed included. Nothing ever spans both. */
-function fullPage(right: boolean, g: Canvas): Rect {
-  const half = g.w / 2;
-  return { x: right ? half : 0, y: 0, w: half, h: g.h };
-}
-
-/** Margined content box of one page, half a gutter kept off the fold. */
-function pageBox(right: boolean, g: Canvas): Rect {
-  const half = g.w / 2;
-  const w = half - g.margin - g.gutter / 2;
-  return {
-    x: right ? half + g.gutter / 2 : g.margin,
-    y: g.margin,
-    w,
-    h: g.h - 2 * g.margin,
-  };
-}
-
-/** Grid cells inside a box, reading order: top row first, left to right. */
-function grid(b: Rect, cols: number, rows: number, gap: number): Rect[] {
-  const cw = (b.w - (cols - 1) * gap) / cols;
-  const ch = (b.h - (rows - 1) * gap) / rows;
-  const out: Rect[] = [];
-  for (let r = 0; r < rows; r++) {
-    // y grows upward here, so the first row sits at the top
-    const y = b.y + (rows - 1 - r) * (ch + gap);
-    for (let c = 0; c < cols; c++) {
-      out.push({ x: b.x + c * (cw + gap), y, w: cw, h: ch });
-    }
-  }
-  return out;
-}
-
-/** A cell of the given aspect ratio, centered in a box. */
-function fitted(b: Rect, aspect: number): Rect {
-  const w = Math.min(b.w, b.h * aspect);
-  const h = w / aspect;
-  return { x: b.x + (b.w - w) / 2, y: b.y + (b.h - h) / 2, w, h };
-}
-
-/** The engine's own geometry, origin bottom-left as in the PDF. */
-function slotsBottomUp(template: string, n: number, g: Canvas): Rect[] {
-  // Photo-less spreads hold no rectangles at all.
-  if (
-    template === "vide" ||
-    template === "texte" ||
-    template === COLOPHON_TEMPLATE ||
-    template === GARDE_TEMPLATE
-  )
-    return [];
-  const verso = template.endsWith("_verso");
-  const leadRight = !verso;
-  const lead = pageBox(leadRight, g);
-  const facing = pageBox(!leadRight, g);
-  const base = verso ? template.slice(0, -"_verso".length) : template;
-
-  let v: Rect[];
-  switch (base) {
-    case "full1":
-      v = [fullPage(leadRight, g)];
-      break;
-    case "solo":
-      v = [fitted(lead, CELL_PORTRAIT)];
-      break;
-    case "solo_paysage":
-      v = [fitted(lead, CELL_LANDSCAPE)];
-      break;
-    case "solo_pano":
-      v = [fitted(lead, CELL_PANO)];
-      break;
-    case "solo_etroit":
-      v = [fitted(lead, CELL_ETROIT)];
-      break;
-    case "solo_carre":
-      v = [fitted(lead, CELL_CARRE)];
-      break;
-    case "duo":
-      v = [pageBox(false, g), pageBox(true, g)];
-      break;
-    case "duo_portrait":
-      v = [
-        fitted(pageBox(false, g), CELL_PORTRAIT),
-        fitted(pageBox(true, g), CELL_PORTRAIT),
-      ];
-      break;
-    case "duo_paysage":
-      v = [
-        fitted(pageBox(false, g), CELL_LANDSCAPE),
-        fitted(pageBox(true, g), CELL_LANDSCAPE),
-      ];
-      break;
-    case "duo_etroit":
-      v = [
-        fitted(pageBox(false, g), CELL_ETROIT),
-        fitted(pageBox(true, g), CELL_ETROIT),
-      ];
-      break;
-    case "duo_pano":
-      v = [
-        fitted(pageBox(false, g), CELL_PANO),
-        fitted(pageBox(true, g), CELL_PANO),
-      ];
-      break;
-    case "trio": {
-      const stack = grid(facing, 1, 2, g.gutter).map((c) =>
-        fitted(c, CELL_LANDSCAPE),
-      );
-      v = leadRight
-        ? [...stack, fullPage(true, g)]
-        : [fullPage(false, g), ...stack];
-      break;
-    }
-    case "trio_portrait": {
-      const pair = grid(facing, 2, 1, g.gutter).map((c) =>
-        fitted(c, CELL_PORTRAIT),
-      );
-      v = leadRight
-        ? [...pair, fullPage(true, g)]
-        : [fullPage(false, g), ...pair];
-      break;
-    }
-    case "quad": {
-      const lc = grid(pageBox(false, g), 1, 2, g.gutter);
-      const rc = grid(pageBox(true, g), 1, 2, g.gutter);
-      v = [lc[0], rc[0], lc[1], rc[1]].map((c) => fitted(c, CELL_LANDSCAPE));
-      break;
-    }
-    case "quad_portrait":
-      v = [
-        ...grid(pageBox(false, g), 2, 1, g.gutter),
-        ...grid(pageBox(true, g), 2, 1, g.gutter),
-      ].map((c) => fitted(c, CELL_PORTRAIT));
-      break;
-    case "quad_etroit":
-      v = [
-        ...grid(pageBox(false, g), 2, 1, g.gutter),
-        ...grid(pageBox(true, g), 2, 1, g.gutter),
-      ].map((c) => fitted(c, CELL_ETROIT));
-      break;
-    case "quad_pano": {
-      const lc = grid(pageBox(false, g), 1, 2, g.gutter);
-      const rc = grid(pageBox(true, g), 1, 2, g.gutter);
-      v = [lc[0], rc[0], lc[1], rc[1]].map((c) => fitted(c, CELL_PANO));
-      break;
-    }
-    case "six": {
-      const stack = grid(lead, 1, 2, g.gutter).map((c) =>
-        fitted(c, CELL_LANDSCAPE),
-      );
-      const mosaic = grid(facing, 2, 2, g.gutter);
-      v = leadRight ? [...mosaic, ...stack] : [...stack, ...mosaic];
-      break;
-    }
-    case "octo":
-      v = [
-        ...grid(pageBox(false, g), 2, 2, g.gutter),
-        ...grid(pageBox(true, g), 2, 2, g.gutter),
-      ];
-      break;
-    default:
-      v = [pageBox(false, g)];
-  }
-  return v.slice(0, Math.max(n, 1));
-}
-
-/** Caption type size: 9 pt, in millimetres. */
-export const CAPTION_SIZE_MM = 9 * 0.352778;
+/** Caption type size: 9 pt, in millimetres (hydrated). */
+export let CAPTION_SIZE_MM = 9 * 0.352778;
 
 /**
- * Where the chapter caption goes, top-left origin. Port of
- * `pdf.rs::caption_anchor`: the first spot no image covers, tried in reading
- * order, because a caption over a full-bleed photo cannot be read.
+ * Where the chapter caption goes, top-left origin: the engine computed one
+ * anchor per photo count, because the free spot moves with the rectangles.
  */
 export function captionAnchor(template: string, n: number, g: Canvas): Rect {
-  const rects = slotsBottomUp(template, n, g);
-  const half = g.w / 2;
-  // Measured from the trimmed edge, not from the media: see pdf.rs.
-  const low = g.bleed + g.margin * CAPTION_SAFE;
-  const high = g.h - g.bleed - g.margin * 0.75;
-  const left = g.bleed + g.margin * 0.57;
-  const right = half + g.gutter / 2;
-
-  const candidates = [
-    { x: left, y: low },
-    { x: right, y: low },
-    { x: left, y: high },
-    { x: right, y: high },
-  ];
-  // The ground the printed line actually covers. Port of `pdf.rs::caption_box`.
-  const at =
-    candidates.find((c) => {
-      const b = {
-        x: c.x,
-        y: c.y - CAPTION_SIZE_MM * 0.3,
-        w: g.margin * 3.5,
-        h: CAPTION_SIZE_MM * 1.35,
-      };
-      return rects.every((r) => !overlaps(r, b));
-    }) ?? candidates[0];
-
-  return { x: at.x, y: g.h - at.y, w: 0, h: 0 };
-}
-
-function overlaps(a: Rect, b: Rect): boolean {
-  return (
-    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-  );
+  const d = geometrie(trimOf(g), g.bleed);
+  const t = d.templates[template] ?? d.templates["vide"];
+  const caps = t.captions;
+  const at = caps[Math.max(0, Math.min(n, caps.length - 1))];
+  return { x: at[0], y: g.h - at[1], w: 0, h: 0 };
 }
 
 /**
@@ -419,45 +197,44 @@ export function cropWindow(
 export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 4;
 
-/** Photo captions: 7 pt, baseline this far under the slot. Port of pdf.rs. */
-export const PHOTO_CAPTION_SIZE_MM = 7 * 0.352778;
-export const PHOTO_CAPTION_DROP_MM = 3.4;
+/** Photo captions: baseline this far under the slot (hydrated). */
+export let PHOTO_CAPTION_SIZE_MM = 7 * 0.352778;
+export let PHOTO_CAPTION_DROP_MM = 3.4;
 
-/** Free-text pages: 11 pt, fixed leading. Port of pdf.rs. */
-export const TEXT_SIZE_MM = 11 * 0.352778;
-export const TEXT_LEADING_MM = 6.4;
+/** Free-text pages (hydrated). */
+export let TEXT_SIZE_MM = 11 * 0.352778;
+export let TEXT_LEADING_MM = 6.4;
 
-/** First baseline of a `texte` spread, top-left origin (pdf.rs works
+/** First baseline of a `texte` spread, top-left origin (the engine works
  *  bottom-up; the flip happens here like in slotsFor). */
 export function textAnchor(g: Canvas): { x: number; y: number } {
-  return { x: g.w / 2 + g.gutter / 2, y: g.h - g.h * 0.62 };
+  const [x, y] = geometrie(trimOf(g), g.bleed).anchors.texte;
+  return { x, y: g.h - y };
 }
 
-/** The colophon spread: template name, type size and anchor. Port of
- *  `colophon.rs` and `pdf.rs::colophon_anchor`. Quieter than a text page and
- *  low on the recto: it is the last thing in the book, not a statement. */
+/** The colophon spread: quieter than a text page and low on the recto. */
 export const COLOPHON_TEMPLATE = "colophon";
-export const COLOPHON_SIZE_MM = 8.5 * 0.352778;
-export const COLOPHON_LEADING_MM = 4.6;
+export let COLOPHON_SIZE_MM = 8.5 * 0.352778;
+export let COLOPHON_LEADING_MM = 4.6;
 
 export function colophonAnchor(g: Canvas): { x: number; y: number } {
-  return { x: g.w / 2 + g.gutter / 2, y: g.h - g.h * 0.3 };
+  const [x, y] = geometrie(trimOf(g), g.bleed).anchors.colophon;
+  return { x, y: g.h - y };
 }
 
-/** The half-title spread: template, sizes and layout. Port of `garde.rs`.
- *  Two sizes on one page, so it carries its own layout rather than the fixed
- *  leading of a text page. */
+/** The half-title spread: two sizes on one page, so it carries its own
+ *  layout (`gardeLayout`), the algorithm pinned by the dump's samples. */
 export const GARDE_TEMPLATE = "garde";
-export const GARDE_TITRE_MM = 18 * 0.352778;
-export const GARDE_TITRE_MIN_MM = 8.5 * 0.352778;
-export const GARDE_LIGNE_MM = 9.5 * 0.352778;
-export const GARDE_LIGNE_LEADING_MM = 5;
-export const GARDE_APRES_TITRE_MM = 14;
+export let GARDE_TITRE_MM = 18 * 0.352778;
+export let GARDE_TITRE_MIN_MM = 8.5 * 0.352778;
+export let GARDE_LIGNE_MM = 9.5 * 0.352778;
+export let GARDE_LIGNE_LEADING_MM = 5;
+export let GARDE_APRES_TITRE_MM = 14;
 
-/** The longest title the field accepts, mirror of `garde.rs::TITRE_MAX`.
- *  The engine measures, on the six formats and in the face the PDF embeds,
- *  that a title of this length still prints whole on the half-title. */
-export const TITRE_MAX = 64;
+/** The longest title the field accepts. The engine measured, on the six
+ *  formats and in the face the PDF embeds, that a title of this length
+ *  still prints whole on the half-title (hydrated). */
+export let TITRE_MAX = 64;
 
 /** The title the book wears: the cover's when it was given one of its own,
  *  the album's name otherwise. Port of `cover.rs::titre_du_livre`. The
@@ -469,12 +246,13 @@ export function titreDuLivre(album: Album): string {
 }
 
 export function gardeAnchor(g: Canvas): { x: number; y: number } {
-  return { x: g.w / 2 + g.gutter / 2, y: g.h - g.h * 0.68 };
+  const [x, y] = geometrie(trimOf(g), g.bleed).anchors.garde;
+  return { x, y: g.h - y };
 }
 
 /** The room a line has on that page: the recto's margined box. */
 export function gardePlace(g: Canvas): number {
-  return g.w / 2 - g.margin - g.gutter / 2;
+  return geometrie(trimOf(g), g.bleed).anchors.garde_place;
 }
 
 /** One line of the half-title, ready to draw. Port of `garde.rs::Ligne`,
@@ -517,9 +295,9 @@ export function gardeLayout(
   return out;
 }
 
-/** Reference paper weight of the spine coefficients. Port of printer.rs. */
-export const GRAMMAGE_REFERENCE = 150;
-export const GRAMMAGE_DEFAUT = 150;
+/** Reference paper weight of the spine coefficients (hydrated). */
+export let GRAMMAGE_REFERENCE = 150;
+export let GRAMMAGE_DEFAUT = 150;
 
 /** The spine parameters a printer profile carries, as `printer.rs`
  *  serialises them. Declared here so the geometry below takes plain data and
@@ -580,19 +358,18 @@ export function coverSheet(
   };
 }
 
-/** Below this a spine is a fold, not a surface: no title on it. Port of
- *  `cover.rs::SPINE_TEXT_MIN_MM`. */
-export const SPINE_TEXT_MIN_MM = 9;
+/** Below this a spine is a fold, not a surface: no title on it (hydrated). */
+export let SPINE_TEXT_MIN_MM = 9;
 
-/** Longest side of a cached thumbnail. Port of `thumb.rs::THUMB_SIZE`.
+/** Longest side of a cached thumbnail (hydrated from `thumb.rs`).
  *  A thumbnail below this size was never downscaled, so its pixel count is
  *  the original's: the only case where the editor knows a photo's true
  *  resolution without reopening the file. */
-export const THUMB_SIZE = 1600;
+export let THUMB_SIZE = 1600;
 
-/** Below this effective resolution a cell prints visibly soft. Port of
- *  `audit.rs::MIN_EFFECTIVE_PPI`, the floor the preflight blocks on. */
-export const MIN_EFFECTIVE_PPI = 250;
+/** Below this effective resolution a cell prints visibly soft: the floor
+ *  the preflight blocks on (hydrated from `audit.rs`). */
+export let MIN_EFFECTIVE_PPI = 250;
 
 /**
  * Effective print resolution of a photo in a cell, in ppi. Port of the
@@ -619,3 +396,31 @@ export function effectivePpi(
  *  starts at 70, which would have marked ordinary evening photos too, and
  *  a badge that fires on ordinary photos teaches people to ignore badges. */
 export const DARK_MEAN_LUMA = 60;
+
+// ---- hydration ----------------------------------------------------------
+// The bindings above keep their historical defaults only until the first
+// dump lands; from then on the engine's numbers are the numbers. `let` plus
+// a hook, so the two hundred call sites read a constant and the constant
+// still has exactly one source.
+onGeometrie((d) => {
+  const c = d.constantes;
+  CAPTION_SAFE = c.caption_safe;
+  CAPTION_SIZE_MM = c.caption_size_mm;
+  PHOTO_CAPTION_SIZE_MM = c.photo_caption_size_mm;
+  PHOTO_CAPTION_DROP_MM = c.photo_caption_drop_mm;
+  TEXT_SIZE_MM = c.text_size_mm;
+  TEXT_LEADING_MM = c.text_leading_mm;
+  COLOPHON_SIZE_MM = c.colophon_size_mm;
+  COLOPHON_LEADING_MM = c.colophon_leading_mm;
+  GARDE_TITRE_MM = c.garde_titre_mm;
+  GARDE_TITRE_MIN_MM = c.garde_titre_min_mm;
+  GARDE_LIGNE_MM = c.garde_ligne_mm;
+  GARDE_LIGNE_LEADING_MM = c.garde_ligne_leading_mm;
+  GARDE_APRES_TITRE_MM = c.garde_apres_titre_mm;
+  TITRE_MAX = c.titre_max;
+  SPINE_TEXT_MIN_MM = c.spine_text_min_mm;
+  GRAMMAGE_REFERENCE = c.grammage_reference;
+  GRAMMAGE_DEFAUT = c.grammage_defaut;
+  MIN_EFFECTIVE_PPI = c.min_effective_ppi;
+  THUMB_SIZE = c.thumb_size;
+});

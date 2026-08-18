@@ -12,6 +12,7 @@ import {
   fetchCuration,
   FormatPreset,
   inTauri,
+  chargeGeometrieFormat,
   legendeProposee,
   listDensities,
   DensitePreset,
@@ -2276,8 +2277,19 @@ function Empty({
   const [spreads, setSpreads] = useState(48);
   const [densite, setDensite] = useState("equilibree");
 
+  // Formats plus their geometry dumps: the large preview draws the real
+  // spread grid, and every rectangle comes from the engine, never from here.
+  const [geoPrets, setGeoPrets] = useState<Record<string, boolean>>({});
   useEffect(() => {
-    listFormats().then(setFormats, () => {});
+    listFormats().then((f) => {
+      setFormats(f);
+      f.forEach((preset) =>
+        chargeGeometrieFormat(preset.w, preset.h, 0).then(
+          () => setGeoPrets((g) => ({ ...g, [preset.name]: true })),
+          () => {},
+        ),
+      );
+    }, () => {});
     listDensities().then(setDensities, () => {});
   }, []);
 
@@ -2443,7 +2455,7 @@ function Empty({
               </div>
             )}
 
-            {chosen && <FormatSpreadPreview f={chosen} />}
+            {chosen && geoPrets[chosen.name] && <FormatSpreadPreview f={chosen} />}
           </div>
         )}
 

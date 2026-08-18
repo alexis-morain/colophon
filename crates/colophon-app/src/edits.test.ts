@@ -4,6 +4,13 @@
 
 import { describe, expect, it } from "vitest";
 import { Album, Slot, Spread, templateCapacity } from "./album";
+import fixture from "./geometrie.fixture.json";
+import { Dump, setGeometrie } from "./geometrie";
+
+// The catalogue lives in the engine's dump; unit tests run without the
+// binary, so they load the committed fixture. The parity test (which does
+// run the binary) asserts the fixture is the engine's current output.
+setGeometrie(fixture as unknown as Dump);
 import {
   changeTemplate,
   duplicateSpread,

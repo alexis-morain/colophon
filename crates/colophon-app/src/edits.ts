@@ -10,7 +10,7 @@ import {
   GARDE_TEMPLATE,
   Slot,
   Spread,
-  TEMPLATES,
+  templates,
   ZOOM_MAX,
   ZOOM_MIN,
   fallbackTemplate,
@@ -82,7 +82,7 @@ export function growTemplate(
   const [family, capacity] = fam;
   const verso = `${family}_verso`;
   const keepVerso =
-    current.endsWith("_verso") && TEMPLATES.some(([t]) => t === verso);
+    current.endsWith("_verso") && templates().some(([t]: [string, number]) => t === verso);
   return { template: keepVerso ? verso : family, capacity };
 }
 
@@ -446,13 +446,16 @@ export function restoreSpread(album: Album, at: number, origin: Spread): Album {
 /** Templates the spread can switch to right now, current one included.
  *  Photo-less templates (capacity 0) never enter the picker. */
 export function templateChoices(spread: Spread): [string, number][] {
-  return TEMPLATE_CHOICES.filter(
+  return templateChoicesTriees().filter(
     ([t, cap]) =>
       (cap > 0 && cap <= spread.slots.length) || t === spread.template,
   );
 }
 
-// The picker lists plain families and their versos, largest first.
-const TEMPLATE_CHOICES: [string, number][] = [...TEMPLATES].sort(
-  (x, y) => y[1] - x[1] || x[0].localeCompare(y[0]),
-);
+// The picker lists plain families and their versos, largest first. Read at
+// call time: the catalogue lives in the dump, which loads with the album.
+function templateChoicesTriees(): [string, number][] {
+  return [...templates()].sort(
+    (x, y) => y[1] - x[1] || x[0].localeCompare(y[0]),
+  );
+}

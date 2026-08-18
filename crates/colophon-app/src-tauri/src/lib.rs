@@ -174,6 +174,35 @@ fn proposition_legende(
     Ok(colophon_core::legende::proposition(&album, planche))
 }
 
+/// The whole geometry dump for the open album. The editor draws every
+/// rectangle, anchor and type constant from this, and declares none of them:
+/// the engine's arithmetic is the only copy (`gabarit::catalogue`).
+#[tauri::command]
+fn geometrie(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let text = std::fs::read_to_string(dir.join("album.json"))
+        .map_err(|e| format!("lecture de album.json : {e}"))?;
+    let album: Album =
+        serde_json::from_str(&text).map_err(|e| format!("album.json illisible : {e}"))?;
+    Ok(colophon_core::pdf::dump_geometry(&album))
+}
+
+/// The same dump for a bare page format: the creation screen previews the
+/// formats before any album exists.
+#[tauri::command]
+fn geometrie_format(w: f64, h: f64, bleed: f64) -> serde_json::Value {
+    let mut album = Album::new(
+        "format",
+        std::path::Path::new("."),
+        colophon_core::Size { w, h },
+    );
+    album.bleed_mm = bleed;
+    colophon_core::pdf::dump_geometry(&album)
+}
+
 /// The photos curation set aside, with reasons, from curation.json.
 /// Empty when the album predates the export: the sorting view just shows
 /// the hand-removed photos then.
@@ -1072,6 +1101,8 @@ pub fn run() {
             cancel_export,
             caption_suggestion,
             proposition_legende,
+            geometrie,
+            geometrie_format,
             detected_focal,
             curation,
             list_printers,

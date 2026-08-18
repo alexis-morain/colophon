@@ -152,6 +152,9 @@ export default function App() {
   const [revue, setRevue] = useState<number | null>(null);
   const [busyTitle, setBusyTitle] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
+  // A print PDF left the machine for this album: the Envoi screen then
+  // offers the verdict form (the two questions of the launch protocol).
+  const [exporte, setExporte] = useState(false);
   const [view, setView] = useState<View>("livre");
   const [curation, setCuration] = useState<Discard[]>([]);
   const [triSelected, setTriSelected] = useState<string | null>(null);
@@ -468,6 +471,7 @@ export default function App() {
             ? `${written.length} fichiers enregistrés : ${written.join(" · ")}`
             : `PDF enregistré : ${written[0]}`,
       );
+      if (written !== null) setExporte(true);
     } catch (e) {
       if (String(e).includes("export annulé")) {
         setStatus("Export annulé, aucun fichier écrit");
@@ -948,6 +952,11 @@ export default function App() {
       album.spreads[i]?.slots.forEach((s) => loadThumb(s.src).catch(() => {}));
     }
   }, [album, index]);
+
+  // Another album, another verdict: the offer dies with the album it judged.
+  useEffect(() => {
+    setExporte(false);
+  }, [opened]);
 
   // The proposed caption of the spread on screen, fetched when its field is
   // empty. Any move drops it, a refusal leaves no trace, and it never enters
@@ -1461,6 +1470,7 @@ export default function App() {
           }}
           onExport={() => void regenPdf()}
           exporting={rendering}
+          exporte={exporte}
           dirty={dirty}
           colophonPossible={album.colophon !== undefined && album.colophon !== null}
           colophonActif={hasColophon(album)}

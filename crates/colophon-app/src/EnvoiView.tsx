@@ -11,7 +11,8 @@
 
 import { useEffect, useState } from "react";
 import { Album } from "./album";
-import { Defaut, Printer, PrevolReport, preflight } from "./bridge";
+import { Defaut, Printer, PrevolReport, openReportUrl, preflight } from "./bridge";
+import { VERDICT_URL } from "./signaler";
 
 const mm = (v: number) => v.toFixed(1).replace(".", ",");
 
@@ -23,6 +24,7 @@ export function EnvoiView({
   onJump,
   onExport,
   exporting,
+  exporte,
   dirty,
   colophonPossible,
   colophonActif,
@@ -39,6 +41,8 @@ export function EnvoiView({
   onJump: (planche: number) => void;
   onExport: () => void;
   exporting: boolean;
+  /** A print PDF was written for this album: the verdict form is offered. */
+  exporte: boolean;
   /** Unsaved edits: the preflight reads the disk, so it would lie. */
   dirty: boolean;
   /** The album carries the facts the page is made of. False on albums
@@ -265,6 +269,20 @@ export function EnvoiView({
           </p>
         )}
       </section>
+
+      {exporte && (
+        <section className="envoi-verdict-appel">
+          <h3>Votre avis vaut une planche corrigée</h3>
+          <p>
+            Deux questions, dix secondes : montreriez-vous cet album tel que le
+            logiciel l’a composé, et quelles sont ses trois pires planches ?
+            Chaque planche citée est examinée une par une.
+          </p>
+          <button className="link" onClick={() => void openReportUrl(VERDICT_URL)}>
+            Répondre sur GitHub (le formulaire pose ces deux questions)
+          </button>
+        </section>
+      )}
     </div>
   );
 }

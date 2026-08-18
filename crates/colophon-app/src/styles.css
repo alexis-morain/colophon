@@ -2717,7 +2717,8 @@ kbd {
     "verdict imprimeurs"
     "defauts fiche"
     "colophon fiche"
-    "actions fiche";
+    "actions fiche"
+    "appel fiche";
   gap: 0 44px;
   align-content: start;
 }
@@ -2726,7 +2727,7 @@ kbd {
   .envoi {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "verdict" "defauts" "colophon" "actions" "imprimeurs" "fiche";
+      "verdict" "defauts" "colophon" "actions" "appel" "imprimeurs" "fiche";
   }
 }
 
@@ -2979,6 +2980,28 @@ button.envoi-defaut:focus-visible {
   color: var(--muted);
   font-size: var(--fs-13);
   max-width: 52ch;
+}
+
+/* The verdict call, shown once a print PDF exists: a rule above, no card.
+   It asks for ten seconds, it must not look like a banner. */
+.envoi-verdict-appel {
+  grid-area: appel;
+  margin-top: 30px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+  max-width: 52ch;
+}
+
+.envoi-verdict-appel h3 {
+  margin: 0 0 4px;
+  font-size: var(--fs-15);
+  font-weight: 600;
+}
+
+.envoi-verdict-appel p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: var(--fs-13);
 }
 
 /* The destination screen carries its own action: the strip under it only

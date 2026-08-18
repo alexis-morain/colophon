@@ -23,6 +23,11 @@ const TEMPLATE: Record<SignalKind, string> = {
 
 const ISSUE_BASE = "https://github.com/alexis-morain/colophon/issues/new";
 
+/** The verdict form of the launch protocol: two questions, no diagnostic.
+ *  Offered from the Envoi screen once an export succeeded, because that is
+ *  the moment somebody has an album worth judging in front of them. */
+export const VERDICT_URL = `${ISSUE_BASE}?template=4-first-draft.yml`;
+
 /** Browsers and GitHub start truncating around 8 KB of URL: the log extract
  *  shrinks until the whole thing fits under this. */
 const URL_BUDGET = 7500;

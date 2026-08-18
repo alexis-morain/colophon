@@ -1,0 +1,49 @@
+name: The first draft, judged
+description: You exported an album the composer made on its own. Two questions, ten seconds.
+labels: ["first-draft"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is how the composer is measured: not by its average spread, by
+        its worst ones, judged by people who owe it nothing. Answer with the
+        album as the software composed it, before your own corrections, and
+        do not soften anything.
+
+        Every spread you cite ends up in exactly one of three boxes on our
+        side: the composer was right and we write down why, the defect
+        becomes a new counter in the linter, or the composer was wrong and
+        gets fixed. All three are wins, which is why the harshest answer is
+        the most useful one.
+
+        No photograph, filename, path, GPS coordinate or caption of yours is
+        asked for. Spread numbers are enough.
+
+  - type: dropdown
+    id: as-is
+    attributes:
+      label: Would you show it to your family exactly as it is?
+      description: The album as the software composed it, before you touched anything.
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+
+  - type: textarea
+    id: worst
+    attributes:
+      label: The three worst spreads
+      description: Their numbers, and for each a few words on what is wrong, said the way you would to a friend.
+      placeholder: |
+        12: two nearly identical photos side by side
+        23: the best photo of the trip is a thumbnail
+        31: opens the chapter on a blurry one
+    validations:
+      required: true
+
+  - type: textarea
+    id: album
+    attributes:
+      label: What the album was
+      description: Optional. Roughly how many photos, what kind of event (a trip, a wedding, a year of family pictures), which page format.

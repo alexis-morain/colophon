@@ -34,6 +34,10 @@ import {
   COLOPHON_TEMPLATE,
   COLOPHON_SIZE_MM,
   COLOPHON_LEADING_MM,
+  gardeAnchor,
+  gardeLayout,
+  gardePlace,
+  GARDE_TEMPLATE,
 } from "./album";
 import { captionSuggestion, detectedFocal } from "./bridge";
 import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
@@ -156,11 +160,26 @@ export function SpreadView({
         );
       }
     }
+    // The half-title fits its title by shrinking it, and builds its town
+    // line to the page: nothing here overflows unless album.json was
+    // repaired by hand, which is precisely when saying so is worth it.
+    if (spread.template === GARDE_TEMPLATE && spread.text) {
+      const room = gardePlace(canvas);
+      const over = gardeLayout(spread.text, room, measureMm).some(
+        (l) => measureMm(l.texte, l.tailleMm) > room + 0.01,
+      );
+      if (over) {
+        problems.push(
+          "la page de garde déborde : raccourcissez le titre de l’album",
+        );
+      }
+    }
     onOverflow(problems[0] ?? null);
   }, [spread, rects, canvas, mm, onOverflow, fontReady]);
 
   const textAt = textAnchor(canvas);
   const colophonAt = colophonAnchor(canvas);
+  const gardeAt = gardeAnchor(canvas);
 
   // The caption popover anchors under the selected case, in viewport
   // coordinates (position: fixed): it may hang below the sheet without
@@ -309,6 +328,31 @@ export function SpreadView({
             onText={onText}
           />
         )}
+
+        {/* The half-title, read-only like the colophon: the dates and the
+            towns are what the machine measured, and the title is edited in
+            the bar, where renaming the book also rewrites this line. */}
+        {spread.template === GARDE_TEMPLATE &&
+          gardeLayout(spread.text ?? "", gardePlace(canvas), measureMm).map(
+            (l, i) => {
+              // Same reading as the text pages: the size on screen is the
+              // print size, and the baseline is a box top one size up.
+              const px = Math.max(l.tailleMm * mm * 1.35, 11);
+              return (
+                <span
+                  key={i}
+                  className="garde-line"
+                  style={{
+                    left: `${gardeAt.x * mm}px`,
+                    top: `${(gardeAt.y + l.dyMm) * mm - px}px`,
+                    fontSize: `${px}px`,
+                  }}
+                >
+                  {l.texte}
+                </span>
+              );
+            },
+          )}
 
         {/* The colophon: the same block, quieter and lower, and read-only.
             The engine writes it from what it measured; typing over it would

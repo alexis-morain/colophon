@@ -625,6 +625,15 @@ input[type="radio"] {
   cursor: text;
 }
 
+/* Les lignes de la page de garde : posées une à une, chacune à sa taille,
+   là où une page de texte est un bloc d'une seule taille. */
+.garde-line {
+  position: absolute;
+  font-family: var(--font-book);
+  color: var(--paper-ink);
+  white-space: pre;
+}
+
 .text-page-line {
   display: block;
 }

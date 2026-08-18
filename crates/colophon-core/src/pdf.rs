@@ -170,8 +170,10 @@ pub const TEMPLATES: &[(&str, usize)] = &[
     // every count-driven rule.
     ("vide", 0),
     ("texte", 0),
-    // The last page of the book, written by the machine about itself.
+    // The last page of the book, written by the machine about itself, and
+    // the first one, which says what the book is before it starts.
     ("colophon", 0),
+    ("garde", 0),
 ];
 
 /// Cell aspect of the margined landscape cells (stacks, quads).
@@ -449,7 +451,11 @@ fn overlaps(a: &Rect, b: &Rect) -> bool {
 /// them is what keeps a long album from reading like a spreadsheet.
 pub fn slots_for(template: &str, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
     // Photo-less spreads hold no rectangles at all.
-    if template == "vide" || template == "texte" || template == crate::colophon::TEMPLATE {
+    if template == "vide"
+        || template == "texte"
+        || template == crate::colophon::TEMPLATE
+        || template == crate::garde::TEMPLATE
+    {
         return Vec::new();
     }
     let verso = template.ends_with("_verso");
@@ -767,32 +773,42 @@ impl PdfWriter {
             );
         }
 
-        // Free-text page: lines exactly as typed, fixed leading. The colophon
-        // is the same machinery, one notch quieter and lower on the page.
+        // Pages of text, three of them. The half-title sets a title over two
+        // quiet lines, so it carries its own layout; the free-text page and
+        // the colophon are one block of lines exactly as typed at a fixed
+        // leading, the colophon one notch quieter and lower on the page.
         if let Some(text) = &spread.text {
-            let colophon = spread.template == crate::colophon::TEMPLATE;
-            let at = if colophon {
-                colophon_anchor(&self.geom)
-            } else {
-                text_anchor(&self.geom)
-            };
-            let (size, leading) = if colophon {
-                (crate::colophon::SIZE_PT, crate::colophon::LEADING_MM)
-            } else {
-                (TEXT_SIZE_PT, TEXT_LEADING_MM)
-            };
-            for (i, line) in text.lines().enumerate() {
-                if line.is_empty() {
-                    continue;
+            if spread.template == crate::garde::TEMPLATE {
+                let at = crate::garde::anchor(&self.geom);
+                let place = crate::garde::place(&self.geom);
+                for l in crate::garde::mise_en_page(text, place) {
+                    text_op(&mut content, at.x, at.y - l.dy_mm, l.taille_pt, TEXT_INK, &l.texte);
                 }
-                text_op(
-                    &mut content,
-                    at.x,
-                    at.y - i as f64 * leading,
-                    size,
-                    TEXT_INK,
-                    line,
-                );
+            } else {
+                let colophon = spread.template == crate::colophon::TEMPLATE;
+                let at = if colophon {
+                    colophon_anchor(&self.geom)
+                } else {
+                    text_anchor(&self.geom)
+                };
+                let (size, leading) = if colophon {
+                    (crate::colophon::SIZE_PT, crate::colophon::LEADING_MM)
+                } else {
+                    (TEXT_SIZE_PT, TEXT_LEADING_MM)
+                };
+                for (i, line) in text.lines().enumerate() {
+                    if line.is_empty() {
+                        continue;
+                    }
+                    text_op(
+                        &mut content,
+                        at.x,
+                        at.y - i as f64 * leading,
+                        size,
+                        TEXT_INK,
+                        line,
+                    );
+                }
             }
         }
 

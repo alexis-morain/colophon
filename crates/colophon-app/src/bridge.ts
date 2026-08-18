@@ -537,6 +537,23 @@ export async function colophonSpread(album: Album): Promise<Spread | null> {
   return invoke<Spread | null>("colophon_spread", { album });
 }
 
+/** The half-title page, rendered from the facts the album carries and from
+ *  the title it carries right now. Null on an album composed before the
+ *  facts existed: nothing can be invented after the fact, so the Envoi
+ *  screen simply does not offer it. */
+export async function gardeSpread(album: Album): Promise<Spread | null> {
+  if (!inTauri) {
+    // The harness has no engine; the shape is enough to work the screen.
+    if (!album.colophon) return null;
+    return {
+      template: "garde",
+      slots: [],
+      text: `${album.title}\n\nDu 21 au 29 octobre 2013\nPorto-Vecchio, Bonifacio`,
+    };
+  }
+  return invoke<Spread | null>("garde_spread", { album });
+}
+
 /** The composer's own version of one spread, for « rendre à l'automatique ».
  *  Null when the spread was inserted by hand: nothing automatic proposed it.
  *  Throws when the album predates album.origin.json, and the message says so.

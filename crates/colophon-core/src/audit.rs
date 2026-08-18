@@ -369,9 +369,9 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
         .collect();
 
     // -- légendes
-    let legende_manquante = match album.spreads.first() {
-        Some(s) if s.caption.is_none() => vec![Finding {
-            planche: 1,
+    let legende_manquante = match premiere_photo(&album) {
+        Some(i) if album.spreads[i].caption.is_none() => vec![Finding {
+            planche: i + 1,
             case_idx: None,
             src: None,
             info: "l'album s'ouvre sans légende de chapitre".into(),
@@ -454,28 +454,38 @@ fn face_cuts(
 }
 
 /// Spread ranges of the chapters, delimited by the captions the composer
-/// posed. A headless album (no caption on spread 1) still yields one range,
-/// and the missing-caption counter reports it separately.
+/// posed, from the first spread of photographs (see [`premiere_photo`]). A
+/// headless album (no caption where the photographs start) still yields one
+/// range, and the missing-caption counter reports it separately.
 fn chapter_ranges(album: &Album) -> Vec<Range<usize>> {
     let n = album.spreads.len();
-    if n == 0 {
-        return Vec::new();
-    }
+    let Some(debut) = premiere_photo(album) else { return Vec::new() };
     let mut starts: Vec<usize> = album
         .spreads
         .iter()
         .enumerate()
+        .skip(debut)
         .filter(|(_, s)| s.caption.is_some())
         .map(|(i, _)| i)
         .collect();
-    if starts.first() != Some(&0) {
-        starts.insert(0, 0);
+    if starts.first() != Some(&debut) {
+        starts.insert(0, debut);
     }
     starts
         .iter()
         .zip(starts.iter().skip(1).chain(std::iter::once(&n)))
         .map(|(&a, &b)| a..b)
         .collect()
+}
+
+/// The first spread that carries photographs. The pages the machine writes
+/// about the book, the half-title at the head and the colophon at the foot,
+/// are not chapters and have no opening: the chapter structure starts where
+/// the photographs do. Without this, an album opening on its half-title
+/// reads as a one-spread chapter with no caption, and two counters go red
+/// over a page nobody composed.
+fn premiere_photo(album: &Album) -> Option<usize> {
+    album.spreads.iter().position(|s| !s.slots.is_empty())
 }
 
 /// Runs of more than [`FLAT_RUN`] consecutive spreads without a breathing
@@ -545,6 +555,51 @@ mod tests {
         assert_eq!(flat_runs(&t), vec![(7, 7)]);
         let t = [2usize, 1, 2];
         assert!(flat_runs(&t).is_empty());
+    }
+
+    /// A book opening on its half-title: the chapters start at the first
+    /// photographs, so the page nobody composed is neither a chapter of one
+    /// spread nor an album opening without a caption. Both counters are
+    /// strict enough that getting this wrong turns every album red.
+    #[test]
+    fn the_machine_pages_are_outside_the_chapter_structure() {
+        let mut a = crate::model::Album::new(
+            "t",
+            std::path::Path::new("/p"),
+            crate::model::Size { w: 210.0, h: 210.0 },
+        );
+        let planche = |caption: Option<&str>| crate::model::Spread {
+            template: "duo".into(),
+            slots: vec![
+                crate::model::Slot::new("a.jpg".into(), [0.5, 0.5]),
+                crate::model::Slot::new("b.jpg".into(), [0.5, 0.5]),
+            ],
+            caption: caption.map(str::to_string),
+            text: None,
+            edited: false,
+            locked: false,
+        };
+        let faits = crate::colophon::Faits {
+            photos_retenues: 6,
+            photos_scannees: 9,
+            debut: None,
+            fin: None,
+            lieux: Vec::new(),
+            appareils: Vec::new(),
+            compose_le: chrono::NaiveDate::from_ymd_opt(2026, 8, 18).unwrap(),
+        };
+        a.spreads = vec![
+            crate::garde::spread("Corse", &faits, 190.0),
+            planche(Some("Porto-Vecchio")),
+            planche(None),
+            planche(Some("Bonifacio")),
+            crate::colophon::spread(&faits, a.trim_mm, 150.0, "0.9.0"),
+        ];
+        assert_eq!(premiere_photo(&a), Some(1));
+        assert_eq!(chapter_ranges(&a), vec![1..3, 3..5]);
+        // And the caption the audit looks for is the first chapter's, on the
+        // first spread of photographs.
+        assert!(a.spreads[premiere_photo(&a).unwrap()].caption.is_some());
     }
 
     #[test]

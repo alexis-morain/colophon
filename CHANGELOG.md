@@ -9,6 +9,27 @@ sur la page des releases.
 
 ## [Non publié]
 
+### Ajouté
+
+- **Page de garde.** La première page du livre, comme dans un livre imprimé :
+  le titre de l'album, les dates du voyage, les villes traversées. Trois
+  lignes, rien d'autre. Activée par défaut, décochable dans Envoi à côté de
+  la page de colophon. Le titre suit le renommage de l'album ; les dates et
+  les villes sortent de ce que la composition a mesuré, jamais d'une phrase
+  écrite à votre place. Le titre imprimé est celui du livre : celui de la
+  couverture quand vous lui en avez donné un, celui de l'album sinon. Un
+  titre trop long pour la page rétrécit plutôt que de déborder, et rien n'est
+  jamais coupé.
+
+### Corrigé
+
+- **Une photo ne peut plus effacer une page de texte.** Envoyer une photo sur
+  la planche voisine (⌘⇧flèche) quand celle-ci était une page de texte, la
+  page de garde ou le colophon transformait la page en planche photo et son
+  texte disparaissait sans le dire. Le déplacement est refusé et la barre
+  d'état dit pourquoi. La page de respiration, elle, accepte toujours une
+  photo : c'est à ça qu'elle sert.
+
 ## [0.9.0] - 2026-08-17
 
 Première version candidate publique. Le moteur, l'éditeur et l'export sont

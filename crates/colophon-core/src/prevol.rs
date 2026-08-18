@@ -95,14 +95,19 @@ pub fn prevol(dir: &Path, profil: &'static PrinterProfile) -> Result<PrevolRepor
 /// Original pixel sizes, EXIF orientation applied, keyed by slot source.
 /// Absent entries mean the folder moved: resolution then goes unchecked and
 /// the report says so rather than passing quietly.
-/// The album prints the colophon page. It is an ordinary spread, so it costs
-/// two pages like any other, which is exactly why the pagination rule has to
-/// know about it: it is the one spread a user can drop in a single click.
-fn a_un_colophon(album: &Album) -> bool {
-    album
-        .spreads
-        .iter()
-        .any(|s| s.template == crate::colophon::TEMPLATE)
+/// The page the machine writes that the album could do without, named as the
+/// Envoi screen names it. Both are ordinary spreads costing two pages like
+/// any other, which is exactly why the pagination rule has to know about
+/// them: they are the two spreads a user can drop in a single click.
+fn page_decochable(album: &Album) -> Option<&'static str> {
+    let a = |t: &str| album.spreads.iter().any(|s| s.template == t);
+    if a(crate::colophon::TEMPLATE) {
+        Some("de colophon")
+    } else if a(crate::garde::TEMPLATE) {
+        Some("de garde")
+    } else {
+        None
+    }
 }
 
 fn original_dimensions(album: &Album) -> HashMap<String, (u32, u32)> {
@@ -171,8 +176,10 @@ pub fn check(
             // exactly on the upper bound is pushed over by it. Say so where
             // it is read, rather than letting somebody hunt for two pages
             // through a book of a hundred spreads.
-            remede: if a_un_colophon(album) && profil.pagination_ok(pages_fichier - 2) {
-                "décochez la page de colophon dans l'écran Envoi : elle vaut deux pages, et sans elle le compte tombe juste".to_string()
+            remede: if let Some(page) = page_decochable(album)
+                .filter(|_| profil.pagination_ok(pages_fichier - 2))
+            {
+                format!("décochez la page {page} dans l'écran Envoi : elle vaut deux pages, et sans elle le compte tombe juste")
             } else {
                 format!(
                     "ajoutez ou retirez des planches : une planche vaut deux pages, il en faut entre {} et {}",
@@ -511,12 +518,12 @@ mod tests {
         assert!(!d.remede.is_empty());
     }
 
-    /// The colophon page is two pages like any spread. An album sitting on
-    /// the supplier's upper bound is pushed over it by that page, and the
-    /// remedy names the one click that fixes it rather than sending somebody
-    /// hunting through a hundred spreads.
+    /// The pages the machine writes are two pages like any spread. An album
+    /// sitting on the supplier's upper bound is pushed over it by one of
+    /// them, and the remedy names the one click that fixes it rather than
+    /// sending somebody hunting through a hundred spreads.
     #[test]
-    fn the_colophon_page_is_named_when_it_is_the_two_pages_too_many() {
+    fn the_machine_pages_are_named_when_they_are_the_two_pages_too_many() {
         let dims: HashMap<String, (u32, u32)> = (0..101)
             .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
             .collect();
@@ -547,6 +554,26 @@ mod tests {
         let d = r.defauts.iter().find(|d| d.regle == "pagination").unwrap();
         assert!(d.cause.contains("202 pages"), "{}", d.cause);
         assert!(d.remede.contains("colophon"), "{}", d.remede);
+
+        // A book without a colophon but with a half-title: the remedy names
+        // the page it can actually drop, not the one it does not have.
+        let mut garde = a.clone();
+        let f = crate::colophon::Faits {
+            photos_retenues: 100,
+            photos_scannees: 400,
+            debut: None,
+            fin: None,
+            lieux: Vec::new(),
+            appareils: Vec::new(),
+            compose_le: chrono::NaiveDate::from_ymd_opt(2026, 8, 17).unwrap(),
+        };
+        garde.spreads.insert(0, crate::garde::spread("Corse", &f, 190.0));
+        let d = check(&garde, pr, &dims)
+            .defauts
+            .into_iter()
+            .find(|d| d.regle == "pagination")
+            .unwrap();
+        assert!(d.remede.contains("de garde"), "{}", d.remede);
 
         // A count that is wrong for another reason keeps the general remedy.
         let court = album_de(4, 3.0);

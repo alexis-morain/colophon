@@ -14,11 +14,14 @@ import {
   placePhoto,
   removePhoto,
   removeSpread,
+  hasGarde,
   renameAlbum,
   rescuePhoto,
   restoreSpread,
   setSlotCaption,
   setSlotCrop,
+  setCover,
+  setGarde,
   setSpreadText,
   swapPhotos,
   templateChoices,
@@ -314,6 +317,80 @@ describe("restoreSpread", () => {
   it("leaves an album alone when the index is past the end", () => {
     const a = album(spread("duo", 2));
     expect(restoreSpread(a, 4, spread("solo", 1))).toBe(a);
+  });
+});
+
+describe("moveBlocker", () => {
+  it("refuses a page of text: a photo landing there would swallow it", () => {
+    const a = album(spread("duo", 2), spread("solo", 1));
+    const avec = {
+      ...a,
+      spreads: [
+        ...a.spreads,
+        { template: "texte", slots: [], text: "Le premier soir" },
+      ],
+    };
+    expect(moveBlocker(avec, 0, 0, 2)).toBe("target_text");
+    // The breathing page has nothing to lose: dropping a photo on it is what
+    // it is for, and it becomes a solo.
+    const vide = {
+      ...a,
+      spreads: [...a.spreads, { template: "vide", slots: [] }],
+    };
+    expect(moveBlocker(vide, 0, 0, 2)).toBeNull();
+    expect(movePhoto(vide, 0, 0, 2).spreads[2].template).toBe("solo");
+  });
+});
+
+describe("setGarde", () => {
+  const garde: Spread = {
+    template: "garde",
+    slots: [],
+    text: "Corse 2013\n\nDu 21 au 29 octobre 2013\nCalvi",
+  };
+
+  it("opens the book and nowhere else", () => {
+    const a = album(spread("duo", 2), spread("trio", 3));
+    const b = setGarde(a, garde);
+    expect(b.spreads[0].template).toBe("garde");
+    expect(b.spreads).toHaveLength(3);
+    expect(hasGarde(b)).toBe(true);
+    // Twice over is still once: the page is put back, not stacked.
+    expect(setGarde(b, garde).spreads).toHaveLength(3);
+  });
+
+  it("takes it away without touching anything else", () => {
+    const a = setGarde(album(spread("duo", 2)), garde);
+    const b = setGarde(a, null);
+    expect(hasGarde(b)).toBe(false);
+    expect(b.spreads).toHaveLength(1);
+    // An album that never had one is returned as it stands.
+    expect(setGarde(b, null)).toBe(b);
+  });
+
+  it("follows a rename, on the title line and nowhere else", () => {
+    const a = setGarde(album(spread("duo", 2)), garde);
+    const b = renameAlbum(a, "Corse, novembre 2013");
+    expect(b.spreads[0].text).toBe(
+      "Corse, novembre 2013\n\nDu 21 au 29 octobre 2013\nCalvi",
+    );
+    // And the album it was renamed from is untouched: the undo stack holds it.
+    expect(a.spreads[0].text).toBe(garde.text);
+  });
+
+  it("prints the cover's title when the cover has one of its own", () => {
+    const a = setGarde(album(spread("duo", 2)), garde);
+    const b = setCover(a, { title: "Un été", subtitle: "octobre 2013" });
+    expect(b.spreads[0].text).toBe(
+      "Un été\n\nDu 21 au 29 octobre 2013\nCalvi",
+    );
+    // Renaming the album no longer moves that line: the book is called what
+    // its cover says, and the cover was given a name of its own.
+    expect(renameAlbum(b, "Corse 2013").spreads[0].text).toBe(b.spreads[0].text);
+    // A cover left blank hands the page back to the album's name.
+    expect(setCover(b, { title: "  " }).spreads[0].text).toBe(
+      "test\n\nDu 21 au 29 octobre 2013\nCalvi",
+    );
   });
 });
 

@@ -126,6 +126,11 @@ export const FR = {
   "etat.colophon.retire": "Page de colophon retirée",
   "etat.colophon.trop.vieux":
     "Cet album a été composé avant la page de colophon : recomposez-le pour l’obtenir",
+  "etat.garde.ajoutee":
+    "Page de garde ajoutée : ⌘S l’enregistre, le prévol recompte les pages",
+  "etat.garde.retiree": "Page de garde retirée",
+  "etat.garde.trop.vieux":
+    "Cet album a été composé avant la page de garde : recomposez-le pour l’obtenir",
   "etat.auto.rendue": "Planche {n} rendue à l’automatique (⌘Z la ramène)",
   "etat.auto.insertion":
     "Planche {n} : insérée à la main, elle n’a pas de version automatique",
@@ -134,6 +139,7 @@ export const FR = {
   "erreur.reouverture": "Cet album n’a pas pu être rouvert. A-t-il été déplacé ?",
   "erreur.auto": "Cette planche n’a pas pu être rendue à l’automatique.",
   "erreur.colophon": "La page de colophon n’a pas pu être changée.",
+  "erreur.garde": "La page de garde n’a pas pu être changée.",
   "erreur.fidele": "L’aperçu fidèle n’a pas pu être rendu.",
   "erreur.variante": "Cette proposition n’a pas pu être ouverte.",
   "erreur.maj": "La mise à jour n’a pas pu être installée.",
@@ -236,6 +242,11 @@ export const EN: Record<Cle, string> = {
   "etat.colophon.retire": "Colophon page removed",
   "etat.colophon.trop.vieux":
     "This album was composed before the colophon page existed: recompose it to get one",
+  "etat.garde.ajoutee":
+    "Half-title added: ⌘S saves it, the preflight recounts the pages",
+  "etat.garde.retiree": "Half-title removed",
+  "etat.garde.trop.vieux":
+    "This album was composed before the half-title existed: recompose it to get one",
   "etat.auto.rendue": "Spread {n} given back to the machine (⌘Z brings it back)",
   "etat.auto.insertion":
     "Spread {n}: inserted by hand, it has no automatic version",
@@ -244,6 +255,7 @@ export const EN: Record<Cle, string> = {
   "erreur.reouverture": "This album could not be reopened. Has it moved?",
   "erreur.auto": "This spread could not be given back to the machine.",
   "erreur.colophon": "The colophon page could not be changed.",
+  "erreur.garde": "The half-title could not be changed.",
   "erreur.fidele": "The faithful preview could not be rendered.",
   "erreur.variante": "This proposal could not be opened.",
   "erreur.maj": "The update could not be installed.",

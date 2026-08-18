@@ -27,6 +27,8 @@ export function EnvoiView({
   colophonPossible,
   colophonActif,
   onColophon,
+  gardeActif,
+  onGarde,
 }: {
   album: Album;
   /** Loaded once by the window, shared with the cover editor. */
@@ -44,6 +46,10 @@ export function EnvoiView({
   colophonPossible: boolean;
   colophonActif: boolean;
   onColophon: (on: boolean) => void;
+  /** The half-title travels with the colophon: both need the facts the
+   *  composition measured, so `colophonPossible` answers for the two. */
+  gardeActif: boolean;
+  onGarde: (on: boolean) => void;
 }) {
   const [report, setReport] = useState<PrevolReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -209,6 +215,19 @@ export function EnvoiView({
 
       {colophonPossible && (
         <section className="envoi-colophon">
+          <label>
+            <input
+              type="checkbox"
+              checked={gardeActif}
+              onChange={(e) => onGarde(e.target.checked)}
+            />
+            Imprimer la page de garde
+          </label>
+          <p>
+            La première page du livre, comme dans un livre imprimé : le titre,
+            les dates du voyage, les villes traversées. Rien d’autre, et deux
+            pages de plus.
+          </p>
           <label>
             <input
               type="checkbox"

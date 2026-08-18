@@ -7,6 +7,7 @@ import {
   COLOPHON_TEMPLATE,
   Cover,
   Discard,
+  GARDE_TEMPLATE,
   Slot,
   Spread,
   TEMPLATES,
@@ -15,6 +16,7 @@ import {
   fallbackTemplate,
   templateCapacity,
   templateForCount,
+  titreDuLivre,
 } from "./album";
 
 function withSpread(album: Album, at: number, spread: Spread | null): Album {
@@ -88,17 +90,22 @@ export function growTemplate(
  * Why a photo cannot move from one spread to another, or null when it can.
  * Moving never sacrifices a third photo: when the source would fall past an
  * exact template (6→5, 8→7), the move is refused rather than dropping a
- * bystander.
+ * bystander. Nor a page of text: a photo landing there would swallow it.
  */
 export function moveBlocker(
   album: Album,
   from: number,
   slot: number,
   to: number,
-): "no_target" | "target_full" | "source_breaks" | null {
+): "no_target" | "target_full" | "target_text" | "source_breaks" | null {
   const src = album.spreads[from];
   const dst = album.spreads[to];
   if (!src || !dst || from === to || !src.slots[slot]) return "no_target";
+  // A page that carries text would become a photo spread and lose it without
+  // saying so: the half-title, the colophon, and a text page somebody wrote.
+  // The breathing page has nothing to lose, and turning it into a solo is
+  // what dropping a photo on it is for.
+  if ((dst.text ?? "") !== "") return "target_text";
   if (!growTemplate(dst.template, dst.slots.length)) return "target_full";
   const rest = src.slots.length - 1;
   if (rest > 0) {
@@ -352,7 +359,7 @@ export function removeSpread(album: Album, at: number): Album {
 
 /** Replace the album's cover. */
 export function setCover(album: Album, cover: Cover): Album {
-  return { ...album, cover };
+  return avecTitreDuLivre({ ...album, cover });
 }
 
 /**
@@ -364,10 +371,30 @@ export function renameAlbum(album: Album, title: string): Album {
   const t = title.trim();
   if (t === "" || t === album.title) return album;
   const suivait = !album.cover || album.cover.title.trim() === album.title;
-  return {
+  return avecTitreDuLivre({
     ...album,
     title: t,
     cover: album.cover && suivait ? { ...album.cover, title: t } : album.cover,
+  });
+}
+
+/**
+ * Put the book's title back on the half-title's first line. Called wherever
+ * that title can change, a rename or a cover edit: a page left on the old
+ * name would be found at the printer's. Only that line moves, the dates and
+ * the towns underneath are what the composition measured.
+ */
+function avecTitreDuLivre(album: Album): Album {
+  const titre = titreDuLivre(album);
+  return {
+    ...album,
+    spreads: album.spreads.map((s) => {
+      if (s.template !== GARDE_TEMPLATE) return s;
+      const lignes = (s.text ?? "").split("\n");
+      if (lignes[0] === titre) return s;
+      lignes[0] = titre;
+      return { ...s, text: lignes.join("\n") };
+    }),
   };
 }
 
@@ -386,6 +413,23 @@ export function setColophon(album: Album, spread: Spread | null): Album {
 /** The album prints its colophon page. */
 export function hasColophon(album: Album): boolean {
   return album.spreads.some((s) => s.template === COLOPHON_TEMPLATE);
+}
+
+/**
+ * Add or drop the half-title. It opens the book and nowhere else: a page
+ * that says what the book is says it first. Passing null takes it away,
+ * which is the one click the Envoi screen offers.
+ */
+export function setGarde(album: Album, spread: Spread | null): Album {
+  const sans = album.spreads.filter((s) => s.template !== GARDE_TEMPLATE);
+  const spreads = spread ? [spread, ...sans] : sans;
+  if (spreads.length === album.spreads.length && !spread) return album;
+  return { ...album, spreads };
+}
+
+/** The album prints its half-title. */
+export function hasGarde(album: Album): boolean {
+  return album.spreads.some((s) => s.template === GARDE_TEMPLATE);
 }
 
 /**

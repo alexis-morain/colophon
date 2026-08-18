@@ -407,6 +407,11 @@ async fn recompose_album(
             .spreads
             .iter()
             .any(|s| s.template == colophon_core::colophon::TEMPLATE),
+        // And the half-title at the head of the book, on the same rule.
+        garde: album
+            .spreads
+            .iter()
+            .any(|s| s.template == colophon_core::garde::TEMPLATE),
         // A recomposition is not a choice of album: the user already made
         // that one, and a second offer would throw away every hand edit that
         // the pinned spreads were kept for.
@@ -707,6 +712,22 @@ fn colophon_spread(
             &app.package_info().version.to_string(),
         )
     }))
+}
+
+/// The half-title page, built from the same facts and from the title the book
+/// wears right now, the cover's when it has one of its own. `Ok(None)` on an album composed before the facts
+/// existed, like the colophon: nothing is invented after the fact.
+///
+/// The album travels from the front rather than being reread from disk: the
+/// title the page prints is the one on screen, unsaved rename and all.
+#[tauri::command]
+fn garde_spread(album: Album) -> Result<Option<colophon_core::model::Spread>, String> {
+    let place = colophon_core::garde::place(&colophon_core::pdf::geometry(&album));
+    let titre = colophon_core::cover::titre_du_livre(&album).to_string();
+    Ok(album
+        .colophon
+        .as_ref()
+        .map(|f| colophon_core::garde::spread(&titre, f, place)))
 }
 
 /// The composer's own version of one spread, for « rendre à l'automatique ».
@@ -1042,6 +1063,7 @@ pub fn run() {
             about_data,
             render_cover_preview,
             colophon_spread,
+            garde_spread,
             list_albums,
             delete_album,
             purge_thumb_caches,

@@ -267,9 +267,11 @@ function MiniSpread({ album, spread }: { album: Album; spread: Spread }) {
           </span>
         );
       })}
-      {spread.template === "texte" && (
+      {/* Les planches de texte se lisent dans la grille : sans ça, la garde
+          et le colophon y sont deux rectangles vides. */}
+      {spread.text !== undefined && (
         <span className="mini-text" aria-hidden="true">
-          {(spread.text ?? "").trim() ? spread.text : "texte"}
+          {spread.text.trim() ? spread.text : "texte"}
         </span>
       )}
       <span className="mini-fold" aria-hidden="true" />

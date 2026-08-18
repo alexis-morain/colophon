@@ -95,8 +95,10 @@ export const TEMPLATES: [string, number][] = [
   // the template picker and of every count-driven rule.
   ["vide", 0],
   ["texte", 0],
-  // The last page of the book, written by the machine about itself.
+  // The last page of the book, written by the machine about itself, and the
+  // first one, which says what the book is before it starts.
   ["colophon", 0],
+  ["garde", 0],
 ];
 
 /** Cell aspects, port of `pdf.rs::CELL_*`. */
@@ -222,7 +224,12 @@ function fitted(b: Rect, aspect: number): Rect {
 /** The engine's own geometry, origin bottom-left as in the PDF. */
 function slotsBottomUp(template: string, n: number, g: Canvas): Rect[] {
   // Photo-less spreads hold no rectangles at all.
-  if (template === "vide" || template === "texte" || template === COLOPHON_TEMPLATE)
+  if (
+    template === "vide" ||
+    template === "texte" ||
+    template === COLOPHON_TEMPLATE ||
+    template === GARDE_TEMPLATE
+  )
     return [];
   const verso = template.endsWith("_verso");
   const leadRight = !verso;
@@ -435,6 +442,79 @@ export const COLOPHON_LEADING_MM = 4.6;
 
 export function colophonAnchor(g: Canvas): { x: number; y: number } {
   return { x: g.w / 2 + g.gutter / 2, y: g.h - g.h * 0.3 };
+}
+
+/** The half-title spread: template, sizes and layout. Port of `garde.rs`.
+ *  Two sizes on one page, so it carries its own layout rather than the fixed
+ *  leading of a text page. */
+export const GARDE_TEMPLATE = "garde";
+export const GARDE_TITRE_MM = 18 * 0.352778;
+export const GARDE_TITRE_MIN_MM = 8.5 * 0.352778;
+export const GARDE_LIGNE_MM = 9.5 * 0.352778;
+export const GARDE_LIGNE_LEADING_MM = 5;
+export const GARDE_APRES_TITRE_MM = 14;
+
+/** The longest title the field accepts, mirror of `garde.rs::TITRE_MAX`.
+ *  The engine measures, on the six formats and in the face the PDF embeds,
+ *  that a title of this length still prints whole on the half-title. */
+export const TITRE_MAX = 64;
+
+/** The title the book wears: the cover's when it was given one of its own,
+ *  the album's name otherwise. Port of `cover.rs::titre_du_livre`. The
+ *  half-title prints this, so a book called « Un été » on its cover is not
+ *  called something else three pages later. */
+export function titreDuLivre(album: Album): string {
+  const c = album.cover?.title.trim();
+  return c ? c : album.title;
+}
+
+export function gardeAnchor(g: Canvas): { x: number; y: number } {
+  return { x: g.w / 2 + g.gutter / 2, y: g.h - g.h * 0.68 };
+}
+
+/** The room a line has on that page: the recto's margined box. */
+export function gardePlace(g: Canvas): number {
+  return g.w / 2 - g.margin - g.gutter / 2;
+}
+
+/** One line of the half-title, ready to draw. Port of `garde.rs::Ligne`,
+ *  with `dy` growing downward like everything else on this side. */
+export type GardeLigne = { texte: string; tailleMm: number; dyMm: number };
+
+/**
+ * The stored text laid out: the first line is the title, at the size that
+ * fits the page, and every other non-empty line is quiet under it. The blank
+ * line of the stored text is spacing, not a line to draw.
+ *
+ * `mesure` is the caller's own width measurement in the embedded face: the
+ * engine fits the title against the widths the PDF draws, and the editor has
+ * to fit it against the same ones or show a size the print will not use.
+ */
+export function gardeLayout(
+  text: string,
+  placeMm: number,
+  mesure: (s: string, tailleMm: number) => number,
+): GardeLigne[] {
+  const lignes = text.split("\n");
+  if (lignes.length === 0) return [];
+  const titre = lignes[0];
+  const large = mesure(titre, GARDE_TITRE_MM);
+  const taille =
+    large <= placeMm || large <= 0
+      ? GARDE_TITRE_MM
+      : Math.max((GARDE_TITRE_MM * placeMm) / large, GARDE_TITRE_MIN_MM);
+  const out: GardeLigne[] = [{ texte: titre, tailleMm: taille, dyMm: 0 }];
+  lignes
+    .slice(1)
+    .filter((l) => l.trim() !== "")
+    .forEach((l, i) =>
+      out.push({
+        texte: l,
+        tailleMm: GARDE_LIGNE_MM,
+        dyMm: GARDE_APRES_TITRE_MM + i * GARDE_LIGNE_LEADING_MM,
+      }),
+    );
+  return out;
 }
 
 /** Reference paper weight of the spine coefficients. Port of printer.rs. */

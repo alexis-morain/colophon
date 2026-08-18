@@ -18,6 +18,7 @@ import {
   listPrinters,
   onBuildProgress,
   colophonSpread,
+  gardeSpread,
   openAlbum as openAlbumAt,
   originSpread,
   pickAlbumFolder,
@@ -36,6 +37,8 @@ import {
   Slot,
   slotsFor,
   Spread,
+  templateCapacity,
+  TITRE_MAX,
 } from "./album";
 import {
   changeTemplate,
@@ -50,6 +53,8 @@ import {
   renameAlbum,
   setColophon,
   hasColophon,
+  setGarde,
+  hasGarde,
   rescuePhoto,
   restoreSpread,
   setCover,
@@ -405,6 +410,37 @@ export default function App() {
         );
       } catch (e) {
         setError(fault("La page de colophon n’a pas pu être changée.", e));
+      }
+    },
+    [apply],
+  );
+
+  /**
+   * Put the half-title in or take it out, from the Envoi screen. Same
+   * mechanics as the colophon page at the other end of the book: an
+   * ordinary spread, an ordinary edit, ⌘Z and ⌘S included, and the text
+   * comes from the engine rather than from the window.
+   */
+  const toggleGarde = useCallback(
+    async (on: boolean) => {
+      const current = histRef.current?.album;
+      if (!current) return;
+      try {
+        const spread = on ? await gardeSpread(current) : null;
+        if (on && !spread) {
+          setStatus(
+            "Cet album a été composé avant la page de garde : recomposez-le pour l’obtenir",
+          );
+          return;
+        }
+        apply((a) => setGarde(a, spread));
+        setStatus(
+          on
+            ? "Page de garde ajoutée : ⌘S l’enregistre, le prévol recompte les pages"
+            : "Page de garde retirée",
+        );
+      } catch (e) {
+        setError(fault("La page de garde n’a pas pu être changée.", e));
       }
     },
     [apply],
@@ -1103,6 +1139,8 @@ export default function App() {
         const blocked = moveBlocker(album, index, selected, to);
         if (blocked === "target_full") {
           setStatus(`Planche ${to + 1} pleine : aucun gabarit n’accepte une photo de plus`);
+        } else if (blocked === "target_text") {
+          setStatus(`Planche ${to + 1} : une page de texte, une photo l’effacerait`);
         } else if (blocked === "source_breaks") {
           setStatus("Refusé : il faudrait sacrifier une autre photo de cette planche");
         } else if (blocked === null) {
@@ -1386,6 +1424,8 @@ export default function App() {
           colophonPossible={album.colophon !== undefined && album.colophon !== null}
           colophonActif={hasColophon(album)}
           onColophon={(on) => void toggleColophon(on)}
+          gardeActif={hasGarde(album)}
+          onGarde={(on) => void toggleGarde(on)}
         />
       ) : view === "planches" ? (
         <PlanchesView
@@ -1642,6 +1682,10 @@ function TitreAlbum({
       value={brouillon}
       aria-label="Titre de l’album"
       spellCheck={false}
+      // The half-title prints this line whole, on the narrowest format: the
+      // engine measures that guarantee against this number
+      // (`garde.rs::TITRE_MAX`), and the field is where it is held.
+      maxLength={TITRE_MAX}
       onFocus={() => setEdite(true)}
       onChange={(e) => setBrouillon(e.target.value)}
       onBlur={(e) => valider(e.currentTarget)}
@@ -1850,8 +1894,10 @@ function ContextLine({
   fidele: boolean;
   onFidele: () => void;
 }) {
-  const photoSpread =
-    spread && spread.template !== "vide" && spread.template !== "texte";
+  // A spread that holds photographs, so a template picker means something:
+  // the empty page, the text page and the two pages the machine writes
+  // about the book have nothing to switch to.
+  const photoSpread = spread ? templateCapacity(spread.template) > 0 : false;
   return (
     <div className="context-line">
       {/* The one control that leaves the DOM behind. Always here, on the

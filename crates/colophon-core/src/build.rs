@@ -34,6 +34,10 @@ pub struct BuildOptions {
     /// over what the album already said: taking the page away once must not
     /// have to be done again after every recomposition.
     pub colophon: bool,
+    /// Print the half-title page at the head of the book. Same default and
+    /// same carry-over as the colophon: they are the two pages the machine
+    /// writes about the book rather than with its photographs.
+    pub garde: bool,
     /// Alternative proposals to compose beside the one asked for. Empty is
     /// the plain path: one album, exactly as before.
     pub variantes: Vec<VarianteSpec>,
@@ -51,6 +55,7 @@ impl Default for BuildOptions {
             cover: None,
             densite: layout::Densite::default(),
             colophon: true,
+            garde: true,
             variantes: Vec::new(),
         }
     }
@@ -565,6 +570,16 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
                 crate::printer::GRAMMAGE_DEFAUT,
                 env!("CARGO_PKG_VERSION"),
             ));
+        }
+
+        // And the half-title at the other end, from the same facts: the
+        // title, the days, the towns. Inserted after the pinned spreads have
+        // found their places, so it opens the book whatever else was kept.
+        if let (true, Some(f)) = (opts.garde, &album.colophon) {
+            let g = crate::pdf::geometry(&album);
+            let titre = crate::cover::titre_du_livre(&album).to_string();
+            let garde = crate::garde::spread(&titre, f, crate::garde::place(&g));
+            album.spreads.insert(0, garde);
         }
 
         // Photos that survived curation but not this proposal's own spread
@@ -1111,12 +1126,17 @@ mod tests {
         let slots: usize =
             report.album.spreads.iter().map(|s| s.slots.len()).sum();
         assert_eq!(slots, 3, "les trois photos sont dans l'album");
-        assert!(
-            (1..=3).contains(&report.album.spreads.len()),
-            "{} planches pour 3 photos",
-            report.album.spreads.len()
-        );
+        // Les planches de photographies : la garde et le colophon sont deux
+        // pages de plus, écrites par la machine sur le livre lui-même.
+        let planches = planches_photo(&report.album);
+        assert!((1..=3).contains(&planches), "{planches} planches pour 3 photos");
         assert!(out.join("album.pdf").exists());
+    }
+
+    /// Combien de planches portent des photographies, la garde et le
+    /// colophon mis à part.
+    fn planches_photo(album: &model::Album) -> usize {
+        album.spreads.iter().filter(|s| !s.slots.is_empty()).count()
     }
 
     /// Ten photos: the album is sized on the folder, not on the 48 spreads
@@ -1132,10 +1152,13 @@ mod tests {
         let slots: usize =
             report.album.spreads.iter().map(|s| s.slots.len()).sum();
         assert_eq!(slots, 10, "les dix photos sont dans l'album");
-        assert!(
-            (2..=6).contains(&report.album.spreads.len()),
-            "{} planches pour 10 photos",
-            report.album.spreads.len()
+        let planches = planches_photo(&report.album);
+        assert!((2..=6).contains(&planches), "{planches} planches pour 10 photos");
+        // Les deux pages de la machine encadrent le livre, dans cet ordre.
+        assert_eq!(report.album.spreads[0].template, crate::garde::TEMPLATE);
+        assert_eq!(
+            report.album.spreads.last().unwrap().template,
+            crate::colophon::TEMPLATE
         );
     }
 

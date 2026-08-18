@@ -10,6 +10,7 @@ pub mod cover;
 pub mod face;
 pub mod font;
 pub mod format;
+pub mod garde;
 pub mod heic;
 pub mod icc;
 pub mod layout;

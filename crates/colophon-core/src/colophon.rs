@@ -115,6 +115,33 @@ pub fn faits(
     }
 }
 
+/// The span the album covers, as a sentence fragment: « le 21 octobre 2013 »
+/// for a single day, « du 21 au 29 octobre 2013 » when one month holds both
+/// ends, « du 29 décembre 2013 au 2 janvier 2014 » when it does not.
+///
+/// `None` when no photo carried a trusted capture date, and every page that
+/// asks then says nothing about time rather than printing a copy date as a
+/// shooting date. Shared with [`crate::garde`] so the two pages of a book
+/// cannot come to two different readings of the same trip.
+pub fn periode(
+    debut: Option<chrono::NaiveDate>,
+    fin: Option<chrono::NaiveDate>,
+) -> Option<String> {
+    use chrono::Datelike;
+    let (d, e) = (debut?, fin?);
+    if d == e {
+        return Some(format!("le {}", crate::build::date_fr(d, true)));
+    }
+    let depart = if d.year() != e.year() {
+        crate::build::date_fr(d, true)
+    } else if d.month() != e.month() {
+        crate::build::date_fr(d, false)
+    } else {
+        d.day().to_string()
+    };
+    Some(format!("du {depart} au {}", crate::build::date_fr(e, true)))
+}
+
 /// The page as it prints, line by line. Blank lines separate the three
 /// blocks: what was kept, where and with what, and what the object is.
 ///
@@ -131,32 +158,11 @@ pub fn texte(f: &Faits, trim: Size, grammage: f64, version: &str) -> String {
     } else {
         format!("{} photographies retenues", f.photos_retenues)
     };
-    l.push(match (f.debut, f.fin) {
-        (Some(d), Some(e)) if d == e => format!(
-            "{retenues} sur {}, prises le {}.",
-            f.photos_scannees,
-            crate::build::date_fr(d, true)
-        ),
-        (Some(d), Some(e)) => {
-            use chrono::Datelike;
-            // « du 21 au 29 octobre 2013 » when one month holds both ends,
-            // « du 29 décembre 2013 au 2 janvier 2014 » when it does not.
-            let depart = if d.year() != e.year() {
-                crate::build::date_fr(d, true)
-            } else if d.month() != e.month() {
-                crate::build::date_fr(d, false)
-            } else {
-                d.day().to_string()
-            };
-            format!(
-                "{retenues} sur {}, prises du {depart} au {}.",
-                f.photos_scannees,
-                crate::build::date_fr(e, true)
-            )
-        }
+    l.push(match periode(f.debut, f.fin) {
+        Some(p) => format!("{retenues} sur {}, prises {p}.", f.photos_scannees),
         // No photo carried a trusted capture date: the page says the counts
         // and stops, rather than printing a copy date as a shooting date.
-        _ => format!("{retenues} sur {}.", f.photos_scannees),
+        None => format!("{retenues} sur {}.", f.photos_scannees),
     });
 
     if !f.lieux.is_empty() {

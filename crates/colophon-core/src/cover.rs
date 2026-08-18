@@ -307,6 +307,19 @@ fn draw_text(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cov
     draw_back(content, g, album, cover);
 }
 
+/// The title the book wears, from the album alone: the cover's when it was
+/// given one of its own, the album's name otherwise. The flat sheet reads it
+/// through [`cover_title`] with the cover it is rendering; everything else
+/// that has to print the book's name (the half-title, [`crate::garde`]) asks
+/// here, so a book called « Un été » on its cover is not called something
+/// else three pages later.
+pub fn titre_du_livre(album: &Album) -> &str {
+    match album.cover.as_ref() {
+        Some(c) if !c.title.trim().is_empty() => c.title.as_str(),
+        _ => album.title.as_str(),
+    }
+}
+
 /// The title of the album, whether or not the cover editor has been opened.
 fn cover_title<'a>(album: &'a Album, cover: &'a Cover) -> &'a str {
     if cover.title.is_empty() { album.title.as_str() } else { cover.title.as_str() }
@@ -518,6 +531,25 @@ mod tests {
     }
 
     /// A thin spine carries no type: the rule is a measurement, not a taste.
+    /// The book's name comes from the cover when the cover was given one:
+    /// the flat sheet, the leaf and the half-title all print the same string.
+    #[test]
+    fn the_book_wears_the_covers_title_when_it_has_one() {
+        let mut a = album_de(24);
+        a.title = "corse-2013".into();
+        assert_eq!(titre_du_livre(&a), "corse-2013");
+        a.cover = Some(Cover {
+            title: "Un été".into(),
+            subtitle: String::new(),
+            photo: None,
+            back_text: String::new(),
+        });
+        assert_eq!(titre_du_livre(&a), "Un été");
+        // A cover left blank falls back to the album, it never prints nothing.
+        a.cover.as_mut().unwrap().title = "   ".into();
+        assert_eq!(titre_du_livre(&a), "corse-2013");
+    }
+
     #[test]
     fn a_thin_spine_carries_no_title() {
         let cp = PrinterProfile::par_id("cloudprinter").unwrap();

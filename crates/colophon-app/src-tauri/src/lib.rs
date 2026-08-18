@@ -153,6 +153,27 @@ fn caption_suggestion(src: String, state: State<'_, AppState>) -> Result<Option<
         .then(|| colophon_core::build::date_fr(meta.taken.date(), true)))
 }
 
+/// The caption proposed for a spread whose caption field is empty: the
+/// spread's town when it diverges from its chapter, its day when the
+/// chapter covers several. Computed in core from the originals' EXIF
+/// (`legende::proposition`); None is a full answer, and nothing here ever
+/// enters the album without the user's Tab.
+#[tauri::command]
+fn proposition_legende(
+    planche: usize,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let text = std::fs::read_to_string(dir.join("album.json"))
+        .map_err(|e| format!("lecture de album.json : {e}"))?;
+    let album: Album =
+        serde_json::from_str(&text).map_err(|e| format!("album.json illisible : {e}"))?;
+    Ok(colophon_core::legende::proposition(&album, planche))
+}
+
 /// The photos curation set aside, with reasons, from curation.json.
 /// Empty when the album predates the export: the sorting view just shows
 /// the hand-removed photos then.
@@ -1050,6 +1071,7 @@ pub fn run() {
             cancel_build,
             cancel_export,
             caption_suggestion,
+            proposition_legende,
             detected_focal,
             curation,
             list_printers,

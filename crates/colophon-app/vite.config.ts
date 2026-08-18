@@ -106,6 +106,26 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // The proposed spread caption, computed by the engine on the album's
+      // own EXIF: the ghost text is visible in a browser, not only in the
+      // bundle.
+      server.middlewares.use("/__dev/proposition", (req, res) => {
+        const planche =
+          new URL(req.url ?? "", "http://x").searchParams.get("planche") ?? "0";
+        try {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            execFileSync(
+              engineBinary,
+              ["--proposition", planche, "-o", dir],
+              { encoding: "utf8" },
+            ),
+          );
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
       server.middlewares.use("/__dev/thumb", (req, res) => {
         try {
           const src = new URL(req.url ?? "", "http://x").searchParams.get("src");

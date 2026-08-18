@@ -12,6 +12,7 @@ import {
   fetchCuration,
   FormatPreset,
   inTauri,
+  legendeProposee,
   listDensities,
   DensitePreset,
   listFormats,
@@ -162,6 +163,10 @@ export default function App() {
   // Loaded once and shared: the cover editor draws its sheet for the same
   // supplier the destination screen preflights against.
   const [printers, setPrinters] = useState<Printer[] | null>(null);
+  // The caption proposed for the spread on screen, when its field is empty:
+  // grey in place, Tab accepts, any other gesture ignores it. Never saved
+  // by itself, never fetched twice for the same spread.
+  const [proposition, setProposition] = useState<string | null>(null);
   // The keyboard cheat-sheet overlay (⌘/, menu Aide).
   const [shortcuts, setShortcuts] = useState(false);
   // The report panel (Aide → Signaler), one of the three issue variants.
@@ -944,6 +949,24 @@ export default function App() {
     }
   }, [album, index]);
 
+  // The proposed caption of the spread on screen, fetched when its field is
+  // empty. Any move drops it, a refusal leaves no trace, and it never enters
+  // the album without Tab (`legende::proposition` writes the words).
+  useEffect(() => {
+    setProposition(null);
+    if (!album || view !== "livre" || index < 0) return;
+    const s = album.spreads[index];
+    if (!s || s.caption || !s.slots.length) return;
+    let alive = true;
+    legendeProposee(index).then(
+      (p) => alive && setProposition(p),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [album, index, view]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // A focused control owns the keyboard: an input takes the letters, a
@@ -1197,6 +1220,23 @@ export default function App() {
         apply((a) => removePhoto(a, index, selected));
         return;
       }
+      // The proposed caption: Tab takes it, any other gesture ignores it.
+      // One press, then Tab is a plain Tab again (the proposal is gone).
+      // Never from a focused field: the guard above already returned.
+      if (
+        e.key === "Tab" &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        proposition &&
+        index >= 0
+      ) {
+        e.preventDefault();
+        const p = proposition;
+        apply((a) => setSpreadCaption(a, index, p));
+        setStatus(`Légende posée : « ${p} » (⌘Z la retire)`);
+        return;
+      }
       if (e.key === "Escape") {
         setSelected(null);
         return;
@@ -1247,6 +1287,7 @@ export default function App() {
     signaler,
     stockage,
     apropos,
+    proposition,
   ]);
 
   // The review dies with its subject: leaving the sorting view, or rescuing
@@ -1480,6 +1521,7 @@ export default function App() {
                   onSpreadCaption={(c) =>
                     apply((a) => setSpreadCaption(a, index, c))
                   }
+                  proposition={proposition}
                   onText={(text) => apply((a) => setSpreadText(a, index, text))}
                   onOverflow={setOverflow}
                 />

@@ -265,6 +265,16 @@ export async function captionSuggestion(src: string): Promise<string | null> {
   return invoke<string | null>("caption_suggestion", { src });
 }
 
+/** The caption proposed for a spread whose caption is empty: town when it
+ *  diverges from the chapter, day when the chapter covers several. Null is
+ *  silence, and silence is a full answer. */
+export async function legendeProposee(planche: number): Promise<string | null> {
+  if (inTauri) return invoke<string | null>("proposition_legende", { planche });
+  const res = await fetch(`/__dev/proposition?planche=${planche + 1}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 /** Face-anchored focal point, recomputed on the thumbnail. The crop
  *  editor's double-click recentres on it. */
 export async function detectedFocal(src: string): Promise<[number, number]> {

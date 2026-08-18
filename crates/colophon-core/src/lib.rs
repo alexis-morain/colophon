@@ -14,6 +14,7 @@ pub mod garde;
 pub mod heic;
 pub mod icc;
 pub mod layout;
+pub mod legende;
 pub mod log;
 pub mod meta;
 pub mod model;

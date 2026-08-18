@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "print", "cover", "audit", "reprise", "prevol", "sheets"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "print", "cover", "audit", "reprise", "prevol", "sheets", "proposition"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -101,6 +101,12 @@ struct Cli {
     /// palette. Feeds the PDF → PNG raster non-regression.
     #[arg(long, value_name = "DIR", hide = true)]
     sheets: Option<PathBuf>,
+
+    /// Print the caption proposed for spread PLANCHE (1-based) of the album
+    /// in --out, as JSON: a string, or null when silence is the answer.
+    /// Feeds the dev album server, like --profils-json.
+    #[arg(long, value_name = "PLANCHE", hide = true)]
+    proposition: Option<usize>,
 }
 
 /// Built once at startup so `--help` can show the format table.
@@ -157,6 +163,17 @@ fn main() -> Result<()> {
             "{}",
             serde_json::to_string(colophon_core::printer::PrinterProfile::tous())?
         );
+        return Ok(());
+    }
+
+    if let Some(planche) = cli.proposition {
+        let album: Album = serde_json::from_str(&std::fs::read_to_string(
+            cli.out.join("album.json"),
+        )?)?;
+        let p = planche
+            .checked_sub(1)
+            .and_then(|i| colophon_core::legende::proposition(&album, i));
+        println!("{}", serde_json::to_string(&p)?);
         return Ok(());
     }
 

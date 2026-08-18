@@ -66,6 +66,7 @@ export function SpreadView({
   onCrop,
   onCaption,
   onSpreadCaption,
+  proposition,
   onText,
   onOverflow,
 }: {
@@ -82,6 +83,9 @@ export function SpreadView({
   onCaption?: (slot: number, text: string) => void;
   /** The chapter caption was renamed in place. */
   onSpreadCaption?: (caption: string) => void;
+  /** The caption proposed while the field is empty: grey in place, Tab
+   *  accepts (held by App), any other gesture ignores it. */
+  proposition?: string | null;
   /** The free text of a `texte` spread changed. */
   onText?: (text: string) => void;
   /** Some text overflows its room on this spread (signalled, never cut). */
@@ -271,7 +275,7 @@ export function SpreadView({
               fontSize: `${Math.max(CAPTION_SIZE_MM * mm * 1.35, 13)}px`,
             }}
             defaultValue={spread.caption ?? ""}
-            placeholder="Titre de chapitre…"
+            placeholder={proposition ?? "Titre de chapitre…"}
             autoFocus
             onFocus={(e) => e.currentTarget.select()}
             onClick={(e) => e.stopPropagation()}
@@ -282,6 +286,12 @@ export function SpreadView({
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === "Enter") e.currentTarget.blur();
+              // Tab takes the grey proposal, in the field like outside it.
+              if (e.key === "Tab" && proposition && e.currentTarget.value === "") {
+                e.preventDefault();
+                e.currentTarget.value = proposition;
+                e.currentTarget.blur();
+              }
               if (e.key === "Escape") {
                 e.currentTarget.value = spread.caption ?? "";
                 e.currentTarget.blur();
@@ -301,7 +311,13 @@ export function SpreadView({
                 top: `${caption.y * mm}px`,
                 fontSize: `${CAPTION_SIZE_MM * mm * 1.35}px`,
               }}
-              title={onSpreadCaption ? "Cliquer pour renommer le chapitre" : undefined}
+              title={
+                !spread.caption && proposition
+                  ? "Proposée depuis les photos : Tab la pose, tout autre geste l’ignore"
+                  : onSpreadCaption
+                    ? "Cliquer pour renommer le chapitre"
+                    : undefined
+              }
               onClick={
                 onSpreadCaption &&
                 ((e) => {
@@ -310,7 +326,7 @@ export function SpreadView({
                 })
               }
             >
-              {spread.caption ?? "titre de chapitre"}
+              {spread.caption ?? proposition ?? "titre de chapitre"}
             </span>
           )
         )}

@@ -5,6 +5,7 @@
 // into view; the blob pool stays bounded.
 
 import { useEffect, useRef, useState } from "react";
+import { t } from "./i18n";
 import { Album, Spread, mediaCanvas, slotsFor } from "./album";
 import { thumbCropStyle } from "./SpreadView";
 import { cachedThumb, loadThumb } from "./thumbs";
@@ -120,7 +121,7 @@ function PlancheCell({
       onDrop={onDropCell}
       title={
         (spread.caption ? `${spread.caption} · ` : "") +
-        `planche ${index + 1} · glisser pour déplacer, double-clic pour ouvrir`
+        t("table.cellule.titre", { n: index + 1 })
       }
     >
       <MiniSpread album={album} spread={spread} />
@@ -131,7 +132,7 @@ function PlancheCell({
           {spread.edited && (
             <span
               className="badge-edited"
-              title="Éditée à la main : survit à toute recomposition"
+              title={t("table.editee")}
             />
           )}
           <button
@@ -140,11 +141,7 @@ function PlancheCell({
               e.stopPropagation();
               onLock();
             }}
-            title={
-              spread.locked
-                ? "Figée : survit à toute recomposition. Cliquer pour libérer (⌘L)"
-                : "Figer cette planche face aux recompositions (⌘L)"
-            }
+            title={spread.locked ? t("table.figee") : t("table.figer")}
             aria-pressed={spread.locked ?? false}
           >
             <LockGlyph open={!spread.locked} />
@@ -184,7 +181,7 @@ function CoverCell({
         e.stopPropagation();
         onOpen();
       }}
-      title="Couverture · double-clic pour l’ouvrir"
+      title={t("table.couverture.titre")}
     >
       <div
         className="mini-cover"
@@ -195,7 +192,7 @@ function CoverCell({
       </div>
       <figcaption className="planche-meta">
         <span className="planche-num">C</span>
-        <span className="planche-chapter">Couverture</span>
+        <span className="planche-chapter">{t("table.couverture")}</span>
       </figcaption>
     </figure>
   );

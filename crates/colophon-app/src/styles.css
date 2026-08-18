@@ -1488,6 +1488,36 @@ input[type="radio"] {
   flex-direction: column;
 }
 
+/* ---- les préférences (⌘,) ---------------------------------------------- */
+
+.prefs-panel {
+  width: min(480px, 92vw);
+}
+
+.prefs-panel h3 {
+  margin: 18px 0 8px;
+  font-size: var(--fs-15);
+  font-weight: 600;
+}
+
+.prefs-langues {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.prefs-langue {
+  padding: 3px 12px;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  font-size: var(--fs-13);
+}
+
+.prefs-langue.active {
+  color: var(--fond);
+  background: var(--text);
+  border-color: var(--text);
+}
+
 .stockage-total {
   margin: 0 0 14px;
   font-size: var(--fs-13);

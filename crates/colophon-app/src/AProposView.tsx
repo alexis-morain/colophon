@@ -10,24 +10,18 @@
 
 import { useEffect, useState } from "react";
 import { aboutData, AboutData } from "./bridge";
+import { Cle, t } from "./i18n";
 
-/** The three assets the engine embeds, each with the terms it travels under
- *  and the file that carries them in the repo. */
-const ACTIFS: [string, string, string][] = [
-  [
-    "Source Sans 3",
-    "SIL Open Font License 1.1, Adobe",
-    "La police du livre et de l’interface. C’est elle que le PDF incorpore.",
-  ],
-  [
-    "sRGB2014.icc",
-    "International Color Consortium, redistribution sans restriction",
-    "Le profil couleur que le PDF embarque comme OutputIntent.",
-  ],
+/** The three assets the engine embeds, each with the terms it travels under.
+ *  Names and licences are proper nouns; descriptions translate, and so does
+ *  the one licence line that carries a sentence. */
+const ACTIFS: [string, () => string, Cle][] = [
+  ["Source Sans 3", () => "SIL Open Font License 1.1, Adobe", "apropos.police.quoi"],
+  ["sRGB2014.icc", () => t("apropos.icc.licence"), "apropos.icc.quoi"],
   [
     "GeoNames cities5000",
-    "Creative Commons Attribution 4.0",
-    "Les noms de villes qui titrent les chapitres, depuis le GPS des photos.",
+    () => "Creative Commons Attribution 4.0",
+    "apropos.geonames.quoi",
   ],
 ];
 
@@ -46,48 +40,38 @@ export function AProposView({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="raccourcis-head">
-          <h2>À propos de Colophon</h2>
+          <h2>{t("apropos.titre")}</h2>
           <button className="link" onClick={onClose}>
-            Fermer (Échap)
+            {t("commun.fermer")}
           </button>
         </header>
 
         <p className="apropos-version">
-          Version {data?.version ?? "…"}, sous licence{" "}
-          <strong>GNU General Public License v3.0</strong>.
+          {t("apropos.version", { version: data?.version ?? "…" })}{" "}
+          <strong>{t("apropos.licence")}</strong>.
         </p>
-        <p className="apropos-quoi">
-          Un dossier de photos en entrée, un album composé, tout modifiable, un
-          PDF prêt à imprimer. Le code source est public : vous pouvez le lire,
-          le modifier et le redistribuer aux mêmes conditions.
-        </p>
+        <p className="apropos-quoi">{t("apropos.quoi")}</p>
 
-        <h3>Ce qui voyage à l’intérieur</h3>
+        <h3>{t("apropos.actifs")}</h3>
         <ul className="apropos-actifs">
           {ACTIFS.map(([nom, licence, quoi]) => (
             <li key={nom}>
               <span className="apropos-actif-nom">{nom}</span>
-              <span className="apropos-actif-licence">{licence}</span>
-              <span className="apropos-actif-quoi">{quoi}</span>
+              <span className="apropos-actif-licence">{licence()}</span>
+              <span className="apropos-actif-quoi">{t(quoi)}</span>
             </li>
           ))}
         </ul>
-        <p className="apropos-attribution">
-          Noms de lieux : données GeoNames (https://www.geonames.org), sous
-          licence Creative Commons Attribution 4.0.
-        </p>
+        <p className="apropos-attribution">{t("apropos.attribution")}</p>
 
         <p className="apropos-actions">
           <button className="link" onClick={() => setNotices((n) => !n)}>
-            {notices
-              ? "Masquer les notices des licences tierces"
-              : "Notices des licences tierces"}
+            {notices ? t("apropos.notices.masquer") : t("apropos.notices.voir")}
           </button>
         </p>
         {notices && (
           <pre className="apropos-notices">
-            {data?.notices?.trim() ||
-              "Les notices n’ont pas été générées pour cette version (scripts/notices.sh)."}
+            {data?.notices?.trim() || t("apropos.notices.absentes")}
           </pre>
         )}
       </div>

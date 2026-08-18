@@ -11,7 +11,8 @@
 import { useEffect, useState } from "react";
 import { BuildBilan, VarianteResume } from "./bridge";
 import { Album, Discard } from "./album";
-import { REASONS } from "./reasons";
+import { t } from "./i18n";
+import { REASON_KEYS, reasonLabel } from "./reasons";
 import { cachedThumb, loadThumb } from "./thumbs";
 
 export function BilanView({
@@ -41,9 +42,9 @@ export function BilanView({
   for (const d of curation) {
     counts.set(d.reason, (counts.get(d.reason) ?? 0) + 1);
   }
-  const reasons = REASONS.map(([key, label]) => ({
+  const reasons = REASON_KEYS.map((key) => ({
     key,
-    label,
+    label: reasonLabel(key),
     count: counts.get(key) ?? 0,
   })).filter((r) => r.count > 0);
   const setAside = curation.length;
@@ -58,9 +59,8 @@ export function BilanView({
       ? [
           {
             id: "",
-            nom: "Comme demandé",
-            about:
-              "Le rythme et la longueur choisis à la création. Le point de départ.",
+            nom: t("bilan.demande.nom"),
+            about: t("bilan.demande.about"),
             planches: spreads,
             photos: bilan.photos_kept,
             apercu: apercuDe(album),
@@ -74,12 +74,17 @@ export function BilanView({
       <div className="empty-block">
         <p className="kicker">Colophon</p>
         <div className="setup bilan">
-          <h1 className="setup-heading">« {album.title} » est composé</h1>
+          <h1 className="setup-heading">{t("bilan.titre", { titre: album.title })}</h1>
           <p className="bilan-lead">
-            <strong>{bilan.photos_scanned}</strong> photos lues,{" "}
-            <strong>{bilan.photos_kept}</strong> dans l’album, soit {pct} % du
-            dossier&nbsp;: {spreads} planches en {bilan.chapters} chapitre
-            {bilan.chapters > 1 ? "s" : ""}.
+            <strong>{bilan.photos_scanned}</strong> {t("bilan.lues")}{" "}
+            <strong>{bilan.photos_kept}</strong>{" "}
+            {bilan.chapters > 1
+              ? t("bilan.gardees", {
+                  pct,
+                  planches: spreads,
+                  chapitres: bilan.chapters,
+                })
+              : t("bilan.gardees.chapitre.un", { pct, planches: spreads })}
           </p>
 
           {setAside > 0 && (
@@ -95,7 +100,7 @@ export function BilanView({
 
           {cartes.length > 1 && (
             <>
-              <h2 className="bilan-choix-titre">Trois livres, les mêmes photos</h2>
+              <h2 className="bilan-choix-titre">{t("bilan.choix.titre")}</h2>
               <ul className="bilan-choix">
                 {cartes.map((v) => (
                   <li key={v.id || "demandee"}>
@@ -114,7 +119,10 @@ export function BilanView({
                       </span>
                       <span className="bilan-carte-nom">{v.nom}</span>
                       <span className="bilan-carte-chiffres">
-                        {v.planches} planches, {v.photos} photos
+                        {t("bilan.carte.chiffres", {
+                          planches: v.planches,
+                          photos: v.photos,
+                        })}
                       </span>
                       <span className="bilan-carte-about">{v.about}</span>
                     </button>
@@ -125,27 +133,21 @@ export function BilanView({
           )}
 
           <p className="setup-hint">
-            {setAside > 0
-              ? "Rien n’est supprimé : chaque photo écartée attend dans la " +
-                "vue Tri, avec sa raison, et un double-clic la repêche."
-              : "Toutes les photos du dossier sont dans l’album."}
+            {setAside > 0 ? t("bilan.hint.ecartees") : t("bilan.hint.toutes")}
           </p>
 
           <p className="setup-actions">
             <button className="cta" autoFocus onClick={onOpen}>
-              Ouvrir l’album
+              {t("bilan.ouvrir")}
             </button>
             {setAside > 0 && (
               <button className="link" onClick={onTri}>
-                Passer les {setAside} écartées en revue
+                {t("bilan.revue", { n: setAside })}
               </button>
             )}
           </p>
           {cartes.length > 1 && (
-            <p className="bilan-garde">
-              Les deux autres restent sur le disque : elles se reprennent depuis
-              cet écran tant que rien n’a été modifié à la main.
-            </p>
+            <p className="bilan-garde">{t("bilan.garde")}</p>
           )}
         </div>
       </div>

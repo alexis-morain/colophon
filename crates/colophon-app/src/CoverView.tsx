@@ -18,6 +18,7 @@ import {
   ZOOM_MIN,
   coverSheet,
 } from "./album";
+import { t } from "./i18n";
 import { Printer } from "./bridge";
 import { LazyThumb } from "./TriView";
 import { cachedThumb, loadThumb } from "./thumbs";
@@ -98,7 +99,7 @@ export function CoverView({
           <textarea
             className="cover-back-text"
             value={form.back_text ?? ""}
-            placeholder="Quatrième de couverture (optionnelle) : un mot, une dédicace, un été."
+            placeholder={t("couverture.quatrieme")}
             onChange={(e) => setForm({ ...form, back_text: e.target.value })}
             onBlur={commitForm}
           />
@@ -111,8 +112,8 @@ export function CoverView({
             className="cover-spine"
             style={{ flex: spine }}
             title={
-              `Dos ${spine.toFixed(1).replace(".", ",")} mm` +
-              (provisoire ? " (provisoire, en attente de l’imprimeur)" : "")
+              t("couverture.dos.titre", { mm: spine.toFixed(1).replace(".", ",") }) +
+              (provisoire ? t("couverture.dos.provisoire.titre") : "")
             }
           >
             {spine >= SPINE_TEXT_MIN_MM && (
@@ -130,7 +131,7 @@ export function CoverView({
             />
           ) : (
             <button className="cover-photo-empty" onClick={() => setPicking(true)}>
-              Choisir la photo de couverture…
+              {t("couverture.choisir.photo")}
             </button>
           )}
           <div className="cover-titles" onClick={(e) => e.stopPropagation()}>
@@ -141,25 +142,25 @@ export function CoverView({
               onChange={(e) => setForm({ ...form, title: e.target.value })}
               onBlur={commitForm}
               onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-              aria-label="Titre de la couverture"
+              aria-label={t("couverture.titre.aria")}
             />
             <input
               className="cover-subtitle-input"
               value={form.subtitle ?? ""}
-              placeholder="sous-titre (optionnel)"
+              placeholder={t("couverture.soustitre.placeholder")}
               onChange={(e) => setForm({ ...form, subtitle: e.target.value })}
               onBlur={commitForm}
               onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-              aria-label="Sous-titre"
+              aria-label={t("couverture.soustitre.aria")}
             />
           </div>
           {cover.photo && (
             <button
               className="cover-photo-change"
               onClick={() => setPicking(true)}
-              title="Choisir une autre photo de l’album"
+              title={t("couverture.changer.titre")}
             >
-              Changer la photo
+              {t("couverture.changer")}
             </button>
           )}
         </div>
@@ -168,26 +169,30 @@ export function CoverView({
       <p className="cover-note">
         {sheet.spine ? (
           <>
-            Dos {spine.toFixed(1).replace(".", ",")} mm pour{" "}
-            {album.spreads.length * 2} pages
-            {provisoire && ", valeur provisoire que la formule de l’imprimeur remplacera"}
-            {spine < SPINE_TEXT_MIN_MM && " · trop mince pour porter un titre"}
+            {t("couverture.note.dos", {
+              mm: spine.toFixed(1).replace(".", ","),
+              pages: album.spreads.length * 2,
+            })}
+            {provisoire && t("couverture.note.provisoire")}
+            {spine < SPINE_TEXT_MIN_MM && t("couverture.note.mince")}
           </>
         ) : (
-          <>
-            {printer?.nom ?? "L’imprimeur"} fabrique le dos : la feuille part
-            sans lui.
-          </>
-        )}{" "}
-        · feuille {sheet.w.toFixed(0)} × {sheet.h.toFixed(0)} mm
+          t("couverture.note.sans.dos", {
+            imprimeur: printer?.nom ?? t("couverture.imprimeur"),
+          })
+        )}
+        {t("couverture.note.feuille", {
+          w: sheet.w.toFixed(0),
+          h: sheet.h.toFixed(0),
+        })}
       </p>
 
       {picking && (
         <div className="cover-picker" role="listbox">
           <header className="cover-picker-bar">
-            <span>Photo de couverture, parmi l’album</span>
+            <span>{t("couverture.picker.titre")}</span>
             <button className="link" onClick={() => setPicking(false)}>
-              Fermer (Échap)
+              {t("commun.fermer")}
             </button>
           </header>
           <div className="cover-picker-grid">
@@ -311,7 +316,7 @@ function CoverPhoto({
         gesture.current = null;
         if (draft) onChange(draft);
       }}
-      title="Glisser pour recadrer · molette pour zoomer · ⌥ affine"
+      title={t("planche.couverture.recadrer")}
     >
       {url && (
         <img

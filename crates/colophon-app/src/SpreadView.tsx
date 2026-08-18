@@ -40,6 +40,7 @@ import {
   GARDE_TEMPLATE,
 } from "./album";
 import { captionSuggestion, detectedFocal } from "./bridge";
+import { t } from "./i18n";
 import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
@@ -141,15 +142,13 @@ export function SpreadView({
       // Below the trimmed page (full-bleed slots): the caption would print
       // in the bleed and be cut off entirely.
       if (r.y + r.h + PHOTO_CAPTION_DROP_MM > canvas.h - 4) {
-        problems.push(
-          `la légende de la case ${i + 1} tombe hors page sous une pleine page : retirez-la ou changez de gabarit`,
-        );
+        problems.push(t("deborde.legende.horspage", { i: i + 1 }));
         return;
       }
       const wMm = measureMm(slot.caption, PHOTO_CAPTION_SIZE_MM);
       if (wMm > r.w) {
         problems.push(
-          `légende de la case ${i + 1} trop longue de ${Math.ceil(wMm - r.w)} mm : raccourcissez-la`,
+          t("deborde.legende.longue", { i: i + 1, mm: Math.ceil(wMm - r.w) }),
         );
       }
     });
@@ -160,7 +159,7 @@ export function SpreadView({
         .filter((l) => measureMm(l, TEXT_SIZE_MM) > room).length;
       if (over > 0) {
         problems.push(
-          `${over} ligne${over > 1 ? "s" : ""} de texte dépasse${over > 1 ? "nt" : ""} la page : coupez-les`,
+          over > 1 ? t("deborde.lignes", { n: over }) : t("deborde.ligne.une"),
         );
       }
     }
@@ -173,9 +172,7 @@ export function SpreadView({
         (l) => measureMm(l.texte, l.tailleMm) > room + 0.01,
       );
       if (over) {
-        problems.push(
-          "la page de garde déborde : raccourcissez le titre de l’album",
-        );
+        problems.push(t("deborde.garde"));
       }
     }
     onOverflow(problems[0] ?? null);
@@ -258,7 +255,7 @@ export function SpreadView({
                 maxWidth: "none",
                 fontSize: `${Math.max(PHOTO_CAPTION_SIZE_MM * mm * 1.35, 9)}px`,
               }}
-              title={over ? "Cette légende dépasse la photo : raccourcissez-la" : undefined}
+              title={over ? t("planche.legende.deborde") : undefined}
             >
               {slot.caption}
             </span>
@@ -275,7 +272,7 @@ export function SpreadView({
               fontSize: `${Math.max(CAPTION_SIZE_MM * mm * 1.35, 13)}px`,
             }}
             defaultValue={spread.caption ?? ""}
-            placeholder={proposition ?? "Titre de chapitre…"}
+            placeholder={proposition ?? t("planche.chapitre.placeholder")}
             autoFocus
             onFocus={(e) => e.currentTarget.select()}
             onClick={(e) => e.stopPropagation()}
@@ -313,9 +310,9 @@ export function SpreadView({
               }}
               title={
                 !spread.caption && proposition
-                  ? "Proposée depuis les photos : Tab la pose, tout autre geste l’ignore"
+                  ? t("planche.proposition.titre")
                   : onSpreadCaption
-                    ? "Cliquer pour renommer le chapitre"
+                    ? t("planche.chapitre.renommer")
                     : undefined
               }
               onClick={
@@ -326,7 +323,7 @@ export function SpreadView({
                 })
               }
             >
-              {spread.caption ?? proposition ?? "titre de chapitre"}
+              {spread.caption ?? proposition ?? t("planche.chapitre.ghost")}
             </span>
           )
         )}
@@ -460,11 +457,11 @@ function CaptionPopover({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <label className="caption-popover-label">
-        Légende
+        {t("planche.legende")}
         <input
           className="caption-popover-input"
           value={value}
-          placeholder="aucune"
+          placeholder={t("planche.legende.aucune")}
           onChange={(e) => setValue(e.target.value)}
           onBlur={() => value.trim() !== (slot.caption ?? "") && onCaption(value)}
           onKeyDown={(e) => {
@@ -483,9 +480,9 @@ function CaptionPopover({
             setValue(suggestion);
             onCaption(suggestion);
           }}
-          title="Date EXIF de la photo, proposée, jamais imposée"
+          title={t("planche.legende.exif")}
         >
-          Proposer « {suggestion} »
+          {t("planche.legende.proposer", { texte: suggestion })}
         </button>
       )}
     </div>
@@ -538,7 +535,7 @@ function TextBlock({
           lineHeight: `${Math.max(leadPx, fontPx * 1.3)}px`,
         }}
         defaultValue={text}
-        placeholder={"Votre texte, ligne à ligne.\nEntrée pour aller à la ligne."}
+        placeholder={t("planche.texte.placeholder")}
         autoFocus
         onClick={(e) => e.stopPropagation()}
         onBlur={(e) => {
@@ -564,7 +561,7 @@ function TextBlock({
         fontSize: `${fontPx}px`,
         lineHeight: `${Math.max(leadPx, fontPx * 1.3)}px`,
       }}
-      title={onText ? "Cliquer pour éditer le texte" : undefined}
+      title={onText ? t("planche.texte.editer") : undefined}
       onClick={
         onText &&
         ((e) => {
@@ -841,7 +838,7 @@ function CropPhoto({
       }
       title={
         selected
-          ? "Glisser pour recadrer · molette pour zoomer · double-clic recentre · ⌥ affine"
+          ? t("planche.recadrer")
           : undefined
       }
     >
@@ -869,11 +866,10 @@ function CropPhoto({
           {warn.ppi !== null && (
             <span
               className="slot-warn"
-              title={
-                `Cette photo imprimerait vers ${warn.ppi} ppi ici, sous le plancher de ` +
-                `${MIN_EFFECTIVE_PPI}. Une case plus petite, un zoom réduit ou une autre ` +
-                `photo règlent le problème. L’export le signalera aussi.`
-              }
+              title={t("planche.warn.ppi", {
+                ppi: warn.ppi,
+                plancher: MIN_EFFECTIVE_PPI,
+              })}
             >
               {warn.ppi} ppi
             </span>
@@ -881,12 +877,9 @@ function CropPhoto({
           {warn.dark && (
             <span
               className="slot-warn"
-              title={
-                "Photo très sombre : le papier la rendra plus sombre encore que l’écran. " +
-                "À garder en connaissance de cause, rien ne bloque."
-              }
+              title={t("planche.warn.sombre")}
             >
-              sombre
+              {t("planche.warn.sombre.badge")}
             </span>
           )}
         </span>

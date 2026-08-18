@@ -5,7 +5,12 @@
 import { describe, expect, it } from "vitest";
 import { Album } from "./album";
 import { ReportData } from "./bridge";
+import { setLangue } from "./i18n";
 import { basename, buildReport, fitReport, issueUrl } from "./signaler";
+
+// The assertions below read the French wording; the node test environment
+// has no navigator and would default to English.
+setLangue("fr");
 
 function album(): Album {
   return {

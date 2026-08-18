@@ -16,6 +16,7 @@ import {
   revealDataDir,
   StorageReport,
 } from "./bridge";
+import { langue, t } from "./i18n";
 
 /** Base 1024, one decimal past a megabyte: the figure has to be comparable
  *  with what the Finder shows beside it. */
@@ -29,18 +30,21 @@ export function poids(bytes: number): string {
 }
 
 function dateCourte(secs: number | null): string {
-  if (!secs) return "date inconnue";
-  return new Date(secs * 1000).toLocaleDateString("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  if (!secs) return t("stockage.date.inconnue");
+  return new Date(secs * 1000).toLocaleDateString(
+    langue() === "fr" ? "fr-FR" : "en-GB",
+    {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    },
+  );
 }
 
 function ligneDetail(a: AlbumEntry): string {
   if (a.probleme) return a.probleme;
   const bits: string[] = [];
-  if (a.spreads !== null) bits.push(`${a.spreads} planches`);
+  if (a.spreads !== null) bits.push(t("stockage.planches", { n: a.spreads }));
   if (a.format) bits.push(`${Math.round(a.format[0])} × ${Math.round(a.format[1])} mm`);
   bits.push(dateCourte(a.modified));
   return bits.join(", ");
@@ -73,17 +77,17 @@ export function StockageView({
 
   const supprimer = async (a: AlbumEntry) => {
     const ok = await confirmDialog(
-      `Supprimer « ${a.title} » ?\n\n` +
-        `Cela libère ${poids(a.bytes_total)} et efface la composition : ` +
-        `les planches, les recadrages, les légendes et l’aperçu.\n\n` +
-        `Vos photos ne sont pas touchées, elles restent dans leur dossier.`,
+      t("stockage.confirme.supprimer", {
+        titre: a.title,
+        poids: poids(a.bytes_total),
+      }),
     );
     if (!ok) return;
     setOccupe(true);
     try {
       const libere = await deleteAlbum(a.id);
       onSupprime(a.id);
-      setNote(`« ${a.title} » supprimé, ${poids(libere)} libérés.`);
+      setNote(t("stockage.supprime", { titre: a.title, poids: poids(libere) }));
       setErr(null);
       relire();
     } catch (e) {
@@ -96,16 +100,13 @@ export function StockageView({
   const purger = async () => {
     const total = (rapport?.albums ?? []).reduce((n, a) => n + a.bytes_thumbs, 0);
     const ok = await confirmDialog(
-      `Vider les caches de vignettes ?\n\n` +
-        `Cela libère ${poids(total)}. Aucun album n’est perdu : les vignettes ` +
-        `se reconstruisent à la prochaine ouverture, ce qui prend quelques ` +
-        `secondes par album.`,
+      t("stockage.confirme.purger", { poids: poids(total) }),
     );
     if (!ok) return;
     setOccupe(true);
     try {
       const libere = await purgeThumbCaches();
-      setNote(`Caches vidés, ${poids(libere)} libérés.`);
+      setNote(t("stockage.purge", { poids: poids(libere) }));
       setErr(null);
       relire();
     } catch (e) {
@@ -125,21 +126,22 @@ export function StockageView({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="raccourcis-head">
-          <h2>Stockage</h2>
+          <h2>{t("stockage.titre")}</h2>
           <button className="link" onClick={onClose}>
-            Fermer (Échap)
+            {t("commun.fermer")}
           </button>
         </header>
 
         <p className="stockage-total">
           {rapport ? (
             <>
-              <strong>{poids(rapport.total)}</strong> sur ce disque, {albums.length}{" "}
-              {albums.length > 1 ? "albums" : "album"}. Les photos d’origine ne
-              sont pas comptées ici : Colophon ne les copie jamais.
+              <strong>{poids(rapport.total)}</strong>{" "}
+              {albums.length > 1
+                ? t("stockage.total.suite", { n: albums.length })
+                : t("stockage.total.suite.un")}
             </>
           ) : (
-            "Mesure du dossier de données…"
+            t("stockage.mesure")
           )}
         </p>
 
@@ -152,11 +154,16 @@ export function StockageView({
               <div className="stockage-ligne-texte">
                 <span className="stockage-titre">
                   {a.title}
-                  {a.id === ouvertId && <em className="stockage-ouvert">ouvert</em>}
+                  {a.id === ouvertId && (
+                    <em className="stockage-ouvert">{t("stockage.ouvert")}</em>
+                  )}
                 </span>
                 <span className="stockage-detail">{ligneDetail(a)}</span>
                 <span className="stockage-repartition">
-                  vignettes {poids(a.bytes_thumbs)}, aperçu {poids(a.bytes_pdf)}
+                  {t("stockage.repartition", {
+                    vignettes: poids(a.bytes_thumbs),
+                    apercu: poids(a.bytes_pdf),
+                  })}
                 </span>
               </div>
               <span className="stockage-poids">{poids(a.bytes_total)}</span>
@@ -165,12 +172,12 @@ export function StockageView({
                 disabled={occupe}
                 onClick={() => supprimer(a)}
               >
-                Supprimer
+                {t("stockage.supprimer")}
               </button>
             </li>
           ))}
           {rapport && albums.length === 0 && (
-            <li className="stockage-vide">Aucun album composé sur cette machine.</li>
+            <li className="stockage-vide">{t("stockage.vide")}</li>
           )}
         </ul>
 
@@ -180,16 +187,13 @@ export function StockageView({
             disabled={occupe || caches === 0}
             onClick={purger}
           >
-            Vider les caches de vignettes ({poids(caches)})
+            {t("stockage.purger", { poids: poids(caches) })}
           </button>
           <button className="link" onClick={() => revealDataDir().catch(() => {})}>
-            Ouvrir le dossier
+            {t("stockage.ouvrir.dossier")}
           </button>
         </div>
-        <p className="signaler-note">
-          Un album supprimé ne se récupère pas. Le dossier de photos, lui, reste
-          intact : rien ici n’écrit ou n’efface hors du dossier de Colophon.
-        </p>
+        <p className="signaler-note">{t("stockage.note")}</p>
       </div>
     </div>
   );

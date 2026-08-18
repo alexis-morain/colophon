@@ -77,6 +77,7 @@ import { Drawer } from "./Drawer";
 import { PlanchesView, LockGlyph } from "./PlanchesView";
 import { CoverView } from "./CoverView";
 import { EnvoiView } from "./EnvoiView";
+import { Cle, FR, langue, t, useLangue } from "./i18n";
 import { RaccourcisView } from "./Raccourcis";
 import { SignalerView } from "./SignalerView";
 import { SignalKind } from "./signaler";
@@ -85,6 +86,7 @@ import { installMenu, MenuActions, RecentAlbum } from "./menu";
 import { readRecents, pushRecent, forgetRecent, albumId } from "./recents";
 import { StockageView } from "./StockageView";
 import { AProposView } from "./AProposView";
+import { PrefsView } from "./PrefsView";
 import { ApercuFidele, forgetPdfs } from "./pdfview";
 import { cachedThumb, loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
@@ -121,7 +123,7 @@ function FaultBlock({
         )}
       </p>
       <details className="fault-detail">
-        <summary>Détail technique</summary>
+        <summary>{t("erreur.detail")}</summary>
         <pre>{fault.detail}</pre>
       </details>
     </div>
@@ -181,6 +183,8 @@ export default function App() {
   const [fidele, setFidele] = useState(false);
   // À propos : version, licence, et les trois actifs sous licence tierce.
   const [apropos, setApropos] = useState(false);
+  // Préférences (⌘,) : la langue, et une note sur l'apparence.
+  const [prefs, setPrefs] = useState(false);
   // Une mise à jour disponible, quand il y en a une. Jamais téléchargée
   // toute seule : le bandeau attend un clic, et se referme sans en attendre.
   const [maj, setMaj] = useState<Awaited<ReturnType<typeof checkUpdate>>>(null);
@@ -234,7 +238,7 @@ export default function App() {
         setCuration(await fetchCuration().catch(() => []));
       } catch (e) {
         setError(
-          fault("Cet album n’a pas pu être rouvert. A-t-il été déplacé ?", e),
+          fault(t("erreur.reouverture"), e),
         );
       }
     },
@@ -249,7 +253,7 @@ export default function App() {
       adopt(result);
       setCuration(await fetchCuration().catch(() => []));
     } catch (e) {
-      setError(fault("L’album n’a pas pu être ouvert.", e));
+      setError(fault(t("erreur.ouverture"), e));
     }
   }, [adopt]);
 
@@ -311,10 +315,10 @@ export default function App() {
     try {
       await saveAlbum(h.album);
       setSavedAlbum(h.album);
-      setStatus("Enregistré");
+      setStatus(t("etat.enregistre"));
       return true;
     } catch (e) {
-      setError(fault("L’enregistrement a échoué : rien n’a été écrit.", e));
+      setError(fault(t("erreur.enregistrement"), e));
       return false;
     }
   }, []);
@@ -334,7 +338,7 @@ export default function App() {
       return;
     }
     setRendering(true);
-    setStatus("Rendu de l’aperçu fidèle…");
+    setStatus(t("fidele.rendu"));
     try {
       // The browser harness has no engine: it shows whatever PDF the dev
       // album folder holds, which is the right thing to work the mode on and
@@ -352,11 +356,11 @@ export default function App() {
       setFidele(true);
       setStatus(
         inTauri
-          ? "Aperçu fidèle : ce que la presse recevra, au pixel près"
-          : "Aperçu fidèle : le PDF du dossier de dev, pas forcément à jour",
+          ? t("fidele.pret")
+          : t("fidele.harnais"),
       );
     } catch (e) {
-      setError(fault("L’aperçu fidèle n’a pas pu être rendu.", e));
+      setError(fault(t("erreur.fidele"), e));
     } finally {
       setRendering(false);
     }
@@ -385,7 +389,7 @@ export default function App() {
           setBilan(v ? { ...base, photos_kept: v.photos } : base);
         }
       } catch (e) {
-        setError(fault("Cette proposition n’a pas pu être ouverte.", e));
+        setError(fault(t("erreur.variante"), e));
       }
     },
     [adopt],
@@ -406,18 +410,18 @@ export default function App() {
         const spread = on ? await colophonSpread(current) : null;
         if (on && !spread) {
           setStatus(
-            "Cet album a été composé avant la page de colophon : recomposez-le pour l’obtenir",
+            t("etat.colophon.trop.vieux"),
           );
           return;
         }
         apply((a) => setColophon(a, spread));
         setStatus(
           on
-            ? "Page de colophon ajoutée : ⌘S l’enregistre, le prévol recompte les pages"
-            : "Page de colophon retirée",
+            ? t("etat.colophon.ajoute")
+            : t("etat.colophon.retire"),
         );
       } catch (e) {
-        setError(fault("La page de colophon n’a pas pu être changée.", e));
+        setError(fault(t("erreur.colophon"), e));
       }
     },
     [apply],
@@ -437,18 +441,18 @@ export default function App() {
         const spread = on ? await gardeSpread(current) : null;
         if (on && !spread) {
           setStatus(
-            "Cet album a été composé avant la page de garde : recomposez-le pour l’obtenir",
+            t("etat.garde.trop.vieux"),
           );
           return;
         }
         apply((a) => setGarde(a, spread));
         setStatus(
           on
-            ? "Page de garde ajoutée : ⌘S l’enregistre, le prévol recompte les pages"
-            : "Page de garde retirée",
+            ? t("etat.garde.ajoutee")
+            : t("etat.garde.retiree"),
         );
       } catch (e) {
-        setError(fault("La page de garde n’a pas pu être changée.", e));
+        setError(fault(t("erreur.garde"), e));
       }
     },
     [apply],
@@ -457,26 +461,26 @@ export default function App() {
   const regenPdf = useCallback(async () => {
     if (rendering || !hist || !(await save())) return;
     setRendering(true);
-    setStatus("Rendu du PDF d’impression…");
+    setStatus(t("export.rendu"));
     try {
       const written = await exportPdf(hist.album.title, profil, (done, total) =>
-        setStatus(`Rendu à 300 dpi : ${done}/${total} photos…`),
+        setStatus(t("export.progress", { done, total })),
       );
       // What was actually written, named. A supplier who wants two files gets
       // two, and the second one is the thing nobody thinks to look for.
       setStatus(
         written === null
-          ? "Enregistrement annulé"
+          ? t("export.enregistrement.annule")
           : written.length > 1
-            ? `${written.length} fichiers enregistrés : ${written.join(" · ")}`
-            : `PDF enregistré : ${written[0]}`,
+            ? t("export.fichiers", { n: written.length, liste: written.join(" · ") })
+            : t("export.pdf", { nom: written[0] }),
       );
       if (written !== null) setExporte(true);
     } catch (e) {
       if (String(e).includes("export annulé")) {
-        setStatus("Export annulé, aucun fichier écrit");
+        setStatus(t("export.annule"));
       } else {
-        setError(fault("Le rendu du PDF a échoué.", e));
+        setError(fault(t("erreur.export"), e));
       }
     } finally {
       setRendering(false);
@@ -509,19 +513,14 @@ export default function App() {
       setVariante(null);
     } catch (e) {
       const msg = String(e);
-      if (msg.includes("annulée")) setStatus("Composition annulée");
+      if (msg.includes("annulée")) setStatus(t("compo.annulee"));
       else if (msg.includes("aucune photo exploitable"))
         // The engine refused rather than open an empty album. The gesture
         // that gets the user out is choosing another folder, so say so.
         setError(
-          fault(
-            "Ce dossier n’a donné aucune photo exploitable, rien n’a été créé. " +
-              "Choisissez un autre dossier, ou rouvrez celui-ci après y avoir " +
-              "ajouté des photos.",
-            e,
-          ),
+          fault(t("compo.vide"), e),
         );
-      else setError(fault("La composition a échoué.", e));
+      else setError(fault(t("erreur.compo"), e));
     } finally {
       off();
       setBuilding(null);
@@ -537,9 +536,7 @@ export default function App() {
     if (!hist || building) return;
     if (
       !(await confirmDialog(
-        "Recomposer l’album ? Les planches éditées à la main ou verrouillées " +
-          "sont conservées telles quelles, les autres sont recomposées. " +
-          "L’historique d’annulation repart de zéro.",
+        t("recomp.confirme"),
       ))
     ) {
       return;
@@ -554,10 +551,10 @@ export default function App() {
       const result = await recomposeAlbum();
       adopt(result);
       setCuration(await fetchCuration().catch(() => []));
-      setStatus("Album recomposé, planches éditées conservées");
+      setStatus(t("recomp.ok"));
     } catch (e) {
-      if (String(e).includes("annulée")) setStatus("Recomposition annulée");
-      else setError(fault("La recomposition a échoué.", e));
+      if (String(e).includes("annulée")) setStatus(t("recomp.annulee"));
+      else setError(fault(t("erreur.recomp"), e));
     } finally {
       off();
       setBuilding(null);
@@ -570,7 +567,7 @@ export default function App() {
     if (
       dirty &&
       !(await confirmDialog(
-        "Des modifications ne sont pas enregistrées. Fermer quand même ?",
+        t("fermer.confirme"),
       ))
     ) {
       return;
@@ -599,14 +596,14 @@ export default function App() {
       );
       if (!result) {
         setStatus(
-          `Aucune place autour de la planche ${anchor + 1} : libérez une case ou changez un gabarit`,
+          t("repeche.place", { n: anchor + 1 }),
         );
         return;
       }
       setTriSelected(null);
       apply(() => result.album);
       setIndex(result.at);
-      setStatus(`Repêchée sur la planche ${result.at + 1}`);
+      setStatus(t("repeche.ok", { n: result.at + 1 }));
     },
     [album, index, apply],
   );
@@ -618,14 +615,14 @@ export default function App() {
       const before = album.spreads[index]?.slots[slot]?.src;
       const next = placePhoto(album, index, slot, photo);
       if (next === album) {
-        setStatus("Déjà sur cette planche : deux fois la même photo serait un doublon");
+        setStatus(t("place.doublon"));
         return;
       }
       apply(() => next);
       setStatus(
         before
-          ? "Photo placée · l’ancienne repart dans la réserve"
-          : "Photo placée",
+          ? t("place.remplacee")
+          : t("place.ok"),
       );
     },
     [album, index, apply],
@@ -714,7 +711,7 @@ export default function App() {
       if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
       apply((a) => duplicateSpread(a, index));
       setIndex(index + 1);
-      setStatus(`Planche ${index + 1} dupliquée`);
+      setStatus(t("planche.dupliquee", { n: index + 1 }));
     },
     figer: () => {
       if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
@@ -722,8 +719,8 @@ export default function App() {
       apply((a) => toggleLock(a, index));
       setStatus(
         was
-          ? "Planche libérée"
-          : "Planche figée : elle survivra à toute recomposition",
+          ? t("planche.liberee")
+          : t("planche.figee.status"),
       );
     },
     // The way out of the lock. Asks first: it throws away hand work, and
@@ -737,25 +734,19 @@ export default function App() {
           const origin = await originSpread(album, index);
           if (!origin) {
             setStatus(
-              `Planche ${index + 1} : insérée à la main, elle n’a pas de version automatique`,
+              t("etat.auto.insertion", { n: index + 1 }),
             );
             return;
           }
           const ok = await confirmDialog(
-            `Rendre la planche ${index + 1} à l’automatique ?\n\n` +
-              `Elle reprend la composition proposée au départ. Le recadrage, ` +
-              `les légendes et les photos changées à la main sur cette planche ` +
-              `sont perdus, et le cadenas tombe.\n\n⌘Z revient en arrière.`,
+            t("auto.confirme", { n: index + 1 }),
           );
           if (!ok) return;
           apply((a) => restoreSpread(a, index, origin));
-          setStatus(`Planche ${index + 1} rendue à l’automatique (⌘Z la ramène)`);
+          setStatus(t("etat.auto.rendue", { n: index + 1 }));
         } catch (e) {
           setError(
-            fault(
-              "Cette planche n’a pas pu être rendue à l’automatique.",
-              e,
-            ),
+            fault(t("erreur.auto"), e),
           );
         }
       })();
@@ -765,19 +756,19 @@ export default function App() {
       const at = Math.max(index, 0);
       apply((a) => insertSpread(a, at, "vide"));
       setIndex(at + 1);
-      setStatus("Planche vide insérée : une respiration");
+      setStatus(t("planche.vide.inseree"));
     },
     "inserer-texte": () => {
       if (!album || view !== "livre" && view !== "planches") return;
       const at = Math.max(index, 0);
       apply((a) => insertSpread(a, at, "texte"));
       setIndex(at + 1);
-      setStatus("Planche de texte insérée : double-clic pour l’ouvrir et écrire");
+      setStatus(t("planche.texte.inseree"));
     },
     "supprimer-planche": () => {
       if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
       apply((a) => removeSpread(a, index));
-      setStatus(`Planche ${index + 1} supprimée (⌘Z la ramène)`);
+      setStatus(t("planche.supprimee", { n: index + 1 }));
     },
     // The four overlays are one place at a time: opening one closes the
     // others. Two panels stacked, neither trapping the keyboard, is how
@@ -786,19 +777,29 @@ export default function App() {
       setStockage(false);
       setApropos(false);
       setSignaler(null);
+      setPrefs(false);
       setShortcuts((s) => !s);
     },
     stockage: () => {
       setShortcuts(false);
       setApropos(false);
       setSignaler(null);
+      setPrefs(false);
       setStockage((s) => !s);
     },
     apropos: () => {
       setShortcuts(false);
       setStockage(false);
       setSignaler(null);
+      setPrefs(false);
       setApropos((a) => !a);
+    },
+    preferences: () => {
+      setShortcuts(false);
+      setStockage(false);
+      setSignaler(null);
+      setApropos(false);
+      setPrefs((p) => !p);
     },
     // The faithful preview: only in the book view, where there is a spread
     // to be faithful about.
@@ -809,6 +810,7 @@ export default function App() {
     // The three report variants. A bug needs nothing; the two layout
     // complaints quote the spread on screen, the crop one its selected cell.
     "signaler-bug": () => {
+      setPrefs(false);
       setShortcuts(false);
       setStockage(false);
       setApropos(false);
@@ -816,16 +818,18 @@ export default function App() {
     },
     "signaler-planche": () => {
       if (!album || index < 0) {
-        setStatus("Ouvrez d’abord la planche à signaler (vue Livre ou Planches)");
+        setStatus(t("signal.planche.dabord"));
         return;
       }
+      setPrefs(false);
       setSignaler("planche");
     },
     "signaler-recadrage": () => {
       if (!album || index < 0 || selected === null) {
-        setStatus("Sélectionnez d’abord la case au recadrage raté (vue Livre)");
+        setStatus(t("signal.case.dabord"));
         return;
       }
+      setPrefs(false);
       setSignaler("recadrage");
     },
   };
@@ -869,6 +873,9 @@ export default function App() {
   const openRecentRef = useRef(openRecent);
   openRecentRef.current = openRecent;
   const albumOpen = album !== null;
+  // One subscription for the whole tree: a language change re-renders App,
+  // and every component below re-reads its t() calls on that render.
+  const lang = useLangue();
   useEffect(() => {
     if (!inTauri) return;
     const actions: MenuActions = {
@@ -880,6 +887,7 @@ export default function App() {
       fermerAlbum: () => fire("menu", "fermerAlbum"),
       stockage: () => fire("menu", "stockage"),
       apropos: () => fire("menu", "apropos"),
+      preferences: () => fire("menu", "preferences"),
       apercuFidele: () => fire("menu", "fidele"),
       annuler: () => fire("menu", "annuler"),
       retablir: () => fire("menu", "retablir"),
@@ -902,7 +910,7 @@ export default function App() {
     installMenu(() => actions, albumOpen, recents).catch(() => {
       // A shell without the menu permission still has the window shortcuts.
     });
-  }, [albumOpen, recents, fire]);
+  }, [albumOpen, recents, fire, lang]);
 
   // The faithful preview belongs to the book view and to the album it was
   // rendered from: leaving either drops it rather than showing a page of a
@@ -981,7 +989,7 @@ export default function App() {
       // A focused control owns the keyboard: an input takes the letters, a
       // button takes space and enter (standard activation). App-level
       // chords still pass: ⌘S from inside a caption field must save.
-      const t = e.target as HTMLElement | null;
+      const cible = e.target as HTMLElement | null;
       const key = e.key.toLowerCase();
       // The end-of-build report holds the keyboard: Enter or Escape opens
       // the book, nothing may reach the editor behind it. Enter on a focused
@@ -989,7 +997,7 @@ export default function App() {
       if (bilan) {
         if (
           e.key === "Escape" ||
-          (e.key === "Enter" && !(t && t.tagName === "BUTTON"))
+          (e.key === "Enter" && !(cible && cible.tagName === "BUTTON"))
         ) {
           e.preventDefault();
           setBilan(null);
@@ -1018,7 +1026,7 @@ export default function App() {
           e.preventDefault();
           if (i >= last) {
             setRevue(null);
-            setStatus("Revue terminée, chaque écart est vu");
+            setStatus(t("revue.terminee"));
           } else {
             setStatus(null);
             setRevue(i + 1);
@@ -1029,6 +1037,14 @@ export default function App() {
           e.preventDefault();
           if (entries[i]) rescue(entries[i]);
           return;
+        }
+        return;
+      }
+      // Preferences hold the keyboard like the panels below them.
+      if (prefs) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setPrefs(false);
         }
         return;
       }
@@ -1065,13 +1081,13 @@ export default function App() {
         }
         return;
       }
-      if (t && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(t.tagName)) {
+      if (cible && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(cible.tagName)) {
         // A focused field keeps its letters and its own editing chords,
         // native ⌘Z included; a few app chords still pass.
         const appChord =
           e.metaKey && ["s", "o", "1", "2", "3", "4"].includes(key);
         if (!appChord) return;
-        if (t.tagName === "BUTTON") t.blur();
+        if (cible.tagName === "BUTTON") cible.blur();
       }
       // App chords: one name each, the same names the menu speaks, so a
       // keypress and its menu item are one code path.
@@ -1095,6 +1111,8 @@ export default function App() {
                       ? "dupliquer"
                       : key === "l"
                         ? "figer"
+                        : key === ","
+                        ? "preferences"
                         : key === "/"
                           ? "raccourcis"
                           : key === "1"
@@ -1139,7 +1157,7 @@ export default function App() {
         if ((e.key === "Backspace" || e.key === "Delete") && index >= 0) {
           e.preventDefault();
           apply((a) => removeSpread(a, index));
-          setStatus(`Planche ${index + 1} supprimée (⌘Z la ramène)`);
+          setStatus(t("planche.supprimee", { n: index + 1 }));
           return;
         }
         // Escape behaves like everywhere else: it lets go of the current
@@ -1170,15 +1188,15 @@ export default function App() {
         if (to < 0 || to >= total) return;
         const blocked = moveBlocker(album, index, selected, to);
         if (blocked === "target_full") {
-          setStatus(`Planche ${to + 1} pleine : aucun gabarit n’accepte une photo de plus`);
+          setStatus(t("move.pleine", { n: to + 1 }));
         } else if (blocked === "target_text") {
-          setStatus(`Planche ${to + 1} : une page de texte, une photo l’effacerait`);
+          setStatus(t("move.texte", { n: to + 1 }));
         } else if (blocked === "source_breaks") {
-          setStatus("Refusé : il faudrait sacrifier une autre photo de cette planche");
+          setStatus(t("move.refuse"));
         } else if (blocked === null) {
           setSelected(null);
           apply((a) => movePhoto(a, index, selected, to));
-          setStatus(`Photo envoyée sur la planche ${to + 1}`);
+          setStatus(t("move.ok", { n: to + 1 }));
         }
         return;
       }
@@ -1217,7 +1235,7 @@ export default function App() {
           if (e.key === "0") {
             e.preventDefault();
             apply((a) => setSlotCrop(a, index, selected, slot.focal, 1));
-            setStatus("Zoom remis au remplissage exact");
+            setStatus(t("zoom.remis"));
             return;
           }
         }
@@ -1243,7 +1261,7 @@ export default function App() {
         e.preventDefault();
         const p = proposition;
         apply((a) => setSpreadCaption(a, index, p));
-        setStatus(`Légende posée : « ${p} » (⌘Z la retire)`);
+        setStatus(t("legende.posee", { texte: p }));
         return;
       }
       if (e.key === "Escape") {
@@ -1296,6 +1314,7 @@ export default function App() {
     signaler,
     stockage,
     apropos,
+    prefs,
     proposition,
   ]);
 
@@ -1351,7 +1370,7 @@ export default function App() {
               .catch((e) => {
                 setMajEnCours(false);
                 setError(
-                  fault("La mise à jour n'a pas pu être installée.", e),
+                  fault(t("erreur.maj"), e),
                 );
               });
           }}
@@ -1359,6 +1378,7 @@ export default function App() {
         />
       )}
         {apropos && <AProposView onClose={() => setApropos(false)} />}
+        {prefs && <PrefsView onClose={() => setPrefs(false)} />}
       </>
     );
   }
@@ -1436,7 +1456,7 @@ export default function App() {
         onSave={() => void save()}
         onRename={(titre) => {
           apply((a) => renameAlbum(a, titre));
-          setStatus("Titre modifié : ⌘S l’enregistre");
+          setStatus(t("etat.titre.modifie"));
         }}
         onRecompose={inTauri ? () => void recompose() : undefined}
         onOpen={inTauri ? undefined : openAlbum}
@@ -1490,7 +1510,7 @@ export default function App() {
           onMove={(from, to) => {
             apply((a) => moveSpread(a, from, to));
             setIndex(to);
-            setStatus(`Planche déplacée en position ${to + 1}`);
+            setStatus(t("planche.deplacee", { n: to + 1 }));
           }}
           onLock={(at) => apply((a) => toggleLock(a, at))}
         />
@@ -1504,7 +1524,7 @@ export default function App() {
                 cle={pdfCle}
                 album={album}
                 onErreur={(m) =>
-                  setError(fault("L’aperçu fidèle n’a pas pu être rendu.", m))
+                  setError(fault(t("erreur.fidele"), m))
                 }
               />
             ) : onCover ? (
@@ -1557,8 +1577,8 @@ export default function App() {
                   apply((a) => toggleLock(a, index));
                   setStatus(
                     was
-                      ? "Planche libérée"
-                      : "Planche figée : elle survivra à toute recomposition",
+                      ? t("planche.liberee")
+                      : t("planche.figee.status"),
                   );
                 }
               : undefined
@@ -1614,8 +1634,8 @@ export default function App() {
             setIndex(at + 1);
             setStatus(
               kind === "vide"
-                ? "Planche vide insérée : une respiration"
-                : "Planche de texte insérée : double-clic pour l’ouvrir et écrire",
+                ? t("planche.vide.inseree")
+                : t("planche.texte.inseree"),
             );
           }}
           onDuplicate={() => {
@@ -1626,7 +1646,7 @@ export default function App() {
           onRemove={() => {
             const at = Math.max(index, 0);
             apply((a) => removeSpread(a, at));
-            setStatus(`Planche ${at + 1} supprimée (⌘Z la ramène)`);
+            setStatus(t("planche.supprimee", { n: at + 1 }));
           }}
         />
       ) : view === "envoi" ? (
@@ -1680,7 +1700,7 @@ export default function App() {
               .catch((e) => {
                 setMajEnCours(false);
                 setError(
-                  fault("La mise à jour n'a pas pu être installée.", e),
+                  fault(t("erreur.maj"), e),
                 );
               });
           }}
@@ -1688,6 +1708,7 @@ export default function App() {
         />
       )}
       {apropos && <AProposView onClose={() => setApropos(false)} />}
+        {prefs && <PrefsView onClose={() => setPrefs(false)} />}
     </div>
   );
 }
@@ -1732,7 +1753,7 @@ function TitreAlbum({
     <input
       className="bar-titre"
       value={brouillon}
-      aria-label="Titre de l’album"
+      aria-label={t("bar.titre.aria")}
       spellCheck={false}
       // The half-title prints this line whole, on the narrowest format: the
       // engine measures that guarantee against this number
@@ -1776,17 +1797,17 @@ function MajBandeau({
   return (
     <div className="maj" role="status">
       <span className="maj-texte">
-        Colophon {version} est disponible.
+        {t("maj.dispo", { version })}
         {enCours
-          ? " Téléchargement en cours, l'app redémarrera toute seule."
-          : " Le téléchargement et le redémarrage prennent une minute."}
+          ? t("maj.encours")
+          : t("maj.attente")}
       </span>
       <span className="maj-actions">
         <button className="cta small" onClick={onInstaller} disabled={enCours}>
-          {enCours ? "Installation…" : "Installer maintenant"}
+          {enCours ? t("maj.installation") : t("maj.installer")}
         </button>
         <button className="link" onClick={onPlusTard} disabled={enCours}>
-          Plus tard
+          {t("maj.plus.tard")}
         </button>
       </span>
     </div>
@@ -1845,7 +1866,7 @@ function Bar({
             aria-keyshortcuts="Meta+1"
             title="⌘1"
           >
-            Livre
+            {t("bar.livre")}
           </button>
           <button
             className={"view-tab" + (view === "tri" ? " active" : "")}
@@ -1853,7 +1874,7 @@ function Bar({
             aria-keyshortcuts="Meta+2"
             title="⌘2"
           >
-            Tri · {triCount}
+            {t("bar.tri")} · {triCount}
           </button>
           <button
             className={"view-tab" + (view === "planches" ? " active" : "")}
@@ -1861,33 +1882,33 @@ function Bar({
             aria-keyshortcuts="Meta+3"
             title="⌘3"
           >
-            Planches
+            {t("bar.planches")}
           </button>
           <button
             className={"view-tab" + (view === "envoi" ? " active" : "")}
             onClick={() => onView("envoi")}
             aria-keyshortcuts="Meta+4"
-            title="⌘4 · le contrôle avant impression"
+            title={t("bar.envoi.titre")}
           >
-            Envoi
+            {t("bar.envoi")}
           </button>
         </span>
       </p>
       <p className="actions">
         <button className="link" onClick={onUndo} disabled={!canUndo} title="⌘Z">
-          Annuler
+          {t("bar.annuler")}
         </button>
         <button className="link" onClick={onRedo} disabled={!canRedo} title="⇧⌘Z">
-          Rétablir
+          {t("bar.retablir")}
         </button>
         <span className="actions-sep" aria-hidden="true" />
         {onRecompose && (
           <button
             className="link"
             onClick={onRecompose}
-            title="Recompose l’album ; les planches éditées ou verrouillées sont conservées"
+            title={t("bar.recomposer.titre")}
           >
-            Recomposer
+            {t("bar.recomposer")}
           </button>
         )}
         <button
@@ -1896,7 +1917,7 @@ function Bar({
           disabled={!dirty}
           title="⌘S"
         >
-          Enregistrer
+          {t("bar.enregistrer")}
         </button>
         {onClose && onOpen && (
           <>
@@ -1904,12 +1925,12 @@ function Bar({
             <button
               className="link"
               onClick={onClose}
-              title="Fermer et composer un autre album"
+              title={t("bar.nouveau.titre")}
             >
-              Nouveau
+              {t("bar.nouveau")}
             </button>
             <button className="link" onClick={onOpen} title="⌘O">
-              Ouvrir
+              {t("bar.ouvrir")}
             </button>
           </>
         )}
@@ -1960,18 +1981,13 @@ function ContextLine({
         onClick={onFidele}
         aria-pressed={fidele}
         title={
-          fidele
-            ? "Retour au rendu de l’éditeur, celui qu’on peut modifier (⇧⌘P)"
-            : "Afficher la page telle que le PDF la contient, rendue par pdf.js (⇧⌘P)"
+          fidele ? t("fidele.titre.off") : t("fidele.titre.on")
         }
       >
-        {fidele ? "Aperçu fidèle" : "Voir le PDF"}
+        {fidele ? t("fidele.actif") : t("fidele.voir")}
       </button>
       {onCover ? (
-        <span className="context-hint">
-          La couverture : titre et sous-titre en place, glissez la photo pour
-          la recadrer. Le tiroir de photos revient sur les planches.
-        </span>
+        <span className="context-hint">{t("contexte.couverture")}</span>
       ) : (
         spread && (
           <>
@@ -1987,7 +2003,7 @@ function ContextLine({
               {spread.edited && (
                 <span
                   className="badge-edited"
-                  title="Éditée à la main : survit à toute recomposition"
+                  title={t("table.editee")}
                 />
               )}
               {onLock && (
@@ -1995,11 +2011,7 @@ function ContextLine({
                   className={"lock" + (spread.locked ? " locked" : "")}
                   onClick={onLock}
                   aria-pressed={spread.locked ?? false}
-                  title={
-                    spread.locked
-                      ? "Figée : survit à toute recomposition. Cliquer pour libérer (⌘L)"
-                      : "Figer cette planche face aux recompositions (⌘L)"
-                  }
+                  title={spread.locked ? t("table.figee") : t("table.figer")}
                 >
                   <LockGlyph open={!spread.locked} />
                 </button>
@@ -2007,7 +2019,7 @@ function ContextLine({
             </span>
             <span className="context-hint">
               {selected !== null
-                ? "Recadrage : glisser déplace, molette zoome, ⌥ affine, ⌫ retire la photo"
+                ? t("contexte.recadrage")
                 : ""}
             </span>
           </>
@@ -2050,7 +2062,7 @@ function BookFoot({
           className="foot-arrow"
           onClick={() => onSeek(index - 1)}
           disabled={index <= COVER}
-          aria-label="Planche précédente"
+          aria-label={t("nav.precedente")}
           title="←"
         >
           <Chevron dir="left" />
@@ -2058,12 +2070,12 @@ function BookFoot({
         <button
           className={"ruler-cover" + (index === COVER ? " current" : "")}
           onClick={() => onSeek(COVER)}
-          title="Couverture"
-          aria-label="Couverture"
+          title={t("menu.couverture")}
+          aria-label={t("menu.couverture")}
         >
           <CoverGlyph />
         </button>
-        <nav className="ruler" aria-label="Aller à une planche">
+        <nav className="ruler" aria-label={t("nav.aller")}>
           {album.spreads.map((s, i) => (
             <button
               key={i}
@@ -2073,7 +2085,7 @@ function BookFoot({
                 (i === index ? " current" : "")
               }
               style={{ left: `${total > 1 ? (i / (total - 1)) * 100 : 0}%` }}
-              title={(s.caption ? `${s.caption} · ` : "") + `planche ${i + 1}`}
+              title={(s.caption ? `${s.caption} · ` : "") + t("nav.planche", { n: i + 1 })}
               onClick={() => onSeek(i)}
             />
           ))}
@@ -2088,8 +2100,8 @@ function BookFoot({
           className="foot-arrow"
           onClick={() => onSeek(index + 1)}
           disabled={index >= total - 1}
-          aria-label="Planche suivante"
-          title="→ ou espace"
+          aria-label={t("nav.suivante")}
+          title={t("nav.espace.titre")}
         >
           <Chevron dir="right" />
         </button>
@@ -2100,9 +2112,9 @@ function BookFoot({
       <div className="foot-line">
         {rendering ? (
           <span className="foot-render">
-            {status ?? "Rendu du PDF d’impression…"}{" "}
+            {status ?? t("export.rendu")}{" "}
             <button className="link" onClick={onCancelExport}>
-              Annuler l’export
+              {t("export.annuler")}
             </button>
           </span>
         ) : (
@@ -2136,26 +2148,25 @@ function PlanchesFoot({
     <footer className="foot">
       <div className="foot-nav planches-actions">
         <span className="foot-pos planches-pos">
-          planche {index + 1} / {album.spreads.length}
+          {t("planches.pos", { n: index + 1, total: album.spreads.length })}
           {spread?.caption ? ` · ${spread.caption}` : ""}
         </span>
-        <button className="link" onClick={() => onInsert("vide")} title="Après la planche courante">
-          + Planche vide
+        <button className="link" onClick={() => onInsert("vide")} title={t("planches.apres")}>
+          {t("planches.inserer.vide")}
         </button>
-        <button className="link" onClick={() => onInsert("texte")} title="Après la planche courante">
-          + Planche de texte
+        <button className="link" onClick={() => onInsert("texte")} title={t("planches.apres")}>
+          {t("planches.inserer.texte")}
         </button>
         <span className="actions-sep" aria-hidden="true" />
         <button className="link" onClick={onDuplicate} title="⌘D">
-          Dupliquer
+          {t("menu.dupliquer")}
         </button>
         <button className="link" onClick={onRemove} title="⌫">
-          Supprimer
+          {t("stockage.supprimer")}
         </button>
       </div>
       <p className="foot-line">
-        {status ??
-          "Glissez une planche sur une autre pour la déplacer. Double-clic ouvre dans le Livre, ⌘L fige."}
+        {status ?? t("planches.hint")}
       </p>
     </footer>
   );
@@ -2186,22 +2197,18 @@ function TriFoot({
             <button
               className="foot-winner"
               onClick={() => onShowSpread(entry.kept!)}
-              title="Voir la planche de la photo gardée"
+              title={t("tri.gardee.voir")}
             >
               <MiniThumb src={entry.kept} />
-              <span>gardée à sa place · voir la planche</span>
+              <span>{t("tri.gardee.label")}</span>
             </button>
           )}
           <button className="cta small" onClick={() => onRescue(entry)}>
-            Repêcher
+            {t("revue.repecher")}
           </button>
         </div>
       ) : (
-        <div className="foot-tri muted">
-          Photos écartées par la curation ou retirées à la main. Un clic pour
-          les détails, un double-clic repêche. Le tiroir du Livre les garde
-          aussi à portée de glisser.
-        </div>
+        <div className="foot-tri muted">{t("tri.foot.vide")}</div>
       )}
       <p className="foot-line">{status ?? ""}</p>
     </footer>
@@ -2227,16 +2234,12 @@ function MiniThumb({ src }: { src: string }) {
   );
 }
 
-/** French names for the engine's format identifiers. The identifier stays
- *  in the data; the screen speaks French. */
-const FORMAT_LABELS: Record<string, string> = {
-  "carre-21": "Carré 21 × 21",
-  "carre-30": "Carré 30 × 30",
-  "portrait-a4": "Portrait A4",
-  "paysage-a4": "Paysage A4",
-  "paysage-28x21": "Paysage 28 × 21",
-  "portrait-20x25": "Portrait 20 × 25",
-};
+/** The engine's format identifiers stay in the data; the screen reads the
+ *  dictionaries (`format.*`), raw identifier when no entry exists. */
+function formatLabel(name: string): string {
+  const cle = `format.${name}`;
+  return cle in FR ? t(cle as Cle) : name.replace(/-/g, " ");
+}
 
 function Empty({
   onOpen,
@@ -2296,28 +2299,23 @@ function Empty({
         {!dir && !building && (
           <>
             <h1>
-              Un dossier de photos,
-              <br />
-              un album à feuilleter.
+              {t("accueil.titre")
+                .split("\n")
+                .map((l, i) => (i === 0 ? l : [<br key={i} />, l]))}
             </h1>
-            <p className="lede">
-              Colophon lit vos photos, écarte les doublons et les ratés,
-              compose les planches et rend un PDF prêt à relire. Tout se
-              retouche ensuite : gabarits, ordre, photos repêchées.
-            </p>
+            <p className="lede">{t("accueil.lede")}</p>
             <button className="cta" onClick={() => void pick()}>
-              Choisir un dossier de photos…
+              {t("accueil.choisir")}
             </button>
             <p className="hint">
-              ou{" "}
               <button className="link" onClick={onOpen}>
-                Ouvrir un album existant
+                {t("accueil.ou.ouvrir")}
               </button>{" "}
               (<kbd>⌘</kbd> <kbd>O</kbd>)
             </p>
             {recents.length > 0 && (
               <div className="recents">
-                <h2 className="recents-title">Albums récents</h2>
+                <h2 className="recents-title">{t("accueil.recents")}</h2>
                 <ul className="recents-list">
                   {recents.map((r) => (
                     <li key={r.dir}>
@@ -2347,17 +2345,17 @@ function Empty({
                   onCreate(dir, format, spreads, densite, title.trim() || null);
                 }}
               >
-                <h1 className="setup-heading">Nouvel album</h1>
+                <h1 className="setup-heading">{t("setup.nouvel")}</h1>
                 <p className="setup-folder">
                   <code>{dir}</code>
                   <button type="button" className="link" onClick={() => void pick()}>
-                    Changer de dossier
+                    {t("setup.changer.dossier")}
                   </button>
                 </p>
 
                 <div className="setup-duo">
                   <label className="setup-field">
-                    <span className="setup-label">titre</span>
+                    <span className="setup-label">{t("setup.titre")}</span>
                     <input
                       className="setup-input"
                       value={title}
@@ -2367,7 +2365,7 @@ function Empty({
                     />
                   </label>
                   <label className="setup-field">
-                    <span className="setup-label">planches</span>
+                    <span className="setup-label">{t("setup.planches")}</span>
                     <span className="setup-spreads">
                       <input
                         className="setup-input narrow"
@@ -2378,14 +2376,14 @@ function Empty({
                         onChange={(e) => setSpreads(Number(e.target.value) || 48)}
                       />
                       <span className="setup-hint">
-                        soit {spreads * 2} pages
+                        {t("setup.pages", { n: spreads * 2 })}
                       </span>
                     </span>
                   </label>
                 </div>
 
                 <div className="setup-field">
-                  <span className="setup-label">format de page</span>
+                  <span className="setup-label">{t("setup.format")}</span>
                   <div className="format-cards">
                     {formats.map((f) => (
                       <FormatCard
@@ -2399,7 +2397,7 @@ function Empty({
                 </div>
 
                 <div className="setup-field">
-                  <span className="setup-label">rythme</span>
+                  <span className="setup-label">{t("setup.rythme")}</span>
                   <div className="densites">
                     {densities.map((d) => (
                       <button
@@ -2415,18 +2413,15 @@ function Empty({
                       </button>
                     ))}
                   </div>
-                  <span className="setup-hint">
-                    Le rythme se rejoue à chaque recomposition ; chaque planche
-                    reste modifiable une par une.
-                  </span>
+                  <span className="setup-hint">{t("setup.rythme.hint")}</span>
                 </div>
 
                 <p className="setup-actions">
                   <button className="cta" type="submit">
-                    Composer l’album
+                    {t("setup.composer")}
                   </button>
                   <button type="button" className="link" onClick={() => setDir(null)}>
-                    Annuler
+                    {t("setup.annuler")}
                   </button>
                 </p>
               </form>
@@ -2436,14 +2431,14 @@ function Empty({
               <div className="setup">
                 <h1 className="setup-heading">
                   {busyTitle
-                    ? `Recomposition de « ${busyTitle} »`
-                    : `Composition de « ${title.trim() || folderName || "l’album"} »`}
+                    ? t("compo.recomposition", { titre: busyTitle })
+                    : t("compo.composition", {
+                        titre: title.trim() || folderName || t("compo.album.defaut"),
+                      })}
                 </h1>
                 <BuildProgress lines={building} onCancel={onCancelBuild} />
                 <p className="setup-hint">
-                  {busyTitle
-                    ? "Les planches éditées à la main ou verrouillées sont conservées telles quelles."
-                    : "L’analyse des photos ne se fait qu’une fois : recomposer ce dossier sera bien plus rapide."}
+                  {busyTitle ? t("compo.hint.recomp") : t("compo.hint.compo")}
                 </p>
               </div>
             )}
@@ -2482,7 +2477,9 @@ function DensiteApercu({ photos }: { photos: number }) {
 }
 
 const cm = (mm: number) =>
-  (mm / 10).toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+  (mm / 10).toLocaleString(langue() === "fr" ? "fr-FR" : "en-GB", {
+    maximumFractionDigits: 1,
+  });
 
 /**
  * One page format, drawn as an open double page at its true proportions:
@@ -2510,9 +2507,7 @@ function FormatCard({
         <span className="format-page" style={{ width: pageW, height: pageH }} />
         <span className="format-page" style={{ width: pageW, height: pageH }} />
       </span>
-      <span className="format-name">
-        {FORMAT_LABELS[f.name] ?? f.name.replace(/-/g, " ")}
-      </span>
+      <span className="format-name">{formatLabel(f.name)}</span>
       <span className="format-dims">
         {cm(f.w)} × {cm(f.h)} cm
       </span>
@@ -2534,7 +2529,7 @@ function FormatSpreadPreview({ f }: { f: FormatPreset }) {
 
   return (
     <figure className="format-large">
-      <span className="format-large-cote">{cm(f.w * 2)} cm ouvert</span>
+      <span className="format-large-cote">{t("setup.cm.ouvert", { cm: cm(f.w * 2) })}</span>
       <div
         className="format-large-spread"
         style={{ width: canvas.w * scale, height: canvas.h * scale }}
@@ -2557,7 +2552,7 @@ function FormatSpreadPreview({ f }: { f: FormatPreset }) {
         <strong>
           {cm(f.w)} × {cm(f.h)} cm
         </strong>{" "}
-        la page · {f.about}
+        {t("setup.la.page")} · {f.about}
       </figcaption>
     </figure>
   );
@@ -2570,45 +2565,45 @@ function FormatSpreadPreview({ f }: { f: FormatPreset }) {
  */
 function buildStage(lines: string[]): { pct: number; label: string } {
   let pct = 2;
-  let label = "lecture du dossier";
+  let label = t("stage.lecture");
   for (const l of lines) {
     let p = 0;
     let lab = "";
     const count = l.match(/^analyze: (\d+)\/(\d+)/);
     if (l.startsWith("scan:")) {
       p = 4;
-      lab = "inventaire du dossier";
+      lab = t("stage.scan");
     } else if (count) {
       const [, i, n] = count;
       p = 5 + (65 * Number(i)) / Math.max(1, Number(n));
-      lab = `analyse des photos, ${i} sur ${n}`;
+      lab = t("stage.analyse.n", { i, n });
     } else if (l.startsWith("analyze:")) {
       p = 70;
-      lab = "analyse des photos";
+      lab = t("stage.analyse");
     } else if (l.startsWith("junk:") || l.startsWith("note:")) {
       p = 72;
-      lab = "écart des parasites";
+      lab = t("stage.parasites");
     } else if (l.startsWith("dedup:")) {
       p = 76;
-      lab = "déduplication des rafales";
+      lab = t("stage.dedup");
     } else if (l.startsWith("thinning:")) {
       p = 80;
-      lab = "éclaircissage des doublons";
+      lab = t("stage.eclaircissage");
     } else if (l.startsWith("chapters:")) {
       p = 84;
-      lab = "découpage en chapitres";
+      lab = t("stage.chapitres");
     } else if (l.startsWith("layout:")) {
       p = 88;
-      lab = "mise en page des planches";
+      lab = t("stage.layout");
     } else if (l.startsWith("pinned:")) {
       p = 90;
-      lab = "planches éditées remises en place";
+      lab = t("stage.pinned");
     } else if (l.startsWith("curation:")) {
       p = 92;
-      lab = "journal de curation";
+      lab = t("stage.curation");
     } else if (l.startsWith("pdf:")) {
       p = 96;
-      lab = "rendu du PDF";
+      lab = t("stage.pdf");
     }
     if (p >= pct) {
       pct = p;
@@ -2647,17 +2642,17 @@ function BuildProgress({
             className="link"
             type="button"
             onClick={onCancel}
-            title="Arrête la composition ; rien n’est écrit"
+            title={t("compo.arreter.titre")}
           >
-            Annuler
+            {t("setup.annuler")}
           </button>
           <span className="build-pct">{Math.round(pct)} %</span>
         </span>
       </p>
       <details className="build-details">
-        <summary>Détails techniques</summary>
+        <summary>{t("compo.details")}</summary>
         <pre className="buildlog">
-          {log.length ? log.join("\n") : "lecture du dossier…"}
+          {log.length ? log.join("\n") : t("compo.lecture")}
         </pre>
       </details>
     </div>

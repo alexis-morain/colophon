@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { Album } from "./album";
 import { Defaut, Printer, PrevolReport, openReportUrl, preflight } from "./bridge";
+import { t } from "./i18n";
 import { VERDICT_URL } from "./signaler";
 
 const mm = (v: number) => v.toFixed(1).replace(".", ",");
@@ -84,39 +85,38 @@ export function EnvoiView({
     <div className="envoi">
       <section className="envoi-verdict">
         {dirty && (
-          <p className="envoi-dirty">
-            Des modifications ne sont pas enregistrées. Le prévol lit le fichier
-            sur le disque : enregistrez (⌘S) avant de vous fier au verdict.
-          </p>
+          <p className="envoi-dirty">{t("envoi.dirty")}</p>
         )}
         {error ? (
           <h2 className="envoi-ko">{error}</h2>
         ) : running || !report ? (
-          <h2 className="envoi-wait">Contrôle du fichier…</h2>
+          <h2 className="envoi-wait">{t("envoi.controle")}</h2>
         ) : report.ok ? (
           <>
             <h2 className="envoi-ok">
-              Rien ne s’oppose à l’impression chez {report.fiche.imprimeur}.
+              {t("envoi.ok", { imprimeur: report.fiche.imprimeur })}
             </h2>
             <p className="envoi-sub">
-              {report.fiche.planches} planches, {report.fiche.pages_interieur}{" "}
-              pages, {report.fiche.fichiers === "deux"
-                ? "intérieur et couverture en deux fichiers"
-                : `un seul fichier de ${report.fiche.pages_fichier} pages, couverture comprise`}
-              .
+              {report.fiche.fichiers === "deux"
+                ? t("envoi.ok.deux", {
+                    planches: report.fiche.planches,
+                    pages: report.fiche.pages_interieur,
+                  })
+                : t("envoi.ok.un", {
+                    planches: report.fiche.planches,
+                    pages: report.fiche.pages_interieur,
+                    fichier: report.fiche.pages_fichier ?? 0,
+                  })}
             </p>
           </>
         ) : (
           <>
             <h2 className="envoi-ko">
               {bloquants.length === 1
-                ? "Un défaut arrête l’envoi."
-                : `${bloquants.length} défauts arrêtent l’envoi.`}
+                ? t("envoi.ko.un")
+                : t("envoi.ko", { n: bloquants.length })}
             </h2>
-            <p className="envoi-sub">
-              Chaque ligne mène à sa planche. Corrigez, revenez, le contrôle se
-              refait tout seul.
-            </p>
+            <p className="envoi-sub">{t("envoi.ko.sub")}</p>
           </>
         )}
       </section>
@@ -133,7 +133,7 @@ export function EnvoiView({
       )}
 
       <section className="envoi-imprimeurs">
-        <h3>Qui accepte un PDF comme celui-ci</h3>
+        <h3>{t("envoi.imprimeurs")}</h3>
         <ul>
           {(printers ?? []).map((p) => (
             <li key={p.id}>
@@ -144,14 +144,16 @@ export function EnvoiView({
               >
                 <span className="envoi-imprimeur-nom">{p.nom}</span>
                 <span className="envoi-imprimeur-quoi">
-                  {p.pdf_x === "x4" ? "PDF/X-4" : "PDF simple"} ·{" "}
-                  {p.espace === "rgb" ? "RVB" : "CMJN FOGRA39"} ·{" "}
-                  {p.fichiers === "deux" ? "deux fichiers" : "un fichier"} ·{" "}
-                  {p.dos.mode === "calcule" ? "dos à fournir" : "dos non demandé"}
+                  {p.pdf_x === "x4" ? "PDF/X-4" : t("envoi.pdf.simple")} ·{" "}
+                  {p.espace === "rgb" ? t("envoi.rvb") : t("envoi.cmjn")} ·{" "}
+                  {p.fichiers === "deux"
+                    ? t("envoi.deux.fichiers")
+                    : t("envoi.un.fichier")}{" "}
+                  · {p.dos.mode === "calcule" ? t("envoi.dos.fournir") : t("envoi.dos.non")}
                 </span>
                 {p.certitude === "provisoire" && (
                   <span className="envoi-provisoire" title={p.reserves.join(" · ")}>
-                    fiche provisoire
+                    {t("envoi.provisoire")}
                   </span>
                 )}
               </button>
@@ -162,44 +164,57 @@ export function EnvoiView({
 
       {report && (
         <section className="envoi-fiche">
-          <h3>La fiche à donner à l’imprimeur</h3>
+          <h3>{t("envoi.fiche.titre")}</h3>
           <dl>
-            <Ligne k="Format d’une page">
+            <Ligne k={t("envoi.fiche.format")}>
               {mm(report.fiche.format_page_mm[0])} × {mm(report.fiche.format_page_mm[1])} mm
             </Ligne>
-            <Ligne k="Intérieur">
-              {report.fiche.planches} planches, {report.fiche.pages_interieur} pages
+            <Ligne k={t("envoi.fiche.interieur")}>
+              {t("envoi.fiche.interieur.v", {
+                planches: report.fiche.planches,
+                pages: report.fiche.pages_interieur,
+              })}
             </Ligne>
-            <Ligne k="Fond perdu">
-              haut {mm(report.fiche.fond_perdu_mm.haut)}, bas{" "}
-              {mm(report.fiche.fond_perdu_mm.bas)}, extérieur{" "}
-              {mm(report.fiche.fond_perdu_mm.exterieur)}, dos{" "}
-              {mm(report.fiche.fond_perdu_mm.dos)} mm
+            <Ligne k={t("envoi.fiche.fond")}>
+              {t("envoi.fiche.fond.v", {
+                haut: mm(report.fiche.fond_perdu_mm.haut),
+                bas: mm(report.fiche.fond_perdu_mm.bas),
+                ext: mm(report.fiche.fond_perdu_mm.exterieur),
+                dos: mm(report.fiche.fond_perdu_mm.dos),
+              })}
             </Ligne>
-            <Ligne k="Zone sûre">{mm(report.fiche.zone_sure_mm)} mm depuis la coupe</Ligne>
-            <Ligne k="Espace couleur">
-              {report.fiche.espace === "rgb" ? "RVB" : "CMJN"} · {report.fiche.output_intent}
+            <Ligne k={t("envoi.fiche.zone")}>{t("envoi.fiche.zone.v", { mm: mm(report.fiche.zone_sure_mm) })}</Ligne>
+            <Ligne k={t("envoi.fiche.espace")}>
+              {report.fiche.espace === "rgb" ? t("envoi.rvb") : t("envoi.fiche.espace.cmjn")} ·{" "}
+              {report.fiche.output_intent}
             </Ligne>
-            <Ligne k="Conformité">
-              {report.fiche.conformite === "x4" ? "PDF/X-4 déclaré" : "aucune demandée"}
+            <Ligne k={t("envoi.fiche.conformite")}>
+              {report.fiche.conformite === "x4"
+                ? t("envoi.fiche.conformite.x4")
+                : t("envoi.fiche.conformite.aucune")}
             </Ligne>
-            <Ligne k="Livraison">
+            <Ligne k={t("envoi.fiche.livraison")}>
               {report.fiche.fichiers === "deux"
-                ? "deux fichiers : l’intérieur et la couverture à plat"
-                : `un seul fichier de ${report.fiche.pages_fichier} pages : couverture en première et en dernière page`}
+                ? t("envoi.fiche.livraison.deux")
+                : t("envoi.fiche.livraison.un", {
+                    n: report.fiche.pages_fichier ?? 0,
+                  })}
             </Ligne>
             {report.fiche.dos_mm !== undefined && (
-              <Ligne k="Dos">
-                {mm(report.fiche.dos_mm)} mm pour {report.fiche.pages_interieur} pages à{" "}
-                {report.fiche.grammage_g_m2} g/m²
+              <Ligne k={t("envoi.fiche.dos")}>
+                {t("envoi.fiche.dos.v", {
+                  mm: mm(report.fiche.dos_mm),
+                  pages: report.fiche.pages_interieur,
+                  g: report.fiche.grammage_g_m2 ?? 0,
+                })}
               </Ligne>
             )}
-            <Ligne k="Résolution visée">{report.fiche.resolution_cible_dpi} dpi</Ligne>
+            <Ligne k={t("envoi.fiche.resolution")}>{t("envoi.fiche.resolution.v", { dpi: report.fiche.resolution_cible_dpi })}</Ligne>
           </dl>
 
           {(report.reserves?.length ?? 0) > 0 && (
             <div className="envoi-reserves">
-              <h4>Ce que cette fiche attend encore</h4>
+              <h4>{t("envoi.reserves")}</h4>
               <ul>
                 {report.reserves!.map((r, i) => (
                   <li key={i}>{r}</li>
@@ -225,26 +240,18 @@ export function EnvoiView({
               checked={gardeActif}
               onChange={(e) => onGarde(e.target.checked)}
             />
-            Imprimer la page de garde
+            {t("envoi.garde.label")}
           </label>
-          <p>
-            La première page du livre, comme dans un livre imprimé : le titre,
-            les dates du voyage, les villes traversées. Rien d’autre, et deux
-            pages de plus.
-          </p>
+          <p>{t("envoi.garde.note")}</p>
           <label>
             <input
               type="checkbox"
               checked={colophonActif}
               onChange={(e) => onColophon(e.target.checked)}
             />
-            Imprimer la page de colophon
+            {t("envoi.colophon.label")}
           </label>
-          <p>
-            La dernière page du livre, écrite par le logiciel : combien de
-            photographies sur combien, quand, où, avec quels appareils. Deux
-            pages de plus, et jamais un chemin, une coordonnée ni une légende.
-          </p>
+          <p>{t("envoi.colophon.note")}</p>
         </section>
       )}
 
@@ -254,32 +261,22 @@ export function EnvoiView({
           onClick={onExport}
           disabled={exporting || !report?.ok}
           title={
-            report?.ok
-              ? "Rendu à 300 dpi, puis la couverture si l’imprimeur en veut une"
-              : "Corrigez d’abord ce qui bloque"
+            report?.ok ? t("envoi.exporter.titre") : t("envoi.exporter.bloque")
           }
         >
-          {exporting ? "Rendu en cours…" : "Enregistrer le PDF d’impression"}
+          {exporting ? t("envoi.exporter.rendu") : t("envoi.exporter")}
         </button>
         {chosen && !report?.ok && (
-          <p className="envoi-porte">
-            Un imprimeur sans contrainte accepte souvent ce que {chosen.nom}{" "}
-            refuse : essayez « Imprimeur local » ci-dessus pour voir ce qui
-            resterait.
-          </p>
+          <p className="envoi-porte">{t("envoi.porte", { nom: chosen.nom })}</p>
         )}
       </section>
 
       {exporte && (
         <section className="envoi-verdict-appel">
-          <h3>Votre avis vaut une planche corrigée</h3>
-          <p>
-            Deux questions, dix secondes : montreriez-vous cet album tel que le
-            logiciel l’a composé, et quelles sont ses trois pires planches ?
-            Chaque planche citée est examinée une par une.
-          </p>
+          <h3>{t("envoi.verdict.titre")}</h3>
+          <p>{t("envoi.verdict.texte")}</p>
           <button className="link" onClick={() => void openReportUrl(VERDICT_URL)}>
-            Répondre sur GitHub (le formulaire pose ces deux questions)
+            {t("envoi.verdict.bouton")}
           </button>
         </section>
       )}
@@ -302,7 +299,9 @@ function DefautLigne({ d, onJump }: { d: Defaut; onJump: (n: number) => void }) 
   const body = (
     <>
       <span className="envoi-defaut-ou">
-        {d.planche ? `Planche ${d.planche}` : "L’album"}
+        {d.planche
+          ? t("envoi.defaut.planche", { n: d.planche })
+          : t("envoi.defaut.album")}
       </span>
       <span className="envoi-defaut-cause">{d.cause}</span>
       <span className="envoi-defaut-remede">{d.remede}</span>

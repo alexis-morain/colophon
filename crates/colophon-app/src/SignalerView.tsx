@@ -7,7 +7,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Album } from "./album";
 import { openReportUrl, reportData, ReportData } from "./bridge";
-import { fitReport, SIGNAL_TITLES, SignalKind } from "./signaler";
+import { t } from "./i18n";
+import { fitReport, signalTitle, SignalKind } from "./signaler";
 
 export function SignalerView({
   kind,
@@ -76,20 +77,15 @@ export function SignalerView({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="raccourcis-head">
-          <h2>{SIGNAL_TITLES[kind]}</h2>
+          <h2>{signalTitle(kind)}</h2>
           <button className="link" onClick={onClose}>
-            Fermer (Échap)
+            {t("commun.fermer")}
           </button>
         </header>
-        <p className="signaler-intro">
-          Le rapport ci-dessous est construit sur cette machine. Relisez-le :
-          c’est tout ce qui part, rien d’autre. Des chiffres et des noms de
-          fichiers, jamais un chemin, une coordonnée GPS ni une légende.
-        </p>
+        <p className="signaler-intro">{t("signaler.intro")}</p>
         {err && <p className="signaler-erreur">{err}</p>}
         <pre className="signaler-rapport">
-          {fitted?.report ??
-            "Rapport en construction… L’audit relit chaque photo, quelques secondes sur un grand album."}
+          {fitted?.report ?? t("signaler.construction")}
         </pre>
         <label className="signaler-piece">
           <input
@@ -97,21 +93,18 @@ export function SignalerView({
             checked={attach}
             onChange={(e) => setAttach(e.target.checked)}
           />
-          Je joindrai moi-même une image de la planche sur la page GitHub.
-          Rien n’est téléversé d’ici.
+          {t("signaler.piece")}
         </label>
         <div className="signaler-actions">
           <button className="cta small" disabled={!fitted} onClick={ouvrir}>
-            Ouvrir l’issue GitHub pré-remplie
+            {t("signaler.ouvrir")}
           </button>
           <button className="link" disabled={!fitted} onClick={copier}>
-            {copie ? "Rapport copié" : "Copier le rapport"}
+            {copie ? t("signaler.copie") : t("signaler.copier")}
           </button>
         </div>
         <p className="signaler-note">
-          {ouverte
-            ? "L’issue s’ouvre dans votre navigateur, le rapport déjà en place : relisez, complétez, publiez."
-            : "Sans réseau ou sans compte GitHub : copiez le rapport, il se colle tel quel dans une issue ou un mail, plus tard."}
+          {ouverte ? t("signaler.note.ouverte") : t("signaler.note.copie")}
         </p>
       </div>
     </div>

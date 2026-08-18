@@ -11,29 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Album, mediaCanvas, slotsFor, Spread, templateCapacity, TEMPLATES } from "./album";
 import { templateChoices } from "./edits";
-
-/** French labels for template families; the diagram carries the rest. */
-const FAMILY_LABELS: Record<string, string> = {
-  full1: "Pleine page",
-  solo: "Une photo",
-  solo_paysage: "Une photo, paysage",
-  solo_pano: "Une photo, panorama",
-  solo_etroit: "Une photo, étroite",
-  solo_carre: "Une photo, carrée",
-  duo: "Deux photos",
-  duo_portrait: "Deux portraits",
-  duo_paysage: "Deux paysages",
-  duo_etroit: "Deux photos, étroites",
-  duo_pano: "Deux panoramas",
-  trio: "Trois photos",
-  trio_portrait: "Trois photos, portraits",
-  quad: "Quatre photos",
-  quad_portrait: "Quatre portraits",
-  quad_etroit: "Quatre photos, étroites",
-  quad_pano: "Quatre panoramas",
-  six: "Six photos",
-  octo: "Huit photos",
-};
+import { Cle, FR, t } from "./i18n";
 
 /** The family behind a template name, verso suffix folded away. */
 function familyOf(template: string): string {
@@ -42,9 +20,12 @@ function familyOf(template: string): string {
     : template;
 }
 
+/** The label of a template family lives in the dictionaries (`gabarit.*`);
+ *  an engine name without an entry shows raw, which is the honest default. */
 export function templateLabel(template: string): string {
   const family = familyOf(template);
-  return FAMILY_LABELS[family] ?? family;
+  const cle = `gabarit.${family}`;
+  return cle in FR ? t(cle as Cle) : family;
 }
 
 /** The face a family takes on this spread: verso on odd spreads when the
@@ -109,7 +90,7 @@ export function TemplatePicker({
       <button
         className="tpl-current"
         onClick={() => setOpen((o) => !o)}
-        title="Gabarit de la planche"
+        title={t("gabarit.titre")}
         aria-expanded={open}
       >
         <TemplateDiagram album={album} template={spread.template} width={34} />
@@ -134,7 +115,9 @@ export function TemplatePicker({
                 <TemplateDiagram album={album} template={target} width={64} />
                 <span className="tpl-option-name">{templateLabel(family)}</span>
                 <span className="tpl-option-cap">
-                  {cap} photo{cap > 1 ? "s" : ""}
+                  {cap > 1
+                    ? t("gabarit.photos", { n: cap })
+                    : t("gabarit.photos.une")}
                 </span>
               </button>
             );

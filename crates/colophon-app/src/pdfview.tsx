@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { albumPdfBytes } from "./bridge";
+import { t } from "./i18n";
 
 /** pdf.js and its worker, loaded once, on the first faithful preview. The
  *  library is a megabyte: nobody who never opens the preview pays for it. */
@@ -131,7 +132,7 @@ export function PdfPage({
     <canvas
       ref={canvas}
       className="pdf-page"
-      aria-label="Aperçu fidèle, rendu depuis le PDF"
+      aria-label={t("fidele.pdf.aria")}
     />
   );
 }

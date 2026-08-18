@@ -9,6 +9,7 @@
 // sources, so an action never runs twice for one keypress.
 
 import { inTauri } from "./bridge";
+import { t } from "./i18n";
 
 export type RecentAlbum = { dir: string; title: string };
 
@@ -23,6 +24,7 @@ export type MenuActions = {
   fermerAlbum(): void;
   stockage(): void;
   apropos(): void;
+  preferences(): void;
   annuler(): void;
   retablir(): void;
   vue(v: "livre" | "tri" | "planches" | "envoi"): void;
@@ -87,13 +89,17 @@ export async function installMenu(
     items: [
       // Ours, not the system panel: the system panel cannot carry the
       // GeoNames attribution, and that attribution is a licence condition.
-      await item("apropos", "À propos de Colophon"),
+      await item("apropos", t("menu.apropos")),
       await sep(),
-      await PredefinedMenuItem.new({ item: "Hide", text: "Masquer Colophon" }),
-      await PredefinedMenuItem.new({ item: "HideOthers", text: "Masquer les autres" }),
-      await PredefinedMenuItem.new({ item: "ShowAll", text: "Tout afficher" }),
+      await item("preferences", t("menu.preferences"), {
+        accelerator: "CmdOrCtrl+,",
+      }),
       await sep(),
-      await PredefinedMenuItem.new({ item: "Quit", text: "Quitter Colophon" }),
+      await PredefinedMenuItem.new({ item: "Hide", text: t("menu.masquer") }),
+      await PredefinedMenuItem.new({ item: "HideOthers", text: t("menu.masquer.autres") }),
+      await PredefinedMenuItem.new({ item: "ShowAll", text: t("menu.tout.afficher") }),
+      await sep(),
+      await PredefinedMenuItem.new({ item: "Quit", text: t("menu.quitter") }),
     ],
   });
 
@@ -102,7 +108,7 @@ export async function installMenu(
       ? [
           await MenuItem.new({
             id: "recents-vide",
-            text: "Aucun album récent",
+            text: t("menu.recents.vide"),
             enabled: false,
           }),
         ]
@@ -117,109 +123,109 @@ export async function installMenu(
         );
 
   const fichier = await Submenu.new({
-    text: "Fichier",
+    text: t("menu.fichier"),
     items: [
-      await item("nouveau", "Nouveau…", { accelerator: "CmdOrCtrl+N" }),
-      await item("ouvrir", "Ouvrir…", { accelerator: "CmdOrCtrl+O" }),
-      await Submenu.new({ text: "Albums récents", items: recentItems }),
+      await item("nouveau", t("menu.nouveau"), { accelerator: "CmdOrCtrl+N" }),
+      await item("ouvrir", t("menu.ouvrir"), { accelerator: "CmdOrCtrl+O" }),
+      await Submenu.new({ text: t("menu.recents"), items: recentItems }),
       await sep(),
-      await item("enregistrer", "Enregistrer", {
+      await item("enregistrer", t("menu.enregistrer"), {
         accelerator: "CmdOrCtrl+S",
         enabled: albumOpen,
       }),
-      await item("exporter", "Exporter…", {
+      await item("exporter", t("menu.exporter"), {
         accelerator: "Shift+CmdOrCtrl+E",
         enabled: albumOpen,
       }),
       await sep(),
       // Storage answers a question about the machine, not about the album:
       // it opens with or without one, like the bug report does.
-      await item("stockage", "Stockage…"),
+      await item("stockage", t("menu.stockage")),
       await sep(),
-      await item("fermerAlbum", "Fermer l’album", { enabled: albumOpen }),
+      await item("fermerAlbum", t("menu.fermer.album"), { enabled: albumOpen }),
     ],
   });
 
   const edition = await Submenu.new({
-    text: "Édition",
+    text: t("menu.edition"),
     items: [
-      await item("annuler", "Annuler", {
+      await item("annuler", t("menu.annuler"), {
         accelerator: "CmdOrCtrl+Z",
         enabled: albumOpen,
       }),
-      await item("retablir", "Rétablir", {
+      await item("retablir", t("menu.retablir"), {
         accelerator: "Shift+CmdOrCtrl+Z",
         enabled: albumOpen,
       }),
       await sep(),
-      await PredefinedMenuItem.new({ item: "Cut", text: "Couper" }),
-      await PredefinedMenuItem.new({ item: "Copy", text: "Copier" }),
-      await PredefinedMenuItem.new({ item: "Paste", text: "Coller" }),
-      await PredefinedMenuItem.new({ item: "SelectAll", text: "Tout sélectionner" }),
+      await PredefinedMenuItem.new({ item: "Cut", text: t("menu.couper") }),
+      await PredefinedMenuItem.new({ item: "Copy", text: t("menu.copier") }),
+      await PredefinedMenuItem.new({ item: "Paste", text: t("menu.coller") }),
+      await PredefinedMenuItem.new({ item: "SelectAll", text: t("menu.tout.selectionner") }),
     ],
   });
 
   const affichage = await Submenu.new({
-    text: "Affichage",
+    text: t("menu.affichage"),
     items: [
-      await vue("livre", "Livre", "1"),
-      await vue("tri", "Tri", "2"),
-      await vue("planches", "Planches", "3"),
-      await vue("envoi", "Envoi", "4"),
-      await item("couverture", "Couverture", { enabled: albumOpen }),
+      await vue("livre", t("menu.livre"), "1"),
+      await vue("tri", t("menu.tri"), "2"),
+      await vue("planches", t("menu.planches"), "3"),
+      await vue("envoi", t("menu.envoi"), "4"),
+      await item("couverture", t("menu.couverture"), { enabled: albumOpen }),
       await sep(),
       // The one view that is not a second renderer: it reads the PDF the
       // press would read. Sits with the views, because that is what it is.
-      await item("apercuFidele", "Aperçu fidèle", {
+      await item("apercuFidele", t("menu.fidele"), {
         accelerator: "CmdOrCtrl+Shift+P",
         enabled: albumOpen,
       }),
       await sep(),
-      await item("revue", "Passer en revue", { enabled: albumOpen }),
-      await item("reserve", "Photos en réserve", { enabled: albumOpen }),
+      await item("revue", t("menu.revue"), { enabled: albumOpen }),
+      await item("reserve", t("menu.reserve"), { enabled: albumOpen }),
     ],
   });
 
   const planche = await Submenu.new({
-    text: "Planche",
+    text: t("menu.planche"),
     items: [
-      await item("gabarit", "Gabarit…", { enabled: albumOpen }),
-      await item("dupliquer", "Dupliquer", {
+      await item("gabarit", t("menu.gabarit"), { enabled: albumOpen }),
+      await item("dupliquer", t("menu.dupliquer"), {
         accelerator: "CmdOrCtrl+D",
         enabled: albumOpen,
       }),
-      await item("figer", "Figer / libérer", {
+      await item("figer", t("menu.figer"), {
         accelerator: "CmdOrCtrl+L",
         enabled: albumOpen,
       }),
       // The way out of the lock: sits right under it, where somebody who
       // just froze a spread by mistake will look for it.
-      await item("rendreAuto", "Rendre à l’automatique…", { enabled: albumOpen }),
+      await item("rendreAuto", t("menu.rendre.auto"), { enabled: albumOpen }),
       await sep(),
-      await item("insererVide", "Insérer une planche vide", { enabled: albumOpen }),
-      await item("insererTexte", "Insérer une planche de texte", {
+      await item("insererVide", t("menu.inserer.vide"), { enabled: albumOpen }),
+      await item("insererTexte", t("menu.inserer.texte"), {
         enabled: albumOpen,
       }),
       await sep(),
-      await item("supprimerPlanche", "Supprimer la planche", { enabled: albumOpen }),
+      await item("supprimerPlanche", t("menu.supprimer.planche"), { enabled: albumOpen }),
     ],
   });
 
   const aide = await Submenu.new({
-    text: "Aide",
+    text: t("menu.aide"),
     items: [
-      await item("raccourcis", "Raccourcis clavier", {
+      await item("raccourcis", t("menu.raccourcis"), {
         accelerator: "CmdOrCtrl+/",
       }),
       await sep(),
       // The three report variants mirror the repo's three issue templates.
       // A bug can be reported without an album; the two layout complaints
       // need one on screen.
-      await item("signalerBug", "Signaler un problème…"),
-      await item("signalerPlanche", "Signaler une planche ratée…", {
+      await item("signalerBug", t("menu.signaler.bug")),
+      await item("signalerPlanche", t("menu.signaler.planche"), {
         enabled: albumOpen,
       }),
-      await item("signalerRecadrage", "Signaler un recadrage raté…", {
+      await item("signalerRecadrage", t("menu.signaler.recadrage"), {
         enabled: albumOpen,
       }),
     ],

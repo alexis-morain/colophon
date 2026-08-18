@@ -5,7 +5,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TriEntry } from "./edits";
-import { REASONS, reasonLabel } from "./reasons";
+import { t } from "./i18n";
+import { REASON_KEYS, reasonLabel } from "./reasons";
 import { cachedThumb, loadThumb } from "./thumbs";
 
 export function TriView({
@@ -28,15 +29,17 @@ export function TriView({
       list.push(e);
       by.set(e.reason, list);
     }
-    return REASONS.filter(([key]) => by.get(key)?.length).map(
-      ([key, label]) => ({ key, label, list: by.get(key)! }),
-    );
+    return REASON_KEYS.filter((key) => by.get(key)?.length).map((key) => ({
+      key,
+      label: reasonLabel(key),
+      list: by.get(key)!,
+    }));
   }, [entries]);
 
   if (entries.length === 0) {
     return (
       <div className="tri tri-empty">
-        <p>Rien à trier : toutes les photos du dossier sont dans l’album.</p>
+        <p>{t("tri.vide")}</p>
       </div>
     );
   }
@@ -45,8 +48,9 @@ export function TriView({
     <div className="tri" onClick={() => onSelect(null)}>
       <div className="tri-head">
         <p className="tri-lede">
-          {entries.length} photo{entries.length > 1 ? "s" : ""} hors de
-          l’album, chacune avec sa raison. Un double-clic repêche.
+          {entries.length > 1
+            ? t("tri.lede", { n: entries.length })
+            : t("tri.lede.une")}
         </p>
         <button
           className="cta small"
@@ -55,7 +59,7 @@ export function TriView({
             onRevue();
           }}
         >
-          Passer en revue&ensp;<kbd>Entrée</kbd>
+          {t("tri.revue")}&ensp;<kbd>Entrée</kbd>
         </button>
       </div>
       {sections.map(({ key, label, list }) => (
@@ -104,7 +108,11 @@ function Cell({
         e.stopPropagation();
         onRescue();
       }}
-      title={entry.kept ? `${name}, gardée : ${entry.kept.split("/").pop()}` : name}
+      title={
+        entry.kept
+          ? t("tri.gardee", { nom: name, gardee: entry.kept.split("/").pop() ?? "" })
+          : name
+      }
     >
       <LazyThumb src={entry.src} />
     </figure>
@@ -167,22 +175,22 @@ export function RevueView({
         <span className="revue-name">
           {name}
           {entry.kept
-            ? `, gardée à sa place : ${entry.kept.split("/").pop()}`
+            ? t("revue.gardee", { gardee: entry.kept.split("/").pop() ?? "" })
             : ""}
         </span>
         {status && <span className="revue-status">{status}</span>}
         <span className="revue-keys">
           <button className="link" onClick={() => onRescue(entry)}>
-            Repêcher&ensp;<kbd>R</kbd>
+            {t("revue.repecher")}&ensp;<kbd>R</kbd>
           </button>
           <button className="link" onClick={() => onIndex(i + 1)}>
-            Écart confirmé&ensp;<kbd>X</kbd>
+            {t("revue.confirme")}&ensp;<kbd>X</kbd>
           </button>
           <span className="revue-hint">
-            <kbd>←</kbd> <kbd>→</kbd> parcourir
+            <kbd>←</kbd> <kbd>→</kbd> {t("revue.parcourir")}
           </span>
           <button className="link" onClick={onClose}>
-            Sortir&ensp;<kbd>Échap</kbd>
+            {t("revue.sortir")}&ensp;<kbd>Échap</kbd>
           </button>
         </span>
       </footer>

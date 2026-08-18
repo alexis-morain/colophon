@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { TriEntry } from "./edits";
+import { t } from "./i18n";
 import { Chevron } from "./icons";
 import { reasonPhrase } from "./reasons";
 import { LazyThumb } from "./TriView";
@@ -39,7 +40,7 @@ export function Drawer({
           <span className="drawer-chevron" aria-hidden="true">
             <Chevron dir={open ? "down" : "up"} />
           </span>
-          Photos en réserve · {entries.length}
+          {t("tiroir.reserve")} · {entries.length}
         </button>
         {open && (
           <span className="drawer-tabs" role="tablist">
@@ -49,7 +50,7 @@ export function Drawer({
               className={"drawer-tab" + (tab === "non-placees" ? " active" : "")}
               onClick={() => setTab("non-placees")}
             >
-              Non placées · {unplaced.length}
+              {t("tiroir.non.placees")} · {unplaced.length}
             </button>
             <button
               role="tab"
@@ -57,14 +58,12 @@ export function Drawer({
               className={"drawer-tab" + (tab === "ecartees" ? " active" : "")}
               onClick={() => setTab("ecartees")}
             >
-              Écartées · {discarded.length}
+              {t("tiroir.ecartees")} · {discarded.length}
             </button>
           </span>
         )}
         {open && (
-          <span className="drawer-hint">
-            glissez une photo sur une case du livre pour l’y placer
-          </span>
+          <span className="drawer-hint">{t("tiroir.hint")}</span>
         )}
       </header>
       {open && (
@@ -72,8 +71,8 @@ export function Drawer({
           {list.length === 0 ? (
             <p className="drawer-empty">
               {tab === "non-placees"
-                ? "Aucune photo en attente : tout ce qui mérite l’album y est."
-                : "Rien d’écarté par la curation."}
+                ? t("tiroir.vide.non.placees")
+                : t("tiroir.vide.ecartees")}
             </p>
           ) : (
             list.map((e) => (
@@ -90,7 +89,9 @@ export function Drawer({
                   ev.dataTransfer.effectAllowed = "copy";
                 }}
                 title={`${e.src.split("/").pop()} · ${reasonPhrase(e.reason)}${
-                  e.kept ? ` (gardée : ${e.kept.split("/").pop()})` : ""
+                  e.kept
+                    ? t("tiroir.gardee", { gardee: e.kept.split("/").pop() ?? "" })
+                    : ""
                 }`}
               >
                 <LazyThumb src={e.src} />

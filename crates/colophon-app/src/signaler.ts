@@ -5,15 +5,14 @@
 
 import { Album, mediaCanvas, Rect, slotsFor } from "./album";
 import { ReportData } from "./bridge";
+import { t } from "./i18n";
 
 /** The three variants, one per issue template shipped in `.github/`. */
 export type SignalKind = "bug" | "planche" | "recadrage";
 
-export const SIGNAL_TITLES: Record<SignalKind, string> = {
-  bug: "Signaler un problème",
-  planche: "Signaler une planche ratée",
-  recadrage: "Signaler un recadrage raté",
-};
+export function signalTitle(kind: SignalKind): string {
+  return t(`signaler.titre.${kind}`);
+}
 
 const TEMPLATE: Record<SignalKind, string> = {
   bug: "1-bug.yml",
@@ -39,7 +38,13 @@ export function basename(src: string): string {
 
 function shape(r: Rect): string {
   const ratio = r.w / r.h;
-  return ratio > 1.05 ? "paysage" : ratio < 0.95 ? "portrait" : "carrée";
+  return t(
+    ratio > 1.05
+      ? "rapport.paysage"
+      : ratio < 0.95
+        ? "rapport.portrait"
+        : "rapport.carree",
+  );
 }
 
 const mm = (v: number) => Math.round(v);
@@ -51,14 +56,24 @@ function spreadBlock(album: Album, index: number): string[] {
   if (!spread) return [];
   const rects = slotsFor(spread.template, spread.slots.length, mediaCanvas(album));
   const lines = [
-    `Planche ${index + 1} sur ${album.spreads.length}, gabarit ${spread.template}, ` +
-      `${spread.slots.length} photo${spread.slots.length > 1 ? "s" : ""}` +
-      `${spread.edited ? ", éditée à la main" : ""}${spread.locked ? ", figée" : ""} :`,
+    t("rapport.planche", {
+      n: index + 1,
+      total: album.spreads.length,
+      gabarit: spread.template,
+      photos:
+        spread.slots.length > 1
+          ? t("rapport.photos", { n: spread.slots.length })
+          : t("rapport.photos.une"),
+      edition: spread.edited ? t("rapport.editee") : "",
+      figee: spread.locked ? t("rapport.figee") : "",
+    }),
   ];
   spread.slots.forEach((slot, i) => {
     const r = rects[i];
-    const geo = r ? `${mm(r.w)} × ${mm(r.h)} mm (${shape(r)})` : "case hors gabarit";
-    lines.push(`  case ${i + 1} : ${geo}, photo ${basename(slot.src)}`);
+    const geo = r
+      ? `${mm(r.w)} × ${mm(r.h)} mm (${shape(r)})`
+      : t("rapport.case.hors.gabarit");
+    lines.push(t("rapport.case", { i: i + 1, geo, nom: basename(slot.src) }));
   });
   return lines;
 }
@@ -69,28 +84,42 @@ function cellBlock(album: Album, index: number, cell: number): string[] {
   const slot = spread?.slots[cell];
   if (!spread || !slot) return [];
   const r = slotsFor(spread.template, spread.slots.length, mediaCanvas(album))[cell];
-  const geo = r ? `${mm(r.w)} × ${mm(r.h)} mm (${shape(r)})` : "hors gabarit";
+  const geo = r
+    ? `${mm(r.w)} × ${mm(r.h)} mm (${shape(r)})`
+    : t("rapport.hors.gabarit");
   return [
-    `Case signalée : case ${cell + 1}, ${geo}, photo ${basename(slot.src)}, ` +
-      `point focal ${slot.focal[0].toFixed(2)} ; ${slot.focal[1].toFixed(2)}, ` +
-      `zoom ${(slot.zoom ?? 1).toFixed(2)}`,
+    t("rapport.case.signalee", {
+      i: cell + 1,
+      geo,
+      nom: basename(slot.src),
+      fx: slot.focal[0].toFixed(2),
+      fy: slot.focal[1].toFixed(2),
+      zoom: (slot.zoom ?? 1).toFixed(2),
+    }),
   ];
 }
 
 function auditBlock(data: ReportData): string[] {
   if (!data.audit) {
-    return ["Audit : indisponible (pas d'album ouvert, ou audit en échec)"];
+    return [t("rapport.audit.indisponible")];
   }
   const entries = Object.entries(data.audit.compteurs);
   const rouges = entries.filter(([, c]) => c.count > c.seuil);
   const verdict = rouges.length
-    ? `${rouges.length} compteur${rouges.length > 1 ? "s" : ""} au-dessus du seuil`
-    : "tous les compteurs sous leur seuil";
+    ? rouges.length > 1
+      ? t("rapport.audit.rouges", { n: rouges.length })
+      : t("rapport.audit.rouge.un")
+    : t("rapport.audit.verts");
   const detail = entries
     .map(([nom, c]) => `${nom} ${c.count}/${c.seuil}`)
     .join(" · ");
-  const lines = [`Audit (${data.audit.planches} planches) : ${verdict}`, detail];
-  for (const note of data.audit.notes ?? []) lines.push(`note : ${note}`);
+  const lines = [
+    t("rapport.audit", { n: data.audit.planches, verdict }),
+    detail,
+  ];
+  for (const note of data.audit.notes ?? []) {
+    lines.push(t("rapport.audit.note", { note }));
+  }
   return lines;
 }
 
@@ -110,8 +139,11 @@ export function buildReport(
   const blocks: string[][] = [[`Colophon ${data.version}, ${data.os}`]];
   if (album) {
     blocks.push([
-      `Album : ${mm(album.trim_mm.w)} × ${mm(album.trim_mm.h)} mm, ` +
-        `${album.spreads.length} planches`,
+      t("rapport.album", {
+        w: mm(album.trim_mm.w),
+        h: mm(album.trim_mm.h),
+        n: album.spreads.length,
+      }),
     ]);
   }
   blocks.push(auditBlock(data));
@@ -122,12 +154,12 @@ export function buildReport(
     }
   }
   if (attach) {
-    blocks.push(["Image de la planche : ajoutée à la main dans GitHub, volontairement."]);
+    blocks.push([t("rapport.image")]);
   }
   const log = data.log.split("\n").filter(Boolean);
   const extrait = log.slice(Math.max(0, log.length - logLines));
   if (extrait.length) {
-    blocks.push(["Extrait du log (chemins déjà réduits aux noms de fichiers) :", ...extrait]);
+    blocks.push([t("rapport.log"), ...extrait]);
   }
   return blocks
     .filter((b) => b.length)

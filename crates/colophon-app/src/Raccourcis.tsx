@@ -1,77 +1,87 @@
 // The keyboard cheat-sheet (⌘/): every gesture of the app on one overlay,
 // grouped the way the menus are. Reachable from the Aide menu and from the
-// chord itself; Échap or a click puts it away.
+// chord itself; Échap or a click puts it away. Built at render time so a
+// language change redraws it.
 
-const GROUPES: [string, [string, string][]][] = [
+import { Cle, t } from "./i18n";
+
+const GROUPES: [Cle, [string | Cle, Cle][]][] = [
   [
-    "Naviguer",
+    "racc.naviguer",
     [
-      ["⌘1 ⌘2 ⌘3 ⌘4", "Livre, Tri, Planches, Envoi"],
-      ["← → · espace", "Planche précédente, suivante"],
-      ["Début / Fin", "Première, dernière planche"],
-      ["P", "Photos en réserve"],
-      ["⇧⌘P", "Aperçu fidèle : la page telle que le PDF la contient"],
-      ["Entrée (Tri)", "Passer en revue"],
+      ["⌘1 ⌘2 ⌘3 ⌘4", "racc.vues"],
+      ["racc.k.espace", "racc.planche.suiv"],
+      ["racc.k.debut", "racc.premiere"],
+      ["P", "racc.reserve"],
+      ["⇧⌘P", "racc.fidele"],
+      ["racc.k.entree", "racc.passer.revue"],
     ],
   ],
   [
-    "Éditer la planche",
+    "racc.editer",
     [
-      ["⌘D", "Dupliquer la planche"],
-      ["⌘L", "Figer ou libérer la planche"],
-      ["⌫ (Planches)", "Supprimer la planche"],
-      ["⇧⌘← ⇧⌘→", "Envoyer la photo sur la planche voisine"],
-      ["⌫ (Livre)", "Retirer la photo sélectionnée"],
+      ["⌘D", "racc.dupliquer"],
+      ["⌘L", "racc.figer"],
+      ["racc.k.suppr.planches", "racc.supprimer"],
+      ["⇧⌘← ⇧⌘→", "racc.envoyer.photo"],
+      ["racc.k.suppr.livre", "racc.retirer.photo"],
+      ["Tab", "racc.tab.legende"],
     ],
   ],
   [
-    "Recadrer la photo sélectionnée",
+    "racc.recadrer",
     [
-      ["glisser · ⌥ affine", "Déplacer le cadrage"],
-      ["molette · + −", "Zoomer, dézoomer"],
-      ["0", "Revenir au remplissage exact"],
-      ["double-clic", "Recentrer sur le visage détecté"],
+      ["racc.k.glisser", "racc.deplacer.cadrage"],
+      ["racc.k.molette", "racc.zoomer"],
+      ["0", "racc.remplissage"],
+      ["racc.k.doubleclic", "racc.recentrer"],
     ],
   ],
   [
-    "En revue (Tri)",
+    "racc.revue",
     [
-      ["← →", "Parcourir les écartées"],
-      ["R", "Repêcher"],
-      ["X", "Écart confirmé, photo suivante"],
-      ["Échap", "Sortir de la revue"],
+      ["← →", "racc.parcourir"],
+      ["R", "racc.repecher"],
+      ["X", "racc.ecart"],
+      ["racc.k.echap", "racc.sortir"],
     ],
   ],
   [
-    "L’album",
+    "racc.album",
     [
-      ["⌘S", "Enregistrer"],
-      ["⌘Z · ⇧⌘Z", "Annuler, rétablir"],
-      ["⇧⌘E", "Exporter (ouvre Envoi)"],
-      ["⌘O · ⌘N", "Ouvrir, nouveau"],
+      ["⌘S", "racc.enregistrer"],
+      ["⌘Z · ⇧⌘Z", "racc.annuler"],
+      ["⇧⌘E", "racc.exporter"],
+      ["⌘O · ⌘N", "racc.ouvrir"],
     ],
   ],
 ];
+
+/** A left-column label is either a literal key cap (⌘D) or a dictionary key
+ *  (the few French words: Échap, molette, glisser). */
+function cap(touches: string): string {
+  return touches.startsWith("racc.") ? t(touches as Cle) : touches;
+}
 
 export function RaccourcisView({ onClose }: { onClose: () => void }) {
   return (
     <div className="raccourcis" onClick={onClose}>
       <div className="raccourcis-panel" onClick={(e) => e.stopPropagation()}>
         <header className="raccourcis-head">
-          <h2>Raccourcis clavier</h2>
+          <h2>{t("racc.titre")}</h2>
           <button className="link" onClick={onClose}>
-            Fermer (Échap)
+            {t("commun.fermer")}
           </button>
         </header>
         <div className="raccourcis-groupes">
           {GROUPES.map(([titre, lignes]) => (
             <section key={titre} className="raccourcis-groupe">
-              <h3>{titre}</h3>
+              <h3>{t(titre)}</h3>
               <dl>
                 {lignes.map(([touches, quoi]) => (
                   <div key={touches} className="raccourcis-ligne">
-                    <dt>{touches}</dt>
-                    <dd>{quoi}</dd>
+                    <dt>{cap(touches)}</dt>
+                    <dd>{t(quoi)}</dd>
                   </div>
                 ))}
               </dl>

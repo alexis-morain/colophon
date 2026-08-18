@@ -134,7 +134,24 @@ your machine unless you deliberately send a file somewhere.
 
 ## Install
 
-Binaries are not published yet. Build from source in the meantime.
+Download the latest release from the
+[Releases page](https://github.com/alexis-morain/colophon/releases): a `.dmg`
+for macOS today, Windows next. Every file ships with its SHA-256 sum, and the
+app updates itself from the same place.
+
+**macOS will refuse to open it the first time.** The app is not signed with an
+Apple certificate yet, so Gatekeeper shows "cannot be opened" or "damaged". It
+is neither. To open it anyway:
+
+1. Right-click (or Ctrl-click) Colophon.app, choose **Open**.
+2. In the dialog, click **Open** again.
+3. That's it, and macOS remembers the choice: next time it opens normally.
+
+If the buttons above do not appear (macOS Sequoia and later), go to
+**System Settings → Privacy & Security**, scroll down, and click
+**Open Anyway** next to the Colophon line.
+
+### Build from source
 
 Requirements: a stable Rust toolchain, Node 20 or newer, and the
 [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform.

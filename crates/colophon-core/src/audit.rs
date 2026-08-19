@@ -368,28 +368,48 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
         })
         .collect();
 
-    // -- légendes
-    let legende_manquante = match premiere_photo(&album) {
-        Some(i) if album.spreads[i].caption.is_none() => vec![Finding {
-            planche: i + 1,
-            case_idx: None,
-            src: None,
-            info: "l'album s'ouvre sans légende de chapitre".into(),
-        }],
-        _ => Vec::new(),
-    };
-    let legende_sur_photo = album
+    // -- légendes : les deux compteurs lisent la hauteur signée. Une bande
+    // déclarée (positive) qui reste vide imprimerait un blanc réservé pour
+    // rien ; une hauteur négative (surimpression déclarée, ou tous les
+    // emplacements libres recouverts) imprime le texte sur une photo.
+    let mut legende_manquante: Vec<Finding> = album
         .spreads
         .iter()
         .enumerate()
-        .filter(|(si, s)| {
-            s.caption.is_some() && pdf::caption_anchor_free(&rects_of[*si], &g).is_none()
+        .filter(|(_, s)| {
+            s.caption.is_none()
+                && crate::gabarit::spec(&s.template).is_some_and(|sp| sp.legende > 0.0)
         })
         .map(|(si, _)| Finding {
             planche: si + 1,
             case_idx: None,
             src: None,
-            info: "tous les emplacements de légende sont recouverts".into(),
+            info: "le gabarit réserve une bande de légende, restée vide".into(),
+        })
+        .collect();
+    if let Some(i) = premiere_photo(&album) {
+        if album.spreads[i].caption.is_none() {
+            legende_manquante.push(Finding {
+                planche: i + 1,
+                case_idx: None,
+                src: None,
+                info: "l'album s'ouvre sans légende de chapitre".into(),
+            });
+        }
+    }
+    let legende_sur_photo = album
+        .spreads
+        .iter()
+        .enumerate()
+        .filter(|(si, s)| {
+            s.caption.is_some()
+                && pdf::caption_height(&s.template, &rects_of[*si], &g) < 0.0
+        })
+        .map(|(si, _)| Finding {
+            planche: si + 1,
+            case_idx: None,
+            src: None,
+            info: "la légende imprimerait sur une photo".into(),
         })
         .collect();
 

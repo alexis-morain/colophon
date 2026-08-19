@@ -320,7 +320,7 @@ pub fn check(
         if !porte_legende {
             continue;
         }
-        let p = pdf::caption_anchor(&rects, &g);
+        let p = pdf::caption_anchor(&spread.template, &rects, &g);
         let marge = distance_au_rognage(p.x, p.y, &g, album.bleed_mm);
         if marge + 1e-9 < profil.safe_mm {
             defauts.push(Defaut {

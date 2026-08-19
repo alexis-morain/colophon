@@ -15,6 +15,10 @@ export type DumpTemplate = {
   caption: number[];
   /** Caption anchor per photo count, index = count, 0..=capacity. */
   captions: number[][];
+  /** Signed caption height, mm: positive a band under the frame, negative
+   *  an overlay on the photo, zero the free-spot hunt. The anchors above
+   *  already account for it; the sign travels for the picker and badges. */
+  legende: number;
 };
 
 export type Dump = {

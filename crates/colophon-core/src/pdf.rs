@@ -189,7 +189,7 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
         .iter()
         .map(|(name, n)| {
             let rects = slots_for(name, *n, &g);
-            let at = caption_anchor(&rects, &g);
+            let at = caption_anchor(name, &rects, &g);
             let slots: Vec<[f64; 4]> = rects.iter().map(|r| [r.x, r.y, r.w, r.h]).collect();
             // The caption anchor moves with the rectangles, and a spread may
             // hold fewer photos than its template's capacity: one anchor per
@@ -197,7 +197,7 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
             let captions: Vec<[f64; 2]> = (0..=*n)
                 .map(|k| {
                     let r = slots_for(name, k, &g);
-                    let a = caption_anchor(&r, &g);
+                    let a = caption_anchor(name, &r, &g);
                     [a.x, a.y]
                 })
                 .collect();
@@ -207,6 +207,7 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
                     "slots": slots,
                     "caption": [at.x, at.y],
                     "captions": captions,
+                    "legende": crate::gabarit::spec(name).map_or(0.0, |s| s.legende),
                 }),
             )
         })
@@ -416,11 +417,64 @@ fn caption_candidates(g: &SpreadGeometry) -> [Point; 4] {
     ]
 }
 
-/// Where the chapter caption goes: the first spot no image covers, tried in
-/// reading order. A caption printed over a full-bleed photo is unreadable,
-/// and moving it costs nothing next to adding a plaque behind it.
-pub fn caption_anchor(rects: &[Rect], g: &SpreadGeometry) -> Point {
-    caption_anchor_free(rects, g).unwrap_or_else(|| caption_candidates(g)[0])
+/// Where the chapter caption goes, driven by the template's signed caption
+/// height. A declared band (positive) hangs the baseline under the lifted
+/// frame, like a photo caption under its slot; a declared overlay (negative)
+/// prints at the reading-order spot without hunting; zero keeps the historic
+/// rule: the first spot no image covers, because a caption printed over a
+/// full-bleed photo is unreadable and moving it costs nothing next to adding
+/// a plaque behind it.
+pub fn caption_anchor(template: &str, rects: &[Rect], g: &SpreadGeometry) -> Point {
+    caption_anchor_of(crate::gabarit::spec(template), rects, g)
+}
+
+/// `caption_anchor` for a spec already in hand (tests build synthetic ones).
+pub fn caption_anchor_of(
+    spec: Option<&crate::gabarit::Spec>,
+    rects: &[Rect],
+    g: &SpreadGeometry,
+) -> Point {
+    let declared = spec.map_or(0.0, |s| s.legende);
+    let c = caption_candidates(g);
+    if declared > 0.0 {
+        // The band under the frame: the interpreter lifted the slots, the
+        // baseline drops under the lowest one like a photo caption does.
+        let bas = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
+        if bas.is_finite() {
+            return Point { x: c[0].x, y: bas - PHOTO_CAPTION_DROP_MM };
+        }
+    }
+    if declared < 0.0 {
+        return c[0];
+    }
+    caption_anchor_free(rects, g).unwrap_or(c[0])
+}
+
+/// The signed caption height of a spread, in millimetres: positive means the
+/// caption sits clear of every photo (a declared band, or a free margin spot
+/// found), negative means it prints over one (a declared overlay, or every
+/// candidate covered). One number instead of two rules: the linter's caption
+/// counters read its sign.
+pub fn caption_height(template: &str, rects: &[Rect], g: &SpreadGeometry) -> f64 {
+    caption_height_of(crate::gabarit::spec(template), rects, g)
+}
+
+/// `caption_height` for a spec already in hand (tests build synthetic ones).
+pub fn caption_height_of(
+    spec: Option<&crate::gabarit::Spec>,
+    rects: &[Rect],
+    g: &SpreadGeometry,
+) -> f64 {
+    let declared = spec.map_or(0.0, |s| s.legende);
+    if declared != 0.0 {
+        return declared;
+    }
+    // The hunt's verdict, carried as the ground the caption box covers.
+    let h = CAPTION_SIZE_PT / MM_TO_PT * 1.35;
+    match caption_anchor_free(rects, g) {
+        Some(_) => h,
+        None => -h,
+    }
 }
 
 /// Share of the margin kept between a chapter caption and the trimmed edge.
@@ -709,7 +763,7 @@ impl PdfWriter {
         }
 
         if let Some(caption) = &spread.caption {
-            let at = caption_anchor(&rects, &self.geom);
+            let at = caption_anchor(&spread.template, &rects, &self.geom);
             text_op(&mut content, at.x, at.y, SPREAD_CAPTION_SIZE_PT, INK, caption);
         }
 
@@ -835,6 +889,45 @@ impl PdfWriter {
 mod tests {
     use super::*;
     use crate::model::{Size, Slot};
+
+    /// One number carries the caption verdict: declared values pass through
+    /// sign first, and the zero case keeps the historic hunt (positive on a
+    /// free spot, negative when every candidate is covered).
+    #[test]
+    fn la_hauteur_signee_porte_le_verdict() {
+        let g = SpreadGeometry { media_w: 426.0, media_h: 216.0, margin: 14.0, gutter: 7.0, bleed: 3.0 };
+        assert!(caption_height_of(None, &[], &g) > 0.0);
+        let tout = [Rect { x: 0.0, y: 0.0, w: g.media_w, h: g.media_h }];
+        assert!(caption_height_of(None, &tout, &g) < 0.0);
+        let duo = crate::gabarit::spec("duo").unwrap();
+        let bande = crate::gabarit::Spec { legende: 8.0, ..duo.clone() };
+        let sur = crate::gabarit::Spec { legende: -6.0, ..duo.clone() };
+        assert_eq!(caption_height_of(Some(&bande), &tout, &g), 8.0);
+        assert_eq!(caption_height_of(Some(&sur), &[], &g), -6.0);
+    }
+
+    /// The anchor follows the sign: a band hangs the baseline under the
+    /// lifted frame, an overlay takes the reading-order spot without
+    /// hunting, zero still hunts.
+    #[test]
+    fn l_ancre_suit_le_signe() {
+        let g = SpreadGeometry { media_w: 426.0, media_h: 216.0, margin: 14.0, gutter: 7.0, bleed: 3.0 };
+        let duo = crate::gabarit::spec("duo").unwrap();
+
+        let bande = crate::gabarit::Spec { legende: 8.0, ..duo.clone() };
+        let rects = crate::gabarit::slots(&bande, 2, &g);
+        let bas = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
+        let at = caption_anchor_of(Some(&bande), &rects, &g);
+        assert!((at.y - (bas - PHOTO_CAPTION_DROP_MM)).abs() < 1e-9);
+
+        // A photo over the first candidate spot: the hunt moves to the next
+        // one, the declared overlay stays put.
+        let bas_gauche = [Rect { x: 0.0, y: 0.0, w: g.media_w / 2.0, h: g.media_h / 2.0 }];
+        let sur = crate::gabarit::Spec { legende: -6.0, ..duo.clone() };
+        let chasse = caption_anchor_of(None, &bas_gauche, &g);
+        let surimpression = caption_anchor_of(Some(&sur), &bas_gauche, &g);
+        assert!(chasse.x > surimpression.x);
+    }
 
     /// Write a one-spread album and hand back its bytes plus the reopened
     /// document. Everything below reads the file the writer actually

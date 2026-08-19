@@ -56,6 +56,12 @@ pub struct Spec {
     pub gauche: Page,
     pub droite: Page,
     pub ordre: Ordre,
+    /// Signed caption height, in millimetres. Positive reserves a white band
+    /// under the frame (the cells lift to clear it, the baseline hangs in
+    /// it); negative declares an overlay printed over the photo; zero leaves
+    /// the caption to the free-spot hunt in `pdf::caption_anchor`. One
+    /// number, and the linter's two caption counters read its sign.
+    pub legende: f64,
 }
 
 impl Spec {
@@ -70,7 +76,16 @@ impl Spec {
 /// Order matters: the picker and the dump keep it.
 fn familles() -> Vec<Spec> {
     let une = |ratio: Option<f64>| Page::Grille { cols: 1, rangs: 1, ratio };
-    let v = |nom, capacite, gauche, droite, ordre| Spec { nom, capacite, gauche, droite, ordre };
+    // The historic catalogue declares no band and no overlay: its captions
+    // keep hunting the free margin spots, exactly as before the sign existed.
+    let v = |nom, capacite, gauche, droite, ordre| Spec {
+        nom,
+        capacite,
+        gauche,
+        droite,
+        ordre,
+        legende: 0.0,
+    };
     use Ordre::*;
     use Page::*;
     vec![
@@ -163,6 +178,7 @@ pub fn catalogue() -> &'static [Spec] {
                 gauche: f.droite,
                 droite: f.gauche,
                 ordre: f.ordre,
+                legende: f.legende,
             });
             out.push(f);
             out.extend(miroir);
@@ -182,12 +198,29 @@ pub fn slots(spec: &Spec, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
     if spec.capacite == 0 {
         return Vec::new();
     }
+    // A positive caption height lifts the content off a band under the
+    // frame; overlay (negative) and hunt (zero) leave the geometry alone.
+    let bande = spec.legende.max(0.0);
     let page = |droite: bool, p: &Page| -> Vec<Rect> {
         match p {
             Page::Vide => Vec::new(),
-            Page::Pleine => vec![full_page(droite, g)],
+            Page::Pleine => {
+                let mut r = full_page(droite, g);
+                if bande > 0.0 {
+                    // What must survive the cut is measured from the cut: a
+                    // full-bleed page with a band stops bleeding at the
+                    // bottom, `bande` millimetres above the trim line.
+                    let bas = g.bleed + bande;
+                    r.h -= bas - r.y;
+                    r.y = bas;
+                }
+                vec![r]
+            }
             Page::Grille { cols, rangs, ratio } => {
-                let cells = grid(page_box(droite, g), *cols, *rangs, g.gutter);
+                let mut b = page_box(droite, g);
+                b.y += bande;
+                b.h -= bande;
+                let cells = grid(b, *cols, *rangs, g.gutter);
                 match ratio {
                     Some(r) => cells.into_iter().map(|c| fitted(c, *r)).collect(),
                     None => cells,
@@ -222,6 +255,61 @@ pub fn slots(spec: &Spec, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn geom() -> SpreadGeometry {
+        SpreadGeometry { media_w: 426.0, media_h: 216.0, margin: 14.0, gutter: 7.0, bleed: 3.0 }
+    }
+
+    /// The historic catalogue declares no band and no overlay: its geometry
+    /// must not move an atom. The day a generated band template earns its
+    /// place (1.5), it enters beside these, not instead of them.
+    #[test]
+    fn le_catalogue_historique_ne_declare_aucune_legende() {
+        assert!(catalogue().iter().all(|s| s.legende == 0.0));
+    }
+
+    /// A positive height lifts the cells off a band under the frame: same
+    /// left edge, same width, the bottom raised by exactly the band.
+    #[test]
+    fn la_bande_positive_souleve_les_cases() {
+        let g = geom();
+        let duo = spec("duo").unwrap();
+        let avant = slots(duo, 2, &g);
+        let bande = Spec { legende: 8.0, ..duo.clone() };
+        let apres = slots(&bande, 2, &g);
+        for (a, b) in avant.iter().zip(&apres) {
+            assert!((b.y - (a.y + 8.0)).abs() < 1e-9);
+            assert!((b.h - (a.h - 8.0)).abs() < 1e-9);
+            assert_eq!(a.x, b.x);
+            assert_eq!(a.w, b.w);
+        }
+    }
+
+    /// What must survive the cut is measured from the cut: a full-bleed page
+    /// with a band stops exactly `legende` above the trim line, and still
+    /// bleeds at the top.
+    #[test]
+    fn la_bande_arrete_le_plein_fond_au_dessus_de_la_coupe() {
+        let g = geom();
+        let bande = Spec { legende: 8.0, ..spec("full1").unwrap().clone() };
+        let r = slots(&bande, 1, &g)[0];
+        assert!((r.y - (g.bleed + 8.0)).abs() < 1e-9);
+        assert!((r.y + r.h - g.media_h).abs() < 1e-9);
+    }
+
+    /// A declared overlay prints over the photo: the geometry is exactly the
+    /// zero-height one, only the caption's place and the linter's verdict
+    /// change.
+    #[test]
+    fn la_surimpression_ne_touche_pas_la_geometrie() {
+        let g = geom();
+        let duo = spec("duo").unwrap();
+        let avant = slots(duo, 2, &g);
+        let sur = Spec { legende: -6.0, ..duo.clone() };
+        for (a, b) in avant.iter().zip(&slots(&sur, 2, &g)) {
+            assert_eq!((a.x, a.y, a.w, a.h), (b.x, b.y, b.w, b.h));
+        }
+    }
 
     /// The mirror is derived, never written: every asymmetric family has
     /// its `_verso` right behind it, symmetric ones none.

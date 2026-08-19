@@ -26,6 +26,7 @@ const GROUPES: [Cle, [string | Cle, Cle][]][] = [
       ["⇧⌘← ⇧⌘→", "racc.envoyer.photo"],
       ["racc.k.suppr.livre", "racc.retirer.photo"],
       ["Tab", "racc.tab.legende"],
+      ["G · ⇧G", "racc.gabarit"],
     ],
   ],
   [

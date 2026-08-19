@@ -322,6 +322,28 @@ export async function legendeProposee(planche: number): Promise<string | null> {
   return res.json();
 }
 
+/** Templates the spread can switch to right now, count and orientation
+ *  both fitting: the engine's one rule (`gabarit::compatibles`), photos
+ *  passed live so an unsaved edit filters right. Null when the engine
+ *  cannot answer (no server, unreadable thumbs): the caller then filters
+ *  nothing rather than guessing. */
+export async function gabaritsCompatibles(
+  srcs: string[],
+): Promise<string[] | null> {
+  try {
+    if (inTauri) {
+      return await invoke<string[]>("gabarits_compatibles", { srcs });
+    }
+    const res = await fetch(
+      `/__dev/gabarits?srcs=${encodeURIComponent(JSON.stringify(srcs))}`,
+    );
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 /** Face-anchored focal point, recomputed on the thumbnail. The crop
  *  editor's double-click recentres on it. */
 export async function detectedFocal(src: string): Promise<[number, number]> {

@@ -153,6 +153,23 @@ fn caption_suggestion(src: String, state: State<'_, AppState>) -> Result<Option<
         .then(|| colophon_core::build::date_fr(meta.taken.date(), true)))
 }
 
+/// Templates the spread can switch to, count and orientation both fitting:
+/// the engine's one rule (`gabarit::compatibles`). The photos travel as
+/// their srcs, live from the editor, so an unsaved edit filters right.
+#[tauri::command]
+fn gabarits_compatibles(
+    srcs: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    colophon_core::gabarit::compatibles_srcs(&dir, &srcs)
+        .map(|noms| noms.into_iter().map(String::from).collect())
+        .map_err(|e| format!("{e:#}"))
+}
+
 /// The caption proposed for a spread whose caption field is empty: the
 /// spread's town when it diverges from its chapter, its day when the
 /// chapter covers several. Computed in core from the originals' EXIF
@@ -1101,6 +1118,7 @@ pub fn run() {
             cancel_export,
             caption_suggestion,
             proposition_legende,
+            gabarits_compatibles,
             geometrie,
             geometrie_format,
             detected_focal,

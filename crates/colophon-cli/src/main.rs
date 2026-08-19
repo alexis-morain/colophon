@@ -1,6 +1,6 @@
 //! Command line shell over `colophon-core`.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use colophon_core::{build_album, format, pdf, Album, BuildOptions};
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "print", "cover", "audit", "reprise", "prevol", "sheets", "proposition"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "print", "cover", "audit", "reprise", "prevol", "sheets", "proposition", "gabarits"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -112,6 +112,13 @@ struct Cli {
     /// Feeds the dev album server, like --profils-json.
     #[arg(long, value_name = "PLANCHE", hide = true)]
     proposition: Option<usize>,
+
+    /// Print the templates a spread holding SRCS (a JSON array of photo
+    /// sources, in slot order) can switch to, count and orientation both
+    /// fitting, as a JSON array of names. Feeds the dev album server, like
+    /// --proposition; the srcs travel so an unsaved edit filters right.
+    #[arg(long, value_name = "SRCS", hide = true)]
+    gabarits: Option<String>,
 }
 
 /// Built once at startup so `--help` can show the format table.
@@ -180,6 +187,14 @@ fn main() -> Result<()> {
             .checked_sub(1)
             .and_then(|i| colophon_core::legende::proposition(&album, i));
         println!("{}", serde_json::to_string(&p)?);
+        return Ok(());
+    }
+
+    if let Some(srcs) = &cli.gabarits {
+        let srcs: Vec<String> =
+            serde_json::from_str(srcs).context("--gabarits attend un tableau JSON de src")?;
+        let noms = colophon_core::gabarit::compatibles_srcs(&cli.out, &srcs)?;
+        println!("{}", serde_json::to_string(&noms)?);
         return Ok(());
     }
 

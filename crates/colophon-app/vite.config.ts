@@ -155,6 +155,24 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // The templates a spread can switch to, count and orientation both
+      // fitting: the engine's one rule. The srcs travel as a JSON array so
+      // an unsaved edit filters right.
+      server.middlewares.use("/__dev/gabarits", (req, res) => {
+        const srcs =
+          new URL(req.url ?? "", "http://x").searchParams.get("srcs") ?? "[]";
+        try {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            execFileSync(engineBinary, ["--gabarits", srcs, "-o", dir], {
+              encoding: "utf8",
+            }),
+          );
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
       server.middlewares.use("/__dev/thumb", (req, res) => {
         try {
           const src = new URL(req.url ?? "", "http://x").searchParams.get("src");

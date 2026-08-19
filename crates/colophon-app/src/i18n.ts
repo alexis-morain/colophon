@@ -509,6 +509,7 @@ export const FR = {
 
   // -- les familles de gabarits (sélecteur, ligne de contexte)
   "gabarit.titre": "Gabarit de la planche",
+  "gabarit.cycle": "Gabarit : {nom}",
   "gabarit.photos": "{n} photos",
   "gabarit.photos.une": "1 photo",
   "gabarit.full1": "Pleine page",
@@ -553,6 +554,7 @@ export const FR = {
   "racc.envoyer.photo": "Envoyer la photo sur la planche voisine",
   "racc.retirer.photo": "Retirer la photo sélectionnée",
   "racc.tab.legende": "Poser la légende proposée",
+  "racc.gabarit": "Gabarit suivant, précédent",
   "racc.deplacer.cadrage": "Déplacer le cadrage",
   "racc.zoomer": "Zoomer, dézoomer",
   "racc.remplissage": "Revenir au remplissage exact",
@@ -1057,6 +1059,7 @@ export const EN: Record<Cle, string> = {
   "couverture.picker.titre": "Cover photo, from the album",
 
   "gabarit.titre": "Template of the spread",
+  "gabarit.cycle": "Template: {nom}",
   "gabarit.photos": "{n} photos",
   "gabarit.photos.une": "1 photo",
   "gabarit.full1": "Full page",
@@ -1100,6 +1103,7 @@ export const EN: Record<Cle, string> = {
   "racc.envoyer.photo": "Send the photo to the next spread",
   "racc.retirer.photo": "Remove the selected photo",
   "racc.tab.legende": "Take the proposed caption",
+  "racc.gabarit": "Next, previous template",
   "racc.deplacer.cadrage": "Move the crop",
   "racc.zoomer": "Zoom in, out",
   "racc.remplissage": "Back to the exact fill",

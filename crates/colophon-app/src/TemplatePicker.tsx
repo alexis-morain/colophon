@@ -10,11 +10,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Album, mediaCanvas, slotsFor, Spread, templateCapacity, templates } from "./album";
+import { gabaritsCompatibles } from "./bridge";
 import { templateChoices } from "./edits";
 import { Cle, FR, t } from "./i18n";
 
 /** The family behind a template name, verso suffix folded away. */
-function familyOf(template: string): string {
+export function familyOf(template: string): string {
   return template.endsWith("_verso")
     ? template.slice(0, -"_verso".length)
     : template;
@@ -30,7 +31,7 @@ export function templateLabel(template: string): string {
 
 /** The face a family takes on this spread: verso on odd spreads when the
  *  variant exists, like the Composer's own flip. */
-function faceFor(family: string, index: number): string {
+export function faceFor(family: string, index: number): string {
   const verso = `${family}_verso`;
   if (index % 2 === 1 && templates().some(([t]: [string, number]) => t === verso)) return verso;
   return family;
@@ -49,7 +50,23 @@ export function TemplatePicker({
   onPick: (template: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // The compatible template names, asked to the engine when the panel
+  // opens; null while it answers (or when it cannot), which filters
+  // nothing: an honest picker beats an empty one.
+  const [compat, setCompat] = useState<Set<string> | null>(null);
   const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let dead = false;
+    setCompat(null);
+    void gabaritsCompatibles(spread.slots.map((s) => s.src)).then((noms) => {
+      if (!dead && noms) setCompat(new Set(noms.map(familyOf)));
+    });
+    return () => {
+      dead = true;
+    };
+  }, [open, spread]);
 
   // Escape and outside clicks close the panel before anything else reacts.
   useEffect(() => {
@@ -78,10 +95,20 @@ export function TemplatePicker({
   }, []);
 
   // One entry per family: the verso variants merge into their family and
-  // the parity picks the face at the moment of the choice.
+  // the parity picks the face at the moment of the choice. The engine's
+  // compatibility list then keeps only the layouts these photos can take,
+  // orientation included; the current family always stays visible, because
+  // the spread's own state is never a dead end.
   const families: [string, number][] = [];
   for (const [t, cap] of templateChoices(spread)) {
     const family = familyOf(t);
+    if (
+      compat &&
+      !compat.has(family) &&
+      family !== familyOf(spread.template)
+    ) {
+      continue;
+    }
     if (!families.some(([f]) => f === family)) families.push([family, cap]);
   }
 

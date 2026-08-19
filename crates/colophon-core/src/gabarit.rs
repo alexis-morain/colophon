@@ -14,6 +14,9 @@
 //! (`Densite::offertes` is the model).
 
 use crate::pdf::{fitted, full_page, grid, page_box, Rect, SpreadGeometry};
+use anyhow::{Context, Result};
+use std::collections::HashMap;
+use std::path::Path;
 
 /// Cell aspect of the margined landscape cells (stacks, quads).
 pub const CELL_LANDSCAPE: f64 = 4.0 / 3.0;
@@ -252,6 +255,56 @@ pub fn slots(spec: &Spec, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
     v
 }
 
+/// Templates a spread can switch to right now, judged the way the linter
+/// counts: the capacity fits the photo count (a smaller one keeps the head
+/// and drops the tail, exactly like the switch does), and no kept photo
+/// would betray its cell's orientation past `audit::ASPECT_BETRAYAL`, the
+/// threshold the composer places with. One rule, engine side: the picker
+/// and the keyboard cycle both read this list, neither rewrites it.
+pub fn compatibles(aspects: &[f64], g: &SpreadGeometry) -> Vec<&'static str> {
+    catalogue()
+        .iter()
+        .filter(|s| s.capacite > 0 && s.capacite <= aspects.len())
+        .filter(|s| {
+            slots(s, s.capacite, g).iter().zip(aspects).all(|(r, a)| {
+                let c = r.w / r.h;
+                (a / c).max(c / a) <= crate::audit::ASPECT_BETRAYAL
+            })
+        })
+        .map(|s| s.nom)
+        .collect()
+}
+
+/// `compatibles` for photos of a saved album, named by their `src`, in
+/// slot order. The aspects are read on the thumbnail headers (a thumbnail
+/// keeps its photo's shape and a header costs nothing), the geometry is
+/// the album's own. The live spread travels as the src list, so an
+/// unsaved edit still filters right. Feeds the Tauri command and
+/// `--gabarits`.
+pub fn compatibles_srcs(dir: &Path, srcs: &[String]) -> Result<Vec<&'static str>> {
+    let album: crate::model::Album = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("album.json"))
+            .with_context(|| format!("lecture de {}", dir.join("album.json").display()))?,
+    )
+    .context("album.json illisible")?;
+    let thumbs: HashMap<String, String> =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("thumbs.json"))?)
+            .context("thumbs.json illisible")?;
+    let aspects = srcs
+        .iter()
+        .map(|src| {
+            let name = thumbs
+                .get(src)
+                .with_context(|| format!("{src} absent de thumbs.json"))?;
+            let (w, h) =
+                image::image_dimensions(dir.join(".cache").join("thumbs").join(name))
+                    .with_context(|| format!("vignette illisible pour {src}"))?;
+            Ok(f64::from(w) / f64::from(h))
+        })
+        .collect::<Result<Vec<f64>>>()?;
+    Ok(compatibles(&aspects, &crate::pdf::geometry(&album)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,6 +362,25 @@ mod tests {
         for (a, b) in avant.iter().zip(&slots(&sur, 2, &g)) {
             assert_eq!((a.x, a.y, a.w, a.h), (b.x, b.y, b.w, b.h));
         }
+    }
+
+    /// The list follows the count and the orientation: a template only
+    /// enters when its capacity fits and no kept photo would betray its
+    /// cell past the linter's threshold.
+    #[test]
+    fn compatibles_suit_le_nombre_et_l_orientation() {
+        let g = geom();
+        let portraits = [0.75, 0.75];
+        let c = compatibles(&portraits, &g);
+        assert!(c.contains(&"duo_portrait"));
+        assert!(c.contains(&"solo"), "une capacité moindre juge les photos gardées");
+        assert!(!c.contains(&"duo_pano"), "un portrait trahirait la case panorama");
+        assert!(!c.contains(&"trio"), "trois cases pour deux photos, jamais de trou");
+        let panos = [2.0, 2.0];
+        let cp = compatibles(&panos, &g);
+        assert!(cp.contains(&"duo_pano"));
+        assert!(!cp.contains(&"duo_portrait"));
+        assert!(compatibles(&[], &g).is_empty());
     }
 
     /// The mirror is derived, never written: every asymmetric family has

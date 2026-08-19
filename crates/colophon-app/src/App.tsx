@@ -26,6 +26,7 @@ import {
   pickAlbumFolder,
   pickPhotosFolder,
   Printer,
+  gabaritsCompatibles,
   recomposeAlbum,
   renderCoverPreview,
   renderPdf,
@@ -66,13 +67,14 @@ import {
   setSpreadText,
   spreadOf,
   swapPhotos,
+  templateChoices,
   toggleLock,
   triEntries,
   TriEntry,
 } from "./edits";
 import { BilanView } from "./BilanView";
 import { SpreadView } from "./SpreadView";
-import { TemplatePicker } from "./TemplatePicker";
+import { faceFor, familyOf, TemplatePicker, templateLabel } from "./TemplatePicker";
 import { RevueView, TriView } from "./TriView";
 import { Drawer } from "./Drawer";
 import { PlanchesView, LockGlyph } from "./PlanchesView";
@@ -651,6 +653,36 @@ export default function App() {
     return el !== null && /^(INPUT|TEXTAREA)$/.test(el.tagName);
   };
 
+  // The quick template cycle: G walks the spread through the layouts its
+  // photos can take right now, engine-judged (count and orientation, the
+  // same rule the picker filters on), ⇧G walks back. Exact capacity only:
+  // the cycle never drops a photo; the smaller layouts stay in the picker.
+  const cycleGabarit = (sens: 1 | -1) => {
+    if (!album || view !== "livre" || index < 0) return;
+    const spread = album.spreads[index];
+    if (!spread || templateCapacity(spread.template) === 0) return;
+    void (async () => {
+      const noms = await gabaritsCompatibles(spread.slots.map((s) => s.src));
+      // Engine unreachable: cycle the count-compatible list, which is the
+      // same honest fallback the picker shows.
+      const offerts = (
+        noms ?? templateChoices(spread).map(([nom]) => nom)
+      ).filter((nom) => templateCapacity(nom) === spread.slots.length);
+      const familles: string[] = [];
+      for (const nom of offerts) {
+        const f = familyOf(nom);
+        if (!familles.includes(f)) familles.push(f);
+      }
+      const courante = familyOf(spread.template);
+      const at = familles.indexOf(courante);
+      const suivante =
+        familles[(at + sens + familles.length) % familles.length];
+      if (!suivante || suivante === courante) return;
+      apply((a) => changeTemplate(a, index, faceFor(suivante, index)));
+      setStatus(t("gabarit.cycle", { nom: templateLabel(suivante) }));
+    })();
+  };
+
   // Every command of the app, by name. The window's keydown handler and the
   // native menu both land here, so a chord and its menu item are one code
   // path with one guard each.
@@ -708,6 +740,8 @@ export default function App() {
         window.dispatchEvent(new Event("colophon:gabarit"));
       }
     },
+    "gabarit-suivant": () => cycleGabarit(1),
+    "gabarit-precedent": () => cycleGabarit(-1),
     dupliquer: () => {
       if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
       apply((a) => duplicateSpread(a, index));
@@ -1271,6 +1305,11 @@ export default function App() {
       }
       if (key === "p" && !e.metaKey) {
         setDrawerOpen((o) => !o);
+        return;
+      }
+      if (key === "g" && !e.metaKey && !e.altKey && !e.ctrlKey) {
+        e.preventDefault();
+        fire("kbd", e.shiftKey ? "gabarit-precedent" : "gabarit-suivant");
         return;
       }
       const step = (d: number) =>

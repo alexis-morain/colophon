@@ -112,7 +112,7 @@ pub struct Counters {
 }
 
 impl Counters {
-    fn all(&self) -> [&Counter; 10] {
+    pub(crate) fn all(&self) -> [&Counter; 10] {
         [
             &self.visage_coupe,
             &self.orientation_trahie,
@@ -139,20 +139,21 @@ pub struct AuditReport {
 }
 
 /// What the audit knows about one photo, all measured on its cached
-/// thumbnail except the original pixel size.
-struct PhotoInfo {
-    w: f64,
-    h: f64,
-    dhash: u64,
-    phash: u64,
-    colorsig: [u8; 12],
-    score: f64,
-    faces: Vec<[f64; 4]>,
+/// thumbnail except the original pixel size. The bench (`banc`) reads the
+/// same measurements to judge candidate templates, hence the crate scope.
+pub(crate) struct PhotoInfo {
+    pub(crate) w: f64,
+    pub(crate) h: f64,
+    pub(crate) dhash: u64,
+    pub(crate) phash: u64,
+    pub(crate) colorsig: [u8; 12],
+    pub(crate) score: f64,
+    pub(crate) faces: Vec<[f64; 4]>,
     /// Original size, EXIF orientation applied. None when the source folder
     /// is unreachable: the resolution counter then skips with a note.
-    orig: Option<(u32, u32)>,
+    pub(crate) orig: Option<(u32, u32)>,
     /// Capture time, when the original and its EXIF are reachable.
-    taken: Option<chrono::NaiveDateTime>,
+    pub(crate) taken: Option<chrono::NaiveDateTime>,
 }
 
 pub fn audit(dir: &Path) -> Result<AuditReport> {
@@ -161,9 +162,6 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
             .with_context(|| format!("lecture de {}", dir.join("album.json").display()))?,
     )
     .context("album.json illisible")?;
-    let thumbs: HashMap<String, String> =
-        serde_json::from_str(&fs::read_to_string(dir.join("thumbs.json"))?)
-            .context("thumbs.json illisible")?;
 
     let root = PathBuf::from(&album.root);
     let root_ok = root.is_dir();
@@ -184,7 +182,31 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
     srcs.sort();
     srcs.dedup();
 
-    let infos: HashMap<String, PhotoInfo> = srcs
+    let infos = mesure_photos(dir, &root, root_ok, &srcs)?;
+    let compteurs = compteurs(&album, &infos, &pdf::geometry(&album));
+    let ok = compteurs.all().iter().all(|c| c.passes());
+
+    Ok(AuditReport {
+        album: dir.display().to_string(),
+        planches: album.spreads.len(),
+        ok,
+        notes,
+        compteurs,
+    })
+}
+
+/// Measure every photo an album (or a set of albums sharing a thumbnail
+/// cache) touches: the read half of the audit, reusable by the bench.
+pub(crate) fn mesure_photos(
+    dir: &Path,
+    root: &Path,
+    root_ok: bool,
+    srcs: &[String],
+) -> Result<HashMap<String, PhotoInfo>> {
+    let thumbs: HashMap<String, String> =
+        serde_json::from_str(&fs::read_to_string(dir.join("thumbs.json"))?)
+            .context("thumbs.json illisible")?;
+    srcs
         .par_iter()
         .map_init(face::new_detector, |det, src| -> Result<(String, PhotoInfo)> {
             let name = thumbs
@@ -223,13 +245,21 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
                 },
             ))
         })
-        .collect::<Result<_>>()?;
+        .collect::<Result<_>>()
+}
 
-    let g = pdf::geometry(&album);
+/// The counting half of the audit: pure and in-memory, given the album, the
+/// measurements and the geometry. The bench re-runs it after every candidate
+/// substitution; `audit` runs it once.
+pub(crate) fn compteurs(
+    album: &Album,
+    infos: &HashMap<String, PhotoInfo>,
+    g: &pdf::SpreadGeometry,
+) -> Counters {
     let rects_of: Vec<Vec<pdf::Rect>> = album
         .spreads
         .iter()
-        .map(|s| pdf::slots_for(&s.template, s.slots.len(), &g))
+        .map(|s| pdf::slots_for(&s.template, s.slots.len(), g))
         .collect();
 
     // -- visage coupé, orientation trahie, sous 300 ppi : par case
@@ -312,7 +342,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
     }
 
     // -- chapitres : délimités par les légendes posées à la composition
-    let chapters = chapter_ranges(&album);
+    let chapters = chapter_ranges(album);
     let orphelins = chapters
         .iter()
         .filter(|r| r.len() == 1)
@@ -387,7 +417,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
             info: "le gabarit réserve une bande de légende, restée vide".into(),
         })
         .collect();
-    if let Some(i) = premiere_photo(&album) {
+    if let Some(i) = premiere_photo(album) {
         if album.spreads[i].caption.is_none() {
             legende_manquante.push(Finding {
                 planche: i + 1,
@@ -403,7 +433,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
         .enumerate()
         .filter(|(si, s)| {
             s.caption.is_some()
-                && pdf::caption_height(&s.template, &rects_of[*si], &g) < 0.0
+                && pdf::caption_height(&s.template, &rects_of[*si], g) < 0.0
         })
         .map(|(si, _)| Finding {
             planche: si + 1,
@@ -413,7 +443,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
         })
         .collect();
 
-    let compteurs = Counters {
+    Counters {
         visage_coupe: Counter::new(0, true, visage),
         orientation_trahie: Counter::new(0, true, orientation),
         doublon_planche: Counter::new(0, true, doublons),
@@ -424,16 +454,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
         legende_manquante: Counter::new(0, true, legende_manquante),
         legende_sur_photo: Counter::new(0, true, legende_sur_photo),
         repetition_gabarit: Counter::new(1, false, repetition),
-    };
-    let ok = compteurs.all().iter().all(|c| c.passes());
-
-    Ok(AuditReport {
-        album: dir.display().to_string(),
-        planches: album.spreads.len(),
-        ok,
-        notes,
-        compteurs,
-    })
+    }
 }
 
 /// Which crop edges cut a face, as edge names. Only edges the crop actually

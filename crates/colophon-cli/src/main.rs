@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "print", "cover", "audit", "reprise", "prevol", "sheets", "proposition", "gabarits"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "print", "cover", "audit", "reprise", "prevol", "sheets", "proposition", "gabarits", "banc_gabarits"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -119,6 +119,13 @@ struct Cli {
     /// --proposition; the srcs travel so an unsaved edit filters right.
     #[arg(long, value_name = "SRCS", hide = true)]
     gabarits: Option<String>,
+
+    /// Run the generated-template bench over composed album directories
+    /// (grouped into reference sets by their source folder) and print the
+    /// verdict as JSON: which enumerated combinations are green on every
+    /// set. Feeds `gabarit::RETENUS` through scripts/banc-gabarits.sh.
+    #[arg(long, value_name = "DIRS", num_args = 1.., hide = true)]
+    banc_gabarits: Vec<PathBuf>,
 }
 
 /// Built once at startup so `--help` can show the format table.
@@ -195,6 +202,23 @@ fn main() -> Result<()> {
             serde_json::from_str(srcs).context("--gabarits attend un tableau JSON de src")?;
         let noms = colophon_core::gabarit::compatibles_srcs(&cli.out, &srcs)?;
         println!("{}", serde_json::to_string(&noms)?);
+        return Ok(());
+    }
+
+    if !cli.banc_gabarits.is_empty() {
+        let t0 = std::time::Instant::now();
+        let rapport =
+            colophon_core::banc::banc(&cli.banc_gabarits, &|line| eprintln!("{line}"))?;
+        eprintln!(
+            "banc en {:.1?} : {} candidats, {} verts, {} recalés, {} sans essai, {} jeu manquant",
+            t0.elapsed(),
+            rapport.candidats,
+            rapport.verts.len(),
+            rapport.recales,
+            rapport.sans_essai,
+            rapport.jeu_manquant
+        );
+        println!("{}", serde_json::to_string_pretty(&rapport)?);
         return Ok(());
     }
 

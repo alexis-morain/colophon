@@ -61,6 +61,13 @@ for fmt in FORMATS:
         for name, spec in geo["templates"].items():
             if not spec["slots"]:
                 continue  # gabarits sans case (vide, texte) : rien à rasteriser
+            # Les gabarits générés (retenus par le banc) passent au raster sur
+            # carré-21 seulement : l'interpréteur est paramétrique et la parité
+            # couvre l'arithmétique des six formats ; rasteriser 350 gabarits
+            # sur six formats doublerait la porte pour re-mesurer le même code.
+            # Le catalogue historique reste contrôlé partout, comme avant.
+            if name.startswith("g_") and fmt != "carre-21":
+                continue
             pdf = os.path.join(td, f"{name}.pdf")
             png = os.path.join(td, f"{name}.png")
             subprocess.check_call(

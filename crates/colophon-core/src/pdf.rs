@@ -145,13 +145,10 @@ pub static TEMPLATES: std::sync::LazyLock<Vec<(&'static str, usize)>> =
 
 pub use crate::gabarit::{CELL_CARRE, CELL_ETROIT, CELL_LANDSCAPE, CELL_PANO, CELL_PORTRAIT};
 
-/// How many photos a template holds.
+/// How many photos a template holds. Resolves through `gabarit::spec`, so
+/// a generated name outside the offered list still answers exactly.
 pub fn template_capacity(name: &str) -> usize {
-    TEMPLATES
-        .iter()
-        .find(|(t, _)| *t == name)
-        .map(|(_, n)| *n)
-        .unwrap_or(1)
+    crate::gabarit::spec(name).map(|s| s.capacite).unwrap_or(1)
 }
 
 /// The template family for a photo count, with its capacity. Counts without
@@ -185,7 +182,12 @@ pub fn fallback_template(current: &str, remaining: usize) -> Option<(String, usi
 /// arithmetic drift silently otherwise.
 pub fn dump_geometry(album: &Album) -> serde_json::Value {
     let g = geometry(album);
-    let templates: serde_json::Map<String, serde_json::Value> = TEMPLATES
+    // The dump speaks for the offered list, not just the historical
+    // catalogue: a retained generated template must reach the editor's
+    // picker and previews through the same single source.
+    let offerts: Vec<(&'static str, usize)> =
+        crate::gabarit::offerts().iter().map(|s| (s.nom, s.capacite)).collect();
+    let templates: serde_json::Map<String, serde_json::Value> = offerts
         .iter()
         .map(|(name, n)| {
             let rects = slots_for(name, *n, &g);
@@ -215,7 +217,7 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
 
     // The catalogue's own order: a JSON map sorts its keys, and the picker
     // shows families in catalogue order, so the order travels separately.
-    let ordre: Vec<serde_json::Value> = TEMPLATES
+    let ordre: Vec<serde_json::Value> = offerts
         .iter()
         .map(|(name, n)| serde_json::json!([name, n]))
         .collect();
@@ -575,7 +577,9 @@ pub fn render_template_sheets(album: &Album, dir: &Path) -> Result<Vec<std::path
     use crate::model::{Slot, Spread};
     std::fs::create_dir_all(dir)?;
     let mut out = Vec::new();
-    for (name, n) in TEMPLATES.iter() {
+    // The offered list, not just the historical catalogue: a retained
+    // generated template is exportable, so its real render is checked too.
+    for (name, n) in crate::gabarit::offerts().iter().map(|s| (&s.nom, &s.capacite)) {
         if *n == 0 {
             continue; // photo-less templates have no cells to check
         }

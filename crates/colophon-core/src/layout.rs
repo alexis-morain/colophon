@@ -639,10 +639,25 @@ fn window(p: &Photo, cell: &Rect) -> (f64, f64, f64, f64) {
 
 /// Significant face extent along one axis, in pixels: (lo, hi).
 fn face_extent(p: &Photo, horizontal: bool) -> Option<(f64, f64)> {
-    let (iw, ih) = (f64::from(p.analysis.width), f64::from(p.analysis.height));
+    face_extent_dims(
+        &p.faces,
+        f64::from(p.analysis.width),
+        f64::from(p.analysis.height),
+        horizontal,
+    )
+}
+
+/// `face_extent` on raw dimensions and boxes: the bench reasons from the
+/// audit's measurements instead of a pipeline `Photo`, same arithmetic.
+pub(crate) fn face_extent_dims(
+    faces: &[[f64; 4]],
+    iw: f64,
+    ih: f64,
+    horizontal: bool,
+) -> Option<(f64, f64)> {
     let mut lo = f64::MAX;
     let mut hi = f64::MIN;
-    for b in &p.faces {
+    for b in faces {
         if b[2] < FACE_MIN_SHARE {
             continue;
         }
@@ -660,7 +675,7 @@ fn face_extent(p: &Photo, horizontal: bool) -> Option<(f64, f64)> {
 /// Window offset along one axis that keeps the faces clear of the cropped
 /// edges, and whether it fully can. Anchoring the window on an image border
 /// un-crops that border, which is why an edge face can still be safe.
-fn safe_offset(
+pub(crate) fn safe_offset(
     total: f64,
     visible: f64,
     extent: Option<(f64, f64)>,

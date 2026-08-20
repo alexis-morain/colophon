@@ -663,6 +663,33 @@ input[type="radio"] {
   overflow: auto;
 }
 
+/* ---- the canvas renderer ------------------------------------------------ */
+
+/* One element for the whole spread, behind the switch in Preferences. It
+   covers the media box exactly, so a pointer position in its own pixels is
+   a position in the scene's millimetres after one division. `touch-action`
+   is off because the crop drag owns the pointer, the way the selected case
+   always has. */
+.spread-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  touch-action: none;
+}
+
+/* The chips a case wears — resolution, night-dark, zoom readout — kept in
+   the DOM under both renderers: each one carries its remedy in a title, and
+   a canvas has no tooltip. Positioned on the case, not on a photograph. */
+.slot-chips {
+  position: absolute;
+  pointer-events: none;
+}
+
+.slot-chips > * {
+  pointer-events: auto;
+}
+
 /* ---- what the keyboard holds the page by -------------------------------- */
 
 /* One focusable box per object of the scene, in reading order, over the

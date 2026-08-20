@@ -169,6 +169,11 @@ export const FR = {
   "prefs.theme": "Apparence",
   "prefs.theme.note":
     "Colophon suit le réglage du système. Le papier des planches, lui, ne change jamais de teinte : c’est du papier.",
+  "prefs.rendu": "Rendu des planches",
+  "prefs.rendu.dom": "Éléments",
+  "prefs.rendu.canvas": "Canvas",
+  "prefs.rendu.note":
+    "Les deux dessinent la même planche, à partir des mêmes objets ; ils ne diffèrent que par la façon dont elle arrive à l’écran. Le canvas est en cours d’évaluation : si votre machine peine à faire glisser un recadrage, essayez-le. Le PDF ne change jamais, quel que soit ce réglage.",
 
   // -- création, composition, formats
   "setup.nouvel": "Nouvel album",
@@ -765,6 +770,11 @@ export const EN: Record<Cle, string> = {
   "prefs.theme": "Appearance",
   "prefs.theme.note":
     "Colophon follows the system setting. The paper of the spreads never changes shade: it is paper.",
+  "prefs.rendu": "How spreads are drawn",
+  "prefs.rendu.dom": "Elements",
+  "prefs.rendu.canvas": "Canvas",
+  "prefs.rendu.note":
+    "Both draw the same spread, from the same objects; they differ only in how it reaches the screen. The canvas is under evaluation: if dragging a crop feels heavy on your machine, try it. The PDF never changes, whichever this is set to.",
 
   "setup.nouvel": "New album",
   "setup.changer.dossier": "Change folder",

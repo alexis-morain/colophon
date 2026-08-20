@@ -1,8 +1,13 @@
-// Preferences (⌘,): the application language, and a note about appearance.
-// One panel, two facts. The language change is a React render, never a
-// restart; the native menu is rebuilt by App the moment the language moves.
+// Preferences (⌘,): the application language, a note about appearance, and
+// which renderer draws a spread. Every one of them is a React render, never
+// a restart; the native menu is rebuilt by App the moment the language moves.
+//
+// The renderer belongs here rather than in a build flag because wave 2.5 has
+// to measure the two against each other in an installed bundle, on one
+// machine, without recompiling between the two readings.
 
 import { Lang, setLangue, t, useLangue } from "./i18n";
+import { Rendu, setRendu, useRendu } from "./rendu";
 
 const LANGES: [Lang, string][] = [
   ["fr", "Français"],
@@ -11,6 +16,11 @@ const LANGES: [Lang, string][] = [
 
 export function PrefsView({ onClose }: { onClose: () => void }) {
   const lang = useLangue();
+  const dessin = useRendu();
+  const RENDUS: [Rendu, string][] = [
+    ["dom", t("prefs.rendu.dom")],
+    ["canvas", t("prefs.rendu.canvas")],
+  ];
   return (
     <div className="raccourcis" onClick={onClose}>
       <div
@@ -42,6 +52,22 @@ export function PrefsView({ onClose }: { onClose: () => void }) {
 
         <h3>{t("prefs.theme")}</h3>
         <p className="signaler-note">{t("prefs.theme.note")}</p>
+
+        <h3>{t("prefs.rendu")}</h3>
+        <div className="prefs-langues" role="radiogroup" aria-label={t("prefs.rendu")}>
+          {RENDUS.map(([id, nom]) => (
+            <button
+              key={id}
+              role="radio"
+              aria-checked={dessin === id}
+              className={"prefs-langue" + (dessin === id ? " active" : "")}
+              onClick={() => setRendu(id)}
+            >
+              {nom}
+            </button>
+          ))}
+        </div>
+        <p className="signaler-note">{t("prefs.rendu.note")}</p>
       </div>
     </div>
   );

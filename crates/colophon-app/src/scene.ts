@@ -229,6 +229,30 @@ function textBlock(
   return { rect, reading: 0, role: { role: "text", at, lines } };
 }
 
+/**
+ * The same scene with one cell framed differently — the gesture in flight,
+ * before it lands on the undo stack.
+ *
+ * It belongs here rather than in a renderer because *both* renderers need
+ * it, and because a draft is not a different scene: it is the same objects
+ * with one framing not yet written down. Neither renderer has to know what
+ * a crop draft is; they draw whatever scene they are handed.
+ */
+export function avecRecadrage(
+  scene: Scene,
+  cell: number,
+  focal: [number, number],
+  zoom: number,
+): Scene {
+  return {
+    objects: scene.objects.map((o) =>
+      o.role.role === "photo" && o.role.cell === cell
+        ? { ...o, role: { ...o.role, focal, zoom } }
+        : o,
+    ),
+  };
+}
+
 /** Whether a rectangle holds a point, edges included. Which object wins on
  *  a shared edge is not this function's problem: the paint order decides,
  *  and `hitTest` reads it from the front. */

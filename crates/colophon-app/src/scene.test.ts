@@ -11,7 +11,13 @@ import { Album, Spread, spreadGeometry } from "./album";
 import { Dump, setGeometrie } from "./geometrie";
 import { nomDObjet } from "./SceneProxies";
 import { setLangue } from "./i18n";
-import { contains, depthOfCell, hitTest, sceneOf } from "./scene";
+import {
+  avecRecadrage,
+  contains,
+  depthOfCell,
+  hitTest,
+  sceneOf,
+} from "./scene";
 
 setGeometrie(fixture as unknown as Dump);
 
@@ -190,5 +196,36 @@ describe("what the keyboard calls an object", () => {
         "Bloc de texte : Un été & deux hivers",
       );
     }
+  });
+});
+
+// A gesture in flight is the same scene with one framing not yet written
+// down. Both renderers read it, so it lives with the scene rather than
+// inside either of them.
+describe("a crop still being made", () => {
+  it("reframes one cell and leaves every other object alone", () => {
+    const spread = planche("duo", 2);
+    spread.slots[0].caption = "la plage";
+    const scene = sceneOf(spread, g, mesure);
+    const pendant = avecRecadrage(scene, 1, [0.2, 0.8], 2.5);
+    expect(pendant.objects[1].role).toMatchObject({
+      role: "photo",
+      cell: 1,
+      focal: [0.2, 0.8],
+      zoom: 2.5,
+    });
+    // Same rectangles, same order, same everything else: a crop moves what
+    // shows inside a cell, never the cell.
+    expect(pendant.objects.map((o) => o.rect)).toEqual(
+      scene.objects.map((o) => o.rect),
+    );
+    expect(pendant.objects[0].role).toEqual(scene.objects[0].role);
+    expect(pendant.objects[2].role).toEqual(scene.objects[2].role);
+  });
+
+  it("leaves the scene it was given untouched", () => {
+    const scene = sceneOf(planche("duo", 2), g, mesure);
+    avecRecadrage(scene, 0, [0, 0], 4);
+    expect(scene.objects[0].role).toMatchObject({ focal: [0.5, 0.42], zoom: 1 });
   });
 });

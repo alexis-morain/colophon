@@ -31,13 +31,10 @@ import {
   Spread,
   TEXT_LEADING_MM,
   TEXT_SIZE_MM,
-  DARK_MEAN_LUMA,
   MIN_EFFECTIVE_PPI,
-  THUMB_SIZE,
   ZOOM_MAX,
   ZOOM_MIN,
   captionAnchor,
-  effectivePpi,
   spreadGeometry,
   slidingRoom,
   textAnchor,
@@ -50,16 +47,23 @@ import {
 import { captionSuggestion, detectedFocal } from "./bridge";
 import { SceneProxies } from "./SceneProxies";
 import { fontLoaded, measureMm } from "./font";
+import { badgesDe, imageDe, ROOM_EPSILON, surImage } from "./photos";
+import { useRendu } from "./rendu";
+import { SceneCanvas } from "./SceneCanvas";
 import { t } from "./i18n";
 import { jusquAuRendu } from "./mesure";
-import { Point, Role, SceneObject, sceneOf } from "./scene";
-import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
+import {
+  avecRecadrage,
+  hitTest,
+  Point,
+  Role,
+  SceneObject,
+  sceneOf,
+} from "./scene";
+import { cachedThumb, loadThumb } from "./thumbs";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
 type CropDraft = { slot: number; focal: [number, number]; zoom: number };
-
-/** Under half a pixel each way, no gesture can move anything. */
-const ROOM_EPSILON = 0.5;
 
 export function SpreadView({
   album,
@@ -142,7 +146,15 @@ export function SpreadView({
   // What this spread holds, derived exactly as the engine derives it before
   // writing the PDF. Rebuilt on every render rather than memoised: it is a
   // handful of objects, and a stale scene would draw yesterday's page.
-  const scene = sceneOf(spread, geom, measureMm);
+  //
+  // A gesture in flight is substituted into it rather than handed to the
+  // renderer on the side: a draft is not another scene, it is these objects
+  // with one framing not yet written down — and neither renderer has to
+  // learn what a crop draft is.
+  const pose = sceneOf(spread, geom, measureMm);
+  const scene = draft
+    ? avecRecadrage(pose, draft.slot, draft.focal, draft.zoom)
+    : pose;
   const cellRects = new Map<number, Rect>();
   scene.objects.forEach((o) => {
     if (o.role.role === "photo") cellRects.set(o.role.cell, o.rect);
@@ -302,6 +314,189 @@ export function SpreadView({
     }
   };
 
+  // ---- the canvas renderer, behind its switch --------------------------
+  // Both renderers eat the same scene, so nothing below is a second opinion
+  // about what a spread holds: only about how it reaches the screen. The
+  // default stays `dom` until 2.5 has measured the two.
+  const modeCanvas = useRendu() === "canvas";
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [drop, setDrop] = useState<number | null>(null);
+  const geste = useRef<{
+    type: "crop" | "swap" | "vide";
+    cell: number;
+    x: number;
+    y: number;
+    focal: [number, number];
+    moved: boolean;
+    signale: boolean;
+    at: number | null;
+  } | null>(null);
+  // A canvas has no `<img>` to wait on its behalf: a thumbnail landing has
+  // to repaint the badges too, not only the picture.
+  const [, setArrivee] = useState(0);
+  useEffect(
+    () => (modeCanvas ? surImage(() => setArrivee((n) => n + 1)) : undefined),
+    [modeCanvas],
+  );
+
+  /** Pointer coordinates in the scene's own frame: millimetres, top-left of
+   *  the media box, which is exactly what the canvas covers. */
+  const enMm = (e: { clientX: number; clientY: number }) => {
+    const r = canvas.current?.getBoundingClientRect();
+    if (!r) return { x: -1, y: -1 };
+    return { x: (e.clientX - r.left) / mm, y: (e.clientY - r.top) / mm };
+  };
+
+  /** The cell under a point, through the scene: the hit test reads the
+   *  paint order backwards, so a caption over a photograph answers for the
+   *  photograph it names — which is the case a gesture is about. */
+  const caseSous = (x: number, y: number): number | null => {
+    const at = hitTest(scene, x, y);
+    if (at === null) return null;
+    const role = scene.objects[at].role;
+    return role.role === "photo" || role.role === "photo_caption"
+      ? role.cell
+      : null;
+  };
+
+  const surPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0) return;
+    const p = enMm(e);
+    const at = hitTest(scene, p.x, p.y);
+    const cell = caseSous(p.x, p.y);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const commun = { x: e.clientX, y: e.clientY, moved: false, signale: false, at };
+    if (cell !== null && cell === selected && onCrop) {
+      const slot = spread.slots[cell];
+      const f = (draft?.slot === cell ? draft.focal : slot?.focal) ?? [0.5, 0.42];
+      geste.current = { type: "crop", cell, focal: [f[0], f[1]], ...commun };
+    } else if (cell !== null) {
+      geste.current = { type: "swap", cell, focal: [0, 0], ...commun };
+    } else {
+      geste.current = { type: "vide", cell: -1, focal: [0, 0], ...commun };
+    }
+  };
+
+  const surPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const g = geste.current;
+    if (!g) return;
+    const dx0 = e.clientX - g.x;
+    const dy0 = e.clientY - g.y;
+    if (!g.moved && Math.abs(dx0) + Math.abs(dy0) < 3) return;
+    g.moved = true;
+    if (g.type === "swap") {
+      const p = enMm(e);
+      const cible = caseSous(p.x, p.y);
+      setDrop(cible !== null && cible !== g.cell ? cible : null);
+      return;
+    }
+    if (g.type !== "crop") return;
+    const slot = spread.slots[g.cell];
+    const img = slot ? imageDe(slot.src) : null;
+    const r = cellRects.get(g.cell);
+    if (!img?.naturalWidth || !r) return;
+    const zoom = draft?.slot === g.cell ? draft.zoom : (slot.zoom ?? 1);
+    const { x: spanX, y: spanY } = slidingRoom(
+      { w: r.w * mm, h: r.h * mm },
+      img.naturalWidth,
+      img.naturalHeight,
+      zoom,
+    );
+    // ⌥ affine : the same fifth of a pixel per pixel as the DOM renderer.
+    const fine = e.altKey ? 0.2 : 1;
+    const dx = dx0 * fine;
+    const dy = dy0 * fine;
+    if (spanX <= ROOM_EPSILON && spanY <= ROOM_EPSILON) {
+      if (!g.signale) {
+        g.signale = true;
+        onSansMarge?.();
+      }
+      return;
+    }
+    const fx = spanX > 0.5 ? g.focal[0] - dx / spanX : g.focal[0];
+    const fy = spanY > 0.5 ? g.focal[1] - dy / spanY : g.focal[1];
+    const fin = jusquAuRendu("recadrage.trame");
+    setDraft({
+      slot: g.cell,
+      focal: [Math.min(1, Math.max(0, fx)), Math.min(1, Math.max(0, fy))],
+      zoom,
+    });
+    fin();
+  };
+
+  const surPointerUp = () => {
+    const g = geste.current;
+    geste.current = null;
+    const cible = drop;
+    setDrop(null);
+    if (!g) return;
+    if (!g.moved) {
+      // A click that moved nothing is a click: the same thing the proxy
+      // layer does with Enter, and the same thing a `<div>` used to do.
+      if (g.at === null) onSelect?.(null);
+      else activer(scene.objects[g.at]);
+      return;
+    }
+    if (g.type === "crop" && draft?.slot === g.cell && onCrop) {
+      const d = draft;
+      setDraft(null);
+      onCrop(g.cell, d.focal, d.zoom);
+    }
+    if (g.type === "swap" && cible !== null && onSwap) onSwap(g.cell, cible);
+  };
+
+  const surDoubleClic = async (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const p = enMm(e);
+    const cell = caseSous(p.x, p.y);
+    if (cell === null || cell !== selected || !onCrop) return;
+    const f = await detectedFocal(spread.slots[cell]?.src ?? "").catch(
+      () => [0.5, 0.42] as [number, number],
+    );
+    onCrop(cell, [f[0], f[1]], spread.slots[cell]?.zoom ?? 1);
+  };
+
+  // The wheel needs a listener the browser cannot treat as passive, or the
+  // page scrolls under the zoom. One burst commits once, when it stops.
+  const molette = useRef<{ focal: [number, number]; zoom: number } | null>(null);
+  const moletteTimer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const el = canvas.current;
+    if (!el || !modeCanvas || selected === null || selected === undefined) return;
+    if (!onCrop) return;
+    const cell = selected;
+    const surMolette = (e: WheelEvent) => {
+      const r = el.getBoundingClientRect();
+      if (caseSous((e.clientX - r.left) / mm, (e.clientY - r.top) / mm) !== cell) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      const slot = spread.slots[cell];
+      const cur =
+        molette.current ?? {
+          focal: (draft?.slot === cell ? draft.focal : slot?.focal) ?? [0.5, 0.42],
+          zoom: draft?.slot === cell ? draft.zoom : (slot?.zoom ?? 1),
+        };
+      const next = Math.min(
+        ZOOM_MAX,
+        Math.max(ZOOM_MIN, cur.zoom * Math.exp(-e.deltaY * 0.0022)),
+      );
+      molette.current = { focal: cur.focal, zoom: next };
+      setDraft({ slot: cell, focal: cur.focal, zoom: next });
+      window.clearTimeout(moletteTimer.current);
+      moletteTimer.current = window.setTimeout(() => {
+        const w = molette.current;
+        molette.current = null;
+        if (w) {
+          setDraft(null);
+          onCrop(cell, w.focal, w.zoom);
+        }
+      }, 350);
+    };
+    el.addEventListener("wheel", surMolette, { passive: false });
+    return () => el.removeEventListener("wheel", surMolette);
+  });
+
   const roomMm = geom.w / 2 - geom.margin - geom.gutter / 2;
 
   /**
@@ -381,23 +576,80 @@ export function SpreadView({
           height: `${geom.h * mm}px`,
         }}
       >
+        {/* Painted in one element rather than thirty, when the switch says
+            so. The gestures below it read the same scene through the hit
+            test; nothing here decides what a spread holds. */}
+        {modeCanvas && (
+          <SceneCanvas
+            scene={scene}
+            geom={geom}
+            mm={mm}
+            selected={selected}
+            drop={drop}
+            canvasRef={canvas}
+            onPointerDown={onSelect && surPointerDown}
+            onPointerMove={onSelect && surPointerMove}
+            onPointerUp={onSelect && surPointerUp}
+            onDoubleClick={surDoubleClic}
+            onDragOver={
+              (onSwap || onPlace) &&
+              ((e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                const p = enMm(e);
+                setDrop(caseSous(p.x, p.y));
+              })
+            }
+            onDragLeave={() => setDrop(null)}
+            onDrop={
+              onPlace &&
+              ((e) => {
+                e.preventDefault();
+                const p = enMm(e);
+                const cell = caseSous(p.x, p.y);
+                setDrop(null);
+                const pool = e.dataTransfer.getData("application/x-colophon-photo");
+                if (cell === null || !pool) return;
+                try {
+                  const photo = JSON.parse(pool) as Slot;
+                  if (photo.src) {
+                    onPlace(cell, {
+                      src: photo.src,
+                      focal: photo.focal ?? [0.5, 0.42],
+                    });
+                  }
+                } catch {
+                  /* not ours */
+                }
+              })
+            }
+          />
+        )}
+
         {/* The scene, in its own order: back to front, exactly as the PDF's
-            content stream lays it down. */}
+            content stream lays it down. Under the canvas renderer only what
+            is being typed into stays in the DOM: a field is a field. */}
         {scene.objects.map((o, depth) => {
           const role = o.role;
+          if (
+            modeCanvas &&
+            !(role.role === "chapter_caption" && editingCaption) &&
+            !(role.role === "text" && editingText)
+          ) {
+            return null;
+          }
           switch (role.role) {
             case "photo": {
               const cell = role.cell;
-              const d = draft?.slot === cell ? draft : null;
               return (
                 <CropPhoto
                   key={`${role.src}-${cell}`}
                   src={role.src}
                   rect={o.rect}
                   mm={mm}
-                  focal={d?.focal ?? role.focal}
-                  zoom={d?.zoom ?? role.zoom}
-                  zoomPose={role.zoom}
+                  focal={role.focal}
+                  zoom={role.zoom}
+                  zoomPose={spread.slots[cell]?.zoom ?? 1}
                   selected={selected === cell}
                   onSelect={
                     onSelect && (() => onSelect(selected === cell ? null : cell))
@@ -460,6 +712,62 @@ export function SpreadView({
         {!aChapitre &&
           onSpreadCaption &&
           chapitre(null, captionAnchor(spread.template, spread.slots.length, geom))}
+
+        {/* The badges a case wears, when a canvas draws the case. The rule
+            they read is the DOM renderer's own (`photos.ts::badgesDe`); what
+            differs is only that there is no `<img>` here to hang them on.
+            They stay in the DOM on purpose: an infobulle carries the remedy,
+            and a canvas has no infobulle. */}
+        {modeCanvas &&
+          onSelect &&
+          [...cellRects].map(([cell, r]) => {
+            const slot = spread.slots[cell];
+            const img = slot ? imageDe(slot.src) : null;
+            if (!slot || !img) return null;
+            const zoomPose = slot.zoom ?? 1;
+            const zoom = draft?.slot === cell ? draft.zoom : zoomPose;
+            const b = badgesDe(slot.src, img, r, mm, zoom);
+            const montreZoom = selected === cell && zoomPose > 1.001;
+            if (b.ppi === null && !b.dark && !montreZoom) return null;
+            return (
+              <div
+                key={`badges-${cell}`}
+                className="slot-chips"
+                style={{
+                  left: `${r.x * mm}px`,
+                  top: `${r.y * mm}px`,
+                  width: `${r.w * mm}px`,
+                  height: `${r.h * mm}px`,
+                }}
+              >
+                {(b.ppi !== null || b.dark) && (
+                  <span className="slot-warns">
+                    {b.ppi !== null && (
+                      <span
+                        className="slot-warn"
+                        title={t("planche.warn.ppi", {
+                          ppi: b.ppi,
+                          plancher: MIN_EFFECTIVE_PPI,
+                        })}
+                      >
+                        {b.ppi} ppi
+                      </span>
+                    )}
+                    {b.dark && (
+                      <span className="slot-warn" title={t("planche.warn.sombre")}>
+                        {t("planche.warn.sombre.badge")}
+                      </span>
+                    )}
+                  </span>
+                )}
+                {montreZoom && (
+                  <span className="slot-zoom">
+                    ×{zoom.toFixed(2).replace(".", ",")}
+                  </span>
+                )}
+              </div>
+            );
+          })}
 
         {/* A text page with nothing written yet: same case, one page later. */}
         {!aTexte && spread.template === "texte" && (
@@ -802,20 +1110,10 @@ function CropPhoto({
     if (!el || !url) return;
     const inspect = () => {
       if (!el.naturalWidth) return;
-      const known = Math.max(el.naturalWidth, el.naturalHeight) < THUMB_SIZE;
-      const p = effectivePpi(rect, el.naturalWidth, el.naturalHeight, zoom);
-      const luma = meanLuma(src, el);
-      setWarn({
-        ppi: known && p < MIN_EFFECTIVE_PPI ? Math.round(p) : null,
-        dark: luma !== undefined && luma < DARK_MEAN_LUMA,
-      });
-      const room = slidingRoom(
-        { w: rect.w * mm, h: rect.h * mm },
-        el.naturalWidth,
-        el.naturalHeight,
-        zoom,
-      );
-      setSansMarge(room.x <= ROOM_EPSILON && room.y <= ROOM_EPSILON);
+      // The same rule the canvas renderer reads, written once.
+      const b = badgesDe(src, el, rect, mm, zoom);
+      setWarn({ ppi: b.ppi, dark: b.dark });
+      setSansMarge(b.sansMarge);
     };
     if (el.complete) {
       inspect();

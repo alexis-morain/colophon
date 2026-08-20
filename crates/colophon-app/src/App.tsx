@@ -1619,6 +1619,7 @@ export default function App() {
                   proposition={proposition}
                   onText={(text) => apply((a) => setSpreadText(a, index, text))}
                   onOverflow={setOverflow}
+                  onSansMarge={() => setStatus(t("planche.recadrer.pleine.status"))}
                 />
               )
             )}

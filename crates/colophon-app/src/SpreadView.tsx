@@ -28,6 +28,7 @@ import {
   captionAnchor,
   effectivePpi,
   spreadGeometry,
+  slidingRoom,
   slotsFor,
   textAnchor,
   colophonAnchor,
@@ -46,6 +47,9 @@ import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
 type CropDraft = { slot: number; focal: [number, number]; zoom: number };
+
+/** Under half a pixel each way, no gesture can move anything. */
+const ROOM_EPSILON = 0.5;
 
 /** Measure a string at a given CSS font, for overflow signalling. */
 const measure = (() => {
@@ -71,6 +75,7 @@ export function SpreadView({
   proposition,
   onText,
   onOverflow,
+  onSansMarge,
 }: {
   album: Album;
   spread: Spread;
@@ -92,6 +97,8 @@ export function SpreadView({
   onText?: (text: string) => void;
   /** Some text overflows its room on this spread (signalled, never cut). */
   onOverflow?: (message: string | null) => void;
+  /** A crop drag found nothing to slide: the photo fills its cell exactly. */
+  onSansMarge?: () => void;
 }) {
   const paper = useRef<HTMLDivElement>(null);
   const [mm, setMm] = useState(1);
@@ -237,6 +244,7 @@ export function SpreadView({
                 })
               }
               index={i}
+              onSansMarge={onSansMarge}
             />
           );
         })}
@@ -609,6 +617,7 @@ function CropPhoto({
   onPlace,
   onDraft,
   onCommit,
+  onSansMarge,
 }: {
   slot: Slot;
   rect: Rect;
@@ -622,6 +631,8 @@ function CropPhoto({
   onPlace?: (photo: Slot) => void;
   onDraft: (focal: [number, number], zoom: number) => void;
   onCommit?: (focal: [number, number], zoom: number) => void;
+  /** The photo fills its cell exactly and the drag has nothing to move. */
+  onSansMarge?: () => void;
 }) {
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(slot.src));
   const [over, setOver] = useState(false);
@@ -632,6 +643,8 @@ function CropPhoto({
     y: number;
     focal: [number, number];
     moved: boolean;
+    /** The « nothing to slide » notice has been given for this gesture. */
+    signale: boolean;
   } | null>(null);
   // The wheel commits when it stops: one undo step per zoom burst.
   const wheelState = useRef<{ focal: [number, number]; zoom: number } | null>(null);
@@ -667,6 +680,11 @@ function CropPhoto({
     ppi: null,
     dark: false,
   });
+  // Whether this framing has any slack, kept in state because it depends on
+  // the loaded image's own pixels. Feeds the tooltip; the gesture recomputes
+  // it from the same function rather than reading this, so a stale render can
+  // never make a drag lie.
+  const [sansMarge, setSansMarge] = useState(false);
   useEffect(() => {
     const el = img.current;
     if (!el || !url) return;
@@ -679,6 +697,13 @@ function CropPhoto({
         ppi: known && p < MIN_EFFECTIVE_PPI ? Math.round(p) : null,
         dark: luma !== undefined && luma < DARK_MEAN_LUMA,
       });
+      const room = slidingRoom(
+        { w: rect.w * mm, h: rect.h * mm },
+        el.naturalWidth,
+        el.naturalHeight,
+        zoom,
+      );
+      setSansMarge(room.x <= ROOM_EPSILON && room.y <= ROOM_EPSILON);
     };
     if (el.complete) {
       inspect();
@@ -686,7 +711,7 @@ function CropPhoto({
     }
     el.addEventListener("load", inspect, { once: true });
     return () => el.removeEventListener("load", inspect);
-  }, [url, slot.src, rect.w, rect.h, zoom]);
+  }, [url, slot.src, rect.w, rect.h, zoom, mm]);
 
   // Wheel zoom needs a non-passive listener to swallow the page scroll.
   const box = useRef<HTMLDivElement>(null);
@@ -724,6 +749,7 @@ function CropPhoto({
       y: e.clientY,
       focal: [...focal] as [number, number],
       moved: false,
+      signale: false,
     };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
@@ -732,18 +758,27 @@ function CropPhoto({
     const g = gesture.current;
     const el = img.current;
     if (!g || g.id !== e.pointerId || !el?.naturalWidth) return;
-    const iw = el.naturalWidth;
-    const ih = el.naturalHeight;
-    const w = rect.w * mm;
-    const h = rect.h * mm;
-    const s = Math.max(w / iw, h / ih) * zoom;
-    const spanX = iw * s - w; // how far the image can slide, in px
-    const spanY = ih * s - h;
+    const { x: spanX, y: spanY } = slidingRoom(
+      { w: rect.w * mm, h: rect.h * mm },
+      el.naturalWidth,
+      el.naturalHeight,
+      zoom,
+    );
     const fine = e.altKey ? 0.2 : 1;
     const dx = (e.clientX - g.x) * fine;
     const dy = (e.clientY - g.y) * fine;
     if (!g.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
     g.moved = true;
+    // A drag that cannot move anything is the moment to say why, and to name
+    // the way out. Once per gesture: a message repeated at every pointer event
+    // is noise, and noise is what teaches people to stop reading messages.
+    if (spanX <= ROOM_EPSILON && spanY <= ROOM_EPSILON) {
+      if (!g.signale) {
+        g.signale = true;
+        onSansMarge?.();
+      }
+      return;
+    }
     const fx = spanX > 0.5 ? g.focal[0] - dx / spanX : g.focal[0];
     const fy = spanY > 0.5 ? g.focal[1] - dy / spanY : g.focal[1];
     // Une trame de recadrage, dev seulement : de l'événement de pointeur au
@@ -843,7 +878,9 @@ function CropPhoto({
       }
       title={
         selected
-          ? t("planche.recadrer")
+          ? sansMarge
+            ? t("planche.recadrer.pleine")
+            : t("planche.recadrer")
           : undefined
       }
     >

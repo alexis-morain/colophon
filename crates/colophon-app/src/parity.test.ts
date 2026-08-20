@@ -70,6 +70,42 @@ describe.skipIf(!existsSync(BINARY))("geometry parity with the engine", () => {
   });
 });
 
+// A photo that exactly fills its cell has nothing to slide, and the editor has
+// to say so rather than swallow the gesture. This is the arithmetic behind
+// that sentence; the drag and the tooltip both read it, so it is tested once.
+describe("sliding room inside a cell", () => {
+  it("is nil when the photo and the cell share a shape", async () => {
+    const { slidingRoom } = await import("./album");
+    // 4:3 in a 4:3 cell: the cover-crop fits exactly, both ways.
+    const r = slidingRoom({ w: 400, h: 300 }, 1600, 1200);
+    expect(r.x).toBeCloseTo(0, 9);
+    expect(r.y).toBeCloseTo(0, 9);
+  });
+
+  it("hangs over the long side when the shapes disagree", async () => {
+    const { slidingRoom } = await import("./album");
+    // A 2:1 panorama in a square cell: it covers by height, and 200 px of
+    // width hang over — 100 on each side of the framing.
+    const r = slidingRoom({ w: 200, h: 200 }, 2000, 1000);
+    expect(r.x).toBeCloseTo(200, 9);
+    expect(r.y).toBeCloseTo(0, 9);
+  });
+
+  it("is what the zoom buys back", async () => {
+    const { slidingRoom } = await import("./album");
+    const exact = slidingRoom({ w: 400, h: 300 }, 1600, 1200, 2);
+    expect(exact.x).toBeCloseTo(400, 9);
+    expect(exact.y).toBeCloseTo(300, 9);
+    // Below the fill, zoom never flatters: it clamps to 1, like the print.
+    expect(slidingRoom({ w: 400, h: 300 }, 1600, 1200, 0.5).x).toBeCloseTo(0, 9);
+  });
+
+  it("answers nothing rather than NaN for an image of no size", async () => {
+    const { slidingRoom } = await import("./album");
+    expect(slidingRoom({ w: 400, h: 300 }, 0, 0)).toEqual({ x: 0, y: 0 });
+  });
+});
+
 // The badge maths is a port too: print.rs::print_scale via prevol.rs.
 describe("effective print resolution (port of print_scale)", () => {
   it("reads the cover-crop scale, and zoom crops further in", async () => {

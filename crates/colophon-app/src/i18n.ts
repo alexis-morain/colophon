@@ -450,6 +450,10 @@ export const FR = {
   "planche.texte.editer": "Cliquer pour éditer le texte",
   "planche.recadrer":
     "Glisser pour recadrer · molette pour zoomer · double-clic recentre · ⌥ affine",
+  "planche.recadrer.pleine":
+    "Cette photo remplit sa case exactement : il n’y a rien à faire glisser. Zoomez (molette ou +) pour vous donner du cadrage.",
+  "planche.recadrer.pleine.status":
+    "Photo à la taille exacte de sa case : zoomez (molette ou +) avant de recadrer",
   "planche.couverture.recadrer":
     "Glisser pour recadrer · molette pour zoomer · ⌥ affine",
   "planche.warn.ppi":
@@ -1005,6 +1009,10 @@ export const EN: Record<Cle, string> = {
   "planche.texte.editer": "Click to edit the text",
   "planche.recadrer":
     "Drag to crop · wheel to zoom · double-click recentres · ⌥ refines",
+  "planche.recadrer.pleine":
+    "This photo fills its cell exactly: there is nothing to slide. Zoom in (wheel or +) to give yourself some framing.",
+  "planche.recadrer.pleine.status":
+    "Photo exactly the size of its cell: zoom in (wheel or +) before cropping",
   "planche.couverture.recadrer": "Drag to crop · wheel to zoom · ⌥ refines",
   "planche.warn.ppi":
     "This photo would print near {ppi} ppi here, under the {plancher} floor. A smaller cell, less zoom or another photo fixes it. The export will flag it too.",

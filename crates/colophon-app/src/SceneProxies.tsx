@@ -18,6 +18,7 @@
 // every click, drag and wheel still reaches the render below, untouched.
 // Focus is not hit testing: Tab reaches these boxes all the same.
 
+import { Rect } from "./album";
 import { t } from "./i18n";
 import { Scene, SceneObject } from "./scene";
 
@@ -56,15 +57,39 @@ function enOrdreDeLecture(scene: Scene): { o: SceneObject; depth: number }[] {
     .sort((a, b) => a.o.reading - b.o.reading || a.depth - b.depth);
 }
 
+/**
+ * The part of an object that lands on the trimmed page.
+ *
+ * A full-bleed photograph runs past the guillotine on every side, and the
+ * sheet on screen is clipped there: a focus ring drawn on the object's own
+ * edge would be cut away with the bleed and the reader would see nothing at
+ * all. The proxy is a target, not a measurement — the rectangle stays whole
+ * everywhere it is measured, and only the box the keyboard lands on is
+ * brought back inside the page.
+ */
+function auRognage(r: Rect, trim: Rect): Rect {
+  const x = Math.max(r.x, trim.x);
+  const y = Math.max(r.y, trim.y);
+  return {
+    x,
+    y,
+    w: Math.max(Math.min(r.x + r.w, trim.x + trim.w) - x, 0),
+    h: Math.max(Math.min(r.y + r.h, trim.y + trim.h) - y, 0),
+  };
+}
+
 export function SceneProxies({
   scene,
   mm,
+  trim,
   selected,
   onActivate,
   onEchap,
 }: {
   scene: Scene;
   mm: number;
+  /** The trimmed page inside the media box, millimetres, top-left origin. */
+  trim: Rect;
   /** The selected cell, so a photograph can say whether it is chosen. */
   selected?: number | null;
   onActivate: (o: SceneObject, depth: number) => void;
@@ -79,64 +104,67 @@ export function SceneProxies({
 
   return (
     <div className="scene-proxies" role="group" aria-label={t("scene.objets")}>
-      {enOrdreDeLecture(scene).map(({ o, depth }) => (
-        <button
-          key={depth}
-          type="button"
-          className="scene-proxy"
-          style={{
-            left: `${o.rect.x * mm}px`,
-            top: `${o.rect.y * mm}px`,
-            width: `${o.rect.w * mm}px`,
-            height: `${o.rect.h * mm}px`,
-          }}
-          aria-label={nomDObjet(o, scene)}
-          aria-pressed={
-            o.role.role === "photo" ? selected === o.role.cell : undefined
-          }
-          // The paper deselects on click; a proxy that let its own click
-          // through would select and deselect in the same breath.
-          onClick={(e) => {
-            e.stopPropagation();
-            onActivate(o, depth);
-          }}
-          onKeyDown={(e) => {
-            const el = e.currentTarget;
-            switch (e.key) {
-              // While a proxy holds the focus the arrows walk the page
-              // rather than turn it — App yields the keyboard to a focused
-              // button already, so this is a dead key otherwise.
-              case "ArrowRight":
-              case "ArrowDown":
-                e.preventDefault();
-                bouge(el, 1);
-                break;
-              case "ArrowLeft":
-              case "ArrowUp":
-                e.preventDefault();
-                bouge(el, -1);
-                break;
-              case "Home": {
-                e.preventDefault();
-                const first = el.parentElement?.firstElementChild;
-                if (first instanceof HTMLElement) first.focus();
-                break;
-              }
-              case "End": {
-                e.preventDefault();
-                const last = el.parentElement?.lastElementChild;
-                if (last instanceof HTMLElement) last.focus();
-                break;
-              }
-              case "Escape":
-                e.preventDefault();
-                el.blur();
-                onEchap();
-                break;
+      {enOrdreDeLecture(scene).map(({ o, depth }) => {
+        const box = auRognage(o.rect, trim);
+        return (
+          <button
+            key={depth}
+            type="button"
+            className="scene-proxy"
+            style={{
+              left: `${box.x * mm}px`,
+              top: `${box.y * mm}px`,
+              width: `${box.w * mm}px`,
+              height: `${box.h * mm}px`,
+            }}
+            aria-label={nomDObjet(o, scene)}
+            aria-pressed={
+              o.role.role === "photo" ? selected === o.role.cell : undefined
             }
-          }}
-        />
-      ))}
+            // The paper deselects on click; a proxy that let its own click
+            // through would select and deselect in the same breath.
+            onClick={(e) => {
+              e.stopPropagation();
+              onActivate(o, depth);
+            }}
+            onKeyDown={(e) => {
+              const el = e.currentTarget;
+              switch (e.key) {
+                // While a proxy holds the focus the arrows walk the page
+                // rather than turn it — App yields the keyboard to a focused
+                // button already, so this is a dead key otherwise.
+                case "ArrowRight":
+                case "ArrowDown":
+                  e.preventDefault();
+                  bouge(el, 1);
+                  break;
+                case "ArrowLeft":
+                case "ArrowUp":
+                  e.preventDefault();
+                  bouge(el, -1);
+                  break;
+                case "Home": {
+                  e.preventDefault();
+                  const first = el.parentElement?.firstElementChild;
+                  if (first instanceof HTMLElement) first.focus();
+                  break;
+                }
+                case "End": {
+                  e.preventDefault();
+                  const last = el.parentElement?.lastElementChild;
+                  if (last instanceof HTMLElement) last.focus();
+                  break;
+                }
+                case "Escape":
+                  e.preventDefault();
+                  el.blur();
+                  onEchap();
+                  break;
+              }
+            }}
+          />
+        );
+      })}
     </div>
   );
 }

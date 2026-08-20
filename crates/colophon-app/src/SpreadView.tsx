@@ -483,6 +483,12 @@ export function SpreadView({
         <SceneProxies
           scene={scene}
           mm={mm}
+          trim={{
+            x: album.bleed_mm,
+            y: album.bleed_mm,
+            w: geom.w - 2 * album.bleed_mm,
+            h: geom.h - 2 * album.bleed_mm,
+          }}
           selected={selected}
           onActivate={activer}
           onEchap={() => onSelect?.(null)}

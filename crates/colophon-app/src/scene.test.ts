@@ -9,6 +9,8 @@ import { describe, expect, it } from "vitest";
 import fixture from "./geometrie.fixture.json";
 import { Album, Spread, spreadGeometry } from "./album";
 import { Dump, setGeometrie } from "./geometrie";
+import { nomDObjet } from "./SceneProxies";
+import { setLangue } from "./i18n";
 import { contains, depthOfCell, hitTest, sceneOf } from "./scene";
 
 setGeometrie(fixture as unknown as Dump);
@@ -135,5 +137,58 @@ describe("what the assembler adds on top of the dump", () => {
     const spread = planche("texte", 0);
     spread.text = "";
     expect(sceneOf(spread, g, mesure).objects).toHaveLength(0);
+  });
+});
+
+// The names the keyboard says out loud. They are built from the role code
+// and its parameters — never from a sentence the engine wrote — so the two
+// languages each get their own word order instead of one inheriting the
+// other's.
+describe("what the keyboard calls an object", () => {
+  it("names a photograph by its rank and its file", () => {
+    setLangue("fr");
+    const scene = sceneOf(planche("duo", 2), g, mesure);
+    expect(nomDObjet(scene.objects[0], scene)).toBe("Photo 1 sur 2, 0.jpg");
+    setLangue("en");
+    expect(nomDObjet(scene.objects[1], scene)).toBe("Photo 2 of 2, 1.jpg");
+  });
+
+  it("says a folder out loud to nobody", () => {
+    setLangue("fr");
+    const spread = planche("solo", 1);
+    spread.slots[0].src = "vacances/corse/IMG_0421.jpg";
+    const scene = sceneOf(spread, g, mesure);
+    expect(nomDObjet(scene.objects[0], scene)).toContain("IMG_0421.jpg");
+    expect(nomDObjet(scene.objects[0], scene)).not.toContain("vacances");
+  });
+
+  it("names a caption after the photograph it belongs to", () => {
+    setLangue("fr");
+    const spread = planche("duo", 2);
+    spread.slots[1].caption = "la plage";
+    const scene = sceneOf(spread, g, mesure);
+    const legende = scene.objects[scene.objects.length - 1];
+    expect(nomDObjet(legende, scene)).toBe("Légende de la photo 2 : la plage");
+  });
+
+  it("has something to say about a chapter with no title", () => {
+    setLangue("fr");
+    const spread = planche("duo", 2);
+    spread.caption = "";
+    const scene = sceneOf(spread, g, mesure);
+    const chapitre = scene.objects[scene.objects.length - 1];
+    expect(nomDObjet(chapitre, scene)).toBe("Titre de chapitre, vide");
+  });
+
+  it("names a block of text by its first line, whichever page it is", () => {
+    setLangue("fr");
+    for (const template of ["garde", "texte", "colophon"]) {
+      const spread = planche(template, 0);
+      spread.text = "Un été & deux hivers\n\nCalvi";
+      const scene = sceneOf(spread, g, mesure);
+      expect(nomDObjet(scene.objects[0], scene)).toBe(
+        "Bloc de texte : Un été & deux hivers",
+      );
+    }
   });
 });

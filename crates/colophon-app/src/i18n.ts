@@ -449,6 +449,16 @@ export const FR = {
     "Votre texte, ligne à ligne.\nEntrée pour aller à la ligne.",
   "planche.texte.editer": "Cliquer pour éditer le texte",
   "planche.texte.ghost": "Page de texte : cliquer pour écrire.",
+
+  // -- ce que le clavier tient de la planche : un nom par objet de la scène,
+  //    bâti depuis le code de rôle et ses paramètres, jamais depuis une
+  //    phrase venue du moteur.
+  "scene.objets": "Objets de la planche",
+  "scene.photo": "Photo {n} sur {total}, {fichier}",
+  "scene.legende": "Légende de la photo {n} : {texte}",
+  "scene.chapitre": "Titre de chapitre : {texte}",
+  "scene.chapitre.vide": "Titre de chapitre, vide",
+  "scene.texte": "Bloc de texte : {texte}",
   "planche.recadrer":
     "Glisser pour recadrer · molette pour zoomer · double-clic recentre · ⌥ affine",
   "planche.recadrer.pleine":
@@ -1009,6 +1019,14 @@ export const EN: Record<Cle, string> = {
   "planche.texte.placeholder": "Your text, line by line.\nEnter for a new line.",
   "planche.texte.editer": "Click to edit the text",
   "planche.texte.ghost": "Text page: click to write.",
+
+  // -- what the keyboard holds a spread by
+  "scene.objets": "Objects on this spread",
+  "scene.photo": "Photo {n} of {total}, {fichier}",
+  "scene.legende": "Caption of photo {n}: {texte}",
+  "scene.chapitre": "Chapter title: {texte}",
+  "scene.chapitre.vide": "Chapter title, empty",
+  "scene.texte": "Text block: {texte}",
   "planche.recadrer":
     "Drag to crop · wheel to zoom · double-click recentres · ⌥ refines",
   "planche.recadrer.pleine":

@@ -48,10 +48,11 @@ import {
   GARDE_TEMPLATE,
 } from "./album";
 import { captionSuggestion, detectedFocal } from "./bridge";
+import { SceneProxies } from "./SceneProxies";
 import { fontLoaded, measureMm } from "./font";
 import { t } from "./i18n";
 import { jusquAuRendu } from "./mesure";
-import { Point, Role, sceneOf } from "./scene";
+import { Point, Role, SceneObject, sceneOf } from "./scene";
 import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
@@ -102,6 +103,10 @@ export function SpreadView({
   const [mm, setMm] = useState(1);
   const [draft, setDraft] = useState<CropDraft | null>(null);
   const [editingCaption, setEditingCaption] = useState(false);
+  // The text block's editing state lives here rather than inside the block,
+  // because the keyboard opens it from the proxy layer and the mouse opens
+  // it from the block itself: one state, two ways in.
+  const [editingText, setEditingText] = useState(false);
 
   const trimW = album.trim_mm.w * 2;
   const geom = spreadGeometry(album);
@@ -120,6 +125,7 @@ export function SpreadView({
   // The draft belongs to one selection on one spread.
   useEffect(() => setDraft(null), [spread, selected]);
   useEffect(() => setEditingCaption(false), [spread]);
+  useEffect(() => setEditingText(false), [spread]);
 
   // Text is only measured in the embedded face: once it lands (local file,
   // milliseconds), render again so every ink rectangle is remeasured. The
@@ -273,6 +279,29 @@ export function SpreadView({
   const aChapitre = scene.objects.some((o) => o.role.role === "chapter_caption");
   const aTexte = scene.objects.some((o) => o.role.role === "text");
 
+  /**
+   * What Enter does on a focused object — the keyboard's half of what a
+   * click already does. A caption leads to its own photograph, because the
+   * caption editor is the popover under the case: the reader who reaches a
+   * caption wants to write one.
+   */
+  const activer = (o: SceneObject) => {
+    switch (o.role.role) {
+      case "photo":
+        onSelect?.(selected === o.role.cell ? null : o.role.cell);
+        break;
+      case "photo_caption":
+        onSelect?.(o.role.cell);
+        break;
+      case "chapter_caption":
+        if (onSpreadCaption) setEditingCaption(true);
+        break;
+      case "text":
+        if (onText && spread.template === "texte") setEditingText(true);
+        break;
+    }
+  };
+
   const roomMm = geom.w / 2 - geom.margin - geom.gutter / 2;
 
   /**
@@ -324,6 +353,8 @@ export function SpreadView({
         roomMm={roomMm}
         fontPx={Math.max(sizeMm * mm * 1.35, colophon ? 11 : 13)}
         leadPx={(colophon ? COLOPHON_LEADING_MM : TEXT_LEADING_MM) * mm * 1.35}
+        editing={editingText}
+        onEditing={setEditingText}
         onText={spread.template === "texte" ? onText : undefined}
       />
     );
@@ -440,9 +471,22 @@ export function SpreadView({
             roomMm={roomMm}
             fontPx={Math.max(TEXT_SIZE_MM * mm * 1.35, 13)}
             leadPx={TEXT_LEADING_MM * mm * 1.35}
+            editing={editingText}
+            onEditing={setEditingText}
             onText={onText}
           />
         )}
+
+        {/* One focusable box per object, in reading order, laid over the
+            page and invisible to the pointer. Last, so nothing paints over
+            a focus ring. */}
+        <SceneProxies
+          scene={scene}
+          mm={mm}
+          selected={selected}
+          onActivate={activer}
+          onEchap={() => onSelect?.(null)}
+        />
       </div>
       <div className="gutter" aria-hidden="true" />
       {selectedSlot && selectedRect && paperBox && onCaption && (
@@ -567,6 +611,8 @@ function TextBlock({
   fontPx,
   leadPx,
   roomMm,
+  editing,
+  onEditing,
   onText,
 }: {
   text: string;
@@ -578,10 +624,11 @@ function TextBlock({
   fontPx: number;
   leadPx: number;
   roomMm: number;
+  /** Held above: the mouse opens the block, and so does the keyboard. */
+  editing: boolean;
+  onEditing: (on: boolean) => void;
   onText?: (text: string) => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  useEffect(() => setEditing(false), [text === ""]);
 
   const x = at.x * mm;
   const y = at.y * mm;
@@ -603,7 +650,7 @@ function TextBlock({
         autoFocus
         onClick={(e) => e.stopPropagation()}
         onBlur={(e) => {
-          setEditing(false);
+          onEditing(false);
           onText(e.currentTarget.value);
         }}
         onKeyDown={(e) => {
@@ -630,7 +677,7 @@ function TextBlock({
         onText &&
         ((e) => {
           e.stopPropagation();
-          setEditing(true);
+          onEditing(true);
         })
       }
     >

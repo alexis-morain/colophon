@@ -82,6 +82,31 @@ autre : dans les trois cas `window.__mesures()` reste vide. C'est voulu — un
 relevé qui se fermerait sans trame donnerait un chiffre pris avant le pixel —
 mais c'est aussi la première chose à vérifier quand rien ne s'affiche.
 
+## Deux fenêtres borgnes, et la seconde a été trouvée le 21/08
+
+Le panneau d'aperçu ne composite pas : `visibilityState` y répond `hidden`,
+donc aucune trame n'arrive et aucune mesure ne se ferme. C'est écrit plus
+haut. Le navigateur piloté à côté est borgne d'un second œil, découvert en
+essayant d'y vérifier le focus :
+
+```js
+document.hasFocus()   // faux tant que la fenêtre n'est pas au premier plan
+```
+
+Un document qui n'a pas le focus du système ne reçoit **aucun événement de
+focus**. `element.focus()` y déplace bien `document.activeElement`, mais ni
+`focus` ni `focusin` ne partent, et `:focus` ne matche pas. D'où deux choses
+qui se ressemblent et n'en font qu'une : l'anneau de focus qu'on n'a jamais
+vu au harnais, et un clavier dont le comportement ne s'y observe pas.
+
+**Les deux passes — le chronomètre et le focus — demandent donc la même
+chose : une fenêtre au premier plan, celle du bundle ou celle d'un navigateur
+qu'on met devant.** Vérifier les deux lignes avant de commencer, toujours :
+
+```js
+document.visibilityState === "visible" && document.hasFocus()
+```
+
 ## Il n'y a pas de relevé d'avant-port, et c'est délibéré
 
 Ce document a d'abord posé le relevé d'avant le port comme une précondition

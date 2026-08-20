@@ -1,0 +1,22 @@
+{
+ "etat": "après 2.3 (le port en Canvas) et 2.4 (l'accessibilité) — les deux rendus coexistent, défaut `dom`",
+ "commit": "e6d0a96",
+ "machine": "MacBook, macOS 25.5, Apple Silicon",
+ "temoin_moteur": {
+  "quoi": "build_album sur mauritanie-2019 (670 photos, 59 planches), format carre-21",
+  "commande": "time ./target/release/colophon ~/Pictures/colophon-testsets/mauritanie-2019 -o /tmp/temoin --format carre-21",
+  "secondes": [
+   11.79,
+   11.58
+  ],
+  "contre": "14,06 s le 20/08 (2026-08-20-avant-port.json)",
+  "verdict": "Le moteur n'a pas bougé, et la preuve ne tient pas au chronomètre : `git diff 205c528 HEAD -- crates/colophon-core crates/colophon-cli` est vide, et le binaire mesuré est le même fichier qu'hier (target/release/colophon, 20 août 12:09, cargo n'a rien reconstruit). Mêmes octets, même album, deux jours : l'écart de 17 % est la machine, et il va dans le sens rapide, donc il ne peut pas cacher une régression du port."
+ },
+ "rendu": {
+  "pris": false,
+  "requis": true,
+  "pourquoi": "Aucun des deux harnais de la session ne peut chronométrer un rendu. Le panneau d'aperçu répond `visibilityState: hidden` — connu — et le navigateur piloté répond en plus `document.hasFocus(): false`, donc ni `requestAnimationFrame` ni les événements de focus n'y partent. `window.__mesures()` y reste vide, ce qui est voulu : l'instrument refuse de poser un chiffre faux.",
+  "comment": "scripts/mesure-rendu.md, point 3, une fois par rendu, dans une fenêtre au premier plan. Les deux albums sont composés et prêts : .albums/mesure-200 (200 planches) et .albums/mesure-50 (50 planches), ni l'un ni l'autre ne portant d'album.origin.json.",
+  "consequence": "2.5 ne rend pas son verdict aujourd'hui. Le défaut reste `dom`, et le commit qui bascule — s'il a lieu — ne fera toujours que ça."
+ }
+}

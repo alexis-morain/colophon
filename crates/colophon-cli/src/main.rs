@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "print", "cover", "audit", "reprise", "prevol", "sheets", "proposition", "gabarits", "banc_gabarits"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "proposition", "gabarits", "banc_gabarits"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -50,6 +50,18 @@ struct Cli {
     /// parity check against the editor's TypeScript port.
     #[arg(long)]
     dump_geometry: bool,
+
+    /// Print the scene of every spread as JSON and exit: what each spread
+    /// actually holds, as objects, in paint order. The committed fixture of
+    /// the parity check is this output, and so is what a renderer is
+    /// compared against.
+    ///
+    /// Reads `album.json` from --out, or the file given here. `--format`
+    /// applies: the same spreads are re-derived at that page shape, which is
+    /// how one committed album covers the six formats without being
+    /// recomposed six times.
+    #[arg(long, value_name = "ALBUM.JSON", num_args = 0..=1, default_missing_value = "")]
+    dump_scene: Option<String>,
 
     /// Bleed of the dumped geometry, in millimetres. The dev album server
     /// asks for the album's own bleed; the format previews ask for none.
@@ -152,6 +164,25 @@ fn main() -> Result<()> {
         let mut album = Album::new("geometry", std::path::Path::new("."), trim);
         album.bleed_mm = cli.bleed;
         println!("{}", serde_json::to_string_pretty(&pdf::dump_geometry(&album))?);
+        return Ok(());
+    }
+
+    if let Some(chemin) = &cli.dump_scene {
+        let path = if chemin.is_empty() {
+            cli.out.join("album.json")
+        } else {
+            PathBuf::from(chemin)
+        };
+        let json = std::fs::read_to_string(&path)
+            .with_context(|| format!("lecture de {}", path.display()))?;
+        let mut album: Album = serde_json::from_str(&json).context("album.json illisible")?;
+        // The page shape comes from --format, so the same committed album
+        // yields the six geometries the parity check walks.
+        album.trim_mm = trim;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&colophon_core::scene::album(&album))?
+        );
         return Ok(());
     }
 

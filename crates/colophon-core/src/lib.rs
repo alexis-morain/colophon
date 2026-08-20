@@ -29,6 +29,7 @@ pub mod print;
 pub mod printer;
 pub mod reprise;
 pub mod scan;
+pub mod scene;
 pub mod thumb;
 
 pub use build::{build_album, render_album_pdf, write_album_json, BuildOptions, BuildReport};

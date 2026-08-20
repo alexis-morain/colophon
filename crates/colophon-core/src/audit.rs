@@ -256,10 +256,20 @@ pub(crate) fn compteurs(
     infos: &HashMap<String, PhotoInfo>,
     g: &pdf::SpreadGeometry,
 ) -> Counters {
+    // The cells the linter judges are the objects the emitter draws: one
+    // derivation for both, so a counter can never grade a rectangle the PDF
+    // does not contain.
     let rects_of: Vec<Vec<pdf::Rect>> = album
         .spreads
         .iter()
-        .map(|s| pdf::slots_for(&s.template, s.slots.len(), g))
+        .map(|s| {
+            crate::scene::Scene::of(s, g)
+                .objects
+                .iter()
+                .filter(|o| matches!(o.role, crate::scene::Role::Photo { .. }))
+                .map(|o| o.rect)
+                .collect()
+        })
         .collect();
 
     // -- visage coupé, orientation trahie, sous 300 ppi : par case

@@ -8,7 +8,18 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import fixture from "./geometrie.fixture.json";
+import sceneFixture from "./scene.fixture.json";
 import { geometryProblems, PARITY_FORMATS } from "./parity";
+
+/// The page shapes the raster gate walks, and the scene fixture with them.
+const SCENE_FORMATS = [
+  "carre-21",
+  "carre-30",
+  "portrait-a4",
+  "paysage-a4",
+  "paysage-28x21",
+  "portrait-20x25",
+];
 
 const BINARY = fileURLToPath(
   new URL("../../../target/release/colophon", import.meta.url),
@@ -33,6 +44,29 @@ describe.skipIf(!existsSync(BINARY))("geometry parity with the engine", () => {
       }),
     );
     expect(fixture).toEqual(fresh);
+  });
+
+  // The scene of a committed album, on every page shape. Its input is
+  // `scene.album.json`, hand-written to hold one of everything — the
+  // half-title, a full-bleed page, an empty caption that must produce no
+  // object, a truncated verso, a declared caption band, a text page with a
+  // blank line, a template nobody knows, the colophon — because a fixture
+  // taken from a real album covers whatever that album happened to contain.
+  //
+  // Nothing reads this yet: the renderer that will is wave 2.3's. It is
+  // committed now so that the port lands on a model already pinned, and so
+  // that any change to what a spread *means* shows up as a diff here rather
+  // than as a surprise on screen.
+  it.each(SCENE_FORMATS)("the committed scene fixture holds for %s", (format) => {
+    const fresh = JSON.parse(
+      execFileSync(
+        BINARY,
+        ["--dump-scene", fileURLToPath(new URL("./scene.album.json", import.meta.url)),
+         "--format", format],
+        { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+      ),
+    );
+    expect((sceneFixture as Record<string, unknown>)[format]).toEqual(fresh);
   });
 });
 

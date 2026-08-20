@@ -1,0 +1,2810 @@
+{
+ "carre-21": [
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 26.67291666666665,
+      "w": 53.91784999999999,
+      "x": 216.5,
+      "y": 126.87458333333336
+     },
+     "role": {
+      "at": {
+       "x": 216.5,
+       "y": 146.88000000000002
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 18.0,
+        "text": "Un été & deux hivers"
+       },
+       {
+        "dy_mm": 14.0,
+        "size_pt": 9.5,
+        "text": "Du 27 octobre au 3 novembre 2013"
+       },
+       {
+        "dy_mm": 19.0,
+        "size_pt": 9.5,
+        "text": "Calvi, Ajaccio, Bonifacio"
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 216.0,
+      "w": 213.0,
+      "x": 213.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 15.278099999999998,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Corse, 2013"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 188.0,
+      "w": 195.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.3,
+       0.6
+      ],
+      "role": "photo",
+      "src": "b.jpg",
+      "zoom": 1.8
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 188.0,
+      "w": 195.5,
+      "x": 216.5,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "c.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 3.3337499999999998,
+      "w": 8.082491666666666,
+      "x": 14.0,
+      "y": 9.859166666666667
+     },
+     "role": {
+      "at": {
+       "x": 14.0,
+       "y": 10.6
+      },
+      "cell": 0,
+      "role": "photo_caption",
+      "text": "la plage"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 4.28625,
+      "w": 68.55142500000001,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Une légende de chapitre assez longue pour mesurer"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 51.41666666666667,
+      "y": 111.5
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "d.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 253.91666666666669,
+      "y": 111.5
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "e.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 51.41666666666667,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 2,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "f.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 253.91666666666669,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 3,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "g.jpg",
+      "zoom": 1.0
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 216.0,
+      "w": 213.0,
+      "x": 0.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "h.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 253.91666666666669,
+      "y": 111.5
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "i.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 29.45765,
+      "x": 216.5,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 216.5,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "un trio tronqué à deux"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 86.5,
+      "w": 64.875,
+      "x": 281.8125,
+      "y": 115.5
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "j.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 86.5,
+      "w": 64.875,
+      "x": 281.8125,
+      "y": 22.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "k.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 26.184224999999998,
+      "x": 10.98,
+      "y": 17.6475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 18.6
+      },
+      "role": "chapter_caption",
+      "text": "une bande déclarée"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 24.438750000000027,
+      "w": 82.08927222222223,
+      "x": 216.5,
+      "y": 113.55583333333331
+     },
+     "role": {
+      "at": {
+       "x": 216.5,
+       "y": 133.92
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "Première ligne."
+       },
+       {
+        "dy_mm": 12.8,
+        "size_pt": 11.0,
+        "text": "Troisième ligne, après un blanc qui prend son tour."
+       },
+       {
+        "dy_mm": 19.200000000000003,
+        "size_pt": 11.0,
+        "text": "Quatrième."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 188.0,
+      "w": 195.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "l.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 20.828,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "le repli honnête"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 13.248125000000009,
+      "w": 38.9759472222222,
+      "x": 216.5,
+      "y": 54.70041666666666
+     },
+     "role": {
+      "at": {
+       "x": 216.5,
+       "y": 64.8
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 8.5,
+        "text": "Composé avec Colophon."
+       },
+       {
+        "dy_mm": 4.6,
+        "size_pt": 8.5,
+        "text": "98 photographies, 50 planches."
+       },
+       {
+        "dy_mm": 9.2,
+        "size_pt": 8.5,
+        "text": "sRGB, 300 ppi."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  }
+ ],
+ "carre-30": [
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 26.67291666666665,
+      "w": 53.91784999999999,
+      "x": 308.0,
+      "y": 188.07458333333335
+     },
+     "role": {
+      "at": {
+       "x": 308.0,
+       "y": 208.08
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 18.0,
+        "text": "Un été & deux hivers"
+       },
+       {
+        "dy_mm": 14.0,
+        "size_pt": 9.5,
+        "text": "Du 27 octobre au 3 novembre 2013"
+       },
+       {
+        "dy_mm": 19.0,
+        "size_pt": 9.5,
+        "text": "Calvi, Ajaccio, Bonifacio"
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 306.0,
+      "w": 303.0,
+      "x": 303.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 15.278099999999998,
+      "x": 14.399999999999999,
+      "y": 12.0475
+     },
+     "role": {
+      "at": {
+       "x": 14.399999999999999,
+       "y": 13.0
+      },
+      "role": "chapter_caption",
+      "text": "Corse, 2013"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 266.0,
+      "w": 278.0,
+      "x": 20.0,
+      "y": 20.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.3,
+       0.6
+      ],
+      "role": "photo",
+      "src": "b.jpg",
+      "zoom": 1.8
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 266.0,
+      "w": 278.0,
+      "x": 308.0,
+      "y": 20.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "c.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 3.3337499999999998,
+      "w": 8.082491666666666,
+      "x": 20.0,
+      "y": 15.859166666666669
+     },
+     "role": {
+      "at": {
+       "x": 20.0,
+       "y": 16.6
+      },
+      "cell": 0,
+      "role": "photo_caption",
+      "text": "la plage"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 4.28625,
+      "w": 68.55142500000001,
+      "x": 14.399999999999999,
+      "y": 12.0475
+     },
+     "role": {
+      "at": {
+       "x": 14.399999999999999,
+       "y": 13.0
+      },
+      "role": "chapter_caption",
+      "text": "Une légende de chapitre assez longue pour mesurer"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 128.0,
+      "w": 170.66666666666666,
+      "x": 73.66666666666667,
+      "y": 158.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "d.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 128.0,
+      "w": 170.66666666666666,
+      "x": 361.6666666666667,
+      "y": 158.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "e.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 128.0,
+      "w": 170.66666666666666,
+      "x": 73.66666666666667,
+      "y": 20.0
+     },
+     "role": {
+      "cell": 2,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "f.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 128.0,
+      "w": 170.66666666666666,
+      "x": 361.6666666666667,
+      "y": 20.0
+     },
+     "role": {
+      "cell": 3,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "g.jpg",
+      "zoom": 1.0
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 306.0,
+      "w": 303.0,
+      "x": 0.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "h.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 128.0,
+      "w": 170.66666666666666,
+      "x": 361.6666666666667,
+      "y": 158.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "i.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 29.45765,
+      "x": 308.0,
+      "y": 12.0475
+     },
+     "role": {
+      "at": {
+       "x": 308.0,
+       "y": 13.0
+      },
+      "role": "chapter_caption",
+      "text": "un trio tronqué à deux"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 124.0,
+      "w": 93.0,
+      "x": 400.5,
+      "y": 162.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "j.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 124.0,
+      "w": 93.0,
+      "x": 400.5,
+      "y": 28.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "k.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 26.184224999999998,
+      "x": 14.399999999999999,
+      "y": 23.6475
+     },
+     "role": {
+      "at": {
+       "x": 14.399999999999999,
+       "y": 24.6
+      },
+      "role": "chapter_caption",
+      "text": "une bande déclarée"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 24.438750000000027,
+      "w": 82.08927222222223,
+      "x": 308.0,
+      "y": 169.35583333333332
+     },
+     "role": {
+      "at": {
+       "x": 308.0,
+       "y": 189.72
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "Première ligne."
+       },
+       {
+        "dy_mm": 12.8,
+        "size_pt": 11.0,
+        "text": "Troisième ligne, après un blanc qui prend son tour."
+       },
+       {
+        "dy_mm": 19.200000000000003,
+        "size_pt": 11.0,
+        "text": "Quatrième."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 266.0,
+      "w": 278.0,
+      "x": 20.0,
+      "y": 20.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "l.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 20.828,
+      "x": 14.399999999999999,
+      "y": 12.0475
+     },
+     "role": {
+      "at": {
+       "x": 14.399999999999999,
+       "y": 13.0
+      },
+      "role": "chapter_caption",
+      "text": "le repli honnête"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 13.248125000000002,
+      "w": 38.9759472222222,
+      "x": 308.0,
+      "y": 81.70041666666665
+     },
+     "role": {
+      "at": {
+       "x": 308.0,
+       "y": 91.8
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 8.5,
+        "text": "Composé avec Colophon."
+       },
+       {
+        "dy_mm": 4.6,
+        "size_pt": 8.5,
+        "text": "98 photographies, 50 planches."
+       },
+       {
+        "dy_mm": 9.2,
+        "size_pt": 8.5,
+        "text": "sRGB, 300 ppi."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  }
+ ],
+ "paysage-28x21": [
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 26.67291666666665,
+      "w": 53.91784999999999,
+      "x": 286.5,
+      "y": 126.87458333333336
+     },
+     "role": {
+      "at": {
+       "x": 286.5,
+       "y": 146.88000000000002
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 18.0,
+        "text": "Un été & deux hivers"
+       },
+       {
+        "dy_mm": 14.0,
+        "size_pt": 9.5,
+        "text": "Du 27 octobre au 3 novembre 2013"
+       },
+       {
+        "dy_mm": 19.0,
+        "size_pt": 9.5,
+        "text": "Calvi, Ajaccio, Bonifacio"
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 216.0,
+      "w": 283.0,
+      "x": 283.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 15.278099999999998,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Corse, 2013"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 188.0,
+      "w": 265.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.3,
+       0.6
+      ],
+      "role": "photo",
+      "src": "b.jpg",
+      "zoom": 1.8
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 188.0,
+      "w": 265.5,
+      "x": 286.5,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "c.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 3.3337499999999998,
+      "w": 8.082491666666666,
+      "x": 14.0,
+      "y": 9.859166666666667
+     },
+     "role": {
+      "at": {
+       "x": 14.0,
+       "y": 10.6
+      },
+      "cell": 0,
+      "role": "photo_caption",
+      "text": "la plage"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 4.28625,
+      "w": 68.55142500000001,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Une légende de chapitre assez longue pour mesurer"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 86.41666666666667,
+      "y": 111.5
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "d.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 358.9166666666667,
+      "y": 111.5
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "e.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 86.41666666666667,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 2,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "f.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 358.9166666666667,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 3,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "g.jpg",
+      "zoom": 1.0
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 216.0,
+      "w": 283.0,
+      "x": 0.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "h.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 358.9166666666667,
+      "y": 111.5
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "i.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 29.45765,
+      "x": 286.5,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 286.5,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "un trio tronqué à deux"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 86.5,
+      "w": 64.875,
+      "x": 386.8125,
+      "y": 115.5
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "j.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 86.5,
+      "w": 64.875,
+      "x": 386.8125,
+      "y": 22.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "k.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 26.184224999999998,
+      "x": 10.98,
+      "y": 17.6475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 18.6
+      },
+      "role": "chapter_caption",
+      "text": "une bande déclarée"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 24.438750000000027,
+      "w": 82.08927222222223,
+      "x": 286.5,
+      "y": 113.55583333333331
+     },
+     "role": {
+      "at": {
+       "x": 286.5,
+       "y": 133.92
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "Première ligne."
+       },
+       {
+        "dy_mm": 12.8,
+        "size_pt": 11.0,
+        "text": "Troisième ligne, après un blanc qui prend son tour."
+       },
+       {
+        "dy_mm": 19.200000000000003,
+        "size_pt": 11.0,
+        "text": "Quatrième."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 188.0,
+      "w": 265.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "l.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 20.828,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "le repli honnête"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 13.248125000000009,
+      "w": 38.9759472222222,
+      "x": 286.5,
+      "y": 54.70041666666666
+     },
+     "role": {
+      "at": {
+       "x": 286.5,
+       "y": 64.8
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 8.5,
+        "text": "Composé avec Colophon."
+       },
+       {
+        "dy_mm": 4.6,
+        "size_pt": 8.5,
+        "text": "98 photographies, 50 planches."
+       },
+       {
+        "dy_mm": 9.2,
+        "size_pt": 8.5,
+        "text": "sRGB, 300 ppi."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  }
+ ],
+ "paysage-a4": [
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 26.67291666666665,
+      "w": 53.91784999999999,
+      "x": 303.5,
+      "y": 126.87458333333336
+     },
+     "role": {
+      "at": {
+       "x": 303.5,
+       "y": 146.88000000000002
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 18.0,
+        "text": "Un été & deux hivers"
+       },
+       {
+        "dy_mm": 14.0,
+        "size_pt": 9.5,
+        "text": "Du 27 octobre au 3 novembre 2013"
+       },
+       {
+        "dy_mm": 19.0,
+        "size_pt": 9.5,
+        "text": "Calvi, Ajaccio, Bonifacio"
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 216.0,
+      "w": 300.0,
+      "x": 300.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 15.278099999999998,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Corse, 2013"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 188.0,
+      "w": 282.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.3,
+       0.6
+      ],
+      "role": "photo",
+      "src": "b.jpg",
+      "zoom": 1.8
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 188.0,
+      "w": 282.5,
+      "x": 303.5,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "c.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 3.3337499999999998,
+      "w": 8.082491666666666,
+      "x": 14.0,
+      "y": 9.859166666666667
+     },
+     "role": {
+      "at": {
+       "x": 14.0,
+       "y": 10.6
+      },
+      "cell": 0,
+      "role": "photo_caption",
+      "text": "la plage"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 4.28625,
+      "w": 68.55142500000001,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Une légende de chapitre assez longue pour mesurer"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 94.91666666666667,
+      "y": 111.5
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "d.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 384.4166666666667,
+      "y": 111.5
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "e.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 94.91666666666667,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 2,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "f.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 384.4166666666667,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 3,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "g.jpg",
+      "zoom": 1.0
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 216.0,
+      "w": 300.0,
+      "x": 0.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "h.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 90.5,
+      "w": 120.66666666666666,
+      "x": 384.4166666666667,
+      "y": 111.5
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "i.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 29.45765,
+      "x": 303.5,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 303.5,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "un trio tronqué à deux"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 86.5,
+      "w": 64.875,
+      "x": 412.3125,
+      "y": 115.5
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "j.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 86.5,
+      "w": 64.875,
+      "x": 412.3125,
+      "y": 22.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "k.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 26.184224999999998,
+      "x": 10.98,
+      "y": 17.6475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 18.6
+      },
+      "role": "chapter_caption",
+      "text": "une bande déclarée"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 24.438750000000027,
+      "w": 82.08927222222223,
+      "x": 303.5,
+      "y": 113.55583333333331
+     },
+     "role": {
+      "at": {
+       "x": 303.5,
+       "y": 133.92
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "Première ligne."
+       },
+       {
+        "dy_mm": 12.8,
+        "size_pt": 11.0,
+        "text": "Troisième ligne, après un blanc qui prend son tour."
+       },
+       {
+        "dy_mm": 19.200000000000003,
+        "size_pt": 11.0,
+        "text": "Quatrième."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 188.0,
+      "w": 282.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "l.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 20.828,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "le repli honnête"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 13.248125000000009,
+      "w": 38.9759472222222,
+      "x": 303.5,
+      "y": 54.70041666666666
+     },
+     "role": {
+      "at": {
+       "x": 303.5,
+       "y": 64.8
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 8.5,
+        "text": "Composé avec Colophon."
+       },
+       {
+        "dy_mm": 4.6,
+        "size_pt": 8.5,
+        "text": "98 photographies, 50 planches."
+       },
+       {
+        "dy_mm": 9.2,
+        "size_pt": 8.5,
+        "text": "sRGB, 300 ppi."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  }
+ ],
+ "portrait-20x25": [
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 26.67291666666665,
+      "w": 53.91784999999999,
+      "x": 209.38333333333333,
+      "y": 156.79458333333335
+     },
+     "role": {
+      "at": {
+       "x": 209.38333333333333,
+       "y": 176.8
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 18.0,
+        "text": "Un été & deux hivers"
+       },
+       {
+        "dy_mm": 14.0,
+        "size_pt": 9.5,
+        "text": "Du 27 octobre au 3 novembre 2013"
+       },
+       {
+        "dy_mm": 19.0,
+        "size_pt": 9.5,
+        "text": "Calvi, Ajaccio, Bonifacio"
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 260.0,
+      "w": 206.0,
+      "x": 206.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 15.278099999999998,
+      "x": 10.713999999999999,
+      "y": 8.814166666666665
+     },
+     "role": {
+      "at": {
+       "x": 10.713999999999999,
+       "y": 9.766666666666666
+      },
+      "role": "chapter_caption",
+      "text": "Corse, 2013"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 232.93333333333334,
+      "w": 189.08333333333334,
+      "x": 13.533333333333333,
+      "y": 13.533333333333333
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.3,
+       0.6
+      ],
+      "role": "photo",
+      "src": "b.jpg",
+      "zoom": 1.8
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 232.93333333333334,
+      "w": 189.08333333333334,
+      "x": 209.38333333333333,
+      "y": 13.533333333333333
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "c.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 3.3337499999999998,
+      "w": 8.082491666666666,
+      "x": 13.533333333333333,
+      "y": 9.3925
+     },
+     "role": {
+      "at": {
+       "x": 13.533333333333333,
+       "y": 10.133333333333333
+      },
+      "cell": 0,
+      "role": "photo_caption",
+      "text": "la plage"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 4.28625,
+      "w": 68.55142500000001,
+      "x": 10.713999999999999,
+      "y": 8.814166666666665
+     },
+     "role": {
+      "at": {
+       "x": 10.713999999999999,
+       "y": 9.766666666666666
+      },
+      "role": "chapter_caption",
+      "text": "Une légende de chapitre assez longue pour mesurer"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 113.08333333333333,
+      "w": 150.77777777777777,
+      "x": 32.68611111111112,
+      "y": 133.38333333333333
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "d.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 113.08333333333333,
+      "w": 150.77777777777777,
+      "x": 228.5361111111111,
+      "y": 133.38333333333333
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "e.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 113.08333333333333,
+      "w": 150.77777777777777,
+      "x": 32.68611111111112,
+      "y": 13.533333333333333
+     },
+     "role": {
+      "cell": 2,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "f.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 113.08333333333333,
+      "w": 150.77777777777777,
+      "x": 228.5361111111111,
+      "y": 13.533333333333333
+     },
+     "role": {
+      "cell": 3,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "g.jpg",
+      "zoom": 1.0
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 260.0,
+      "w": 206.0,
+      "x": 0.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "h.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 113.08333333333333,
+      "w": 150.77777777777777,
+      "x": 228.5361111111111,
+      "y": 133.38333333333333
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "i.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 29.45765,
+      "x": 209.38333333333333,
+      "y": 8.814166666666665
+     },
+     "role": {
+      "at": {
+       "x": 209.38333333333333,
+       "y": 9.766666666666666
+      },
+      "role": "chapter_caption",
+      "text": "un trio tronqué à deux"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 109.08333333333333,
+      "w": 81.8125,
+      "x": 263.01875,
+      "y": 137.38333333333333
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "j.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 109.08333333333333,
+      "w": 81.8125,
+      "x": 263.01875,
+      "y": 21.53333333333333
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "k.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 26.184224999999998,
+      "x": 10.713999999999999,
+      "y": 17.180833333333332
+     },
+     "role": {
+      "at": {
+       "x": 10.713999999999999,
+       "y": 18.133333333333333
+      },
+      "role": "chapter_caption",
+      "text": "une bande déclarée"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 24.43875,
+      "w": 82.08927222222223,
+      "x": 209.38333333333333,
+      "y": 140.83583333333334
+     },
+     "role": {
+      "at": {
+       "x": 209.38333333333333,
+       "y": 161.2
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "Première ligne."
+       },
+       {
+        "dy_mm": 12.8,
+        "size_pt": 11.0,
+        "text": "Troisième ligne, après un blanc qui prend son tour."
+       },
+       {
+        "dy_mm": 19.200000000000003,
+        "size_pt": 11.0,
+        "text": "Quatrième."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 232.93333333333334,
+      "w": 189.08333333333334,
+      "x": 13.533333333333333,
+      "y": 13.533333333333333
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "l.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 20.828,
+      "x": 10.713999999999999,
+      "y": 8.814166666666665
+     },
+     "role": {
+      "at": {
+       "x": 10.713999999999999,
+       "y": 9.766666666666666
+      },
+      "role": "chapter_caption",
+      "text": "le repli honnête"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 13.248125000000002,
+      "w": 38.9759472222222,
+      "x": 209.38333333333333,
+      "y": 67.90041666666666
+     },
+     "role": {
+      "at": {
+       "x": 209.38333333333333,
+       "y": 78.0
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 8.5,
+        "text": "Composé avec Colophon."
+       },
+       {
+        "dy_mm": 4.6,
+        "size_pt": 8.5,
+        "text": "98 photographies, 50 planches."
+       },
+       {
+        "dy_mm": 9.2,
+        "size_pt": 8.5,
+        "text": "sRGB, 300 ppi."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  }
+ ],
+ "portrait-a4": [
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 26.67291666666665,
+      "w": 53.91784999999999,
+      "x": 216.5,
+      "y": 186.03458333333336
+     },
+     "role": {
+      "at": {
+       "x": 216.5,
+       "y": 206.04000000000002
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 18.0,
+        "text": "Un été & deux hivers"
+       },
+       {
+        "dy_mm": 14.0,
+        "size_pt": 9.5,
+        "text": "Du 27 octobre au 3 novembre 2013"
+       },
+       {
+        "dy_mm": 19.0,
+        "size_pt": 9.5,
+        "text": "Calvi, Ajaccio, Bonifacio"
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 303.0,
+      "w": 213.0,
+      "x": 213.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 15.278099999999998,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Corse, 2013"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 275.0,
+      "w": 195.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.3,
+       0.6
+      ],
+      "role": "photo",
+      "src": "b.jpg",
+      "zoom": 1.8
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 275.0,
+      "w": 195.5,
+      "x": 216.5,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "c.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 3.3337499999999998,
+      "w": 8.082491666666666,
+      "x": 14.0,
+      "y": 9.859166666666667
+     },
+     "role": {
+      "at": {
+       "x": 14.0,
+       "y": 10.6
+      },
+      "cell": 0,
+      "role": "photo_caption",
+      "text": "la plage"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 4.28625,
+      "w": 68.55142500000001,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Une légende de chapitre assez longue pour mesurer"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 134.0,
+      "w": 178.66666666666666,
+      "x": 22.41666666666667,
+      "y": 155.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "d.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 134.0,
+      "w": 178.66666666666666,
+      "x": 224.91666666666669,
+      "y": 155.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "e.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 134.0,
+      "w": 178.66666666666666,
+      "x": 22.41666666666667,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 2,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "f.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 134.0,
+      "w": 178.66666666666666,
+      "x": 224.91666666666669,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 3,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "g.jpg",
+      "zoom": 1.0
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 303.0,
+      "w": 213.0,
+      "x": 0.0,
+      "y": 0.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "h.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 134.0,
+      "w": 178.66666666666666,
+      "x": 224.91666666666669,
+      "y": 155.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "i.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 29.45765,
+      "x": 216.5,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 216.5,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "un trio tronqué à deux"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 130.0,
+      "w": 97.5,
+      "x": 265.5,
+      "y": 159.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "j.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 130.0,
+      "w": 97.5,
+      "x": 265.5,
+      "y": 22.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "k.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 26.184224999999998,
+      "x": 10.98,
+      "y": 17.6475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 18.6
+      },
+      "role": "chapter_caption",
+      "text": "une bande déclarée"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 24.438750000000027,
+      "w": 82.08927222222223,
+      "x": 216.5,
+      "y": 167.4958333333333
+     },
+     "role": {
+      "at": {
+       "x": 216.5,
+       "y": 187.85999999999999
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "Première ligne."
+       },
+       {
+        "dy_mm": 12.8,
+        "size_pt": 11.0,
+        "text": "Troisième ligne, après un blanc qui prend son tour."
+       },
+       {
+        "dy_mm": 19.200000000000003,
+        "size_pt": 11.0,
+        "text": "Quatrième."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 275.0,
+      "w": 195.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.42
+      ],
+      "role": "photo",
+      "src": "l.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 4.28625,
+      "w": 20.828,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "le repli honnête"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 13.248125000000002,
+      "w": 38.9759472222222,
+      "x": 216.5,
+      "y": 80.80041666666665
+     },
+     "role": {
+      "at": {
+       "x": 216.5,
+       "y": 90.89999999999999
+      },
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 8.5,
+        "text": "Composé avec Colophon."
+       },
+       {
+        "dy_mm": 4.6,
+        "size_pt": 8.5,
+        "text": "98 photographies, 50 planches."
+       },
+       {
+        "dy_mm": 9.2,
+        "size_pt": 8.5,
+        "text": "sRGB, 300 ppi."
+       }
+      ],
+      "role": "text"
+     }
+    }
+   ]
+  }
+ ]
+}

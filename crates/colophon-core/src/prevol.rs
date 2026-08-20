@@ -11,7 +11,7 @@
 
 use crate::model::Album;
 use crate::printer::{Certitude, Dos, Espace, Fichiers, PdfX, PrinterProfile, GRAMMAGE_DEFAUT};
-use crate::{heic, meta, pdf, print};
+use crate::{heic, meta, pdf, print, scene};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use serde::Serialize;
@@ -290,10 +290,13 @@ pub fn check(
         );
     }
     for (si, spread) in album.spreads.iter().enumerate() {
-        let rects = pdf::slots_for(&spread.template, spread.slots.len(), &g);
-        for (ci, (slot, rect)) in spread.slots.iter().zip(rects.iter()).enumerate() {
-            let Some(&(ow, oh)) = dims.get(&slot.src) else { continue };
-            let scale = print::print_scale(rect, ow, oh) * slot.zoom.max(1.0);
+        let scene = scene::Scene::of(spread, &g);
+        for (ci, object) in scene.objects.iter().enumerate() {
+            let scene::Role::Photo { src, zoom, .. } = &object.role else { continue };
+            let Some(&(ow, oh)) = dims.get(src) else { continue };
+            let rect = &object.rect;
+            let slot = &spread.slots[ci];
+            let scale = print::print_scale(rect, ow, oh) * zoom.max(1.0);
             let ppi = print::PRINT_DPI / scale;
             if ppi < profil.min_ppi {
                 defauts.push(Defaut {
@@ -314,12 +317,17 @@ pub fn check(
 
     // 6. Safe zone. Photos bleed on purpose; text must not.
     for (si, spread) in album.spreads.iter().enumerate() {
-        let rects = pdf::slots_for(&spread.template, spread.slots.len(), &g);
         let porte_legende = spread.caption.is_some()
             || spread.slots.iter().any(|s| s.caption.is_some());
         if !porte_legende {
             continue;
         }
+        // The anchor comes from the scene rather than from a second
+        // derivation of the same rectangles. What is measured stays the
+        // baseline, not the ink around it: measuring the box instead would
+        // move the verdict, and moving a verdict belongs in a session that
+        // can weigh it, not in one that promises invisibility.
+        let rects = pdf::slots_for(&spread.template, spread.slots.len(), &g);
         let p = pdf::caption_anchor(&spread.template, &rects, &g);
         let marge = distance_au_rognage(p.x, p.y, &g, album.bleed_mm);
         if marge + 1e-9 < profil.safe_mm {
@@ -391,12 +399,13 @@ pub fn check(
 
 /// Shortest distance from a point on the spread to the trimmed edge, in
 /// millimetres. The media is the trim plus the bleed on all four sides.
+/// Distance from a point to the guillotine. One implementation of the
+/// doctrine, in [`crate::scene::distance_to_trim`], reached here with a
+/// rectangle of no extent: what must survive the cut is measured from the
+/// cut, and it is measured the same way for everyone.
 fn distance_au_rognage(x: f64, y: f64, g: &pdf::SpreadGeometry, bleed: f64) -> f64 {
-    let gauche = x - bleed;
-    let bas = y - bleed;
-    let droite = (g.media_w - bleed) - x;
-    let haut = (g.media_h - bleed) - y;
-    gauche.min(bas).min(droite).min(haut)
+    debug_assert!((g.bleed - bleed).abs() < 1e-9, "deux fonds perdus pour une planche");
+    scene::distance_to_trim(&pdf::Rect { x, y, w: 0.0, h: 0.0 }, g)
 }
 
 #[cfg(test)]

@@ -73,6 +73,31 @@ pub struct Declaration {
     pub id: Object,
 }
 
+/// The instant the file declares, from `SOURCE_DATE_EPOCH` when it is set
+/// and the clock otherwise.
+///
+/// The variable is the reproducible-builds convention, and honouring it makes
+/// the whole PDF deterministic: nothing else in the file varies between two
+/// runs on the same album, so pinning the stamp pins the bytes. That is what
+/// lets a refactor of the emitter prove it displaced nothing at all, and what
+/// makes the four conformity re-measurements of wave 6 comparable to each
+/// other rather than merely green.
+pub fn stamp() -> DateTime<Local> {
+    std::env::var("SOURCE_DATE_EPOCH")
+        .ok()
+        .as_deref()
+        .and_then(stamp_from_epoch)
+        .unwrap_or_else(Local::now)
+}
+
+/// Seconds since the Unix epoch, as the convention writes them. Anything
+/// unparseable is ignored rather than fatal: a malformed variable in someone
+/// else's build script must not stop an export.
+fn stamp_from_epoch(raw: &str) -> Option<DateTime<Local>> {
+    let secs: i64 = raw.trim().parse().ok()?;
+    chrono::DateTime::from_timestamp(secs, 0).map(|utc| utc.with_timezone(&Local))
+}
+
 /// Put the declaration in the document and hand back what to reference.
 ///
 /// `stamp` is passed in rather than read from the clock so a test can assert
@@ -300,6 +325,17 @@ mod tests {
 
     fn stamp() -> DateTime<Local> {
         Local.with_ymd_and_hms(2026, 8, 14, 17, 5, 30).unwrap()
+    }
+
+    /// `SOURCE_DATE_EPOCH` is read as seconds since the Unix epoch, and a
+    /// malformed value is ignored rather than fatal.
+    #[test]
+    fn l_horodatage_se_lit_dans_l_environnement() {
+        let t = stamp_from_epoch("1755000000").expect("epoch lisible");
+        assert_eq!(t.timestamp(), 1_755_000_000);
+        assert_eq!(stamp_from_epoch("  1755000000  ").map(|t| t.timestamp()), Some(1_755_000_000));
+        assert!(stamp_from_epoch("hier").is_none());
+        assert!(stamp_from_epoch("").is_none());
     }
 
     /// `/Info` and the XMP describe the same instant. Two clocks in one file

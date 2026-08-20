@@ -1,0 +1,17 @@
+{
+  "etat": "après 2.2 (le graphe de scène), avant le port en Canvas de 2.3",
+  "commit": "à remplir au commit de 2.2",
+  "machine": "MacBook, macOS 25.5, Apple Silicon",
+  "temoin_moteur": {
+    "quoi": "build_album sur mauritanie-2019 (670 photos, 59 planches), format carre-21",
+    "commande": "time ./target/release/colophon ~/Pictures/colophon-testsets/mauritanie-2019 -o /tmp/temoin --format carre-21",
+    "secondes": [14.06, 14.06],
+    "pourquoi": "Le port de 2.3 ne touche que l'affichage. Ce nombre doit être identique après, aux fluctuations de machine près ; s'il bouge, le port a touché ce qu'il ne devait pas toucher."
+  },
+  "rendu": {
+    "pris": false,
+    "pourquoi": "Les trois séries d'écran se ferment sur deux requestAnimationFrame imbriqués, pour compter le pixel et non la trame d'avant. Aucune fenêtre compositant n'était disponible depuis la session qui a écrit l'instrumentation : le pane d'aperçu répondait document.visibilityState === 'hidden' et ne recevait aucune trame. L'instrument a donc refusé de poser un chiffre, ce qui est son comportement voulu.",
+    "verifie": "L'instrumentation a bien produit des relevés quand la fenêtre était vivante (planche.premiere et planche.suivante, n=1 chacune, démarrage à froid inclus donc non représentatifs et volontairement non consignés ici).",
+    "a_faire": "scripts/mesure-rendu.md, dans une fenêtre visible. Avant que 2.3 commence : un « avant » ne se rattrape pas après."
+  }
+}

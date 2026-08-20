@@ -18,7 +18,7 @@ pub use crate::pdfx::EMITS_PDF_X;
 
 /// Geometry of one slot on the spread's media box, in millimetres,
 /// origin bottom-left, bleed included.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct Rect {
     pub x: f64,
     pub y: f64,
@@ -364,7 +364,7 @@ const CROP_SAMPLES: &[(f64, f64, f64, f64, f64, f64, f64)] = &[
 ];
 
 /// A point on the spread's media box, in millimetres, origin bottom-left.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
@@ -541,6 +541,13 @@ fn overlaps(a: &Rect, b: &Rect) -> bool {
 }
 
 /// Slot rectangles for a template, on the given spread geometry.
+///
+/// This answers a question about a **template** — what would these cells be —
+/// which is what the composer asks of a candidate it has not chosen yet, and
+/// what the geometry dump asks of a catalogue with no album in hand. For what
+/// a **spread** actually holds, ask [`crate::scene::Scene::of`]: it is the one
+/// derivation the emitter, the print pass, the linter and the preflight
+/// share.
 /// The `_verso` variants mirror the layout onto the other page; alternating
 /// them is what keeps a long album from reading like a spreadsheet.
 pub fn slots_for(template: &str, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
@@ -685,6 +692,14 @@ fn embed_font(doc: &mut Document) -> lopdf::ObjectId {
 
 impl PdfWriter {
     pub fn new(album: &Album) -> Self {
+        Self::with_stamp(album, pdfx::stamp())
+    }
+
+    /// The writer with its declared instant pinned. Everything else in a PDF
+    /// this crate emits is a pure function of the album and its assets, so
+    /// two writers given the same stamp produce the same bytes — which is how
+    /// a change to the emitter proves it changed nothing.
+    pub fn with_stamp(album: &Album, stamp: chrono::DateTime<chrono::Local>) -> Self {
         let mut doc = Document::with_version(pdfx::PDF_VERSION);
         let pages_id = doc.new_object_id();
         let font_id = embed_font(&mut doc);
@@ -696,79 +711,53 @@ impl PdfWriter {
             geom: geometry(album),
             bleed_mm: album.bleed_mm,
             title: album.title.clone(),
-            stamp: chrono::Local::now(),
+            stamp,
         }
     }
 
+    /// One spread, drawn from its scene.
+    ///
+    /// The emitter walks [`crate::scene::Scene`] rather than rebuilding the
+    /// rectangles and re-deciding, for the fourth time in this crate, that
+    /// `garde`, `texte` and `colophon` are special. The scene comes out in
+    /// paint order, so this loop is a translation and nothing else: same
+    /// objects, same order, same bytes.
+    ///
+    /// The ink stays here. What colour a caption prints in is a rendering
+    /// decision, not a property of the spread, and the scene is deliberately
+    /// silent about it.
     pub fn add_spread(&mut self, spread: &Spread, assets: &[JpegAsset]) -> Result<()> {
-        let rects = slots_for(&spread.template, assets.len(), &self.geom);
+        use crate::scene::{Role, Scene};
+        let scene = Scene::of(spread, &self.geom);
         let mut content = String::new();
         let mut xobjects = dictionary! {};
 
-        for (i, (asset, rect)) in assets.iter().zip(rects.iter()).enumerate() {
-            self.draw_image(&mut content, &mut xobjects, i, asset, rect);
-        }
-
-        // Photo captions: 7 pt under the slot's bottom edge, left-aligned on
-        // the slot. Printed as typed, never truncated: the editor is the
-        // place that signals overflow.
-        for (slot, rect) in spread.slots.iter().zip(rects.iter()) {
-            let Some(caption) = &slot.caption else { continue };
-            if caption.is_empty() {
-                continue;
-            }
-            text_op(
-                &mut content,
-                rect.x,
-                rect.y - PHOTO_CAPTION_DROP_MM,
-                PHOTO_CAPTION_SIZE_PT,
-                INK,
-                caption,
-            );
-        }
-
-        // Pages of text, three of them. The half-title sets a title over two
-        // quiet lines, so it carries its own layout; the free-text page and
-        // the colophon are one block of lines exactly as typed at a fixed
-        // leading, the colophon one notch quieter and lower on the page.
-        if let Some(text) = &spread.text {
-            if spread.template == crate::garde::TEMPLATE {
-                let at = crate::garde::anchor(&self.geom);
-                let place = crate::garde::place(&self.geom);
-                for l in crate::garde::mise_en_page(text, place) {
-                    text_op(&mut content, at.x, at.y - l.dy_mm, l.taille_pt, TEXT_INK, &l.texte);
+        for object in &scene.objects {
+            match &object.role {
+                Role::Photo { cell, .. } => {
+                    // A spread whose thumbnails went missing is refused by the
+                    // caller, never drawn short: this only guards the index.
+                    let Some(asset) = assets.get(*cell) else { continue };
+                    self.draw_image(&mut content, &mut xobjects, *cell, asset, &object.rect);
                 }
-            } else {
-                let colophon = spread.template == crate::colophon::TEMPLATE;
-                let at = if colophon {
-                    colophon_anchor(&self.geom)
-                } else {
-                    text_anchor(&self.geom)
-                };
-                let (size, leading) = if colophon {
-                    (crate::colophon::SIZE_PT, crate::colophon::LEADING_MM)
-                } else {
-                    (TEXT_SIZE_PT, TEXT_LEADING_MM)
-                };
-                for (i, line) in text.lines().enumerate() {
-                    if line.is_empty() {
-                        continue;
+                // Photo captions: 7 pt under the slot's bottom edge,
+                // left-aligned on the slot. Printed as typed, never
+                // truncated: the editor is the place that signals overflow.
+                Role::PhotoCaption { text, at, .. } => {
+                    text_op(&mut content, at.x, at.y, PHOTO_CAPTION_SIZE_PT, INK, text);
+                }
+                // The three pages of text, now one role: the half-title's two
+                // sizes, the text page's regular leading and the colophon's
+                // quieter one all reach here as lines already placed.
+                Role::Text { at, lines } => {
+                    for l in lines {
+                        text_op(&mut content, at.x, at.y - l.dy_mm, l.size_pt, TEXT_INK, &l.text);
                     }
-                    text_op(
-                        &mut content,
-                        at.x,
-                        at.y - i as f64 * leading,
-                        size,
-                        TEXT_INK,
-                        line,
-                    );
+                }
+                Role::ChapterCaption { text, at } => {
+                    text_op(&mut content, at.x, at.y, SPREAD_CAPTION_SIZE_PT, INK, text);
                 }
             }
-        }
-
-        if let Some(caption) = &spread.caption {
-            let at = caption_anchor(&spread.template, &rects, &self.geom);
-            text_op(&mut content, at.x, at.y, SPREAD_CAPTION_SIZE_PT, INK, caption);
         }
 
         let b = self.bleed_mm;
@@ -938,6 +927,13 @@ mod tests {
     /// produced, never the structures it held in memory: the declaration is
     /// only worth what survives serialisation.
     fn written() -> (Vec<u8>, Document) {
+        written_at(chrono::Local::now())
+    }
+
+    /// The same album at a pinned instant. Splitting the stamp out is what
+    /// makes byte identity testable: it is the one field of a Colophon PDF
+    /// that is not a function of the album.
+    fn written_at(stamp: chrono::DateTime<chrono::Local>) -> (Vec<u8>, Document) {
         let mut album = Album::new("Été & cie", std::path::Path::new("."), Size { w: 210.0, h: 210.0 });
         album.spreads.push(Spread {
             template: "duo".into(),
@@ -954,15 +950,41 @@ mod tests {
             solid_jpeg([200, 30, 40], 160, 120).unwrap(),
             solid_jpeg([30, 120, 200], 160, 120).unwrap(),
         ];
-        let mut w = PdfWriter::new(&album);
+        let mut w = PdfWriter::with_stamp(&album, stamp);
         w.add_spread(&album.spreads[0], &assets).unwrap();
-        let path = std::env::temp_dir()
-            .join(format!("colophon-pdfx-{}-{:?}.pdf", std::process::id(), std::thread::current().id()));
+        let path = std::env::temp_dir().join(format!(
+            "colophon-pdfx-{}-{:?}-{}.pdf",
+            std::process::id(),
+            std::thread::current().id(),
+            stamp.timestamp_nanos_opt().unwrap_or_default()
+        ));
         w.save(&path).expect("écriture");
         let bytes = std::fs::read(&path).unwrap();
         let doc = Document::load(&path).expect("relecture");
         let _ = std::fs::remove_file(&path);
         (bytes, doc)
+    }
+
+    /// Two exports of the same album at the same instant are the same file,
+    /// byte for byte. Everything a Colophon PDF holds is a pure function of
+    /// the album and its assets except the declared instant, so pinning that
+    /// pins the bytes.
+    ///
+    /// This is the measuring instrument the scene port needs: a refactor of
+    /// the emitter that leaves this diff empty displaced nothing, which no
+    /// count of green counters can say as plainly.
+    #[test]
+    fn deux_exports_au_meme_instant_sont_le_meme_fichier() {
+        use chrono::{Local, TimeZone};
+        let t = Local.with_ymd_and_hms(2026, 8, 20, 11, 0, 0).unwrap();
+        let (a, _) = written_at(t);
+        let (b, _) = written_at(t);
+        assert_eq!(a.len(), b.len(), "longueurs différentes");
+        assert!(a == b, "deux exports au même instant diffèrent");
+
+        // And the test is not vacuous: move the instant, the file moves.
+        let (c, _) = written_at(Local.with_ymd_and_hms(2026, 8, 20, 11, 0, 1).unwrap());
+        assert!(a != c, "l'horodatage ne se lit pas dans le fichier");
     }
 
     /// The header says 1.6 and the line under it carries the binary marker.

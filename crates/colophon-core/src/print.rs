@@ -6,7 +6,7 @@
 
 use crate::model::Album;
 use crate::printer::{Fichiers, PrinterProfile};
-use crate::{cover, meta, pdf, thumb};
+use crate::{cover, meta, pdf, scene, thumb};
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -152,14 +152,17 @@ pub fn render_print_pdf(
     }
 
     for (i, spread) in album.spreads.iter().enumerate() {
-        let rects = pdf::slots_for(&spread.template, spread.slots.len(), &g);
+        // How many pixels a photograph deserves is a question about the cell
+        // it lands in, so it is a question about the scene.
+        let scene = scene::Scene::of(spread, &g);
         let mut assets = Vec::with_capacity(spread.slots.len());
-        for (slot, rect) in spread.slots.iter().zip(rects.iter()) {
+        for object in &scene.objects {
+            let scene::Role::Photo { src, focal, zoom, .. } = &object.role else { continue };
             anyhow::ensure!(!cancel(), "export annulé");
-            let src = root.join(&slot.src);
-            let orientation = meta::read(&src).orientation;
-            let asset = print_asset(&src, orientation, rect, slot.focal, slot.zoom)
-                .with_context(|| format!("planche {} : {}", i + 1, slot.src))?;
+            let path = root.join(src);
+            let orientation = meta::read(&path).orientation;
+            let asset = print_asset(&path, orientation, &object.rect, *focal, *zoom)
+                .with_context(|| format!("planche {} : {}", i + 1, src))?;
             assets.push(asset);
             done += 1;
             progress(&format!("render: {done}/{total}"));

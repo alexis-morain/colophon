@@ -41,6 +41,7 @@ import {
 } from "./album";
 import { captionSuggestion, detectedFocal } from "./bridge";
 import { t } from "./i18n";
+import { jusquAuRendu } from "./mesure";
 import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
@@ -745,10 +746,14 @@ function CropPhoto({
     g.moved = true;
     const fx = spanX > 0.5 ? g.focal[0] - dx / spanX : g.focal[0];
     const fy = spanY > 0.5 ? g.focal[1] - dy / spanY : g.focal[1];
+    // Une trame de recadrage, dev seulement : de l'événement de pointeur au
+    // pixel. C'est la mesure qui dira si un canvas glisse mieux qu'un DOM.
+    const fin = jusquAuRendu("recadrage.trame");
     onDraft(
       [Math.min(1, Math.max(0, fx)), Math.min(1, Math.max(0, fy))],
       zoom,
     );
+    fin();
   };
 
   const endCrop = (e: React.PointerEvent) => {

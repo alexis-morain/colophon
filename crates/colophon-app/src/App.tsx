@@ -81,6 +81,7 @@ import { PlanchesView, LockGlyph } from "./PlanchesView";
 import { CoverView } from "./CoverView";
 import { EnvoiView } from "./EnvoiView";
 import { Cle, FR, langue, t, useLangue } from "./i18n";
+import { jusquAuRendu } from "./mesure";
 import { RaccourcisView } from "./Raccourcis";
 import { SignalerView } from "./SignalerView";
 import { SignalKind } from "./signaler";
@@ -212,7 +213,31 @@ export default function App() {
   const total = album?.spreads.length ?? 0;
   const dirty = album !== null && album !== savedAlbum;
 
+  // Deux chronos de rendu, dev seulement (`mesure.ts`), pris avant le port en
+  // Canvas pour qu'après il y ait quelque chose à comparer. Ils se ferment
+  // dans un effet du parent : les effets des enfants tournent d'abord, donc la
+  // planche est commitée quand celui-ci s'exécute, et le double `rAF` de
+  // `jusquAuRendu` attend le pixel plutôt que la trame d'avant.
+  const finPremiere = useRef<(() => void) | null>(null);
+  const finPlanche = useRef<(() => void) | null>(null);
+  const indexMesure = useRef<number | null>(null);
+  // Comparé au rendu plutôt que dans un effet : ce qu'on veut chronométrer
+  // est le travail d'affichage, pas le trajet de la frappe jusqu'à lui, et ce
+  // trajet-là ne bougera pas d'un port de rendu. Le double rendu de
+  // StrictMode ne relance rien, la ref ayant déjà pris la valeur.
+  if (indexMesure.current !== index) {
+    indexMesure.current = index;
+    finPlanche.current = jusquAuRendu("planche.suivante");
+  }
+  useEffect(() => {
+    finPremiere.current?.();
+    finPremiere.current = null;
+    finPlanche.current?.();
+    finPlanche.current = null;
+  });
+
   const adopt = useCallback((result: OpenedAlbum) => {
+    finPremiere.current = jusquAuRendu("planche.premiere");
     resetThumbs();
     setOpened(result);
     setHist({ album: result.album, past: [], future: [] });

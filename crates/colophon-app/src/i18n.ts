@@ -432,6 +432,8 @@ export const FR = {
     "Répondre sur GitHub (le formulaire pose ces deux questions)",
 
   // -- la table lumineuse
+  "table.liste": "Planches de l’album",
+  "table.cellule.nom": "Planche {n}",
   "table.cellule.titre":
     "planche {n} · glisser pour déplacer, double-clic pour ouvrir",
   "table.editee": "Éditée à la main : survit à toute recomposition",
@@ -1015,6 +1017,8 @@ export const EN: Record<Cle, string> = {
     "Two questions, ten seconds: would you show this album exactly as the software composed it, and which are its three worst spreads? Every cited spread is examined one by one.",
   "envoi.verdict.bouton": "Answer on GitHub (the form asks these two questions)",
 
+  "table.liste": "The album’s spreads",
+  "table.cellule.nom": "Spread {n}",
   "table.cellule.titre":
     "spread {n} · drag to move, double-click to open",
   "table.editee": "Edited by hand: survives any recomposition",

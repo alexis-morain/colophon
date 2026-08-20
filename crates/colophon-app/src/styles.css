@@ -2343,6 +2343,13 @@ kbd {
   border: 1px dashed var(--accent);
 }
 
+/* La cellule courante porte déjà une bordure d'accent ; l'anneau dit autre
+   chose — que le clavier est ici, et que les flèches vont le déplacer. */
+.planche-cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .planche-cell:active {
   cursor: grabbing;
 }

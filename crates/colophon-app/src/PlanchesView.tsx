@@ -3,6 +3,14 @@
 // spread one click away: the sequencing work that makes or breaks the book
 // happens here, nearly for free. Images only load when their cell scrolls
 // into view; the blob pool stays bounded.
+//
+// **Et elle se parcourt au clavier**, parce que c'est un écran de
+// navigation : c'est ici qu'on cherche une planche, et une grille qu'on ne
+// peut atteindre qu'à la souris n'est pas une grille, c'est une image. Un
+// seul arrêt de tabulation — la cellule courante — puis les flèches à
+// l'intérieur, les verticales d'une rangée entière. La couverture est la
+// page zéro et se parcourt avec le reste ; ce qu'elle porte dedans attend
+// la session qui lui donnera une scène.
 
 import { useEffect, useRef, useState } from "react";
 import { t } from "./i18n";
@@ -28,14 +36,71 @@ export function PlanchesView({
   onLock: (at: number) => void;
 }) {
   const [dropAt, setDropAt] = useState<number | null>(null);
+  const grille = useRef<HTMLDivElement>(null);
+
+  /** Combien de cellules par rangée, tel que la grille les pose vraiment :
+   *  une flèche verticale doit sauter une rangée, pas un nombre inventé. */
+  const colonnes = () => {
+    const el = grille.current;
+    if (!el) return 1;
+    const pistes = getComputedStyle(el)
+      .gridTemplateColumns.split(" ")
+      .filter(Boolean).length;
+    return Math.max(1, pistes);
+  };
+
+  // Le clavier suit la cellule courante — mais seulement s'il est déjà dans
+  // la grille : sinon la vue volerait le focus à la barre ou au pied.
+  useEffect(() => {
+    const el = grille.current;
+    if (!el || !el.contains(document.activeElement)) return;
+    el.querySelector<HTMLElement>(`[data-at="${current}"]`)?.focus();
+  }, [current]);
+
+  const surTouche = (e: React.KeyboardEvent, at: number) => {
+    const dernier = album.spreads.length - 1;
+    // Arrêtée ici, la touche n'atteint pas la table de commandes d'App, qui
+    // ferait le même pas une seconde fois.
+    const aller = (to: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onSelect(Math.min(dernier, Math.max(-1, to)));
+    };
+    switch (e.key) {
+      case "ArrowRight":
+        aller(at + 1);
+        break;
+      case "ArrowLeft":
+        aller(at - 1);
+        break;
+      case "ArrowDown":
+        aller(at + colonnes());
+        break;
+      case "ArrowUp":
+        aller(at - colonnes());
+        break;
+      case "Home":
+        aller(-1);
+        break;
+      case "End":
+        aller(dernier);
+        break;
+      case "Enter":
+        e.preventDefault();
+        e.stopPropagation();
+        onOpen(at);
+        break;
+    }
+  };
 
   return (
-    <div className="planches" role="list">
+    <div className="planches" role="list" aria-label={t("table.liste")} ref={grille}>
       <CoverCell
         album={album}
         current={current === -1}
         onSelect={() => onSelect(-1)}
         onOpen={() => onOpen(-1)}
+        onKey={(e) => surTouche(e, -1)}
       />
       {album.spreads.map((spread, i) => (
         <PlancheCell
@@ -48,6 +113,7 @@ export function PlanchesView({
           onSelect={() => onSelect(i)}
           onOpen={() => onOpen(i)}
           onLock={() => onLock(i)}
+          onKey={(e) => surTouche(e, i)}
           onDragStartCell={(e) => {
             e.dataTransfer.setData("text/colophon-spread", String(i));
             e.dataTransfer.effectAllowed = "move";
@@ -80,6 +146,7 @@ function PlancheCell({
   onSelect,
   onOpen,
   onLock,
+  onKey,
   onDragStartCell,
   onDragOverCell,
   onDragLeaveCell,
@@ -93,6 +160,7 @@ function PlancheCell({
   onSelect: () => void;
   onOpen: () => void;
   onLock: () => void;
+  onKey: (e: React.KeyboardEvent) => void;
   onDragStartCell: (e: React.DragEvent) => void;
   onDragOverCell: (e: React.DragEvent) => void;
   onDragLeaveCell: () => void;
@@ -123,6 +191,17 @@ function PlancheCell({
         (spread.caption ? `${spread.caption} · ` : "") +
         t("table.cellule.titre", { n: index + 1 })
       }
+      // Un seul arrêt de tabulation pour toute la grille, celui de la
+      // cellule courante : les flèches font le reste, et Tab ne devient pas
+      // soixante pressions pour traverser un album.
+      data-at={index}
+      tabIndex={current ? 0 : -1}
+      aria-current={current ? true : undefined}
+      aria-label={
+        (spread.caption ? `${spread.caption} · ` : "") +
+        t("table.cellule.nom", { n: index + 1 })
+      }
+      onKeyDown={onKey}
     >
       <MiniSpread album={album} spread={spread} />
       <figcaption className="planche-meta">
@@ -162,11 +241,13 @@ function CoverCell({
   current,
   onSelect,
   onOpen,
+  onKey,
 }: {
   album: Album;
   current: boolean;
   onSelect: () => void;
   onOpen: () => void;
+  onKey: (e: React.KeyboardEvent) => void;
 }) {
   const cover = album.cover ?? { title: album.title };
   return (
@@ -182,6 +263,11 @@ function CoverCell({
         onOpen();
       }}
       title={t("table.couverture.titre")}
+      data-at={-1}
+      tabIndex={current ? 0 : -1}
+      aria-current={current ? true : undefined}
+      aria-label={t("table.couverture")}
+      onKeyDown={onKey}
     >
       <div
         className="mini-cover"

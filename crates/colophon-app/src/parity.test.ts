@@ -8,8 +8,11 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import fixture from "./geometrie.fixture.json";
+import sceneAlbum from "./scene.album.json";
 import sceneFixture from "./scene.fixture.json";
-import { geometryProblems, PARITY_FORMATS } from "./parity";
+import { Album, spreadGeometry } from "./album";
+import { setGeometrie } from "./geometrie";
+import { geometryProblems, PARITY_FORMATS, sceneProblems } from "./parity";
 
 /// The page shapes the raster gate walks, and the scene fixture with them.
 const SCENE_FORMATS = [
@@ -53,10 +56,8 @@ describe.skipIf(!existsSync(BINARY))("geometry parity with the engine", () => {
   // blank line, a template nobody knows, the colophon — because a fixture
   // taken from a real album covers whatever that album happened to contain.
   //
-  // Nothing reads this yet: the renderer that will is wave 2.3's. It is
-  // committed now so that the port lands on a model already pinned, and so
-  // that any change to what a spread *means* shows up as a diff here rather
-  // than as a surprise on screen.
+  // Two tests hang off it: this one keeps it honest against the engine, and
+  // the one below holds the TypeScript port to it.
   it.each(SCENE_FORMATS)("the committed scene fixture holds for %s", (format) => {
     const fresh = JSON.parse(
       execFileSync(
@@ -67,6 +68,37 @@ describe.skipIf(!existsSync(BINARY))("geometry parity with the engine", () => {
       ),
     );
     expect((sceneFixture as Record<string, unknown>)[format]).toEqual(fresh);
+  });
+});
+
+// The scene port, held to the same fixture. `scene.ts` assembles what a
+// spread holds so the renderer can draw it without asking the engine — and
+// an assembler that agrees with the engine on nine spreads' worth of order,
+// roles, reading ranks and line breaks, on six page shapes, is an assembler
+// whose renderer is drawing the book that will print.
+//
+// **If this diverges, it is the port that is wrong.** The engine writes the
+// PDF; nothing here is allowed to be a second opinion about it.
+describe.skipIf(!existsSync(BINARY))("scene parity with the engine", () => {
+  it.each(SCENE_FORMATS)("the port assembles %s's scenes", (format) => {
+    const dump = JSON.parse(
+      execFileSync(BINARY, ["--dump-geometry", "--format", format], {
+        encoding: "utf8",
+      }),
+    );
+    setGeometrie(dump);
+    const g = spreadGeometry({
+      trim_mm: dump.trim_mm,
+      bleed_mm: dump.bleed_mm,
+    } as Album);
+    expect(
+      sceneProblems(
+        (sceneFixture as Record<string, unknown>)[format],
+        (sceneAlbum as Album).spreads,
+        g,
+        format,
+      ),
+    ).toEqual([]);
   });
 });
 

@@ -1,25 +1,32 @@
-// The one comparison between the engine's geometry dump and what the editor
+// The one comparison between the engine's own output and what the editor
 // still computes by itself. Two callers share it: the /__dev/geometry
 // endpoint (vite.config.ts) and the Vitest parity test, so the check itself
 // cannot drift either.
 //
 // Since the templates became data consumed from the dump, the slots are no
 // longer a port: what this file guards is the algorithmic residue (crop
-// windows, cover sheet, half-title layout under a synthetic measure) and
-// the dump-reading code itself (flip, truncation, per-count captions).
+// windows, cover sheet, half-title layout under a synthetic measure), the
+// dump-reading code itself (flip, truncation, per-count captions), and — as
+// of the scene port — the order, the roles and the line breaking of what a
+// spread holds.
 
 import {
   captionAnchor,
+  CAPTION_SIZE_MM,
   coverSheet,
   cropWindow,
   DosProfil,
   gardeLayout,
+  PHOTO_CAPTION_SIZE_MM,
+  Spread,
   spreadGeometry,
+  SpreadGeometry,
   slotsFor,
   templateForCount,
   templates,
 } from "./album";
 import { Dump, setGeometrie } from "./geometrie";
+import { Scene, SceneObject, sceneOf } from "./scene";
 
 /** Page formats the parity run sweeps: every preset shape plus a free size. */
 export const PARITY_FORMATS = [
@@ -189,4 +196,172 @@ export function geometryProblems(dump: Dump, label: string): string[] {
   }
 
   return problems;
+}
+
+// ---- the scene ----------------------------------------------------------
+// `scene.ts` assembles, spread by spread, what `core::scene` assembles for
+// the PDF. It declares no dimension of its own — every rectangle and anchor
+// it uses comes from the dump — so what can drift is an order, a role, a
+// reading rank or a line break. That is what the golden fixture pins, and
+// what this compares, object by object, on the six page shapes.
+
+/** One object as the engine serialises it: millimetres, origin bottom-left
+ *  of the media box, type sizes in points. */
+type ObjetMoteur = {
+  rect: { x: number; y: number; w: number; h: number };
+  reading: number;
+  role: Record<string, any>;
+};
+
+/**
+ * Millimetre tolerances, and why there are two.
+ *
+ * A photograph's rectangle is a dump lookup on both sides, so the two agree
+ * to the last bit. A text box is built from a type size the dump rounds to
+ * six decimals (`PT_MM` above, against the engine's own 25.4 ⁄ 72), which
+ * moves its top edge by a hundredth of a micron. Neither number is a
+ * tolerance for a real disagreement: a millimetre out of a thousand would
+ * still be a hundred thousand times too big to see.
+ */
+const NEAR_MM = 1e-9;
+const NEAR_TEXTE_MM = 1e-4;
+
+/**
+ * Every disagreement between one committed scene and the port, as readable
+ * lines. `fixture` is the engine's `--dump-scene` for this page shape.
+ *
+ * **The measured ink is the one thing this cannot reproduce.** A width in
+ * the embedded face needs the face, and Vitest runs without a document — so
+ * both sides run the synthetic measure the half-title samples already use,
+ * and the ink width is checked to be exactly what that measure returned,
+ * rather than compared against a number obtained from a font file. The
+ * browser hands `font.ts::measureMm` in its place, and the widths then are
+ * the print's own.
+ */
+export function sceneProblems(
+  fixture: unknown,
+  spreads: Spread[],
+  g: SpreadGeometry,
+  label: string,
+): string[] {
+  const problems: string[] = [];
+  const scenes = fixture as { objects: ObjetMoteur[] }[];
+  if (!Array.isArray(scenes) || scenes.length !== spreads.length) {
+    return [
+      `${label}: ${spreads.length} planches, ${
+        Array.isArray(scenes) ? scenes.length : "aucune"
+      } scènes dans la fixture`,
+    ];
+  }
+
+  // Bottom-up to top-left, the one conversion this file performs.
+  const flipY = (y: number) => g.h - y;
+  const flipRect = (r: ObjetMoteur["rect"]) => ({
+    x: r.x,
+    y: g.h - (r.y + r.h),
+    w: r.w,
+    h: r.h,
+  });
+
+  scenes.forEach((attendu, i) => {
+    const tag = `${label} planche ${i + 1}`;
+    const scene: Scene = sceneOf(spreads[i], g, mesureSynthetique);
+    if (scene.objects.length !== attendu.objects.length) {
+      problems.push(
+        `${tag}: moteur ${attendu.objects.length} objets, port ${scene.objects.length}` +
+          ` (${scene.objects.map((o) => o.role.role).join(", ") || "aucun"})`,
+      );
+      return;
+    }
+    attendu.objects.forEach((want, k) =>
+      problems.push(
+        ...objetProblems(`${tag} objet ${k}`, want, scene.objects[k], flipY, flipRect),
+      ),
+    );
+  });
+
+  return problems;
+}
+
+function objetProblems(
+  tag: string,
+  want: ObjetMoteur,
+  got: SceneObject,
+  flipY: (y: number) => number,
+  flipRect: (r: ObjetMoteur["rect"]) => { x: number; y: number; w: number; h: number },
+): string[] {
+  const p: string[] = [];
+  const ecart = (quoi: string, a: number, b: number, tol: number) => {
+    if (!(Math.abs(a - b) < tol)) p.push(`${tag} ${quoi}: moteur ${a}, port ${b}`);
+  };
+  const egal = (quoi: string, a: unknown, b: unknown) => {
+    if (JSON.stringify(a) !== JSON.stringify(b)) {
+      p.push(`${tag} ${quoi}: moteur ${JSON.stringify(a)}, port ${JSON.stringify(b)}`);
+    }
+  };
+
+  egal("rôle", want.role.role, got.role.role);
+  if (want.role.role !== got.role.role) return p;
+  egal("rang de lecture", want.reading, got.reading);
+
+  const wr = flipRect(want.rect);
+  // A photograph's rectangle is the dump's, whole; a text box is measured,
+  // so its width is checked against the measure and the rest against the
+  // engine.
+  const photo = got.role.role === "photo";
+  const tol = photo ? NEAR_MM : NEAR_TEXTE_MM;
+  ecart("rect.x", wr.x, got.rect.x, tol);
+  ecart("rect.y", wr.y, got.rect.y, tol);
+  ecart("rect.h", wr.h, got.rect.h, tol);
+  if (photo) ecart("rect.w", wr.w, got.rect.w, tol);
+
+  switch (got.role.role) {
+    case "photo": {
+      egal("case", want.role.cell, got.role.cell);
+      egal("source", want.role.src, got.role.src);
+      egal("point focal", want.role.focal, got.role.focal);
+      egal("zoom", want.role.zoom, got.role.zoom);
+      break;
+    }
+    case "photo_caption":
+    case "chapter_caption": {
+      if (got.role.role === "photo_caption") egal("case", want.role.cell, got.role.cell);
+      egal("texte", want.role.text, got.role.text);
+      ecart("ancre.x", want.role.at.x, got.role.at.x, NEAR_MM);
+      ecart("ancre.y", flipY(want.role.at.y), got.role.at.y, NEAR_MM);
+      const taille =
+        got.role.role === "photo_caption" ? PHOTO_CAPTION_SIZE_MM : CAPTION_SIZE_MM;
+      ecart(
+        "encre mesurée",
+        mesureSynthetique(got.role.text, taille),
+        got.rect.w,
+        NEAR_MM,
+      );
+      break;
+    }
+    case "text": {
+      ecart("ancre.x", want.role.at.x, got.role.at.x, NEAR_MM);
+      ecart("ancre.y", flipY(want.role.at.y), got.role.at.y, NEAR_MM);
+      const lignes = want.role.lines as { text: string; size_pt: number; dy_mm: number }[];
+      if (lignes.length !== got.role.lines.length) {
+        p.push(`${tag}: moteur ${lignes.length} lignes, port ${got.role.lines.length}`);
+        break;
+      }
+      lignes.forEach((l, i) => {
+        const w = got.role.role === "text" ? got.role.lines[i] : null;
+        if (!w) return;
+        egal(`ligne ${i}`, l.text, w.text);
+        ecart(`ligne ${i} taille`, l.size_pt * PT_MM, w.sizeMm, NEAR_TEXTE_MM);
+        ecart(`ligne ${i} dy`, l.dy_mm, w.dyMm, NEAR_MM);
+      });
+      ecart(
+        "encre mesurée",
+        Math.max(...got.role.lines.map((l) => mesureSynthetique(l.text, l.sizeMm))),
+        got.rect.w,
+        NEAR_MM,
+      );
+      break;
+    }
+  }
+  return p;
 }

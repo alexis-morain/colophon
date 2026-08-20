@@ -43,10 +43,12 @@ même harnais, si.
    `album.origin.json` : un album de mesure ne doit ressembler à aucune
    référence de `--reprise`.
 
-2. Lancer le harnais sur l'album voulu, **au premier plan** :
+2. Lancer le harnais sur l'album voulu, **au premier plan**. Chemins absolus :
+   `$PWD` et `--prefix` relatif ne valent que depuis la racine du dépôt, et se
+   trompent en silence ailleurs.
 
    ```bash
-   COLOPHON_ALBUM=$PWD/.albums/mesure-200 npm --prefix crates/colophon-app run dev
+   COLOPHON_ALBUM=/Users/alex-pack/Developer/colophon/.albums/mesure-200 npm --prefix /Users/alex-pack/Developer/colophon/crates/colophon-app run dev
    ```
 
 3. Dans la page, faire exactement ceci, dans cet ordre :

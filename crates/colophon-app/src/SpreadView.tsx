@@ -68,6 +68,7 @@ type CropDraft = { slot: number; focal: [number, number]; zoom: number };
 export function SpreadView({
   album,
   spread,
+  planche,
   selected,
   onSelect,
   onSwap,
@@ -79,9 +80,13 @@ export function SpreadView({
   onText,
   onOverflow,
   onSansMarge,
+  onPlanche,
 }: {
   album: Album;
   spread: Spread;
+  /** Le rang de cette planche dans le livre : la couche d'accessibilité en a
+   *  besoin pour savoir qu'elle vient d'être rebâtie, et rendre le clavier. */
+  planche: number;
   selected?: number | null;
   onSelect?: (slot: number | null) => void;
   onSwap?: (a: number, b: number) => void;
@@ -102,6 +107,9 @@ export function SpreadView({
   onOverflow?: (message: string | null) => void;
   /** A crop drag found nothing to slide: the photo fills its cell exactly. */
   onSansMarge?: () => void;
+  /** Tourner la planche depuis la couche d'objets, au bout de l'ordre de
+   *  lecture. Rend vrai si elle a tourné. */
+  onPlanche?: (sens: 1 | -1) => boolean;
 }) {
   const paper = useRef<HTMLDivElement>(null);
   const [mm, setMm] = useState(1);
@@ -834,8 +842,11 @@ export function SpreadView({
             h: geom.h - 2 * album.bleed_mm,
           }}
           selected={selected}
+          planche={planche}
+          edition={editingCaption || editingText}
           onActivate={activer}
           onEchap={() => onSelect?.(null)}
+          onPlanche={onPlanche}
         />
       </div>
       <div className="gutter" aria-hidden="true" />

@@ -491,9 +491,16 @@ export default function App() {
     setRendering(true);
     setStatus(t("export.rendu"));
     try {
-      const written = await exportPdf(hist.album.title, profil, (done, total) =>
-        setStatus(t("export.progress", { done, total })),
-      );
+      // Une fois par photo à l'écran serait bavard pour une région vivante :
+      // le compteur avance au plus une fois par seconde, et la dernière
+      // photo passe toujours.
+      let dernier = 0;
+      const written = await exportPdf(hist.album.title, profil, (done, total) => {
+        const now = performance.now();
+        if (done < total && now - dernier < 1000) return;
+        dernier = now;
+        setStatus(t("export.progress", { done, total }));
+      });
       // What was actually written, named. A supplier who wants two files gets
       // two, and the second one is the thing nobody thinks to look for.
       setStatus(
@@ -1603,6 +1610,7 @@ export default function App() {
                 <SpreadView
                   album={album}
                   spread={spread}
+                  planche={index}
                   selected={selected}
                   onSelect={setSelected}
                   onSwap={(a, b) => apply((al) => swapPhotos(al, index, a, b))}
@@ -1620,6 +1628,16 @@ export default function App() {
                   onText={(text) => apply((a) => setSpreadText(a, index, text))}
                   onOverflow={setOverflow}
                   onSansMarge={() => setStatus(t("planche.recadrer.pleine.status"))}
+                  onPlanche={(sens) => {
+                    const to = index + sens;
+                    if (to < 0 || to >= total) return false;
+                    setIndex(to);
+                    // Le clavier vient de traverser une page sans que rien
+                    // ne le dise : la ligne de statut est la seule voix de
+                    // l'application, et elle est vivante depuis peu.
+                    setStatus(t("planche.position", { n: to + 1, total }));
+                    return true;
+                  }}
                 />
               )
             )}
@@ -1717,7 +1735,7 @@ export default function App() {
         />
       ) : view === "envoi" ? (
         <footer className="foot envoi-foot">
-          <span className="status">{status}</span>
+          <span className="status" role="status">{status}</span>
         </footer>
       ) : (
         <BookFoot
@@ -2175,7 +2193,12 @@ function BookFoot({
           {index === COVER ? "C" : index + 1} / {total}
         </span>
       </div>
-      <div className="foot-line">
+      {/* La seule voix de l'application : « Photo à la taille exacte de sa
+          case », « Planche déplacée en 12 ». Vivante, donc entendue par qui
+          ne la voit pas — et posée sur le conteneur, qui lui existe avant
+          le message, faute de quoi certains lecteurs d'écran ne verraient
+          jamais naître la région. */}
+      <div className="foot-line" role="status">
         {rendering ? (
           <span className="foot-render">
             {status ?? t("export.rendu")}{" "}
@@ -2231,7 +2254,7 @@ function PlanchesFoot({
           {t("stockage.supprimer")}
         </button>
       </div>
-      <p className="foot-line">
+      <p className="foot-line" role="status">
         {status ?? t("planches.hint")}
       </p>
     </footer>
@@ -2276,7 +2299,7 @@ function TriFoot({
       ) : (
         <div className="foot-tri muted">{t("tri.foot.vide")}</div>
       )}
-      <p className="foot-line">{status ?? ""}</p>
+      <p className="foot-line" role="status">{status ?? ""}</p>
     </footer>
   );
 }

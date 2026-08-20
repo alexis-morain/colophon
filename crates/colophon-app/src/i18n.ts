@@ -248,6 +248,7 @@ export const FR = {
   "planche.dupliquee": "Planche {n} dupliquée",
   "planche.liberee": "Planche libérée",
   "planche.figee.status": "Planche figée : elle survivra à toute recomposition",
+  "planche.position": "Planche {n} sur {total}",
   "auto.confirme":
     "Rendre la planche {n} à l’automatique ?\n\nElle reprend la composition proposée au départ. Le recadrage, les légendes et les photos changées à la main sur cette planche sont perdus, et le cadenas tombe.\n\n⌘Z revient en arrière.",
   "planche.vide.inseree": "Planche vide insérée : une respiration",
@@ -851,6 +852,7 @@ export const EN: Record<Cle, string> = {
   "planche.dupliquee": "Spread {n} duplicated",
   "planche.liberee": "Spread released",
   "planche.figee.status": "Spread locked: it will survive any recomposition",
+  "planche.position": "Spread {n} of {total}",
   "auto.confirme":
     "Give spread {n} back to the machine?\n\nIt takes back the composition proposed at the start. The crop, the captions and the photos changed by hand on this spread are lost, and the padlock falls.\n\n⌘Z goes back.",
   "planche.vide.inseree": "Empty spread inserted: a breath",

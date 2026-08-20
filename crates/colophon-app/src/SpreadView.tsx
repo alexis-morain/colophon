@@ -292,6 +292,20 @@ export function SpreadView({
   const aTexte = scene.objects.some((o) => o.role.role === "text");
 
   /**
+   * What is being typed into, whichever renderer is drawing.
+   *
+   * Renaming a chapter and writing a text page stay **real fields** — a
+   * caret, a selection, an undo stack, a spellchecker, an input method:
+   * everything a text box owes the person using it, and none of which a
+   * canvas can be made to fake convincingly. So the canvas simply stops
+   * painting the object the field is showing, for as long as the field is
+   * open, and the field sits over the hole.
+   */
+  const enEdition = (o: SceneObject) =>
+    (o.role.role === "chapter_caption" && editingCaption && !!onSpreadCaption) ||
+    (o.role.role === "text" && editingText && !!onText);
+
+  /**
    * What Enter does on a focused object — the keyboard's half of what a
    * click already does. A caption leads to its own photograph, because the
    * caption editor is the popover under the case: the reader who reaches a
@@ -581,7 +595,7 @@ export function SpreadView({
             test; nothing here decides what a spread holds. */}
         {modeCanvas && (
           <SceneCanvas
-            scene={scene}
+            scene={{ objects: scene.objects.filter((o) => !enEdition(o)) }}
             geom={geom}
             mm={mm}
             selected={selected}
@@ -631,13 +645,7 @@ export function SpreadView({
             is being typed into stays in the DOM: a field is a field. */}
         {scene.objects.map((o, depth) => {
           const role = o.role;
-          if (
-            modeCanvas &&
-            !(role.role === "chapter_caption" && editingCaption) &&
-            !(role.role === "text" && editingText)
-          ) {
-            return null;
-          }
+          if (modeCanvas && !enEdition(o)) return null;
           switch (role.role) {
             case "photo": {
               const cell = role.cell;

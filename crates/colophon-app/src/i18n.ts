@@ -448,6 +448,7 @@ export const FR = {
   "planche.texte.placeholder":
     "Votre texte, ligne à ligne.\nEntrée pour aller à la ligne.",
   "planche.texte.editer": "Cliquer pour éditer le texte",
+  "planche.texte.ghost": "Page de texte : cliquer pour écrire.",
   "planche.recadrer":
     "Glisser pour recadrer · molette pour zoomer · double-clic recentre · ⌥ affine",
   "planche.recadrer.pleine":
@@ -1007,6 +1008,7 @@ export const EN: Record<Cle, string> = {
   "planche.legende.proposer": "Propose “{texte}”",
   "planche.texte.placeholder": "Your text, line by line.\nEnter for a new line.",
   "planche.texte.editer": "Click to edit the text",
+  "planche.texte.ghost": "Text page: click to write.",
   "planche.recadrer":
     "Drag to crop · wheel to zoom · double-click recentres · ⌥ refines",
   "planche.recadrer.pleine":

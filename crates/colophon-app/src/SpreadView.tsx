@@ -4,16 +4,27 @@
 // given, photos become selectable and draggable; the view stays a pure
 // reader without them.
 //
+// **What it draws, it does not decide.** The spread is turned into a scene
+// (`scene.ts`) — objects in paint order, each with its rectangle, its
+// reading rank and its role — by the same derivation the engine runs before
+// writing the PDF. This view walks that list. It no longer rebuilds a
+// rectangle, and it no longer knows that `garde`, `texte` and `colophon` are
+// special: it knows there is a block of text, and which shape of block the
+// screen gives it.
+//
+// The two things the scene does not hold are the two editor affordances for
+// objects that do not exist yet: the ghost of an untitled chapter, and the
+// invitation on a blank text page. Both are marked as such below.
+//
 // The selected photo is a crop editor: dragging inside the case moves the
 // framing (⌥ refines), the wheel zooms past the fill, a double-click
 // recentres on the detected focal. Gestures work on a local draft and land
 // on the undo stack once, at the end of the gesture.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Album,
   CAPTION_SIZE_MM,
-  PHOTO_CAPTION_DROP_MM,
   PHOTO_CAPTION_SIZE_MM,
   Rect,
   Slot,
@@ -29,20 +40,18 @@ import {
   effectivePpi,
   spreadGeometry,
   slidingRoom,
-  slotsFor,
   textAnchor,
-  colophonAnchor,
   COLOPHON_TEMPLATE,
   COLOPHON_SIZE_MM,
   COLOPHON_LEADING_MM,
-  gardeAnchor,
-  gardeLayout,
   gardePlace,
   GARDE_TEMPLATE,
 } from "./album";
 import { captionSuggestion, detectedFocal } from "./bridge";
+import { fontLoaded, measureMm } from "./font";
 import { t } from "./i18n";
 import { jusquAuRendu } from "./mesure";
+import { Point, Role, sceneOf } from "./scene";
 import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
@@ -50,17 +59,6 @@ type CropDraft = { slot: number; focal: [number, number]; zoom: number };
 
 /** Under half a pixel each way, no gesture can move anything. */
 const ROOM_EPSILON = 0.5;
-
-/** Measure a string at a given CSS font, for overflow signalling. */
-const measure = (() => {
-  let ctx: CanvasRenderingContext2D | null = null;
-  return (text: string, font: string): number => {
-    if (!ctx) ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) return 0;
-    ctx.font = font;
-    return ctx.measureText(text).width;
-  };
-})();
 
 export function SpreadView({
   album,
@@ -107,8 +105,6 @@ export function SpreadView({
 
   const trimW = album.trim_mm.w * 2;
   const geom = spreadGeometry(album);
-  const rects = slotsFor(spread.template, spread.slots.length, geom);
-  const caption = captionAnchor(spread.template, spread.slots.length, geom);
 
   // One millimetre in pixels: every geometry below is then written in mm.
   useLayoutEffect(() => {
@@ -126,45 +122,56 @@ export function SpreadView({
   useEffect(() => setEditingCaption(false), [spread]);
 
   // Text is only measured in the embedded face: once it lands (local file,
-  // milliseconds), measure everything again.
-  const [fontReady, setFontReady] = useState(false);
+  // milliseconds), render again so every ink rectangle is remeasured. The
+  // flag itself is never read — the re-render is the whole point.
+  const [, setFontReady] = useState(false);
   useEffect(() => {
     let alive = true;
-    document.fonts.load('100px "Source Sans 3"').then(
-      () => alive && setFontReady(true),
-      () => {},
-    );
+    fontLoaded().then(() => alive && setFontReady(true));
     return () => {
       alive = false;
     };
   }, []);
+
+  // What this spread holds, derived exactly as the engine derives it before
+  // writing the PDF. Rebuilt on every render rather than memoised: it is a
+  // handful of objects, and a stale scene would draw yesterday's page.
+  const scene = sceneOf(spread, geom, measureMm);
+  const cellRects = new Map<number, Rect>();
+  scene.objects.forEach((o) => {
+    if (o.role.role === "photo") cellRects.set(o.role.cell, o.rect);
+  });
 
   // Photo captions wider than their slot, and text lines wider than the
   // page: named to the reader, never cut.
   useEffect(() => {
     if (!onOverflow) return;
     const problems: string[] = [];
-    spread.slots.forEach((slot, i) => {
-      const r = rects[i];
-      if (!slot.caption || !r) return;
+    for (const o of scene.objects) {
+      if (o.role.role !== "photo_caption") continue;
+      const cell = cellRects.get(o.role.cell);
+      if (!cell) continue;
       // Below the trimmed page (full-bleed slots): the caption would print
-      // in the bleed and be cut off entirely.
-      if (r.y + r.h + PHOTO_CAPTION_DROP_MM > geom.h - 4) {
-        problems.push(t("deborde.legende.horspage", { i: i + 1 }));
-        return;
+      // in the bleed and be cut off entirely. Its baseline says so.
+      if (o.role.at.y > geom.h - 4) {
+        problems.push(t("deborde.legende.horspage", { i: o.role.cell + 1 }));
+        continue;
       }
-      const wMm = measureMm(slot.caption, PHOTO_CAPTION_SIZE_MM);
-      if (wMm > r.w) {
+      // The object's own ink is the measurement: nothing is measured twice.
+      if (o.rect.w > cell.w) {
         problems.push(
-          t("deborde.legende.longue", { i: i + 1, mm: Math.ceil(wMm - r.w) }),
+          t("deborde.legende.longue", {
+            i: o.role.cell + 1,
+            mm: Math.ceil(o.rect.w - cell.w),
+          }),
         );
       }
-    });
-    if (spread.template === "texte" && spread.text) {
+    }
+    const bloc = scene.objects.find((o) => o.role.role === "text");
+    const lignes = bloc?.role.role === "text" ? bloc.role.lines : [];
+    if (spread.template === "texte") {
       const room = geom.w / 2 - geom.margin - geom.gutter / 2;
-      const over = spread.text
-        .split("\n")
-        .filter((l) => measureMm(l, TEXT_SIZE_MM) > room).length;
+      const over = lignes.filter((l) => measureMm(l.text, l.sizeMm) > room).length;
       if (over > 0) {
         problems.push(
           over > 1 ? t("deborde.lignes", { n: over }) : t("deborde.ligne.une"),
@@ -174,29 +181,153 @@ export function SpreadView({
     // The half-title fits its title by shrinking it, and builds its town
     // line to the page: nothing here overflows unless album.json was
     // repaired by hand, which is precisely when saying so is worth it.
-    if (spread.template === GARDE_TEMPLATE && spread.text) {
+    if (spread.template === GARDE_TEMPLATE) {
       const room = gardePlace(geom);
-      const over = gardeLayout(spread.text, room, measureMm).some(
-        (l) => measureMm(l.texte, l.tailleMm) > room + 0.01,
-      );
-      if (over) {
+      if (lignes.some((l) => measureMm(l.text, l.sizeMm) > room + 0.01)) {
         problems.push(t("deborde.garde"));
       }
     }
     onOverflow(problems[0] ?? null);
-  }, [spread, rects, geom, mm, onOverflow, fontReady]);
-
-  const textAt = textAnchor(geom);
-  const colophonAt = colophonAnchor(geom);
-  const gardeAt = gardeAnchor(geom);
+  });
 
   // The caption popover anchors under the selected case, in viewport
   // coordinates (position: fixed): it may hang below the sheet without
   // being clipped by the paper's overflow.
   const hasSelection = selected !== null && selected !== undefined;
   const selectedSlot = hasSelection ? (spread.slots[selected] ?? null) : null;
-  const selectedRect = hasSelection ? (rects[selected] ?? null) : null;
+  const selectedRect = hasSelection ? (cellRects.get(selected) ?? null) : null;
   const paperBox = paper.current?.getBoundingClientRect() ?? null;
+
+  /**
+   * The chapter caption, whether it exists yet or not. Given an object's
+   * text, it draws it where the scene put it; given null, it draws the ghost
+   * that invites a title — an editor affordance for an object the spread
+   * does not carry, which is why it is the one anchor this view still asks
+   * the geometry for. An album.json repaired by hand can also hold an empty
+   * caption: it wears the ghost and shows nothing, exactly as before.
+   */
+  const chapitre = (text: string | null, at: Point) =>
+    editingCaption && onSpreadCaption ? (
+      <input
+        className="caption caption-input"
+        style={{
+          left: `${at.x * mm}px`,
+          top: `${at.y * mm}px`,
+          fontSize: `${Math.max(CAPTION_SIZE_MM * mm * 1.35, 13)}px`,
+        }}
+        defaultValue={text ?? ""}
+        placeholder={proposition ?? t("planche.chapitre.placeholder")}
+        autoFocus
+        onFocus={(e) => e.currentTarget.select()}
+        onClick={(e) => e.stopPropagation()}
+        onBlur={(e) => {
+          setEditingCaption(false);
+          onSpreadCaption(e.currentTarget.value);
+        }}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") e.currentTarget.blur();
+          // Tab takes the grey proposal, in the field like outside it.
+          if (e.key === "Tab" && proposition && e.currentTarget.value === "") {
+            e.preventDefault();
+            e.currentTarget.value = proposition;
+            e.currentTarget.blur();
+          }
+          if (e.key === "Escape") {
+            e.currentTarget.value = text ?? "";
+            e.currentTarget.blur();
+          }
+        }}
+      />
+    ) : (
+      <span
+        className={
+          "caption" +
+          (onSpreadCaption ? " editable" : "") +
+          (text ? "" : " ghost")
+        }
+        style={{
+          left: `${at.x * mm}px`,
+          top: `${at.y * mm}px`,
+          fontSize: `${CAPTION_SIZE_MM * mm * 1.35}px`,
+        }}
+        title={
+          !text && proposition
+            ? t("planche.proposition.titre")
+            : onSpreadCaption
+              ? t("planche.chapitre.renommer")
+              : undefined
+        }
+        onClick={
+          onSpreadCaption &&
+          ((e) => {
+            e.stopPropagation();
+            setEditingCaption(true);
+          })
+        }
+      >
+        {text ?? proposition ?? t("planche.chapitre.ghost")}
+      </span>
+    );
+
+  const aChapitre = scene.objects.some((o) => o.role.role === "chapter_caption");
+  const aTexte = scene.objects.some((o) => o.role.role === "text");
+
+  const roomMm = geom.w / 2 - geom.margin - geom.gutter / 2;
+
+  /**
+   * The one block of text a spread can carry — half-title, text page or
+   * colophon — in the shape the screen gives it.
+   *
+   * Making the three one role is what pays here: the anchor and the lines
+   * both come from the scene, and all that is left is a choice of DOM. The
+   * half-title sets its lines one by one, because they are not all the same
+   * size; the other two are one flowing block, which is also what lets a
+   * text page be edited in place.
+   *
+   * That flowing block still spaces its lines with the screen's leading
+   * rather than the print's — a difference of about a millimetre a line,
+   * older than this port, and one the canvas will not inherit.
+   */
+  const blocDeTexte = (role: Extract<Role, { role: "text" }>) => {
+    if (spread.template === GARDE_TEMPLATE) {
+      return role.lines.map((l, i) => {
+        // The size on screen is the print size, and the baseline is a box
+        // top one size up.
+        const px = Math.max(l.sizeMm * mm * 1.35, 11);
+        return (
+          <span
+            key={i}
+            className="garde-line"
+            style={{
+              left: `${role.at.x * mm}px`,
+              top: `${(role.at.y + l.dyMm) * mm - px}px`,
+              fontSize: `${px}px`,
+            }}
+          >
+            {l.text}
+          </span>
+        );
+      });
+    }
+    // The colophon is read-only: the engine writes it from what it measured,
+    // and typing over it would turn a statement of fact into a caption. The
+    // Envoi screen is the one place it can be taken away.
+    const colophon = spread.template === COLOPHON_TEMPLATE;
+    const sizeMm = colophon ? COLOPHON_SIZE_MM : TEXT_SIZE_MM;
+    return (
+      <TextBlock
+        text={spread.text ?? ""}
+        at={role.at}
+        mm={mm}
+        sizeMm={sizeMm}
+        roomMm={roomMm}
+        fontPx={Math.max(sizeMm * mm * 1.35, colophon ? 11 : 13)}
+        leadPx={(colophon ? COLOPHON_LEADING_MM : TEXT_LEADING_MM) * mm * 1.35}
+        onText={spread.template === "texte" ? onText : undefined}
+      />
+    );
+  };
 
   return (
     <div
@@ -219,176 +350,97 @@ export function SpreadView({
           height: `${geom.h * mm}px`,
         }}
       >
-        {spread.slots.map((slot, i) => {
-          const r = rects[i];
-          if (!r) return null;
-          const d = draft?.slot === i ? draft : null;
-          return (
-            <CropPhoto
-              key={`${slot.src}-${i}`}
-              slot={slot}
-              rect={r}
-              mm={mm}
-              focal={d?.focal ?? slot.focal}
-              zoom={d?.zoom ?? slot.zoom ?? 1}
-              selected={selected === i}
-              onSelect={onSelect && (() => onSelect(selected === i ? null : i))}
-              onSwap={onSwap && ((from) => onSwap(from, i))}
-              onPlace={onPlace && ((photo) => onPlace(i, photo))}
-              onDraft={(focal, zoom) => setDraft({ slot: i, focal, zoom })}
-              onCommit={
-                onCrop &&
-                ((focal, zoom) => {
-                  setDraft(null);
-                  onCrop(i, focal, zoom);
-                })
-              }
-              index={i}
-              onSansMarge={onSansMarge}
-            />
-          );
-        })}
+        {/* The scene, in its own order: back to front, exactly as the PDF's
+            content stream lays it down. */}
+        {scene.objects.map((o, depth) => {
+          const role = o.role;
+          switch (role.role) {
+            case "photo": {
+              const cell = role.cell;
+              const d = draft?.slot === cell ? draft : null;
+              return (
+                <CropPhoto
+                  key={`${role.src}-${cell}`}
+                  src={role.src}
+                  rect={o.rect}
+                  mm={mm}
+                  focal={d?.focal ?? role.focal}
+                  zoom={d?.zoom ?? role.zoom}
+                  zoomPose={role.zoom}
+                  selected={selected === cell}
+                  onSelect={
+                    onSelect && (() => onSelect(selected === cell ? null : cell))
+                  }
+                  onSwap={onSwap && ((from) => onSwap(from, cell))}
+                  onPlace={onPlace && ((photo) => onPlace(cell, photo))}
+                  onDraft={(focal, zoom) => setDraft({ slot: cell, focal, zoom })}
+                  onCommit={
+                    onCrop &&
+                    ((focal, zoom) => {
+                      setDraft(null);
+                      onCrop(cell, focal, zoom);
+                    })
+                  }
+                  index={cell}
+                  onSansMarge={onSansMarge}
+                />
+              );
+            }
 
-        {/* Photo captions, at print size and position. */}
-        {spread.slots.map((slot, i) => {
-          const r = rects[i];
-          if (!slot.caption || !r) return null;
-          const over = measureMm(slot.caption, PHOTO_CAPTION_SIZE_MM) > r.w;
-          return (
-            <span
-              key={`cap-${i}`}
-              className={"photo-caption" + (over ? " overflow" : "")}
-              style={{
-                left: `${r.x * mm}px`,
-                top: `${(r.y + r.h + PHOTO_CAPTION_DROP_MM) * mm}px`,
-                maxWidth: "none",
-                fontSize: `${Math.max(PHOTO_CAPTION_SIZE_MM * mm * 1.35, 9)}px`,
-              }}
-              title={over ? t("planche.legende.deborde") : undefined}
-            >
-              {slot.caption}
-            </span>
-          );
-        })}
-
-        {/* Chapter caption: readable in place, renamable in place. */}
-        {editingCaption && onSpreadCaption ? (
-          <input
-            className="caption caption-input"
-            style={{
-              left: `${caption.x * mm}px`,
-              top: `${caption.y * mm}px`,
-              fontSize: `${Math.max(CAPTION_SIZE_MM * mm * 1.35, 13)}px`,
-            }}
-            defaultValue={spread.caption ?? ""}
-            placeholder={proposition ?? t("planche.chapitre.placeholder")}
-            autoFocus
-            onFocus={(e) => e.currentTarget.select()}
-            onClick={(e) => e.stopPropagation()}
-            onBlur={(e) => {
-              setEditingCaption(false);
-              onSpreadCaption(e.currentTarget.value);
-            }}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Enter") e.currentTarget.blur();
-              // Tab takes the grey proposal, in the field like outside it.
-              if (e.key === "Tab" && proposition && e.currentTarget.value === "") {
-                e.preventDefault();
-                e.currentTarget.value = proposition;
-                e.currentTarget.blur();
-              }
-              if (e.key === "Escape") {
-                e.currentTarget.value = spread.caption ?? "";
-                e.currentTarget.blur();
-              }
-            }}
-          />
-        ) : (
-          (spread.caption || onSpreadCaption) && (
-            <span
-              className={
-                "caption" +
-                (onSpreadCaption ? " editable" : "") +
-                (spread.caption ? "" : " ghost")
-              }
-              style={{
-                left: `${caption.x * mm}px`,
-                top: `${caption.y * mm}px`,
-                fontSize: `${CAPTION_SIZE_MM * mm * 1.35}px`,
-              }}
-              title={
-                !spread.caption && proposition
-                  ? t("planche.proposition.titre")
-                  : onSpreadCaption
-                    ? t("planche.chapitre.renommer")
-                    : undefined
-              }
-              onClick={
-                onSpreadCaption &&
-                ((e) => {
-                  e.stopPropagation();
-                  setEditingCaption(true);
-                })
-              }
-            >
-              {spread.caption ?? proposition ?? t("planche.chapitre.ghost")}
-            </span>
-          )
-        )}
-
-        {/* Free-text page: the text in place, editable in place. */}
-        {spread.template === "texte" && (
-          <TextBlock
-            text={spread.text ?? ""}
-            x={textAt.x * mm}
-            y={textAt.y * mm}
-            width={(geom.w / 2 - geom.margin - geom.gutter / 2) * mm}
-            fontPx={Math.max(TEXT_SIZE_MM * mm * 1.35, 13)}
-            leadPx={TEXT_LEADING_MM * mm * 1.35}
-            roomMm={geom.w / 2 - geom.margin - geom.gutter / 2}
-            onText={onText}
-          />
-        )}
-
-        {/* The half-title, read-only like the colophon: the dates and the
-            towns are what the machine measured, and the title is edited in
-            the bar, where renaming the book also rewrites this line. */}
-        {spread.template === GARDE_TEMPLATE &&
-          gardeLayout(spread.text ?? "", gardePlace(geom), measureMm).map(
-            (l, i) => {
-              // Same reading as the text pages: the size on screen is the
-              // print size, and the baseline is a box top one size up.
-              const px = Math.max(l.tailleMm * mm * 1.35, 11);
+            // At print size, on its own baseline. The ink the scene measured
+            // is what says whether the line runs past its case.
+            case "photo_caption": {
+              const cell = cellRects.get(role.cell);
+              const over = cell !== undefined && o.rect.w > cell.w;
               return (
                 <span
-                  key={i}
-                  className="garde-line"
+                  key={`cap-${role.cell}`}
+                  className={"photo-caption" + (over ? " overflow" : "")}
                   style={{
-                    left: `${gardeAt.x * mm}px`,
-                    top: `${(gardeAt.y + l.dyMm) * mm - px}px`,
-                    fontSize: `${px}px`,
+                    left: `${role.at.x * mm}px`,
+                    top: `${role.at.y * mm}px`,
+                    maxWidth: "none",
+                    fontSize: `${Math.max(PHOTO_CAPTION_SIZE_MM * mm * 1.35, 9)}px`,
                   }}
+                  title={over ? t("planche.legende.deborde") : undefined}
                 >
-                  {l.texte}
+                  {role.text}
                 </span>
               );
-            },
-          )}
+            }
 
-        {/* The colophon: the same block, quieter and lower, and read-only.
-            The engine writes it from what it measured; typing over it would
-            turn a statement of fact into a caption. The Envoi screen is the
-            one place it can be taken away. */}
-        {spread.template === COLOPHON_TEMPLATE && (
+            case "chapter_caption":
+              return (
+                <Fragment key={`chapitre-${depth}`}>
+                  {chapitre(role.text, role.at)}
+                </Fragment>
+              );
+
+            case "text":
+              return (
+                <Fragment key={`texte-${depth}`}>{blocDeTexte(role)}</Fragment>
+              );
+          }
+        })}
+
+        {/* An untitled chapter has no object on the scene, and the invitation
+            to title one is not a thing that prints: it is the one anchor this
+            view still asks the geometry for. */}
+        {!aChapitre &&
+          onSpreadCaption &&
+          chapitre(null, captionAnchor(spread.template, spread.slots.length, geom))}
+
+        {/* A text page with nothing written yet: same case, one page later. */}
+        {!aTexte && spread.template === "texte" && (
           <TextBlock
-            text={spread.text ?? ""}
-            x={colophonAt.x * mm}
-            y={colophonAt.y * mm}
-            width={(geom.w / 2 - geom.margin - geom.gutter / 2) * mm}
-            fontPx={Math.max(COLOPHON_SIZE_MM * mm * 1.35, 11)}
-            leadPx={COLOPHON_LEADING_MM * mm * 1.35}
-            roomMm={geom.w / 2 - geom.margin - geom.gutter / 2}
+            text=""
+            at={textAnchor(geom)}
+            mm={mm}
+            sizeMm={TEXT_SIZE_MM}
+            roomMm={roomMm}
+            fontPx={Math.max(TEXT_SIZE_MM * mm * 1.35, 13)}
+            leadPx={TEXT_LEADING_MM * mm * 1.35}
+            onText={onText}
           />
         )}
       </div>
@@ -498,32 +550,31 @@ function CaptionPopover({
   );
 }
 
-/** Width of a string in spread millimetres at a print size in mm: measured
- *  at a big fixed size (glyph widths scale linearly), then scaled down.
- *  The face is the one the PDF embeds: the overflow warning and the print
- *  agree on every glyph. */
-function measureMm(text: string, sizeMm: number): number {
-  return (measure(text, '100px "Source Sans 3", sans-serif') * sizeMm) / 100;
-}
-
 /**
- * The free text of a `texte` spread. A click turns it into a textarea in
- * place; overlong lines are underlined, never wrapped or cut for print.
+ * A flowing block of set text: the free text of a `texte` spread, or the
+ * colophon. A click turns the first into a textarea in place; overlong lines
+ * are underlined, never wrapped or cut for print.
+ *
+ * It takes the raw text rather than the scene's lines, because a blank line
+ * has to hold its row here: on the scene a blank line is a `dy` the next
+ * line carries, and in a CSS grid it is a row of its own.
  */
 function TextBlock({
   text,
-  x,
-  y,
-  width,
+  at,
+  mm,
+  sizeMm,
   fontPx,
   leadPx,
   roomMm,
   onText,
 }: {
   text: string;
-  x: number;
-  y: number;
-  width: number;
+  /** The block's first baseline, millimetres, top-left origin. */
+  at: Point;
+  mm: number;
+  /** Print size of a line, for the overflow measurement. */
+  sizeMm: number;
   fontPx: number;
   leadPx: number;
   roomMm: number;
@@ -531,6 +582,10 @@ function TextBlock({
 }) {
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [text === ""]);
+
+  const x = at.x * mm;
+  const y = at.y * mm;
+  const width = roomMm * mm;
 
   if (editing && onText) {
     return (
@@ -580,14 +635,14 @@ function TextBlock({
       }
     >
       {text === "" ? (
-        <span className="text-page-ghost">Page de texte : cliquer pour écrire.</span>
+        <span className="text-page-ghost">{t("planche.texte.ghost")}</span>
       ) : (
         lines.map((l, i) => (
           <span
             key={i}
             className={
               "text-page-line" +
-              (measureMm(l, TEXT_SIZE_MM) > roomMm ? " overflow" : "")
+              (measureMm(l, sizeMm) > roomMm ? " overflow" : "")
             }
           >
             {l || " "}
@@ -605,11 +660,12 @@ function TextBlock({
  * recentres on the detected focal point).
  */
 function CropPhoto({
-  slot,
+  src,
   rect,
   mm,
   focal,
   zoom,
+  zoomPose,
   index,
   selected,
   onSelect,
@@ -619,11 +675,14 @@ function CropPhoto({
   onCommit,
   onSansMarge,
 }: {
-  slot: Slot;
+  src: string;
   rect: Rect;
   mm: number;
   focal: [number, number];
+  /** Shown: the gesture's draft while one is running, the album's otherwise. */
   zoom: number;
+  /** Stored: what album.json holds, which is what the badges speak about. */
+  zoomPose: number;
   index: number;
   selected?: boolean;
   onSelect?: () => void;
@@ -634,7 +693,7 @@ function CropPhoto({
   /** The photo fills its cell exactly and the drag has nothing to move. */
   onSansMarge?: () => void;
 }) {
-  const [url, setUrl] = useState<string | undefined>(() => cachedThumb(slot.src));
+  const [url, setUrl] = useState<string | undefined>(() => cachedThumb(src));
   const [over, setOver] = useState(false);
   const img = useRef<HTMLImageElement>(null);
   const gesture = useRef<{
@@ -654,20 +713,20 @@ function CropPhoto({
 
   useEffect(() => {
     let alive = true;
-    const hit = cachedThumb(slot.src);
+    const hit = cachedThumb(src);
     if (hit) {
       setUrl(hit);
       return;
     }
     setUrl(undefined);
-    loadThumb(slot.src).then(
+    loadThumb(src).then(
       (u) => alive && setUrl(u),
       () => {},
     );
     return () => {
       alive = false;
     };
-  }, [slot.src]);
+  }, [src]);
 
   // Warning badges, computed from the thumbnail already on screen (front
   // only, no engine round-trip). Resolution is only asserted when it is
@@ -692,7 +751,7 @@ function CropPhoto({
       if (!el.naturalWidth) return;
       const known = Math.max(el.naturalWidth, el.naturalHeight) < THUMB_SIZE;
       const p = effectivePpi(rect, el.naturalWidth, el.naturalHeight, zoom);
-      const luma = meanLuma(slot.src, el);
+      const luma = meanLuma(src, el);
       setWarn({
         ppi: known && p < MIN_EFFECTIVE_PPI ? Math.round(p) : null,
         dark: luma !== undefined && luma < DARK_MEAN_LUMA,
@@ -711,7 +770,7 @@ function CropPhoto({
     }
     el.addEventListener("load", inspect, { once: true });
     return () => el.removeEventListener("load", inspect);
-  }, [url, slot.src, rect.w, rect.h, zoom, mm]);
+  }, [url, src, rect.w, rect.h, zoom, mm]);
 
   // Wheel zoom needs a non-passive listener to swallow the page scroll.
   const box = useRef<HTMLDivElement>(null);
@@ -804,7 +863,7 @@ function CropPhoto({
   const recentre = async (e: React.MouseEvent) => {
     if (!selected || !onCommit) return;
     e.stopPropagation();
-    const f = await detectedFocal(slot.src).catch(() => [0.5, 0.42] as [number, number]);
+    const f = await detectedFocal(src).catch(() => [0.5, 0.42] as [number, number]);
     onCommit([f[0], f[1]], zoom);
   };
 
@@ -824,7 +883,7 @@ function CropPhoto({
         (editable ? " editable" : "") +
         (selected ? " selected cropping" : "") +
         (over ? " dropping" : "") +
-        ((slot.zoom ?? 1) > 1.001 ? " zoomed" : "")
+        (zoomPose > 1.001 ? " zoomed" : "")
       }
       style={style}
       onClick={
@@ -900,7 +959,7 @@ function CropPhoto({
           }}
         />
       )}
-      {selected && (slot.zoom ?? 1) > 1.001 && (
+      {selected && zoomPose > 1.001 && (
         <span className="slot-zoom">×{zoom.toFixed(2).replace(".", ",")}</span>
       )}
       {editable && (warn.ppi !== null || warn.dark) && (

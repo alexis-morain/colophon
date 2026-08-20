@@ -258,6 +258,10 @@ export function SceneCanvas({
     <canvas
       ref={canvasRef}
       className="spread-canvas"
+      // Un canvas n'a pas d'éléments : ce qu'il peint est nommé par la
+      // couche de proxies, jamais par lui. Le déclarer ferme la porte au
+      // jour où un navigateur exposerait la surface elle-même.
+      aria-hidden="true"
       style={{ width: `${geom.w * mm}px`, height: `${geom.h * mm}px` }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

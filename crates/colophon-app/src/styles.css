@@ -579,8 +579,20 @@ input[type="radio"] {
   transition: opacity var(--turn);
 }
 
-.paper:hover .caption.ghost {
+.paper:hover .caption.ghost,
+/* Le clavier y arrive aussi : une invitation qu'on ne voit qu'à la souris
+   n'est pas une invitation. */
+.caption.ghost:focus {
   opacity: 0.4;
+}
+
+/* Les deux invitations — nommer un chapitre, écrire une page de texte —
+   tiennent la place d'un objet que la planche ne porte pas encore, donc
+   aucun proxy ne les nomme et elles portent leur propre anneau. */
+.caption.ghost:focus,
+.text-page:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .caption-input {

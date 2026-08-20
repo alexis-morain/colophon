@@ -446,6 +446,11 @@ export const FR = {
   "planche.proposition.titre":
     "Proposée depuis les photos : Tab la pose, tout autre geste l’ignore",
   "planche.chapitre.renommer": "Cliquer pour renommer le chapitre",
+  // Les deux invitations tiennent la place d'un objet que la planche ne
+  // porte pas : aucun proxy ne les nomme, donc elles se nomment elles-mêmes,
+  // et par ce qu'elles font plutôt que par leur infobulle.
+  "planche.chapitre.nommer": "Nommer ce chapitre",
+  "planche.texte.ecrire": "Écrire cette page de texte",
   "planche.legende": "Légende",
   "planche.legende.aucune": "aucune",
   "planche.legende.exif": "Date EXIF de la photo, proposée, jamais imposée",
@@ -1022,6 +1027,8 @@ export const EN: Record<Cle, string> = {
   "planche.proposition.titre":
     "Proposed from the photos: Tab takes it, any other gesture ignores it",
   "planche.chapitre.renommer": "Click to rename the chapter",
+  "planche.chapitre.nommer": "Name this chapter",
+  "planche.texte.ecrire": "Write this text page",
   "planche.legende": "Caption",
   "planche.legende.aucune": "none",
   "planche.legende.exif": "EXIF date of the photo, proposed, never imposed",

@@ -224,8 +224,13 @@ export function SpreadView({
    * the geometry for. An album.json repaired by hand can also hold an empty
    * caption: it wears the ghost and shows nothing, exactly as before.
    */
-  const chapitre = (text: string | null, at: Point) =>
-    editingCaption && onSpreadCaption ? (
+  const chapitre = (text: string | null, at: Point) => {
+    // L'invitation à nommer un chapitre tient la place d'un objet que la
+    // planche ne porte pas : aucun proxy ne la nomme, donc elle est sa
+    // propre porte d'entrée — à la souris comme avant, au clavier
+    // désormais.
+    const invitation = text === null && !!onSpreadCaption;
+    return editingCaption && onSpreadCaption ? (
       <input
         className="caption caption-input"
         style={{
@@ -269,6 +274,23 @@ export function SpreadView({
           top: `${at.y * mm}px`,
           fontSize: `${CAPTION_SIZE_MM * mm * 1.35}px`,
         }}
+        // Ce qu'un rendu peint est du décor : la couche de proxies nomme
+        // déjà cet objet, et un nom donné deux fois est un nom lu deux
+        // fois. L'invitation fait exception — elle ne double aucun proxy.
+        aria-hidden={invitation ? undefined : true}
+        role={invitation ? "button" : undefined}
+        tabIndex={invitation ? 0 : undefined}
+        aria-label={invitation ? t("planche.chapitre.nommer") : undefined}
+        onKeyDown={
+          invitation
+            ? (e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                e.stopPropagation();
+                setEditingCaption(true);
+              }
+            : undefined
+        }
         title={
           !text && proposition
             ? t("planche.proposition.titre")
@@ -287,6 +309,7 @@ export function SpreadView({
         {text ?? proposition ?? t("planche.chapitre.ghost")}
       </span>
     );
+  };
 
   const aChapitre = scene.objects.some((o) => o.role.role === "chapter_caption");
   const aTexte = scene.objects.some((o) => o.role.role === "text");
@@ -537,6 +560,7 @@ export function SpreadView({
           <span
             key={i}
             className="garde-line"
+            aria-hidden="true"
             style={{
               left: `${role.at.x * mm}px`,
               top: `${(role.at.y + l.dyMm) * mm - px}px`,
@@ -565,6 +589,7 @@ export function SpreadView({
         editing={editingText}
         onEditing={setEditingText}
         onText={spread.template === "texte" ? onText : undefined}
+        objetDeScene
       />
     );
   };
@@ -694,6 +719,8 @@ export function SpreadView({
                     fontSize: `${Math.max(PHOTO_CAPTION_SIZE_MM * mm * 1.35, 9)}px`,
                   }}
                   title={over ? t("planche.legende.deborde") : undefined}
+                  // Nommée par son proxy, comme tout objet de la scène.
+                  aria-hidden="true"
                 >
                   {role.text}
                 </span>
@@ -790,6 +817,7 @@ export function SpreadView({
             editing={editingText}
             onEditing={setEditingText}
             onText={onText}
+            objetDeScene={false}
           />
         )}
 
@@ -936,6 +964,7 @@ function TextBlock({
   editing,
   onEditing,
   onText,
+  objetDeScene,
 }: {
   text: string;
   /** The block's first baseline, millimetres, top-left origin. */
@@ -950,6 +979,11 @@ function TextBlock({
   editing: boolean;
   onEditing: (on: boolean) => void;
   onText?: (text: string) => void;
+  /** Vrai quand un objet de la scène porte ce texte : le proxy le nomme, et
+   *  la copie peinte sort de l'arbre d'accessibilité. Faux pour la page de
+   *  texte encore vide, qui ne double aucun proxy et doit donc être sa
+   *  propre porte d'entrée. */
+  objetDeScene: boolean;
 }) {
 
   const x = at.x * mm;
@@ -995,12 +1029,26 @@ function TextBlock({
         lineHeight: `${Math.max(leadPx, fontPx * 1.3)}px`,
       }}
       title={onText ? t("planche.texte.editer") : undefined}
+      aria-hidden={objetDeScene ? true : undefined}
+      role={!objetDeScene && onText ? "button" : undefined}
+      tabIndex={!objetDeScene && onText ? 0 : undefined}
+      aria-label={!objetDeScene && onText ? t("planche.texte.ecrire") : undefined}
       onClick={
         onText &&
         ((e) => {
           e.stopPropagation();
           onEditing(true);
         })
+      }
+      onKeyDown={
+        !objetDeScene && onText
+          ? (e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              e.stopPropagation();
+              onEditing(true);
+            }
+          : undefined
       }
     >
       {text === "" ? (
@@ -1301,6 +1349,11 @@ function CropPhoto({
             : t("planche.recadrer")
           : undefined
       }
+      // Cette boîte est le dessin d'un objet de la scène, et son infobulle
+      // parle à la souris : le proxy nomme la photo, et le canvas ne pose
+      // aucune boîte du tout. `presentation` la retire de l'arbre sans
+      // emporter les badges, qui eux existent sous les deux rendus.
+      role="presentation"
     >
       {url && (
         <img

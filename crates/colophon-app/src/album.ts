@@ -97,10 +97,10 @@ export function fallbackTemplate(
   return { template: keepVerso ? verso : family, capacity };
 }
 
-/** Millimetres, origin top-left of the media canvas (bleed included). */
+/** Millimetres, origin top-left of the spread's media box (bleed included). */
 export type Rect = { x: number; y: number; w: number; h: number };
 
-export type Canvas = {
+export type SpreadGeometry = {
   w: number;
   h: number;
   margin: number;
@@ -109,11 +109,12 @@ export type Canvas = {
   bleed: number;
 };
 
-/** Full media canvas of a spread, from the dump: two trimmed pages plus
- *  bleed all round, and the margins the engine derived. */
-export function mediaCanvas(album: Album): Canvas {
+/** Full geometry of a spread, from the dump: the media box of two trimmed
+ *  pages plus bleed all round, and the margins the engine derived. Mirror of
+ *  `pdf::geometry`, whose struct carries the same name. */
+export function spreadGeometry(album: Album): SpreadGeometry {
   const d = geometrie(album.trim_mm, album.bleed_mm);
-  return { ...d.canvas, bleed: d.bleed_mm };
+  return { ...d.media, bleed: d.bleed_mm };
 }
 
 /**
@@ -122,15 +123,15 @@ export function mediaCanvas(album: Album): Canvas {
  */
 export let CAPTION_SAFE = 0.5;
 
-/** The trim behind a canvas: exact, because the canvas was built from it
- *  by additions a subtraction undoes without loss. */
-function trimOf(g: Canvas): { w: number; h: number } {
+/** The trim behind a geometry: exact, because the media box was built from
+ *  it by additions a subtraction undoes without loss. */
+function trimOf(g: SpreadGeometry): { w: number; h: number } {
   return { w: (g.w - 2 * g.bleed) / 2, h: g.h - 2 * g.bleed };
 }
 
 /** Slot rectangles for a template, top-left origin, ready for CSS: the
  *  engine's own rectangles, truncated like `slots_for` truncates. */
-export function slotsFor(template: string, n: number, g: Canvas): Rect[] {
+export function slotsFor(template: string, n: number, g: SpreadGeometry): Rect[] {
   const d = geometrie(trimOf(g), g.bleed);
   const t = d.templates[template];
   // A template the catalogue does not know (album.json repaired by hand):
@@ -160,7 +161,7 @@ export let CAPTION_SIZE_MM = 9 * 0.352778;
  * Where the chapter caption goes, top-left origin: the engine computed one
  * anchor per photo count, because the free spot moves with the rectangles.
  */
-export function captionAnchor(template: string, n: number, g: Canvas): Rect {
+export function captionAnchor(template: string, n: number, g: SpreadGeometry): Rect {
   const d = geometrie(trimOf(g), g.bleed);
   const t = d.templates[template] ?? d.templates["vide"];
   const caps = t.captions;
@@ -207,7 +208,7 @@ export let TEXT_LEADING_MM = 6.4;
 
 /** First baseline of a `texte` spread, top-left origin (the engine works
  *  bottom-up; the flip happens here like in slotsFor). */
-export function textAnchor(g: Canvas): { x: number; y: number } {
+export function textAnchor(g: SpreadGeometry): { x: number; y: number } {
   const [x, y] = geometrie(trimOf(g), g.bleed).anchors.texte;
   return { x, y: g.h - y };
 }
@@ -217,7 +218,7 @@ export const COLOPHON_TEMPLATE = "colophon";
 export let COLOPHON_SIZE_MM = 8.5 * 0.352778;
 export let COLOPHON_LEADING_MM = 4.6;
 
-export function colophonAnchor(g: Canvas): { x: number; y: number } {
+export function colophonAnchor(g: SpreadGeometry): { x: number; y: number } {
   const [x, y] = geometrie(trimOf(g), g.bleed).anchors.colophon;
   return { x, y: g.h - y };
 }
@@ -245,13 +246,13 @@ export function titreDuLivre(album: Album): string {
   return c ? c : album.title;
 }
 
-export function gardeAnchor(g: Canvas): { x: number; y: number } {
+export function gardeAnchor(g: SpreadGeometry): { x: number; y: number } {
   const [x, y] = geometrie(trimOf(g), g.bleed).anchors.garde;
   return { x, y: g.h - y };
 }
 
 /** The room a line has on that page: the recto's margined box. */
-export function gardePlace(g: Canvas): number {
+export function gardePlace(g: SpreadGeometry): number {
   return geometrie(trimOf(g), g.bleed).anchors.garde_place;
 }
 

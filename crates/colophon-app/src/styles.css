@@ -438,7 +438,7 @@ input[type="radio"] {
   box-shadow: var(--shadow-paper);
 }
 
-.canvas {
+.media-box {
   position: absolute;
 }
 

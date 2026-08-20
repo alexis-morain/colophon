@@ -16,7 +16,7 @@ const MM_TO_PT: f64 = 72.0 / 25.4;
 /// because `pdf::EMITS_PDF_X` is what the preflight has always read.
 pub use crate::pdfx::EMITS_PDF_X;
 
-/// Geometry of one slot on the spread canvas, in millimetres,
+/// Geometry of one slot on the spread's media box, in millimetres,
 /// origin bottom-left, bleed included.
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
@@ -339,7 +339,7 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
     serde_json::json!({
         "trim_mm": { "w": album.trim_mm.w, "h": album.trim_mm.h },
         "bleed_mm": album.bleed_mm,
-        "canvas": { "w": g.media_w, "h": g.media_h, "margin": g.margin, "gutter": g.gutter },
+        "media": { "w": g.media_w, "h": g.media_h, "margin": g.margin, "gutter": g.gutter },
         "ordre": ordre,
         "templates": templates,
         "fallbacks": fallbacks,
@@ -363,7 +363,7 @@ const CROP_SAMPLES: &[(f64, f64, f64, f64, f64, f64, f64)] = &[
     (100.0, 50.0, 1200.0, 1200.0, 0.25, 0.9, 0.5),
 ];
 
-/// A point on the spread canvas, in millimetres, origin bottom-left.
+/// A point on the spread's media box, in millimetres, origin bottom-left.
 #[derive(Debug, Clone, Copy)]
 pub struct Point {
     pub x: f64,
@@ -540,7 +540,7 @@ fn overlaps(a: &Rect, b: &Rect) -> bool {
     a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
-/// Slot rectangles for a template, on the given spread canvas.
+/// Slot rectangles for a template, on the given spread geometry.
 /// The `_verso` variants mirror the layout onto the other page; alternating
 /// them is what keeps a long album from reading like a spreadsheet.
 pub fn slots_for(template: &str, n: usize, g: &SpreadGeometry) -> Vec<Rect> {

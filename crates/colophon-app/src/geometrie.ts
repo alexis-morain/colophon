@@ -24,7 +24,7 @@ export type DumpTemplate = {
 export type Dump = {
   trim_mm: { w: number; h: number };
   bleed_mm: number;
-  canvas: { w: number; h: number; margin: number; gutter: number };
+  media: { w: number; h: number; margin: number; gutter: number };
   /** `[name, capacity]` in catalogue order: a JSON map sorts its keys. */
   ordre: [string, number][];
   templates: Record<string, DumpTemplate>;

@@ -51,7 +51,7 @@ for fmt in FORMATS:
     geo = json.loads(
         subprocess.check_output([BIN, "--dump-geometry", "--format", fmt])
     )
-    canvas = geo["canvas"]
+    media = geo["media"]
     with tempfile.TemporaryDirectory() as td:
         subprocess.check_call(
             [BIN, "--sheets", td, "--format", fmt],
@@ -76,13 +76,13 @@ for fmt in FORMATS:
                 stderr=subprocess.DEVNULL,
             )
             im = Image.open(png).convert("RGB")
-            sx = im.size[0] / canvas["w"]
-            sy = im.size[1] / canvas["h"]
+            sx = im.size[0] / media["w"]
+            sy = im.size[1] / media["h"]
             n = len(spec["slots"])
             for i, (x, y, w, h) in enumerate(spec["slots"]):
                 # géométrie en origine bas-gauche, PNG en haut-gauche
                 px = min(int((x + w / 2) * sx), im.size[0] - 1)
-                py = min(int((canvas["h"] - (y + h / 2)) * sy), im.size[1] - 1)
+                py = min(int((media["h"] - (y + h / 2)) * sy), im.size[1] - 1)
                 got = im.getpixel((px, py))
                 # candidats : les couleurs des cases de CE gabarit, plus le
                 # blanc du papier (attrape une case pas peinte du tout)

@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { t } from "./i18n";
-import { Album, Spread, mediaCanvas, slotsFor } from "./album";
+import { Album, Spread, spreadGeometry, slotsFor } from "./album";
 import { thumbCropStyle } from "./SpreadView";
 import { cachedThumb, loadThumb } from "./thumbs";
 
@@ -221,8 +221,8 @@ export function LockGlyph({ open }: { open: boolean }) {
 function MiniSpread({ album, spread }: { album: Album; spread: Spread }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
-  const canvas = mediaCanvas(album);
-  const rects = slotsFor(spread.template, spread.slots.length, canvas);
+  const geom = spreadGeometry(album);
+  const rects = slotsFor(spread.template, spread.slots.length, geom);
 
   useEffect(() => {
     const el = ref.current;
@@ -244,7 +244,7 @@ function MiniSpread({ album, spread }: { album: Album; spread: Spread }) {
     <div
       ref={ref}
       className="mini-spread"
-      style={{ aspectRatio: `${canvas.w} / ${canvas.h}` }}
+      style={{ aspectRatio: `${geom.w} / ${geom.h}` }}
     >
       {spread.slots.map((slot, i) => {
         const r = rects[i];
@@ -254,10 +254,10 @@ function MiniSpread({ album, spread }: { album: Album; spread: Spread }) {
             key={i}
             className="mini-slot"
             style={{
-              left: `${(r.x / canvas.w) * 100}%`,
-              top: `${(r.y / canvas.h) * 100}%`,
-              width: `${(r.w / canvas.w) * 100}%`,
-              height: `${(r.h / canvas.h) * 100}%`,
+              left: `${(r.x / geom.w) * 100}%`,
+              top: `${(r.y / geom.h) * 100}%`,
+              width: `${(r.w / geom.w) * 100}%`,
+              height: `${(r.h / geom.h) * 100}%`,
             }}
           >
             {visible && <MiniImg slot={slot} />}

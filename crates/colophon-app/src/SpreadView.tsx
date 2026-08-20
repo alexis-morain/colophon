@@ -1,5 +1,5 @@
 // One spread, rendered at the trimmed size the reader will hold. The media
-// canvas (bleed included) sits behind, offset so the bleed falls outside the
+// box (bleed included) sits behind, offset so the bleed falls outside the
 // visible page, exactly like a trimmed print. When the edit callbacks are
 // given, photos become selectable and draggable; the view stays a pure
 // reader without them.
@@ -27,7 +27,7 @@ import {
   ZOOM_MIN,
   captionAnchor,
   effectivePpi,
-  mediaCanvas,
+  spreadGeometry,
   slotsFor,
   textAnchor,
   colophonAnchor,
@@ -98,9 +98,9 @@ export function SpreadView({
   const [editingCaption, setEditingCaption] = useState(false);
 
   const trimW = album.trim_mm.w * 2;
-  const canvas = mediaCanvas(album);
-  const rects = slotsFor(spread.template, spread.slots.length, canvas);
-  const caption = captionAnchor(spread.template, spread.slots.length, canvas);
+  const geom = spreadGeometry(album);
+  const rects = slotsFor(spread.template, spread.slots.length, geom);
+  const caption = captionAnchor(spread.template, spread.slots.length, geom);
 
   // One millimetre in pixels: every geometry below is then written in mm.
   useLayoutEffect(() => {
@@ -141,7 +141,7 @@ export function SpreadView({
       if (!slot.caption || !r) return;
       // Below the trimmed page (full-bleed slots): the caption would print
       // in the bleed and be cut off entirely.
-      if (r.y + r.h + PHOTO_CAPTION_DROP_MM > canvas.h - 4) {
+      if (r.y + r.h + PHOTO_CAPTION_DROP_MM > geom.h - 4) {
         problems.push(t("deborde.legende.horspage", { i: i + 1 }));
         return;
       }
@@ -153,7 +153,7 @@ export function SpreadView({
       }
     });
     if (spread.template === "texte" && spread.text) {
-      const room = canvas.w / 2 - canvas.margin - canvas.gutter / 2;
+      const room = geom.w / 2 - geom.margin - geom.gutter / 2;
       const over = spread.text
         .split("\n")
         .filter((l) => measureMm(l, TEXT_SIZE_MM) > room).length;
@@ -167,7 +167,7 @@ export function SpreadView({
     // line to the page: nothing here overflows unless album.json was
     // repaired by hand, which is precisely when saying so is worth it.
     if (spread.template === GARDE_TEMPLATE && spread.text) {
-      const room = gardePlace(canvas);
+      const room = gardePlace(geom);
       const over = gardeLayout(spread.text, room, measureMm).some(
         (l) => measureMm(l.texte, l.tailleMm) > room + 0.01,
       );
@@ -176,11 +176,11 @@ export function SpreadView({
       }
     }
     onOverflow(problems[0] ?? null);
-  }, [spread, rects, canvas, mm, onOverflow, fontReady]);
+  }, [spread, rects, geom, mm, onOverflow, fontReady]);
 
-  const textAt = textAnchor(canvas);
-  const colophonAt = colophonAnchor(canvas);
-  const gardeAt = gardeAnchor(canvas);
+  const textAt = textAnchor(geom);
+  const colophonAt = colophonAnchor(geom);
+  const gardeAt = gardeAnchor(geom);
 
   // The caption popover anchors under the selected case, in viewport
   // coordinates (position: fixed): it may hang below the sheet without
@@ -203,12 +203,12 @@ export function SpreadView({
       onClick={() => onSelect?.(null)}
     >
       <div
-        className="canvas"
+        className="media-box"
         style={{
           left: `${-album.bleed_mm * mm}px`,
           top: `${-album.bleed_mm * mm}px`,
-          width: `${canvas.w * mm}px`,
-          height: `${canvas.h * mm}px`,
+          width: `${geom.w * mm}px`,
+          height: `${geom.h * mm}px`,
         }}
       >
         {spread.slots.map((slot, i) => {
@@ -334,10 +334,10 @@ export function SpreadView({
             text={spread.text ?? ""}
             x={textAt.x * mm}
             y={textAt.y * mm}
-            width={(canvas.w / 2 - canvas.margin - canvas.gutter / 2) * mm}
+            width={(geom.w / 2 - geom.margin - geom.gutter / 2) * mm}
             fontPx={Math.max(TEXT_SIZE_MM * mm * 1.35, 13)}
             leadPx={TEXT_LEADING_MM * mm * 1.35}
-            roomMm={canvas.w / 2 - canvas.margin - canvas.gutter / 2}
+            roomMm={geom.w / 2 - geom.margin - geom.gutter / 2}
             onText={onText}
           />
         )}
@@ -346,7 +346,7 @@ export function SpreadView({
             towns are what the machine measured, and the title is edited in
             the bar, where renaming the book also rewrites this line. */}
         {spread.template === GARDE_TEMPLATE &&
-          gardeLayout(spread.text ?? "", gardePlace(canvas), measureMm).map(
+          gardeLayout(spread.text ?? "", gardePlace(geom), measureMm).map(
             (l, i) => {
               // Same reading as the text pages: the size on screen is the
               // print size, and the baseline is a box top one size up.
@@ -376,10 +376,10 @@ export function SpreadView({
             text={spread.text ?? ""}
             x={colophonAt.x * mm}
             y={colophonAt.y * mm}
-            width={(canvas.w / 2 - canvas.margin - canvas.gutter / 2) * mm}
+            width={(geom.w / 2 - geom.margin - geom.gutter / 2) * mm}
             fontPx={Math.max(COLOPHON_SIZE_MM * mm * 1.35, 11)}
             leadPx={COLOPHON_LEADING_MM * mm * 1.35}
-            roomMm={canvas.w / 2 - canvas.margin - canvas.gutter / 2}
+            roomMm={geom.w / 2 - geom.margin - geom.gutter / 2}
           />
         )}
       </div>

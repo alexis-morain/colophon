@@ -9,7 +9,7 @@
 // untouched; this is a display filter only.
 
 import { useEffect, useRef, useState } from "react";
-import { Album, mediaCanvas, slotsFor, Spread, templateCapacity, templates } from "./album";
+import { Album, spreadGeometry, slotsFor, Spread, templateCapacity, templates } from "./album";
 import { gabaritsCompatibles } from "./bridge";
 import { templateChoices } from "./edits";
 import { Cle, FR, t } from "./i18n";
@@ -165,14 +165,14 @@ function TemplateDiagram({
   template: string;
   width: number;
 }) {
-  const canvas = mediaCanvas(album);
+  const geom = spreadGeometry(album);
   const cap = templateCapacity(template);
-  const rects = slotsFor(template, cap, canvas);
-  const scale = width / canvas.w;
+  const rects = slotsFor(template, cap, geom);
+  const scale = width / geom.w;
   return (
     <span
       className="tpl-diagram"
-      style={{ width: canvas.w * scale, height: canvas.h * scale }}
+      style={{ width: geom.w * scale, height: geom.h * scale }}
       aria-hidden="true"
     >
       {rects.map((r, i) => (

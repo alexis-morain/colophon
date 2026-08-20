@@ -3,7 +3,7 @@
 // every line produced here: numbers and file names only. No path, no GPS
 // coordinate and no caption ever enters the text, whatever the album holds.
 
-import { Album, mediaCanvas, Rect, slotsFor } from "./album";
+import { Album, spreadGeometry, Rect, slotsFor } from "./album";
 import { ReportData } from "./bridge";
 import { t } from "./i18n";
 
@@ -54,7 +54,7 @@ const mm = (v: number) => Math.round(v);
 function spreadBlock(album: Album, index: number): string[] {
   const spread = album.spreads[index];
   if (!spread) return [];
-  const rects = slotsFor(spread.template, spread.slots.length, mediaCanvas(album));
+  const rects = slotsFor(spread.template, spread.slots.length, spreadGeometry(album));
   const lines = [
     t("rapport.planche", {
       n: index + 1,
@@ -83,7 +83,7 @@ function cellBlock(album: Album, index: number, cell: number): string[] {
   const spread = album.spreads[index];
   const slot = spread?.slots[cell];
   if (!spread || !slot) return [];
-  const r = slotsFor(spread.template, spread.slots.length, mediaCanvas(album))[cell];
+  const r = slotsFor(spread.template, spread.slots.length, spreadGeometry(album))[cell];
   const geo = r
     ? `${mm(r.w)} × ${mm(r.h)} mm (${shape(r)})`
     : t("rapport.hors.gabarit");

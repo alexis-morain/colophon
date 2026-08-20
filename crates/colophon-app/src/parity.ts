@@ -14,7 +14,7 @@ import {
   cropWindow,
   DosProfil,
   gardeLayout,
-  mediaCanvas,
+  spreadGeometry,
   slotsFor,
   templateForCount,
   templates,
@@ -66,9 +66,9 @@ export function geometryProblems(dump: Dump, label: string): string[] {
   const problems: string[] = [];
   setGeometrie(dump);
   const album = { trim_mm: dump.trim_mm, bleed_mm: dump.bleed_mm } as Parameters<
-    typeof mediaCanvas
+    typeof spreadGeometry
   >[0];
-  const g = mediaCanvas(album);
+  const g = spreadGeometry(album);
 
   // The dump-reading code: flip, truncation, captions per count. The values
   // come from the dump; what can drift is the reading of them.

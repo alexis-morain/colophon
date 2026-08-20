@@ -35,7 +35,7 @@ import {
 import {
   Album,
   Discard,
-  mediaCanvas,
+  spreadGeometry,
   OpenedAlbum,
   Slot,
   slotsFor,
@@ -2573,17 +2573,17 @@ function FormatCard({
  */
 function FormatSpreadPreview({ f }: { f: FormatPreset }) {
   const album = { trim_mm: { w: f.w, h: f.h }, bleed_mm: 0 } as Album;
-  const canvas = mediaCanvas(album);
-  const rects = slotsFor("six", 6, canvas);
+  const geom = spreadGeometry(album);
+  const rects = slotsFor("six", 6, geom);
   const width = 320;
-  const scale = width / canvas.w;
+  const scale = width / geom.w;
 
   return (
     <figure className="format-large">
       <span className="format-large-cote">{t("setup.cm.ouvert", { cm: cm(f.w * 2) })}</span>
       <div
         className="format-large-spread"
-        style={{ width: canvas.w * scale, height: canvas.h * scale }}
+        style={{ width: geom.w * scale, height: geom.h * scale }}
       >
         {rects.map((r, i) => (
           <span

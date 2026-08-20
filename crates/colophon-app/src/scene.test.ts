@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import fixture from "./geometrie.fixture.json";
 import { Album, Spread, spreadGeometry } from "./album";
 import { Dump, setGeometrie } from "./geometrie";
-import { nomDObjet } from "./SceneProxies";
+import { enOrdreDeLecture, nomDObjet } from "./SceneProxies";
 import { setLangue } from "./i18n";
 import {
   avecRecadrage,
@@ -196,6 +196,98 @@ describe("what the keyboard calls an object", () => {
         "Bloc de texte : Un été & deux hivers",
       );
     }
+  });
+
+  // Une légende de photo vide ne porte aucun objet, là où une légende de
+  // chapitre vide en porte un : la première n'aurait rien à dire, la seconde
+  // est le seul chemin vers le champ qui la nommera.
+  it("gives a photograph caption of no text no object at all", () => {
+    const spread = planche("duo", 2);
+    spread.slots[0].caption = "";
+    const scene = sceneOf(spread, g, mesure);
+    expect(scene.objects.filter((o) => o.role.role === "photo_caption")).toHaveLength(0);
+  });
+
+  it("counts only the photographs a spread actually shows", () => {
+    setLangue("fr");
+    // Un album réparé à la main porte quatre photos sous un gabarit qui n'en
+    // déclare que deux : le moteur en pose deux, la scène aussi, et le nom
+    // ne promet pas un total que la planche ne montre pas.
+    const scene = sceneOf(planche("duo", 4), g, mesure);
+    const photos = scene.objects.filter((o) => o.role.role === "photo");
+    expect(photos).toHaveLength(2);
+    expect(nomDObjet(photos[1], scene)).toBe("Photo 2 sur 2, 1.jpg");
+  });
+
+  it("names the one box an unknown template falls back to", () => {
+    setLangue("fr");
+    const scene = sceneOf(planche("gabarit-que-personne-ne-connait", 3), g, mesure);
+    expect(scene.objects).toHaveLength(1);
+    expect(nomDObjet(scene.objects[0], scene)).toBe("Photo 1 sur 1, 0.jpg");
+  });
+
+  it("has nothing special to say about a verso", () => {
+    setLangue("fr");
+    const spread = planche("full1_verso", 1);
+    spread.slots[0].caption = "au dos";
+    const scene = sceneOf(spread, g, mesure);
+    expect(scene.objects.map((o) => o.role.role)).toEqual([
+      "photo",
+      "photo_caption",
+    ]);
+    expect(nomDObjet(scene.objects[1], scene)).toBe(
+      "Légende de la photo 1 : au dos",
+    );
+  });
+});
+
+// L'ordre où l'application prononce une planche. Il ne se lit nulle part
+// ailleurs : le DOM peint dans l'ordre du flux d'impression, et la couche
+// d'accessibilité est le seul endroit où ces deux ordres peuvent diverger.
+describe("the order a spread is read in", () => {
+  it("reads the pictures, then their captions, then what belongs to the spread", () => {
+    const spread = planche("quad", 4);
+    spread.slots[1].caption = "la plage";
+    spread.slots[3].caption = "le port";
+    spread.caption = "Calvi";
+    const scene = sceneOf(spread, g, mesure);
+    expect(enOrdreDeLecture(scene).map(({ o }) => o.role.role)).toEqual([
+      "photo",
+      "photo",
+      "photo",
+      "photo",
+      "photo_caption",
+      "photo_caption",
+      "chapter_caption",
+    ]);
+    // Et une légende se lit après la photo qu'elle nomme, pas après la
+    // première venue : les rangs suivent les cases.
+    const legendes = enOrdreDeLecture(scene)
+      .map(({ o }) => o.role)
+      .filter((r) => r.role === "photo_caption");
+    expect(legendes.map((r) => (r as { cell: number }).cell)).toEqual([1, 3]);
+  });
+
+  it("reads the chapter title after the block of text", () => {
+    const spread = planche("texte", 0);
+    spread.text = "Première ligne.";
+    spread.caption = "Un chapitre";
+    const scene = sceneOf(spread, g, mesure);
+    expect(enOrdreDeLecture(scene).map(({ o }) => o.role.role)).toEqual([
+      "text",
+      "chapter_caption",
+    ]);
+  });
+
+  it("keeps the reading rank a strictly increasing count", () => {
+    const spread = planche("quad", 4);
+    spread.slots.forEach((s, i) => (s.caption = `légende ${i}`));
+    spread.caption = "Calvi";
+    const rangs = enOrdreDeLecture(sceneOf(spread, g, mesure)).map(
+      ({ o }) => o.reading,
+    );
+    expect(rangs).toEqual([...rangs].sort((a, b) => a - b));
+    expect(new Set(rangs).size).toBe(rangs.length);
   });
 });
 

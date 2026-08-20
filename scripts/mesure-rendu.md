@@ -82,10 +82,20 @@ autre : dans les trois cas `window.__mesures()` reste vide. C'est voulu — un
 relevé qui se fermerait sans trame donnerait un chiffre pris avant le pixel —
 mais c'est aussi la première chose à vérifier quand rien ne s'affiche.
 
-**Relevé de référence, état d'avant le port : pas encore pris.** Le port de
-2.3 ne commence pas avant qu'il le soit : c'est la seule contrainte d'ordre
-que la mesure impose, et elle n'est pas négociable, un « avant » ne se
-rattrape jamais après.
+## Il n'y a pas de relevé d'avant-port, et c'est délibéré
+
+Ce document a d'abord posé le relevé d'avant le port comme une précondition
+dure de 2.3, au motif qu'un « avant » ne se rattrape pas après. C'est vrai en
+général, et faux ici, pour une raison précise : **2.3 garde le rendu DOM
+vivant derrière un interrupteur** jusqu'à ce que 2.5 tranche. Les deux rendus
+coexisteront donc, et 2.5 les mesurera le même jour, sur la même machine, sous
+la même charge, avec le même album — une comparaison strictement meilleure
+qu'un chiffre vieux de trois semaines pris sur un autre état du code.
+
+L'instrumentation reste en place et la procédure aussi : le jour de 2.5, on
+relève une fois par rendu, on bascule l'interrupteur entre les deux, et le
+rapport se lit sans rien avoir à retrouver. Le témoin moteur ci-dessous garde
+tout son sens, lui : il n'a pas de jumeau à comparer sur place.
 
 ## Le témoin moteur
 

@@ -107,6 +107,31 @@ qu'on met devant.** Vérifier les deux lignes avant de commencer, toujours :
 document.visibilityState === "visible" && document.hasFocus()
 ```
 
+## La cure des fenêtres borgnes, trouvée le 23/08
+
+Le premier plan n'est pas toujours disponible, et il existe un chemin qui
+rend au harnais tout ce que les deux yeux crevés lui coûtaient. Une instance
+de navigateur **dédiée**, lancée avec un profil jetable et trois drapeaux :
+
+```bash
+open -gna "Brave Browser" --args --user-data-dir=/tmp/brave-mesure \
+  --remote-debugging-port=9333 --disable-backgrounding-occluded-windows \
+  --disable-renderer-backgrounding --disable-background-timer-throttling \
+  http://localhost:1420
+```
+
+Les drapeaux rendent les trames d'animation à une fenêtre occluse — donc les
+mesures se ferment — et `Emulation.setFocusEmulationEnabled` (CDP) rend les
+événements de focus : `hasFocus()` répond vrai, `:focus` matche, `onFocus`
+part. `scripts/mesure-cdp.mjs` déroule le point 3 tout seul là-dessus
+(`node scripts/mesure-cdp.mjs dom mesure-200`, Node nu, zéro dépendance).
+Les relevés du 23/08 sont pris ainsi. Trois pièges appris en le faisant :
+un Entrée synthétique n'active un bouton que si la frappe porte son
+caractère (`text: "\r"`, jamais `rawKeyDown` seul) ; un renderer figé par un
+arrêt de serveur ne se réanime pas, il se **remplace** (`/json/new`, onglet
+neuf par passe) ; et la vérification d'avant-passe reste obligatoire — une
+trame `requestAnimationFrame` reçue, sinon on s'arrête sans poser de chiffre.
+
 ## Il n'y a pas de relevé d'avant-port, et c'est délibéré
 
 Ce document a d'abord posé le relevé d'avant le port comme une précondition

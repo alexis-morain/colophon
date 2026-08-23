@@ -234,9 +234,16 @@ export function SceneProxies({
             // Tab s'en va ailleurs : la place gardée n'a plus lieu d'être.
             // Un `relatedTarget` nul, lui, ne dit rien — c'est aussi bien la
             // boîte qu'on détruit sous le focus que le corps du document.
+            // Et le champ qu'on vient d'ouvrir depuis cette boîte n'est pas
+            // un ailleurs : il rendra le focus en se refermant, donc le rang
+            // doit lui survivre — sans ça la restauration n'a rien à rendre.
             onBlur={(e) => {
               const vers = e.relatedTarget;
-              if (vers instanceof Node && !conteneur.current?.contains(vers)) {
+              if (
+                vers instanceof Node &&
+                !conteneur.current?.contains(vers) &&
+                !champDepuisIci.current
+              ) {
                 rangClavier = null;
               }
             }}

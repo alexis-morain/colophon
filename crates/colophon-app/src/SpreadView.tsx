@@ -257,7 +257,13 @@ export function SpreadView({
         }}
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === "Enter") e.currentTarget.blur();
+          // Sans preventDefault, l'action par défaut d'Entrée clique ce qui
+          // tient le focus quand elle s'exécute — or la fermeture rend le
+          // focus à la boîte d'origine, et le champ validé se rouvrait.
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
           // Tab takes the grey proposal, in the field like outside it.
           if (e.key === "Tab" && proposition && e.currentTarget.value === "") {
             e.preventDefault();
@@ -931,7 +937,12 @@ function CaptionPopover({
           onChange={(e) => setValue(e.target.value)}
           onBlur={() => value.trim() !== (slot.caption ?? "") && onCaption(value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
+            // Même garde que le titre de chapitre : l'action par défaut
+            // d'Entrée cliquerait la boîte à qui la fermeture rend le focus.
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
             if (e.key === "Escape") {
               setValue(slot.caption ?? "");
               e.currentTarget.blur();

@@ -1,0 +1,21 @@
+{
+ "etat": "2.5, le relevé du rendu DOM — pris le même jour que 2026-08-23-canvas.json, même machine, même charge, même pilote",
+ "commit": "7ffa8b7 (026c4ee plus le correctif du clic résiduel, sans effet sur le rendu DOM)",
+ "machine": "MacBook, macOS 26.5.2, Apple Silicon",
+ "harnais": {
+  "quoi": "serveur de dev (launch.json colophon-mesure / colophon-mesure-50), instance Brave dédiée lancée avec --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling, pilotée en CDP (frappes et pointeur trusted), focus émulé par Emulation.setFocusEmulationEnabled",
+  "pourquoi": "la fenêtre au premier plan de la procédure était impossible ce jour-là (écran occupé) ; les drapeaux rendent la composition et les trames d'animation à une fenêtre occluse, et le focus émulé rend les événements de focus. Vérifié avant chaque passe : visibilityState « visible », hasFocus vrai, une trame requestAnimationFrame reçue — sinon le pilote s'arrête sans poser de chiffre",
+  "protocole": "scripts/mesure-rendu.md point 3 : première planche, __mesuresOubli(), trente flèches droite à 350 ms, sélection d'une photo par la couche proxy, trois glissers lents d'un bord à l'autre de sa case (40 pas à 35 ms)",
+  "charge": "une lecture vidéo tournait sur la machine pendant toute la séance ; identique pour les deux rendus, donc sans effet sur le rapport, mais les millisecondes absolues ne valent que ce qu'elles valent au harnais"
+ },
+ "mesure-200": {
+  "planche.premiere": { "n": 1, "median": 26.5, "p95": 26.5, "max": 26.5 },
+  "planche.suivante": { "n": 30, "median": 22.3, "p95": 30.5, "max": 37.9 },
+  "recadrage.trame": { "n": 120, "median": 9.7, "p95": 17.2, "max": 17.7 }
+ },
+ "mesure-50": {
+  "planche.premiere": { "n": 1, "median": 29.5, "p95": 29.5, "max": 29.5 },
+  "planche.suivante": { "n": 30, "median": 21.5, "p95": 38.6, "max": 53.4 },
+  "recadrage.trame": { "n": 120, "median": 10.4, "p95": 17.1, "max": 17.4 }
+ }
+}

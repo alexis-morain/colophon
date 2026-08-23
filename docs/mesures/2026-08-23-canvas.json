@@ -1,0 +1,22 @@
+{
+ "etat": "2.5, le relevé du rendu Canvas — pris le même jour que 2026-08-23-dom.json, même machine, même charge, même pilote",
+ "commit": "7ffa8b7 (026c4ee plus le correctif du clic résiduel ; sans lui, la sélection ne survivait ni à un clic ni à un recadrage validé, et seul le premier des trois glissers recadrait)",
+ "machine": "MacBook, macOS 26.5.2, Apple Silicon",
+ "harnais": "identique au relevé DOM du même jour, voir 2026-08-23-dom.json",
+ "mesure-200": {
+  "planche.premiere": { "n": 1, "median": 19.6, "p95": 19.6, "max": 19.6 },
+  "planche.suivante": { "n": 30, "median": 21.1, "p95": 48.3, "max": 53.2 },
+  "recadrage.trame": { "n": 120, "median": 9.6, "p95": 16.9, "max": 17.3 }
+ },
+ "mesure-50": {
+  "planche.premiere": { "n": 1, "median": 17.9, "p95": 17.9, "max": 17.9 },
+  "planche.suivante": { "n": 30, "median": 23.6, "p95": 59.8, "max": 64.4 },
+  "recadrage.trame": { "n": 120, "median": 9.5, "p95": 17.1, "max": 18.0 }
+ },
+ "rapport": {
+  "planche.premiere": "canvas plus rapide (19,6 contre 26,5 ; 17,9 contre 29,5), écart dans le sens du canvas mais n=1 par passe, indicatif seulement",
+  "planche.suivante": "médianes équivalentes (21,1 contre 22,3 ; 23,6 contre 21,5, soit ± 2 ms, le bruit machine) ; les p95 du canvas sont plus dispersés (48-60 contre 30-39 ms), sous charge vidéo — à revérifier au bundle un jour calme avant d'en faire un grief",
+  "recadrage.trame": "équivalentes, légère avance canvas (9,5-9,6 contre 9,7-10,4)",
+  "verdict_temps": "« temps de rendu au pire égal » : tenu sur les médianes des trois séries ; seule réserve, la dispersion des p95 de planche.suivante côté canvas"
+ }
+}

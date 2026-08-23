@@ -267,6 +267,12 @@ export function SceneCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      // Le papier désélectionne au clic, et le navigateur fabrique un clic
+      // à la fin de tout geste, glisser compris. Les cases du rendu DOM
+      // avalent le leur ; sans celui-ci, sélectionner puis désélectionner
+      // tenaient dans le même souffle. La sélection au canvas se décide
+      // dans le pointerup, jamais ici — cliquer du vide désélectionne déjà.
+      onClick={(e) => e.stopPropagation()}
       onDoubleClick={onDoubleClick}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}

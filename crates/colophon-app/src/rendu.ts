@@ -7,11 +7,13 @@
 // point; an environment variable would mean two builds and a comparison
 // between two different binaries.
 //
-// **The default is `dom` until the gestures are proven**, and it moves to
-// `canvas` in a commit that does nothing else, so the day the picture
-// changes is a line in the log rather than a side effect. Until 2.5 has
-// decided, neither renderer is allowed to rot: both consume the same scene,
-// and the parity test runs on the scene, not on the DOM.
+// **2.5 a tranché le 23/08/2026 : le défaut reste `dom`.** Les relevés
+// (docs/mesures/2026-08-23-*.json) donnent des médianes équivalentes — le
+// canvas ne gagne rien de décisif à ces tailles d'album, et il n'a toujours
+// pas d'infobulles. Le canvas reste vivant derrière l'interrupteur, et
+// aucun rendu n'a le droit de pourrir : les deux consomment la même scène,
+// et le test de parité court sur la scène, pas sur le DOM. Si la bascule a
+// lieu un jour, elle reste un commit qui ne fait que ça.
 //
 // Same shape as `i18n.ts`, and for the same reason: a store, a hook, one
 // key in `localStorage`, no library.

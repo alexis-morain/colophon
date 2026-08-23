@@ -1,5 +1,12 @@
 # Mesurer le rendu, avant et après le port en Canvas
 
+> **2.5 a tranché le 23/08/2026 : le défaut reste `dom`.** Relevés dans
+> `docs/mesures/2026-08-23-{dom,canvas}.json` — médianes équivalentes,
+> canvas devant sur `planche.premiere`, p95 de `planche.suivante` plus
+> dispersés côté canvas (pris sous charge vidéo). Le canvas reste derrière
+> l'interrupteur ; la bascule, si elle a lieu, reste un commit qui ne fait
+> que ça. Ce document reste la procédure pour toute mesure future.
+
 La vague 2 remplace la couche d'affichage de l'éditeur. Une réécriture qui ne
 se mesure pas est un pari : ce document dit comment prendre les trois nombres,
 de façon à ce que la passe d'après (2.5) les reprenne à l'identique.

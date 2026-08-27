@@ -255,6 +255,32 @@ export const FR = {
   "planche.texte.inseree":
     "Planche de texte insérée : double-clic pour l’ouvrir et écrire",
   "planche.supprimee": "Planche {n} supprimée (⌘Z la ramène)",
+  "bascule.titre": "Changer de format",
+  "bascule.intro":
+    "Le même album dans un autre format : mêmes planches, même ordre, mêmes photos, mêmes recadrages. Seules les mises en page dont les photos ne tiendraient plus sont remplacées, et tout ce qui bouge est dit ci-dessous.",
+  "bascule.format.courant": "format actuel",
+  "bascule.calcul": "Calcul en cours…",
+  "bascule.bilan": "Ce que ça change",
+  "bascule.inchangees": "{n} planches sur {total} gardent leur mise en page.",
+  "bascule.sous_resolution":
+    "{n} photos passeraient sous la résolution d’impression. C’est le seul défaut qu’on ne rattrape pas à la main : il faudrait une photo plus grande.",
+  "bascule.ppi": "planche {planche} · {src} · {avant} ppi → {apres} ppi",
+  "bascule.et_reste": "et {n} autres.",
+  "bascule.couverture":
+    "La photo de couverture tomberait à {apres} ppi. C'est la plus grande image du livre.",
+  "bascule.inaptes":
+    "{n} planches gardent une mise en page qui ne va plus tout à fait (planches {planches}) : aucune autre ne tient leurs photos sans en retirer. Aucune photo n’est perdue, et vous pouvez changer la mise en page à la main.",
+  "bascule.replis": "{n} planches changent de mise en page.",
+  "bascule.epinglees":
+    "{n} planches que vous aviez modifiées ou figées changent de mise en page (planches {planches}).",
+  "bascule.manquantes":
+    "{n} photos n’ont pas pu être mesurées : leurs planches sont gardées telles quelles.",
+  "bascule.appliquer": "Appliquer ce format",
+  "bascule.annulable": "⌘Z annule, ⌘S enregistre.",
+  "bascule.faite": "Album basculé en {w} × {h} mm (⌘Z annule)",
+  "bar.format": "Format",
+  "bar.format.titre": "Changer le format de l’album",
+  "erreur.bascule": "Changement de format impossible",
   "planche.deplacee": "Planche déplacée en position {n}",
   "signal.planche.dabord":
     "Ouvrez d’abord la planche à signaler (vue Livre ou Planches)",
@@ -860,6 +886,32 @@ export const EN: Record<Cle, string> = {
   "planche.vide.inseree": "Empty spread inserted: a breath",
   "planche.texte.inseree": "Text spread inserted: double-click to open it and write",
   "planche.supprimee": "Spread {n} deleted (⌘Z brings it back)",
+  "bascule.titre": "Change format",
+  "bascule.intro":
+    "The same album in another size: same spreads, same order, same photos, same crops. Only the layouts whose photos would no longer fit are replaced, and everything that moves is listed below.",
+  "bascule.format.courant": "current format",
+  "bascule.calcul": "Working…",
+  "bascule.bilan": "What this changes",
+  "bascule.inchangees": "{n} spreads out of {total} keep their layout.",
+  "bascule.sous_resolution":
+    "{n} photos would fall below print resolution. This is the one flaw you cannot fix by hand: it would take a larger photo.",
+  "bascule.ppi": "spread {planche} · {src} · {avant} ppi → {apres} ppi",
+  "bascule.et_reste": "and {n} more.",
+  "bascule.couverture":
+    "The cover photo would fall to {apres} ppi. It is the largest image in the book.",
+  "bascule.inaptes":
+    "{n} spreads keep a layout that no longer quite suits them (spreads {planches}): no other one holds their photos without dropping any. No photo is lost, and you can change the layout by hand.",
+  "bascule.replis": "{n} spreads change layout.",
+  "bascule.epinglees":
+    "{n} spreads you had edited or locked change layout (spreads {planches}).",
+  "bascule.manquantes":
+    "{n} photos could not be measured: their spreads are kept as they are.",
+  "bascule.appliquer": "Apply this format",
+  "bascule.annulable": "⌘Z undoes, ⌘S saves.",
+  "bascule.faite": "Album switched to {w} × {h} mm (⌘Z undoes)",
+  "bar.format": "Format",
+  "bar.format.titre": "Change the album format",
+  "erreur.bascule": "Cannot change format",
   "planche.deplacee": "Spread moved to position {n}",
   "signal.planche.dabord":
     "Open the spread to report first (Book or Spreads view)",

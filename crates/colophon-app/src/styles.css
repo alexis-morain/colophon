@@ -1326,6 +1326,179 @@ input[type="radio"] {
   color: var(--muted);
 }
 
+/* ---- changer de format (la bascule) ------------------------------------- */
+
+.bascule {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgb(var(--ink-rgb) / 0.6);
+}
+
+.bascule-panel {
+  width: min(620px, 90vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  padding: 20px 26px 26px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow-pop);
+}
+
+.bascule-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.bascule-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-18);
+  font-weight: 600;
+}
+
+.bascule-intro {
+  margin: 0 0 16px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.bascule-formats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bascule-format {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+}
+
+.bascule-format:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.bascule-format.choisi {
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.08);
+}
+
+.bascule-format:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.bascule-format-nom {
+  font-size: var(--fs-13);
+}
+
+.bascule-format-mm {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.bascule-attente {
+  margin: 16px 0 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.bascule-bilan {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.bascule-bilan h3 {
+  margin: 0 0 8px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.bascule-resume {
+  margin: 0 0 10px;
+  font-size: var(--fs-13);
+}
+
+/* La résolution est le seul dégât qu'aucune main ne rattrape : elle se voit
+   avant tout le reste, et elle ne se lit pas comme une note. Le filet et le
+   fond de `.warn`, la palette n'ayant pas de rouge et n'en voulant pas. */
+.bascule-alerte {
+  margin: 0 0 10px;
+  padding: 10px 14px 10px 12px;
+  border-left: 2px solid var(--accent);
+  background: rgb(var(--accent-rgb) / 0.1);
+  color: var(--text);
+  font-size: var(--fs-13);
+}
+
+.bascule-alerte p {
+  margin: 0 0 6px;
+}
+
+.bascule-alerte ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+
+.bascule-reste {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+
+.bascule-note {
+  margin: 0 0 8px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.bascule-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 0;
+}
+
+.bascule-appliquer {
+  padding: 7px 14px;
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  cursor: pointer;
+}
+
+.bascule-appliquer:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.bascule-annulable {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
 /* ---- the report panel (Aide → Signaler) --------------------------------- */
 
 .signaler-panel {

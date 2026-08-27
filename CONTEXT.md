@@ -12,7 +12,22 @@ the README; what it decided and why lives in `docs/adr/`.
 **Spread**:
 Two facing pages, the unit Colophon composes and prints. Never a single page:
 no image crosses the fold, and the PDF's interior is a run of spreads.
-_Avoid_: page, sheet, double page
+_Avoid_: page, double page
+
+**Sheet**:
+The piece of paper that turns. Its front is the right page of spread *n*, its
+back the left page of spread *n + 1*: one sheet, two spreads, and no image on
+either face is cut by the movement. A sheet is not a spread and never stands
+in for the word; the cover is a sheet of its own, flat, with the spine down
+the middle.
+_Avoid_: leaf, folio, page
+
+**Turn**:
+One sheet going from flat on one side of the fold to flat on the other.
+Started by its corner or by the keyboard, reversible for as long as the finger
+is down, and replaced by an instant change for a reader who asked for less
+movement.
+_Avoid_: flip, page transition, animation
 
 **Cell**:
 One rectangle of a spread that holds one photo. A template lays out cells; a

@@ -4,6 +4,17 @@
 .DS_Store
 __pycache__/
 
+# Filet : aucun secret n'a sa place ici, la clé privée de signature vit dans le
+# .env du dossier de gestion. Cette ligne existe pour qu'une session autonome
+# ne puisse pas en versionner un par accident.
+.env
+.env.bak.*
+
+# Harnais de mesure local : chemins absolus de la machine d'Alexis, faux
+# partout ailleurs et bavards le jour où le dépôt devient public. Le reste de
+# .claude/ reste versionnable (settings partagés, agents, skills).
+/.claude/launch.json
+
 # Rendus d'icône : régénérés par scripts/icone.sh depuis les SVG de
 # design/marques. La planche de comparaison, elle, est versionnée : c'est
 # elle qui sert à choisir.

@@ -1,8 +1,15 @@
-# Le gate, à chaque poussée, sur les trois plateformes.
+# Le gate : les trois plateformes sur la pull request, Ubuntu seul pendant
+# l'itération.
 #
 # `scripts/check.sh` est la seule définition de ce qui est vert : ce fichier ne
 # fait que l'installer et le lancer. Une règle qui n'existerait que dans la CI
 # serait une règle que personne ne peut vérifier avant de pousser.
+#
+# La matrice dépend de l'événement. Une session autonome pousse plusieurs fois
+# par nuit sur sa branche : payer le facteur 10 de macOS à chaque commit
+# épuiserait le quota d'un dépôt privé en une semaine. La couverture complète
+# revient là où elle décide de quelque chose, la PR, et le `push` garde un
+# Ubuntu qui casse tôt.
 #
 # Les jeux de photos de référence ne sont pas dans le dépôt (des dizaines de
 # giga-octets de photos de famille) : le linter et le PDF → PNG se sautent
@@ -26,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-24.04, windows-2022]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["macos-14", "ubuntu-24.04", "windows-2022"]') || fromJSON('["ubuntu-24.04"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
 

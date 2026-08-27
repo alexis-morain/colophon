@@ -3,8 +3,9 @@
 //! and exposure (clipped-histogram penalty).
 
 use image::{imageops::FilterType, DynamicImage, GrayImage};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Analysis {
     pub dhash: u64,
     /// DCT perceptual hash (image_hasher, MIT). Second opinion on

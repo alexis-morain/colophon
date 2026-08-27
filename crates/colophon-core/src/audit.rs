@@ -149,9 +149,10 @@ pub(crate) struct PhotoInfo {
     pub(crate) colorsig: [u8; 12],
     pub(crate) score: f64,
     pub(crate) faces: Vec<[f64; 4]>,
-    /// Original size, EXIF orientation applied. None when the source folder
-    /// is unreachable: the resolution counter then skips with a note.
-    pub(crate) orig: Option<(u32, u32)>,
+    /// Original size, EXIF orientation applied. Not optional: a photo whose
+    /// original size cannot be established is an audit that refuses to note,
+    /// never a resolution counter that quietly counts nothing.
+    pub(crate) orig: (u32, u32),
     /// Capture time, when the original and its EXIF are reachable.
     pub(crate) taken: Option<chrono::NaiveDateTime>,
 }
@@ -165,14 +166,6 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
 
     let root = PathBuf::from(&album.root);
     let root_ok = root.is_dir();
-    let mut notes = Vec::new();
-    if !root_ok {
-        notes.push(format!(
-            "dossier de photos introuvable ({}) : résolution non mesurée, \
-             notes de l'utilisateur non lues",
-            root.display()
-        ));
-    }
 
     let mut srcs: Vec<String> = album
         .spreads
@@ -182,7 +175,7 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
     srcs.sort();
     srcs.dedup();
 
-    let infos = mesure_photos(dir, &root, root_ok, &srcs)?;
+    let (infos, notes) = mesure_photos(dir, &root, root_ok, &srcs)?;
     let compteurs = compteurs(&album, &infos, &pdf::geometry(&album));
     let ok = compteurs.all().iter().all(|c| c.passes());
 
@@ -197,12 +190,39 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
 
 /// Measure every photo an album (or a set of albums sharing a thumbnail
 /// cache) touches: the read half of the audit, reusable by the bench.
+/// Returns what it measured, and where from — a linter that measures
+/// something other than what it says is how a gate starts lying.
 pub(crate) fn mesure_photos(
     dir: &Path,
     root: &Path,
     root_ok: bool,
     srcs: &[String],
-) -> Result<HashMap<String, PhotoInfo>> {
+) -> Result<(HashMap<String, PhotoInfo>, Vec<String>)> {
+    // The relevé first, when the album carries one: a composition without
+    // the photographs left no thumbnails to re-measure, and the fiches hold
+    // the very measurements the thumbnails would give — they were taken on
+    // them.
+    if let Some(releve) = crate::releve::Releve::dans_album(dir)? {
+        let note = format!(
+            "mesuré depuis le relevé de l'album ({} fiches) : les photos n'ont pas \
+             été rouvertes",
+            releve.photos.len()
+        );
+        return Ok((depuis_releve(&releve, srcs)?, vec![note]));
+    }
+    // Neither the fiches nor the originals. The resolution counter would
+    // then count nothing and pass in silence: a green worth less than the
+    // Mac's green, without saying so. That is exactly how a portable gate
+    // becomes a gate that lies, so it refuses instead.
+    anyhow::ensure!(
+        root_ok,
+        "dossier de photos introuvable ({}) et pas de {} dans l'album : la \
+         résolution ne peut pas être mesurée, et un audit qui saute ce compteur \
+         rend un vert qui ne vaut rien. Remettez le dossier de photos en place, \
+         ou composez l'album depuis ses fiches (--depuis-fiches).",
+        root.display(),
+        crate::releve::FICHIER
+    );
     let thumbs: HashMap<String, String> =
         serde_json::from_str(&fs::read_to_string(dir.join("thumbs.json"))?)
             .context("thumbs.json illisible")?;
@@ -217,16 +237,17 @@ pub(crate) fn mesure_photos(
                 .with_context(|| format!("vignette illisible pour {src}, régénérez l'album"))?;
             let analysis = analyze::analyze(&img);
             let faces = face::face_boxes(det.as_mut(), &img);
-            let (orig, taken, rating) = if root_ok {
-                let p = root.join(src);
-                let m = meta::read(&p);
-                let orig = crate::heic::dimensions(&p).ok().map(|(w, h)| {
-                    if (5..=8).contains(&m.orientation) { (h, w) } else { (w, h) }
-                });
-                (orig, m.taken_reliable.then_some(m.taken), m.rating)
-            } else {
-                (None, None, None)
-            };
+            let p = root.join(src);
+            let m = meta::read(&p);
+            // A photo whose header will not give its size is named and
+            // refused, never averaged over: the counter it feeds is the one
+            // that keeps a book above 250 ppi.
+            let orig = crate::heic::dimensions(&p)
+                .map(|(w, h)| if (5..=8).contains(&m.orientation) { (h, w) } else { (w, h) })
+                .with_context(|| {
+                    format!("taille d'origine illisible pour {src}, régénérez l'album")
+                })?;
+            let (taken, rating) = (m.taken_reliable.then_some(m.taken), m.rating);
             Ok((
                 src.clone(),
                 PhotoInfo {
@@ -246,6 +267,42 @@ pub(crate) fn mesure_photos(
             ))
         })
         .collect::<Result<_>>()
+        .map(|infos| (infos, Vec::new()))
+}
+
+/// The same measurements, read rather than re-measured. Nothing is
+/// approximated here: a fiche was taken on the very thumbnail the other path
+/// re-opens, so the two readings are the same numbers by construction.
+fn depuis_releve(
+    releve: &crate::releve::Releve,
+    srcs: &[String],
+) -> Result<HashMap<String, PhotoInfo>> {
+    let par_src: HashMap<String, &crate::pipeline::Photo> =
+        releve.photos.iter().map(|p| (releve.src(&p.path), p)).collect();
+    srcs.iter()
+        .map(|src| {
+            let p = par_src.get(src).with_context(|| {
+                format!(
+                    "{src} absent du relevé de l'album : ces fiches ne décrivent pas \
+                     cet album, régénérez-les (scripts/fiches.sh)"
+                )
+            })?;
+            Ok((
+                src.clone(),
+                PhotoInfo {
+                    w: f64::from(p.analysis.width),
+                    h: f64::from(p.analysis.height),
+                    dhash: p.analysis.dhash,
+                    phash: p.analysis.phash,
+                    colorsig: p.analysis.colorsig,
+                    score: p.analysis.score() * rating_factor(p.meta.rating),
+                    faces: p.faces.clone(),
+                    orig: p.orig,
+                    taken: p.meta.taken_reliable.then_some(p.meta.taken),
+                },
+            ))
+        })
+        .collect()
 }
 
 /// The counting half of the audit: pure and in-memory, given the album, the
@@ -304,18 +361,17 @@ pub(crate) fn compteurs(
                 });
             }
 
-            if let Some((ow, oh)) = info.orig {
-                // Zooming shows fewer source pixels: the effective print
-                // resolution drops with it.
-                let scale = print::print_scale(rect, ow, oh) * slot.zoom.max(1.0);
-                if print::PRINT_DPI / scale < MIN_EFFECTIVE_PPI {
-                    ppi.push(Finding {
-                        planche: si + 1,
-                        case_idx: Some(ci),
-                        src: Some(slot.src.clone()),
-                        info: format!("{:.0} ppi effectifs", print::PRINT_DPI / scale),
-                    });
-                }
+            // Zooming shows fewer source pixels: the effective print
+            // resolution drops with it.
+            let (ow, oh) = info.orig;
+            let scale = print::print_scale(rect, ow, oh) * slot.zoom.max(1.0);
+            if print::PRINT_DPI / scale < MIN_EFFECTIVE_PPI {
+                ppi.push(Finding {
+                    planche: si + 1,
+                    case_idx: Some(ci),
+                    src: Some(slot.src.clone()),
+                    info: format!("{:.0} ppi effectifs", print::PRINT_DPI / scale),
+                });
             }
         }
     }

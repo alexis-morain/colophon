@@ -18,7 +18,12 @@ lopdf = "0.34"
 rayon = "1"
 rustface = "0.1.7"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# float_roundtrip : sans lui, serde_json relit un f64 à un ULP près, et les
+# fiches ne rendent pas ce qu'elles ont mesuré. Un point focal recomposé
+# depuis un relevé s'écrivait alors 0.395 là où la lecture des photos avait
+# écrit 0.39499999999999996, et l'identité des deux chemins tombait sur
+# dix-huit lignes d'album.json.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 walkdir = "2"
 
 [profile.release]

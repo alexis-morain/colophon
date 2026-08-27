@@ -27,12 +27,17 @@ pub mod places;
 pub mod prevol;
 pub mod print;
 pub mod printer;
+pub mod releve;
 pub mod reprise;
 pub mod scan;
 pub mod scene;
 pub mod thumb;
 
-pub use build::{build_album, render_album_pdf, write_album_json, BuildOptions, BuildReport};
+pub use build::{
+    build_album, composer, releve, render_album_pdf, write_album_json, BuildOptions,
+    BuildReport,
+};
+pub use releve::Releve;
 pub use print::render_print_pdf;
 pub use model::{Album, Size, Slot, Spread};
 // The shells reason about capture times (pinned-spread anchors) and decode

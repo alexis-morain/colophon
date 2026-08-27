@@ -126,3 +126,17 @@ The share of the composer's proposal a human had to correct by hand, measured
 as a content diff against `album.origin.json`. The number the GO/NO-GO
 milestone hangs on.
 _Avoid_: rework rate, edit distance
+
+**Fiche**:
+What one reading of one photo measured — metadata, analysis, original size,
+faces — exactly as the composer consumes it. A fiche is the `Photo` struct
+itself, serialized; never a second model beside it.
+_Avoid_: record, entry, sidecar
+
+**Relevé**:
+Every fiche one reading of a folder produced, plus what that reading skipped
+or could not decode. Serialized, it replays a composition on a machine that
+holds no photograph; an album composed that way carries it as `releve.json`,
+and the linter measures from it. The fiches of the reference sets live in
+`crates/colophon-core/fiches/`.
+_Avoid_: dump, snapshot, manifest

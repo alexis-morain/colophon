@@ -48,4 +48,23 @@ if pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
 else
   echo "colophon : dépendances Tauri ABSENTES, cargo build échouera sur colophon-app" >&2
 fi
+
+# Les paquets npm, sans quoi le gate meurt à l'avant-dernière étape.
+#
+# Mesuré en session cloud le 27/08 : sans node_modules, `npx tsc --noEmit` sort
+# 1088 erreurs, toutes de résolution de modules (851 TS7026, 37 TS2307), pas une
+# seule qui parle d'un type du projet, et `npx vitest run` ne démarre jamais
+# parce que check.sh est en set -e. Le gate rendait 2 sans que rien du projet
+# soit en cause. La CI ne voyait pas le problème : check.yml fait `npm ci` en
+# étape séparée AVANT d'appeler check.sh, ce script doit donc en faire autant.
+if [ -d crates/colophon-app ] && [ ! -d crates/colophon-app/node_modules ]; then
+  echo "colophon : npm ci (crates/colophon-app)"
+  ( cd crates/colophon-app && npm ci --no-audit --no-fund 2>&1 | tail -3 )
+fi
+
+if [ -d crates/colophon-app/node_modules ]; then
+  echo "colophon : node_modules en place ($(node --version))"
+else
+  echo "colophon : node_modules ABSENT, tsc et vitest échoueront sur la résolution" >&2
+fi
 exit 0

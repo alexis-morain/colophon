@@ -1,0 +1,251 @@
+# Colophon, pilote technique
+
+Ce fichier possède la **technique** : le moteur, l'app, le gate, les pièges de code,
+l'architecture. La **gestion** (le cap, la publication, les fournisseurs, le verdict
+papier, le lancement, les arbitrages produit) vit hors du dépôt, dans
+`~/Documents/08_IA/02_Outputs/colophon/CLAUDE.md`. Une session cloud ne voit que ce
+fichier : tout ce qu'il faut pour coder est ici, et rien d'autre n'est supposé.
+
+Le glossaire du domaine est `CONTEXT.md`. Un synonyme dans un diff est un rapport de bug
+qui attend.
+
+Logiciel libre d'albums photo : un dossier en entrée, composition automatique, tout
+modifiable, PDF prêt à imprimer. Tauri 2 (Rust + React), GPL-3.0, version 0.9.0.
+
+## Le gate
+
+`./scripts/check.sh` est la seule définition de ce qui est vert. La CI ne fait que
+l'installer et le lancer, sur macOS, Ubuntu et Windows. Une règle qui n'existerait que
+dans la CI serait une règle que personne ne peut vérifier avant de pousser.
+
+Deux sauts sont légitimes hors du Mac, et le script les annonce lui-même :
+
+- **le linter d'albums**, quand `~/Pictures/colophon-testsets` est absent ;
+- **`pdf-png`**, qui dépend de `sips`, donc de macOS.
+
+Tout autre saut est un échec, pas une tolérance.
+
+### Ce que le gate ne couvre pas hors du Mac
+
+Le linter recompose les trois jeux de référence avec le code du jour, puis les audite :
+c'est lui qui attrape une régression du Composer avant qu'elle ne parte. Ces jeux pèsent
+5,7 Go et ne sont pas dans le dépôt. **Le linter ne tourne donc ni dans une session
+cloud, ni chez GitHub Actions. Il ne tourne que sur le Mac.**
+
+Tant que le gate n'est pas portable, la règle est dure : **toute modification qui touche
+`layout` (le Composer), `gabarit`, `audit`, `pipeline`, `prevol` ou les seuils se relit
+et se `check.sh` en local avant fusion.** Le vert de la CI ne vaut pas pour ces
+fichiers. Une PR qui les touche l'écrit dans son titre.
+
+Rendre le gate portable veut dire faire dumper au scan et à l'analyse les fiches de
+chaque photo (date, hashes, netteté, exposition, visages, dimensions, orientation), les
+versionner, et ajouter au CLI de quoi composer depuis ces fiches sans les photos.
+Quelques centaines de kilo-octets rendraient le linter à la CI et au cloud. `curation.json`
+ne suffit pas : c'est un journal de décisions (`src`, `reason`, `focal`), pas une entrée.
+
+### Les deux régimes de fusion
+
+**Régime 1, aujourd'hui.** Une PR se fusionne depuis le Mac, après `check.sh` local, dès
+qu'elle touche un des fichiers ci-dessus. Les autres se fusionnent sur le vert de la CI.
+
+**Régime 2, quand le gate sera portable.** Le vert des trois OS suffit pour tout, et la
+fusion depuis le téléphone devient légitime. Basculer ce paragraphe le jour où c'est vrai.
+
+## La vague en cours
+
+**2.6, la page qui tourne**, deux sessions. Le geste vit dans l'aperçu fidèle et les
+surfaces de lecture, **jamais dans l'éditeur**. Toute bibliothèque de courbure passe par
+un audit de licence avant d'entrer.
+
+Vagues 0 et 1 closes, 2.1 à 2.5 closes. **Verdict de 2.5 : le défaut reste `dom`**,
+gravé dans `rendu.ts` et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une
+bascule future resterait un commit qui ne fait que ça. À la passe humaine au bundle, non
+bloquant : VoiceOver, et le rang gardé via le menu natif.
+
+## Le moteur
+
+Chaîne : scan (JPEG, PNG, **HEIC via ImageIO, macOS seulement**), analyse (dHash + pHash
+DCT, netteté, exposition, visages), curation, Composer, PDF aperçu + 300 dpi + couverture.
+Hors macOS, `heic::system()` rend `None` et `scan.rs` compte `skipped_heic` : rien ne casse.
+
+**Le catalogue a un seuil d'entrée** : le banc (`scripts/banc-gabarits.sh`) a retenu 186
+générés sur 1893 dans `gabarit::RETENUS` ; `offerts()` = historique + retenus (387 au
+dump), le Composer reste sur l'historique, `spec()` reparse tout nom `g_*`.
+
+**Les notes de l'utilisateur entrent dans le score** (`meta.rs`) : une photo rejetée sort
+avant comparaison, une étoilée vaut ×1,18 par étoile. `album.json.bak` à chaque sauvegarde.
+
+**Le Composer garantit** : jamais un portrait dans une case paysage (écart ≤ 1,4), les
+visages à 4 % des bords au moins, jamais deux quasi-doublons sur une planche, une
+ouverture au quartile haut, jamais quatre gabarits d'affilée. Plancher 250 ppi visé,
+**pas garanti** : l'audit en tolère trois, le prévol aucun.
+
+Titres de chapitre depuis le GPS (`core::places`, GeoNames CC-BY) ; seul
+`DateTimeOriginal` date un chapitre. **Deux rythmes** choisis au lancement, stockés dans
+`album.json`, relus à la recomposition (`layout::Densite`). **Une composition donne trois
+propositions** (`build::variantes_offertes`), en `album.<id>.json`, effacées au premier
+enregistrement. **Deux planches ordinaires encadrent le livre** (`album.colophon`,
+décochables depuis Envoi) : colophon en queue, page de garde en tête, hors chapitres.
+
+## La scène, source unique de ce que porte une planche
+
+`Scene::of(planche, géométrie)` rend des objets : rectangle, profondeur (l'indice), rang
+de lecture, rôle codé (`photo`, `photo_caption`, `chapter_caption`, `text`). L'émetteur,
+le tirage 300 dpi, le linter, le prévol **et l'écran** la lisent tous. **Dérivée, jamais
+stockée** : `album.json` n'a pas bougé, donc aucune migration. `garde`, `texte` et
+`colophon` sont un rôle `Text` aux lignes déjà mises en page. Un texte est placé par sa
+ligne de base (`at`) et couvre son encre mesurée (`rect`), deux choses distinctes, et
+`caption_box` reste le proxy de placement du dump. **Pour un gabarit-candidat, c'est
+toujours `slots_for`** ; pour ce que porte une planche, c'est la scène.
+
+`scene.ts::sceneOf` en est le miroir TypeScript, millimètres, origine en haut à gauche.
+**Deux rendus consomment la même scène**, DOM et `SceneCanvas`, derrière `rendu.ts`,
+défaut `dom`. Les quatre gestes passent par `scene.ts::hitTest` ; un recadrage en vol se
+substitue **dans la scène** (`avecRecadrage`), donc aucun rendu ne sait ce qu'est un
+brouillon. **`SceneProxies` pose une boîte focusable par objet**, dans l'ordre de lecture,
+nommée depuis le rôle via `i18n.ts`, `pointer-events: none`, clippée au rognage. **Les
+deux rendus donnent le même arbre d'accessibilité** (37 objets nommés, listes identiques
+sur neuf planches) : ce qu'un rendu peint est du décor, marqué objet par objet, jamais un
+`aria-hidden` sur le conteneur, deux champs de saisie y vivent.
+
+**La géométrie a une seule source** (`gabarit.rs`, dump lu par le TS via `geometrie.ts`).
+Restent portés et sous parité : fenêtres de recadrage, `coverSheet`, `gardeLayout`, et
+l'assemblage de la scène, épinglé objet par objet sur neuf planches × six formats. Seule
+l'encre mesurée échappe, faute de fonte sous Vitest, et court la mesure synthétique des
+deux côtés. **Les deux fixtures se régénèrent** quand le dump ou la scène change
+(`--dump-geometry`, `scripts/fixture-scene.sh`) : leur fraîcheur est un test.
+
+## L'app
+
+Recadrage, tiroir, table lumineuse ⌘3, badge « éditée » et cadenas ⌘L, « rendre à
+l'automatique », recomposition préservante, légendes, texte, couverture, **Envoi ⌘4**
+(qui offre le verdict après un export), bilan de choix, revue clavier, Stockage, À propos,
+**Préférences ⌘,** (FR/EN et le rendu des planches, `i18n.ts`, sans redémarrage),
+**aperçu fidèle ⇧⌘P** (pdf.js).
+
+**Le clavier garde sa place quand la page tourne** : la couche est démontée à chaque tour
+(`key={index}` rejoue l'animation), donc la mémoire du rang vit hors du composant ; au
+bout de l'ordre de lecture, la flèche tourne la planche. **Un champ ouvert depuis une
+boîte rend le focus à cette boîte** : le rang survit au blur vers le champ, et Entrée
+valide avec `preventDefault`, sans lui l'action par défaut rouvrait le champ. **Le canvas
+avale son clic résiduel**, sans quoi le papier désélectionnait dans le même souffle. **La
+ligne de statut est vivante** (`role="status"`, les quatre pieds) et **la table lumineuse
+se parcourt au clavier** (un arrêt de tabulation, flèches, verticales d'une rangée).
+**La légende proposée** : champ vide, fantôme gris (`legende::proposition`), Tab la pose
+et marque `edited`. Badges de case : « N ppi », « sombre », infobulle = remède.
+
+Menu natif (`menu.ts`), barre en trois zones, couverture = cellule zéro de Planches,
+export uniquement par Envoi. **Toute commande passe par la table `raw` d'App et
+`menu.ts`** ; les cinq panneaux s'excluent. **Aide puis Signaler** (`signaler.ts`) :
+rapport entier visible avant envoi, jamais un chemin ni une légende.
+
+**DA** : piste A, chrome clair sur blanc, plus un mode sombre qui suit le système, un
+bloc de tokens, contraste vérifié. Neutres froids, terracotta `#b04a1f` / `#e07a4a`, zéro
+serif. `--ink-rgb` = encre du papier, `--chip-*` = pastilles sur photo, `--salle-*` = la
+salle sombre.
+
+## Le PDF
+
+**L'export se déclare PDF/X-4 et PDF/A-2b** (`core::pdfx`) : OutputIntent sRGB, XMP,
+`/Trapped`, `/ID`, en-tête 1.6. Aucun validateur gratuit ne certifie X-4 : la mesure est
+PDF/A-2b (veraPDF) plus cinq tests Rust, le verdict X-4 revient au prévol imprimeur.
+**Le PDF est reproductible** : `SOURCE_DATE_EPOCH` honoré, deux exports du même album
+sont identiques à l'octet.
+
+**Trois PDF** : `album.pdf` = aperçu vignettes, jamais imprimé, mais c'est lui que lit
+l'aperçu fidèle ; `--print` = 300 dpi, rien ne court-circuite `print_scale` ; `--cover` =
+la feuille à plat, une par profil. **Ce qui doit survivre au massicot se mesure depuis la
+coupe**, et il n'y a plus qu'une implémentation, `scene::distance_to_trim`.
+
+`--audit` : dix compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions de
+chaque jeu. `--reprise` : part des planches corrigées à la main contre
+`album.origin.json` ; sous 10 % bon, jusqu'à 30 % à surveiller, au-delà rédhibitoire.
+`--prevol --profil <id>` : bloquants contre un `PrinterProfile`.
+
+## Pièges connus
+
+**Les chaînes nées dans le moteur restent françaises sur l'écran anglais** (défauts du
+prévol, fiches, rythmes, formats, variantes) : le jour où ça compte, des codes côté
+moteur et le libellé côté app. **Vitest tourne sans `navigator`**, langue par défaut
+anglaise : un test qui affirme du français pose `setLangue("fr")`. Sous
+`pipeline::PETIT_DOSSIER` (25 photos), la curation se limite aux rejets certains.
+
+**`album.origin.json` ne se réécrit jamais**, c'est la référence de `--reprise` :
+composer dans un dossier déjà utilisé mesurerait l'album du jour contre une vieille
+proposition. `check.sh` efface avant. **Les seuils du linter sont co-réglés avec le
+Composer** (250 ppi, écart 1,4, doublons 24 bits dHash / 8 pHash / 180 s, couleur ≤ 20)
+dans `audit.rs`, importés par `layout.rs`.
+
+**Les actifs sous licence gardent leur licence à côté** : `colophon-core/assets/` (OFL,
+ICC sRGB, GeoNames **CC-BY, attribution obligatoire**) ; l'écran À propos porte les trois.
+
+**Le serveur de dev écrase le vrai `album.json`** (POST `/__dev/album`) : copies jetables.
+**Recharger la page après toute édition de source**, le fast refresh Vite corrompt l'état
+React. **Vignettes** : nom non devinable, tout lecteur passe par `thumbs.json` ; sous
+1600 px une vignette EST l'original, le badge ppi s'y fie. **Mémoire** : pipeline sur
+vignettes, l'original ne s'ouvre qu'au rendu.
+
+**Une fenêtre en arrière-plan ne reçoit aucune trame d'animation** : pdf.js n'y résout
+jamais sa promesse et `mesure.ts` n'y pose aucun chiffre, vérifier `document.visibilityState`
+avant d'accuser le code. **Une fenêtre sans le focus système ne reçoit aucun événement de
+focus** (`hasFocus()` faux, les deux harnais) : `focus()` déplace `activeElement`, mais
+`focusin` ne part pas et `:focus` ne matche pas. Tout ce qui touche au clavier ou au
+chronomètre se vérifie **au premier plan**, jamais au harnais. **Mais une capture d'écran
+force une étape de rendu** : sans capture préalable, `ResizeObserver` n'a jamais livré ses
+callbacks, l'échelle de la planche vaut 1 et tout relevé DOM est faussé. Capturer, puis
+relever. La cure des fenêtres borgnes : instance Brave dédiée, drapeaux anti-occlusion,
+focus émulé CDP, `scripts/mesure-cdp.mjs` et `scripts/mesure-rendu.md` § « La cure ».
+**pdf.js** : jamais de lambda dans les dépendances de l'effet de rendu.
+
+**Une UX ne se valide jamais au seul harnais navigateur** (`.claude/launch.json`).
+**Installer le bundle après chaque push** (TCC pour le pilotage à l'écran), 19 Mo.
+**Les artefacts de mise à jour n'existent qu'en release** (`tauri.release.conf.json`).
+
+**Un canvas casse l'accessibilité par nature** : les proxies DOM sont posés, et
+`SceneProxies` doit rester une fonction de la scène. Le jour où il lit le gabarit ou une
+chaîne du moteur, il cesse de servir les deux rendus.
+
+**Jamais un octet écrit sur un original**, la retouche vit dans `album.json`. **Jamais
+d'échec silencieux à l'export.** **Tout ce qui touche le PDF remesure la conformité**
+(cinq tests Rust plus veraPDF) dans la vague où c'est écrit.
+
+## Décisions à ne pas rouvrir, côté code
+
+Tauri 2 et React. GPL-3.0. `album.json` état unique réparable à la main. Le PDF fait foi.
+Aucune image ne traverse le pli. Heuristiques d'abord, IA jamais décisionnaire. Jamais de
+résolution sous 250 ppi. Jamais `imazen/heic` (AGPL).
+
+## Commandes
+
+```bash
+./scripts/check.sh
+```
+
+```bash
+./target/release/colophon ~/Pictures/colophon-testsets/corse-2013 -o .albums/corse-2013 --format carre-21 && ./target/release/colophon --audit -o .albums/corse-2013
+```
+
+Autres drapeaux : `--print`, `--cover`, `--prevol --profil <id>`, `--densite`,
+`--variantes`, `--reprise`, `--dump-scene`, `--dump-geometry`, `--profils`. Scripts :
+`pdfx.sh full`, `install-app.sh`, `fixture-scene.sh`, `notices.sh`, `apercu-fidele.py`,
+`banc-gabarits.sh`, `mesure-cdp.mjs`. App : `npm run tauri dev`.
+
+## Architecture
+
+Workspace Cargo. **`colophon-core`** : `scan` → `meta` → `thumb` → `analyze` → `face` →
+`heic` → `pipeline` (curation) → `layout` (Composer, `Densite`) → `scene` → `pdf` →
+`print` → `cover` → `audit` ; `build.rs` enchaîne. À côté : `font`, `icc`, `places` (les
+trois actifs), `pdfx`, `reprise`, `log`, `printer`, `prevol`, `colophon` (la page).
+**`colophon-cli`** : clap. **`colophon-app`** : React et Vite (`bridge.ts` seule porte,
+`album.ts` géométries, `scene.ts` la scène et `hitTest`, `SceneCanvas.tsx` le peintre,
+`SceneProxies.tsx` le clavier, `rendu.ts` l'interrupteur, `photos.ts` vignettes décodées
+et badges, `font.ts` la mesure de texte, `menu.ts`, `signaler.ts`, `pdfview.tsx`,
+`reasons.ts`, `icons.tsx`, `recents.ts`) plus la coquille Tauri, marques d'icône dans
+`design/marques`.
+
+Chaîne de distribution : `NOTICES.md` généré et embarqué, CSP réelle, CHANGELOG, README,
+modèles d'issue, `check.yml` et `release.yml` (binaires, SHA-256, `latest.json`), updater
+branché. Reste le parcours de correction.
+
+Le prompt de la session en cours, quand il y en a un : `docs/prompts/en-cours.md`.
+Mesures : `docs/mesures/`. Glossaire : `CONTEXT.md`.

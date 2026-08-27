@@ -1259,14 +1259,18 @@ mod tests {
         )
         .unwrap();
         let avant = [[0.2_f64, 0.8_f64], [0.9, 0.1]];
+        // `root` reste un littéral : la migration ne résout aucune photo par
+        // lui (les ratios viennent des vignettes), et y écrire `out.display()`
+        // produisait sous Windows un `C:\Users\...` dont les antislashs sont
+        // des échappements JSON invalides. Le test tombait là, et nulle part
+        // ailleurs, sur le seul runner Windows.
         fs::write(
             out.join("album.json"),
             format!(
-                r#"{{"version":1,"title":"t","root":"{}","trim_mm":{{"w":210.0,"h":210.0}},
+                r#"{{"version":1,"title":"t","root":".","trim_mm":{{"w":210.0,"h":210.0}},
                     "bleed_mm":3.0,"spreads":[{{"template":"duo","slots":[
                       {{"src":"a.jpg","focal":[{},{}]}},
                       {{"src":"b.jpg","focal":[{},{}]}}]}}]}}"#,
-                out.display(),
                 avant[0][0], avant[0][1], avant[1][0], avant[1][1],
             ),
         )
@@ -1320,14 +1324,12 @@ mod tests {
         let (_photos, out) = dossier_test("migration-trou");
         fs::create_dir_all(out.join(".cache").join("thumbs")).unwrap();
         fs::write(out.join("thumbs.json"), r#"{}"#).unwrap();
+        // Littéral, pour la même raison que le test au-dessus.
         fs::write(
             out.join("album.json"),
-            format!(
-                r#"{{"version":1,"title":"t","root":"{}","trim_mm":{{"w":210.0,"h":210.0}},
-                    "bleed_mm":3.0,"spreads":[{{"template":"duo","slots":[
-                      {{"src":"a.jpg","focal":[0.2,0.8]}}]}}]}}"#,
-                out.display(),
-            ),
+            r#"{"version":1,"title":"t","root":".","trim_mm":{"w":210.0,"h":210.0},
+               "bleed_mm":3.0,"spreads":[{"template":"duo","slots":[
+                 {"src":"a.jpg","focal":[0.2,0.8]}]}]}"#,
         )
         .unwrap();
 

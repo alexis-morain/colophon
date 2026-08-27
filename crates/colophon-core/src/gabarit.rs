@@ -701,17 +701,36 @@ pub fn slots(spec: &Spec, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
 /// threshold the composer places with. One rule, engine side: the picker
 /// and the keyboard cycle both read this list, neither rewrites it.
 pub fn compatibles(aspects: &[f64], g: &SpreadGeometry) -> Vec<&'static str> {
-    offerts()
+    offerts().iter().filter(|s| apte(s, aspects, g)).map(|s| s.nom).collect()
+}
+
+/// The worst orientation betrayal a template inflicts on these photos, taken
+/// in slot order: 1.0 when every photo matches its cell, growing as the two
+/// shapes diverge. `audit::ASPECT_BETRAYAL` is where the composer stops
+/// placing and the linter starts counting.
+///
+/// Measured on the rectangles the spread actually renders — `slots` truncates
+/// to the photo count — so a template carrying fewer photos than its capacity
+/// is judged on the cells that hold something, never on empty ones. For a
+/// full spread this is the arithmetic `compatibles` has always run.
+pub fn trahison(spec: &Spec, aspects: &[f64], g: &SpreadGeometry) -> f64 {
+    slots(spec, aspects.len(), g)
         .iter()
-        .filter(|s| s.capacite > 0 && s.capacite <= aspects.len())
-        .filter(|s| {
-            slots(s, s.capacite, g).iter().zip(aspects).all(|(r, a)| {
-                let c = r.w / r.h;
-                (a / c).max(c / a) <= crate::audit::ASPECT_BETRAYAL
-            })
+        .zip(aspects)
+        .map(|(r, a)| {
+            let c = r.w / r.h;
+            (a / c).max(c / a)
         })
-        .map(|s| s.nom)
-        .collect()
+        .fold(1.0, f64::max)
+}
+
+/// Whether a template can carry these photos on this geometry: it holds all
+/// of them, and none betrays its cell. The project's single fitness rule —
+/// the picker, the keyboard cycle and the bascule read it, none rewrites it.
+pub fn apte(spec: &Spec, aspects: &[f64], g: &SpreadGeometry) -> bool {
+    spec.capacite > 0
+        && spec.capacite <= aspects.len()
+        && trahison(spec, aspects, g) <= crate::audit::ASPECT_BETRAYAL
 }
 
 /// `compatibles` for photos of a saved album, named by their `src`, in

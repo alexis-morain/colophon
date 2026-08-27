@@ -28,6 +28,20 @@ pub fn print_scale(rect: &pdf::Rect, iw: u32, ih: u32) -> f64 {
     s * PRINT_DPI / 25.4
 }
 
+/// What one photo actually prints at, in ppi, once cover-cropped into a
+/// rectangle and zoomed. Zooming shows fewer source pixels, so it divides.
+///
+/// The linter's resolution counter and the bascule's bilan read this, and
+/// `album.ts::effectivePpi` is its port. A format change is the one edit that
+/// moves this number for every photo at once, which is why it has a name
+/// rather than living inline at its first call site.
+pub fn effective_ppi(rect: &pdf::Rect, iw: u32, ih: u32, zoom: f64) -> f64 {
+    if iw == 0 || ih == 0 {
+        return f64::INFINITY;
+    }
+    PRINT_DPI / (print_scale(rect, iw, ih) * zoom.max(1.0))
+}
+
 /// Width, height and component count from a JPEG's SOF marker, without
 /// decoding. Component count decides passthrough: only plain 3-component
 /// (YCbCr/RGB) files can be embedded as-is under DeviceRGB.

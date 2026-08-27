@@ -37,6 +37,7 @@ import {
   captionAnchor,
   spreadGeometry,
   slidingRoom,
+  imageSpan,
   textAnchor,
   COLOPHON_TEMPLATE,
   COLOPHON_SIZE_MM,
@@ -447,8 +448,15 @@ export function SpreadView({
     const r = cellRects.get(g.cell);
     if (!img?.naturalWidth || !r) return;
     const zoom = draft?.slot === g.cell ? draft.zoom : (slot.zoom ?? 1);
-    const { x: spanX, y: spanY } = slidingRoom(
-      { w: r.w * mm, h: r.h * mm },
+    const cellule = { w: r.w * mm, h: r.h * mm };
+    const { x: roomX, y: roomY } = slidingRoom(
+      cellule,
+      img.naturalWidth,
+      img.naturalHeight,
+      zoom,
+    );
+    const { x: spanX, y: spanY } = imageSpan(
+      cellule,
       img.naturalWidth,
       img.naturalHeight,
       zoom,
@@ -457,15 +465,17 @@ export function SpreadView({
     const fine = e.altKey ? 0.2 : 1;
     const dx = dx0 * fine;
     const dy = dy0 * fine;
-    if (spanX <= ROOM_EPSILON && spanY <= ROOM_EPSILON) {
+    if (roomX <= ROOM_EPSILON && roomY <= ROOM_EPSILON) {
       if (!g.signale) {
         g.signale = true;
         onSansMarge?.();
       }
       return;
     }
-    const fx = spanX > 0.5 ? g.focal[0] - dx / spanX : g.focal[0];
-    const fy = spanY > 0.5 ? g.focal[1] - dy / spanY : g.focal[1];
+    // Le jeu dit si l'axe peut bouger, l'empan de combien : un point d'image
+    // se déplace d'une fraction de l'image, jamais d'une fraction du reste.
+    const fx = roomX > 0.5 ? g.focal[0] - dx / spanX : g.focal[0];
+    const fy = roomY > 0.5 ? g.focal[1] - dy / spanY : g.focal[1];
     const fin = jusquAuRendu("recadrage.trame");
     setDraft({
       slot: g.cell,
@@ -1246,8 +1256,15 @@ function CropPhoto({
     const g = gesture.current;
     const el = img.current;
     if (!g || g.id !== e.pointerId || !el?.naturalWidth) return;
-    const { x: spanX, y: spanY } = slidingRoom(
-      { w: rect.w * mm, h: rect.h * mm },
+    const cellule = { w: rect.w * mm, h: rect.h * mm };
+    const { x: roomX, y: roomY } = slidingRoom(
+      cellule,
+      el.naturalWidth,
+      el.naturalHeight,
+      zoom,
+    );
+    const { x: spanX, y: spanY } = imageSpan(
+      cellule,
       el.naturalWidth,
       el.naturalHeight,
       zoom,
@@ -1260,15 +1277,17 @@ function CropPhoto({
     // A drag that cannot move anything is the moment to say why, and to name
     // the way out. Once per gesture: a message repeated at every pointer event
     // is noise, and noise is what teaches people to stop reading messages.
-    if (spanX <= ROOM_EPSILON && spanY <= ROOM_EPSILON) {
+    if (roomX <= ROOM_EPSILON && roomY <= ROOM_EPSILON) {
       if (!g.signale) {
         g.signale = true;
         onSansMarge?.();
       }
       return;
     }
-    const fx = spanX > 0.5 ? g.focal[0] - dx / spanX : g.focal[0];
-    const fy = spanY > 0.5 ? g.focal[1] - dy / spanY : g.focal[1];
+    // Le jeu dit si l'axe peut bouger, l'empan de combien : un point d'image
+    // se déplace d'une fraction de l'image, jamais d'une fraction du reste.
+    const fx = roomX > 0.5 ? g.focal[0] - dx / spanX : g.focal[0];
+    const fy = roomY > 0.5 ? g.focal[1] - dy / spanY : g.focal[1];
     // Une trame de recadrage, dev seulement : de l'événement de pointeur au
     // pixel. C'est la mesure qui dira si un canvas glisse mieux qu'un DOM.
     const fin = jusquAuRendu("recadrage.trame");

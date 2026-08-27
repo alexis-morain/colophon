@@ -12,6 +12,20 @@ qui attend.
 Logiciel libre d'albums photo : un dossier en entrée, composition automatique, tout
 modifiable, PDF prêt à imprimer. Tauri 2 (Rust + React), GPL-3.0, version 0.9.0.
 
+## Si tu es une session cloud, commence par ça
+
+```bash
+./scripts/install-cloud-deps.sh
+```
+
+Les dépendances système de Tauri (webkit2gtk et compagnie) ne sont pas dans l'image :
+sans elles, `cargo build` échoue sur `colophon-app` et rien d'autre ne se lit dans
+l'erreur. Le script les pose, ne sort jamais en échec, et se saute tout seul partout
+ailleurs qu'en session cloud. Quelques minutes la première fois, instantané ensuite.
+
+Il n'est **pas** branché en hook : ce dépôt n'exécute rien tout seul au démarrage d'une
+session. On l'appelle, explicitement, et ça se voit.
+
 ## Le gate
 
 `./scripts/check.sh` est la seule définition de ce qui est vert. La CI ne fait que

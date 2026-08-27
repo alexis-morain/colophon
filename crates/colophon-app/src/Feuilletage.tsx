@@ -243,15 +243,38 @@ export function Feuilletage({
 
   // Ce qu'App tient de la feuille : une seule commande, et la réponse
   // honnête quand elle n'a pas pu la prendre.
+  //
+  // Une demande pendant qu'une feuille tourne est **avalée**, et c'est
+  // délibéré : une flèche maintenue tourne alors une page toutes les quatre
+  // cents millisecondes, ce qui est exactement le rythme d'un livre qu'on
+  // feuillette. Laisser passer la demande ferait sauter la planche sous une
+  // feuille dont les images sont celles d'avant. Mettre les demandes en file
+  // ferait tourner une page de trop après qu'on a lâché la touche. Qui
+  // parcourt vite a la table lumineuse (⌘3) et la règle du pied, qui sont
+  // faites pour ça. À reprendre au ressenti, au bundle.
   useImperativeHandle(
     ref,
     (): Tourneur => ({
-      tourner: (sens) =>
-        (sens === 1 || sens === -1) && demarrer(sens, true),
+      tourner: (sens) => {
+        if (sens !== 1 && sens !== -1) return false;
+        if (tour) return true;
+        return demarrer(sens, true);
+      },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [planche, total, cle, largeur, tour],
   );
+
+  // La planche a changé ailleurs qu'au bout de ce tour — Début, Fin, la table
+  // lumineuse, une recomposition : la feuille en vol n'a plus de sujet, et la
+  // laisser finir poserait un indice calculé depuis un livre qui a bougé.
+  useEffect(() => {
+    if (!tour) return;
+    if (planche === tour.feuille.depuis || planche === tour.feuille.vers) return;
+    arreter();
+    setTour(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planche, tour]);
 
   // ---- le geste ----------------------------------------------------------
 
@@ -270,7 +293,8 @@ export function Feuilletage({
   };
 
   const surPointeurBas = (e: React.PointerEvent) => {
-    if (geste.current || e.button !== 0) return;
+    // Une feuille en vol garde la main jusqu'au bout, comme au clavier.
+    if (geste.current || tour || e.button !== 0) return;
     const f = fractions(e);
     if (!f) return;
     const sens = coinTouche(f.x, f.y);

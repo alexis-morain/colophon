@@ -328,6 +328,42 @@ juge("et le livre ne va pas plus loin", (await position()) === auBout, {
   obtenu: await position(),
 });
 
+// 6 bis. Une feuille en vol garde la main. Cinq flèches en rafale pendant un
+// tour ne doivent poser qu'une planche : laisser passer les autres ferait
+// sauter le livre sous une feuille dont les images sont celles d'avant.
+await ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Home" }))`);
+await sleep(900);
+const avantRafale = await position();
+for (let i = 0; i < 5; i++) {
+  await fleche(1);
+  await sleep(40);
+}
+// Pendant que la feuille est encore en vol : le livre ne doit pas avoir
+// bougé sous elle. C'est là que se voit une demande laissée passer.
+const pendantRafale = await position();
+juge("le livre ne saute pas sous la feuille en vol", pendantRafale === avantRafale, {
+  avant: avantRafale,
+  pendant: pendantRafale,
+});
+await sleep(1200);
+const apresRafale = await position();
+juge("cinq flèches en rafale ne tournent qu'une page", apresRafale !== avantRafale, {
+  avant: avantRafale,
+  apres: apresRafale,
+});
+juge("et exactement une", apresRafale.startsWith("2 "), { obtenu: apresRafale });
+
+// 6 ter. Un saut sous une feuille en vol la retire, et n'ajoute rien.
+await fleche(1);
+await sleep(120);
+await ev(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "End" }))`);
+await sleep(900);
+const apresSaut = await position();
+juge("un saut retire la feuille en vol", (await angleFeuille()) === null);
+juge("et le saut est le dernier mot", apresSaut === "50 / 50", {
+  obtenu: apresSaut,
+});
+
 // 7. Le mouvement réduit : la page change, sans feuille et sans attendre.
 // On revient au début : la dernière planche n'a plus rien devant elle, et un
 // livre qui ne peut pas tourner ne prouverait rien.

@@ -11,10 +11,10 @@
 # revient là où elle décide de quelque chose, la PR, et le `push` garde un
 # Ubuntu qui casse tôt.
 #
-# Les jeux de photos de référence ne sont pas dans le dépôt (des dizaines de
-# giga-octets de photos de famille) : le linter et le PDF → PNG se sautent
-# tout seuls quand ils ne les trouvent pas, en le disant. Ce que la CI garde,
-# ce sont les tests unitaires, la compilation, le typage et la parité.
+# Les jeux de photos de référence ne sont pas dans le dépôt (des giga-octets
+# de photos de famille) : le linter compose alors depuis leurs fiches
+# versionnées (crates/colophon-core/fiches) et rend le même verdict que sur le
+# Mac. Seul le PDF → PNG se saute hors macOS (sips), en le disant.
 
 name: check
 

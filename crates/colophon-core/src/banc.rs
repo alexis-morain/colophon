@@ -106,7 +106,7 @@ pub fn banc(dirs: &[PathBuf], progress: &dyn Fn(String)) -> Result<RapportBanc> 
         };
         jeux.insert(jeu.clone());
         let root = PathBuf::from(&jeu);
-        let infos = audit::mesure_photos(dir, &root, true, &srcs)
+        let (infos, _) = audit::mesure_photos(dir, &root, true, &srcs)
             .with_context(|| format!("mesure des photos de {}", dir.display()))?;
 
         for (variante, album) in &charges {
@@ -291,7 +291,7 @@ fn assignation(
         if (a / ca).max(ca / a) > audit::ASPECT_BETRAYAL {
             return None;
         }
-        let (ow, oh) = info.orig?;
+        let (ow, oh) = info.orig;
         if print::PRINT_DPI / print::print_scale(cell, ow, oh) < audit::MIN_EFFECTIVE_PPI {
             return None;
         }
@@ -344,7 +344,7 @@ mod tests {
             },
             score: 1.0 + seed as f64 * 0.01,
             faces: Vec::new(),
-            orig: Some((6000, (6000.0 * h / w) as u32)),
+            orig: (6000, (6000.0 * h / w) as u32),
             taken: None,
         }
     }
@@ -404,7 +404,7 @@ mod tests {
     fn le_plancher_de_resolution_refuse_l_assignation() {
         let (album, mut infos, g) = terrain();
         for i in [1u64, 2] {
-            infos.get_mut(&format!("p{}.jpg", i)).unwrap().orig = Some((900, 1200));
+            infos.get_mut(&format!("p{}.jpg", i)).unwrap().orig = (900, 1200);
         }
         let duo = gabarit::parse_genere("g_1x1q_1x1q").unwrap();
         assert!(essaie_sur_planche(&album, &infos, &g, &duo, 1).is_none());

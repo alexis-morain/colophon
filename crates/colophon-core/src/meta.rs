@@ -3,10 +3,11 @@
 //! EXIF still sort somewhere sensible.
 
 use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhotoMeta {
     pub taken: NaiveDateTime,
     /// True when `taken` came from EXIF rather than file mtime.

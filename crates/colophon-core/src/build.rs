@@ -2,6 +2,7 @@
 //! Kept in the library so the CLI and the app run the exact same pipeline.
 
 use crate::pipeline::Photo;
+use crate::releve::Releve;
 use crate::{analyze, face, layout, meta, model, pdf, pipeline, scan, thumb};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
@@ -118,7 +119,10 @@ impl VarianteResume {
 pub struct BuildReport {
     pub album: model::Album,
     pub album_json: PathBuf,
-    pub album_pdf: PathBuf,
+    /// The preview PDF, absent when the composition had no thumbnails to
+    /// draw it from — a relevé read back from its fiches. An empty path
+    /// would read as a file somewhere.
+    pub album_pdf: Option<PathBuf>,
     pub photos_scanned: usize,
     pub photos_kept: usize,
     pub chapters: usize,
@@ -127,16 +131,15 @@ pub struct BuildReport {
     pub variantes: Vec<VarianteResume>,
 }
 
-pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<BuildReport> {
+/// The reading half of a composition: scan, thumbnails, metadata, analysis,
+/// faces. The only half that touches a pixel, and so the only one that needs
+/// the photographs to be there. Everything it measures is what [`composer`]
+/// reads, and it serializes whole: see [`crate::releve`].
+pub fn releve(photos_dir: &Path, out: &Path, opts: &BuildOptions) -> Result<Releve> {
     let say = &opts.progress;
     let root = photos_dir
         .canonicalize()
         .with_context(|| format!("photos folder {}", photos_dir.display()))?;
-    let title = opts.title.clone().unwrap_or_else(|| {
-        root.file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "Album".into())
-    });
     fs::create_dir_all(out)?;
 
     let cancelled = || (opts.cancel)();
@@ -179,7 +182,6 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         };
         anyhow::bail!("aucune photo exploitable : {detail}");
     }
-    let photos_scanned = scanned.images.len();
 
     // 2. metadata + thumbnails + analysis, in parallel. The longest phase by
     // far, so it reports counts as it goes: a progress bar with nothing to
@@ -279,6 +281,55 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         );
     }
 
+    Ok(Releve {
+        version: crate::releve::VERSION,
+        racine: root,
+        skipped_heic: scanned.skipped_heic,
+        skipped_other: scanned.skipped_other,
+        // The decoder's message stops here, on the progress line above:
+        // nothing downstream reads it, and it would churn the fiches at
+        // every bump of the image crate.
+        illisibles: unreadable.into_iter().map(|(p, _)| p).collect(),
+        photos,
+        vignettes: true,
+    })
+}
+
+/// The composing half: curation, chapters, layout, and the files that come
+/// out of them. It touches no pixel until its last two steps, the thumbnail
+/// index and the preview PDF, which draw the images the analysis worked on —
+/// and a relevé read back from its fiches has none. It stops there, and says
+/// so.
+pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildReport> {
+    let say = &opts.progress;
+    let root = releve.racine.clone();
+    let title = opts.title.clone().unwrap_or_else(|| {
+        root.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Album".into())
+    });
+    fs::create_dir_all(out)?;
+
+    let cancelled = || (opts.cancel)();
+    let rel = |p: &Path| {
+        p.strip_prefix(&root)
+            .unwrap_or(p)
+            .to_string_lossy()
+            .to_string()
+    };
+
+    let vignettes = releve.vignettes;
+    let photos_scanned = releve.photos_scannees();
+    // An album composed without the photographs carries the relevé it came
+    // from: its thumbnails do not exist, so the relevé is the only thing the
+    // linter can measure. Written first, because the fiches are this
+    // composition's input and not a by-product of it.
+    if !vignettes {
+        releve.ecrire(&out.join(crate::releve::FICHIER))?;
+    }
+    let unreadable = releve.illisibles;
+    let photos = releve.photos;
+
     // Capture times, for re-inserting pinned spreads chronologically.
     let times: std::collections::HashMap<String, chrono::NaiveDateTime> =
         photos.iter().map(|p| (rel(&p.path), p.meta.taken)).collect();
@@ -298,7 +349,7 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
     // Unreadable files enter the report first: the sorting view shows the
     // file name without a thumbnail (there is nothing to draw), which is
     // still infinitely better than pretending the file never existed.
-    discards.extend(unreadable.iter().map(|(p, _)| model::Discard {
+    discards.extend(unreadable.iter().map(|p| model::Discard {
         src: rel(p),
         reason: "illisible".into(),
         kept: None,
@@ -718,6 +769,27 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         out.join("curation.json"),
         serde_json::to_string_pretty(&discards)?,
     )?;
+
+    // The pixels resume here, and only here. A relevé read back from its
+    // fiches stops at this line: it has an album, its proposal, its curation
+    // and its variants, and no image to draw them with.
+    if !vignettes {
+        say(&format!(
+            "sans les photos : {} écrit à côté de l'album, ni vignettes, ni \
+             thumbs.json, ni PDF, ni couverture",
+            crate::releve::FICHIER
+        ));
+        return Ok(BuildReport {
+            chapters: base.len(),
+            album,
+            album_json,
+            album_pdf: None,
+            photos_scanned,
+            photos_kept,
+            variantes,
+        });
+    }
+    let cache = thumb::ThumbCache::new(out)?;
     write_thumb_index(&album, &discards, &root, &cache, out)?;
 
     // 6. render PDF from thumbnails (preview quality in P0)
@@ -753,11 +825,19 @@ pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<
         chapters: base.len(),
         album,
         album_json,
-        album_pdf,
+        album_pdf: Some(album_pdf),
         photos_scanned,
         photos_kept,
         variantes,
     })
+}
+
+/// The whole build, from a folder to `album.json` + `album.pdf`: the two
+/// halves in a row, and nothing else. Every caller that has the photographs
+/// at hand goes through here.
+pub fn build_album(photos_dir: &Path, out: &Path, opts: BuildOptions) -> Result<BuildReport> {
+    let releve = releve(photos_dir, out, &opts)?;
+    composer(releve, out, opts)
 }
 
 /// The two proposals shown beside the one the creation screen asked for.

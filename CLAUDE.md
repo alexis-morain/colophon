@@ -18,38 +18,34 @@ modifiable, PDF prêt à imprimer. Tauri 2 (Rust + React), GPL-3.0, version 0.9.
 l'installer et le lancer, sur macOS, Ubuntu et Windows. Une règle qui n'existerait que
 dans la CI serait une règle que personne ne peut vérifier avant de pousser.
 
-Deux sauts sont légitimes hors du Mac, et le script les annonce lui-même :
+Un seul saut est légitime hors du Mac, et le script l'annonce lui-même : **`pdf-png`**,
+qui dépend de `sips`, donc de macOS. Tout autre saut est un échec, pas une tolérance.
+Le linter d'albums, lui, ne se saute plus jamais : fiches absentes, gate rouge.
 
-- **le linter d'albums**, quand `~/Pictures/colophon-testsets` est absent ;
-- **`pdf-png`**, qui dépend de `sips`, donc de macOS.
-
-Tout autre saut est un échec, pas une tolérance.
-
-### Ce que le gate ne couvre pas hors du Mac
+### Le linter tourne partout, les photos ne voyagent pas
 
 Le linter recompose les trois jeux de référence avec le code du jour, puis les audite :
-c'est lui qui attrape une régression du Composer avant qu'elle ne parte. Ces jeux pèsent
-5,7 Go et ne sont pas dans le dépôt. **Le linter ne tourne donc ni dans une session
-cloud, ni chez GitHub Actions. Il ne tourne que sur le Mac.**
+c'est lui qui attrape une régression du Composer avant qu'elle ne parte. Les photos
+(5,7 Go) restent sur le Mac ; ce qui voyage, c'est leur relevé — les fiches versionnées
+de `crates/colophon-core/fiches/`, régénérées par `scripts/fiches.sh` quand l'analyse
+change. Sans les photos, `check.sh` compose depuis les fiches (`--depuis-fiches`, qui
+s'arrête avant les pixels et le dit : ni vignettes, ni PDF, ni couverture) et audite
+pareil — l'audit lit le `releve.json` posé à côté de l'album, et **refuse de noter**
+quand il n'a ni photos ni relevé, plutôt que de laisser le compteur de résolution muet.
 
-Tant que le gate n'est pas portable, la règle est dure : **toute modification qui touche
-`layout` (le Composer), `gabarit`, `audit`, `pipeline`, `prevol` ou les seuils se relit
-et se `check.sh` en local avant fusion.** Le vert de la CI ne vaut pas pour ces
-fichiers. Une PR qui les touche l'écrit dans son titre.
+Sur le Mac, `check.sh` prouve à chaque passage que les deux chemins rendent le même
+`album.json` à l'octet (`root` excepté, normalisé par `scripts/identite-fiches.py`), la
+même `curation.json`, et le même verdict de linter, compteur par compteur. Cette
+identité est le test de la fonctionnalité **et** le test de fraîcheur des fiches, comme
+la fixture de scène l'est pour le dump de géométrie : une fiche qui a vieilli rougit là,
+avec `./scripts/fiches.sh` pour remède.
 
-Rendre le gate portable veut dire faire dumper au scan et à l'analyse les fiches de
-chaque photo (date, hashes, netteté, exposition, visages, dimensions, orientation), les
-versionner, et ajouter au CLI de quoi composer depuis ces fiches sans les photos.
-Quelques centaines de kilo-octets rendraient le linter à la CI et au cloud. `curation.json`
-ne suffit pas : c'est un journal de décisions (`src`, `reason`, `focal`), pas une entrée.
+### Le régime de fusion
 
-### Les deux régimes de fusion
-
-**Régime 1, aujourd'hui.** Une PR se fusionne depuis le Mac, après `check.sh` local, dès
-qu'elle touche un des fichiers ci-dessus. Les autres se fusionnent sur le vert de la CI.
-
-**Régime 2, quand le gate sera portable.** Le vert des trois OS suffit pour tout, et la
-fusion depuis le téléphone devient légitime. Basculer ce paragraphe le jour où c'est vrai.
+Le vert des trois OS suffit pour tout, et la fusion depuis le téléphone est légitime,
+y compris pour une PR qui touche `layout`, `gabarit`, `audit`, `pipeline`, `prevol` ou
+les seuils. (L'ancien régime 1 — `check.sh` local avant fusion pour ces fichiers — est
+aboli depuis que le gate est portable, 27/08.)
 
 ## La vague en cours
 

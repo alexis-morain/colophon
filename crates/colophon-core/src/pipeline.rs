@@ -3,10 +3,16 @@
 use crate::analyze::{color_distance, hamming, Analysis};
 use crate::meta::PhotoMeta;
 use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone)]
+/// Also the fiche the relevé serializes, whole and unabridged: what the
+/// Composer consumes is exactly what a machine without the photographs
+/// reads back. See [`crate::releve`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Photo {
+    /// Absolute while the folder is at hand, relative to the root in a
+    /// written relevé.
     pub path: PathBuf,
     pub meta: PhotoMeta,
     pub analysis: Analysis,

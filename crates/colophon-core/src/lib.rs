@@ -5,6 +5,7 @@
 pub mod analyze;
 pub mod audit;
 pub mod banc;
+pub mod bascule;
 pub mod build;
 pub mod colophon;
 pub mod cover;

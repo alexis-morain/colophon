@@ -364,13 +364,13 @@ pub(crate) fn compteurs(
             // Zooming shows fewer source pixels: the effective print
             // resolution drops with it.
             let (ow, oh) = info.orig;
-            let scale = print::print_scale(rect, ow, oh) * slot.zoom.max(1.0);
-            if print::PRINT_DPI / scale < MIN_EFFECTIVE_PPI {
+            let effectif = print::effective_ppi(rect, ow, oh, slot.zoom);
+            if effectif < MIN_EFFECTIVE_PPI {
                 ppi.push(Finding {
                     planche: si + 1,
                     case_idx: Some(ci),
                     src: Some(slot.src.clone()),
-                    info: format!("{:.0} ppi effectifs", print::PRINT_DPI / scale),
+                    info: format!("{effectif:.0} ppi effectifs"),
                 });
             }
         }

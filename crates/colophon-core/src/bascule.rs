@@ -774,4 +774,42 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// `album.origin.json` is the reprise's reference and never moves: a
+    /// bascule writes `album.json`, and the proposal beside it stays
+    /// byte-identical while the album's trim changes. Measured through the
+    /// folder path, the one that owns every write. And the reprise, read on
+    /// that same folder, withdraws its verdict rather than counting the
+    /// machine's folds as hands.
+    #[test]
+    fn une_bascule_ne_reecrit_jamais_l_origine() {
+        let dir = std::env::temp_dir()
+            .join(format!("colophon-bascule-origine-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let album = album_de(vec![planche("duo", &["p1.jpg", "p2.jpg"])], carre());
+        let json = serde_json::to_string_pretty(&album).unwrap();
+        std::fs::write(dir.join("album.json"), &json).unwrap();
+        std::fs::write(dir.join("album.origin.json"), &json).unwrap();
+        let origine_avant = std::fs::read(dir.join("album.origin.json")).unwrap();
+
+        bascule_dossier(&dir, paysage(), profil(), true).unwrap();
+
+        let relu: Album =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("album.json")).unwrap())
+                .unwrap();
+        assert_eq!((relu.trim_mm.w, relu.trim_mm.h), (paysage().w, paysage().h));
+        assert_eq!(
+            std::fs::read(dir.join("album.origin.json")).unwrap(),
+            origine_avant,
+            "le trim de l'origine n'a pas bougé pendant que celui de l'album bouge"
+        );
+
+        let r = crate::reprise::reprise(&dir).unwrap();
+        assert_eq!(r.verdict, "non mesurable");
+        assert!(r.ok);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

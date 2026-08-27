@@ -31,6 +31,16 @@ pub fn parse(spec: &str) -> Result<Size> {
     bail!("format inconnu « {spec} ». Disponibles : {}", names())
 }
 
+/// The name a size answers to, for humans: the preset when one matches, the
+/// raw millimetres otherwise. Strict equality on purpose — every preset trim
+/// is a literal, and a free size deserves its numbers, not the nearest name.
+pub fn nom(s: Size) -> String {
+    FORMATS
+        .iter()
+        .find(|(_, w, h, _)| *w == s.w && *h == s.h)
+        .map_or_else(|| format!("{} × {} mm", s.w, s.h), |(n, ..)| (*n).to_string())
+}
+
 pub fn names() -> String {
     FORMATS
         .iter()

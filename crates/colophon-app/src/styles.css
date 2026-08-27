@@ -1708,6 +1708,156 @@ input[type="radio"] {
   box-shadow: var(--shadow-paper);
 }
 
+/* ---- la feuille qui tourne ---------------------------------------------- */
+
+/* La scène du feuilletage fait exactement la planche double : c'est elle qui
+   porte l'ombre du papier, une fois, plutôt que chaque morceau la sienne — au
+   milieu d'un tour il y en a quatre à l'écran, et quatre ombres feraient
+   quatre feuilles là où il n'y en a qu'une. */
+.feuilletage {
+  position: relative;
+  background: #fff;
+  box-shadow: var(--shadow-paper);
+  /* Longue : le papier se penche vers le lecteur, il ne plonge pas. */
+  perspective: 2400px;
+  /* Sans quoi le glisser sur le coin ferait défiler la page sous le doigt. */
+  touch-action: none;
+  user-select: none;
+}
+
+.feuilletage.au-coin {
+  cursor: pointer;
+}
+
+/* Une moitié de planche, ou la planche entière : la taille est écrite en
+   pixels par le composant, depuis le bitmap. Rien ici ne la met à l'échelle,
+   sans quoi l'aperçu fidèle serait la chose la plus floue de l'écran. */
+.demi {
+  display: block;
+}
+
+.demi-gauche,
+.demi-droite {
+  position: absolute;
+  top: 0;
+}
+
+.demi-gauche {
+  left: 0;
+}
+
+.demi-droite {
+  right: 0;
+}
+
+.feuillet {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+/* Le tour vers l'avant part de la moitié droite, charnière au pli. */
+.feuillet.vers-avant {
+  left: 50%;
+  transform-origin: left center;
+}
+
+/* Celui vers l'arrière part de la moitié gauche, même pli. */
+.feuillet.vers-arriere {
+  left: 0;
+  transform-origin: right center;
+}
+
+.face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #fff;
+  /* Chaque face ne se voit que de son côté : c'est ce qui fait de deux
+     rectangles une feuille de papier. */
+  backface-visibility: hidden;
+}
+
+.face.verso {
+  transform: rotateY(180deg);
+}
+
+/* Le voile de courbure, dans la feuille et hors des faces : il tourne avec
+   elle, se voit des deux côtés, et son bord sombre reste collé à la charnière
+   quel que soit le côté qu'on regarde. L'opacité est écrite par le composant,
+   depuis `relief`, le même nombre que l'ombre dessous. */
+.feuille-courbure {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vers-avant .feuille-courbure {
+  background: linear-gradient(to right, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0) 62%);
+}
+
+.vers-arriere .feuille-courbure {
+  background: linear-gradient(to left, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0) 62%);
+}
+
+/* L'ombre portée sur la page que la feuille découvre, la plus dense au pli. */
+.feuille-ombre {
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ombre-droite {
+  right: 0;
+  background: linear-gradient(to right, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0) 45%);
+}
+
+.ombre-gauche {
+  left: 0;
+  background: linear-gradient(to left, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0) 45%);
+}
+
+/* Les deux coins : décor seul, ils disent où le geste vit sans le prendre.
+   Leur boîte est celle de `COIN`, posée en pourcentages par le composant, donc
+   ce qu'on voit et ce qui répond sont la même chose. La corne ne se lève que
+   sous le curseur — un livre au repos n'a pas de coin corné. */
+.coin {
+  position: absolute;
+  bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--turn);
+}
+
+.coin.vif {
+  opacity: 1;
+}
+
+.coin-avant {
+  right: 0;
+  background: linear-gradient(
+    to bottom right,
+    rgb(0 0 0 / 0) 78%,
+    rgb(var(--ink-rgb) / 0.14) 80%
+  );
+}
+
+.coin-arriere {
+  left: 0;
+  background: linear-gradient(
+    to bottom left,
+    rgb(0 0 0 / 0) 78%,
+    rgb(var(--ink-rgb) / 0.14) 80%
+  );
+}
+
 /* Sits first in the context line, before the template picker: it changes
    what the whole stage shows, so it comes before what is on it. */
 .fidele-toggle {
@@ -3407,4 +3557,23 @@ button.envoi-defaut:focus-visible {
 
 .densite.active .densite-case {
   background: var(--case-fill-active);
+}
+
+/* ---- moins de mouvement -------------------------------------------------- */
+
+/* Un lecteur qui a demandé moins de mouvement n'a pas demandé un mouvement
+   plus court : ce qui bougeait ne bouge plus, la page change sec.
+   `Feuilletage` refuse de monter une feuille dans ce cas, donc ce qui reste
+   ici, ce sont les entrées en scène et les transitions du chrome. La règle
+   large est volontaire — une nouvelle animation ne doit pas avoir à penser à
+   se déclarer pour être couverte. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

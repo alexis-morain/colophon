@@ -18,10 +18,17 @@ modifiable, PDF prêt à imprimer. Tauri 2 (Rust + React), GPL-3.0, version 0.9.
 ./scripts/install-cloud-deps.sh
 ```
 
-Les dépendances système de Tauri (webkit2gtk et compagnie) ne sont pas dans l'image :
-sans elles, `cargo build` échoue sur `colophon-app` et rien d'autre ne se lit dans
-l'erreur. Le script les pose, ne sort jamais en échec, et se saute tout seul partout
-ailleurs qu'en session cloud. Quelques minutes la première fois, instantané ensuite.
+Il pose deux choses que l'image n'a pas, et sans lesquelles le gate ment :
+
+- les **dépendances système de Tauri** (webkit2gtk et compagnie), sans quoi
+  `cargo build` échoue sur `colophon-app` et rien d'autre ne se lit dans l'erreur ;
+- les **paquets npm** de `crates/colophon-app`. Mesuré le 27/08 : sans `node_modules`,
+  `npx tsc --noEmit` sort 1088 erreurs de résolution de modules, aucune ne parlant d'un
+  type du projet, et `vitest` ne démarre jamais. Le gate rend 2 sans que rien du projet
+  soit en cause. La CI ne voit pas ce piège, elle fait son `npm ci` en étape séparée.
+
+Le script ne sort jamais en échec et se saute tout seul partout ailleurs qu'en session
+cloud. Compter environ quatre minutes pour le premier `cargo build --release` derrière.
 
 Il n'est **pas** branché en hook : ce dépôt n'exécute rien tout seul au démarrage d'une
 session. On l'appelle, explicitement, et ça se voit.

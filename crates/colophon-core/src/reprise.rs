@@ -11,6 +11,12 @@
 //! **which class** of correction it was. That last part is the point: a
 //! correction class that keeps coming back is a linter counter waiting to be
 //! written.
+//!
+//! The metric has one blind spot, and it says so instead of hiding it. A
+//! bascule folds templates by machine, and a content diff cannot tell those
+//! folds from a hand's. When the album's trim differs from its proposal's,
+//! the verdict becomes « non mesurable » — the facts stay, the conclusion is
+//! withdrawn. See [`Bascule`] for why neither correction was right.
 
 use crate::model::{Album, Cover, Slot, Spread};
 use anyhow::{Context, Result};
@@ -100,6 +106,22 @@ pub struct ClasseCount {
     pub compteur_parent: &'static str,
 }
 
+/// The two trims a bascule stood between. Present only when the album's
+/// format differs from its proposal's; the verdict is then withdrawn rather
+/// than corrected. Excluding the `gabarit` class instead would under-count —
+/// a hand that really recomposes a spread after a bascule would vanish, and
+/// the GO/NO-GO number would flatter the composer, the one direction that
+/// ships a weaker composer than believed. Keeping the number as is
+/// over-counts, which is simply wrong. Between a number too good, a number
+/// too bad and no number, the report gives no number, and says why.
+#[derive(Debug, Serialize)]
+pub struct Bascule {
+    /// Trim of `album.origin.json`, millimetres, width then height.
+    pub origine_mm: [f64; 2],
+    /// Trim of `album.json`, millimetres, width then height.
+    pub album_mm: [f64; 2],
+}
+
 #[derive(Debug, Serialize)]
 pub struct RepriseReport {
     pub album: String,
@@ -112,8 +134,14 @@ pub struct RepriseReport {
     /// its proposal the machine got wrong.
     pub part: f64,
     pub pourcentage: f64,
-    /// `bon` under 10 %, `à surveiller` up to 30 %, `rédhibitoire` past it.
+    /// `bon` under 10 %, `à surveiller` up to 30 %, `rédhibitoire` past it —
+    /// or `non mesurable` when a bascule stands between the two albums.
     pub verdict: &'static str,
+    /// Present only when the trim moved since the proposal. When it is here,
+    /// `planches_touchees`, `classes` and `details` remain exact observations,
+    /// but no field of this report claims a verdict on the composer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bascule: Option<Bascule>,
     /// False past the rédhibitoire threshold, so the shell can exit non-zero.
     pub ok: bool,
     /// What changed on the cover. Kept out of the percentage: a cover is one
@@ -255,7 +283,20 @@ pub fn compare(titre: &str, origine: &Album, actuel: &Album) -> RepriseReport {
     let touchees = details.len();
     let base = origine.spreads.len();
     let part = if base == 0 { 0.0 } else { touchees as f64 / base as f64 };
-    let verdict = if part < BON {
+
+    // Strict equality on purpose: both trims come from `format::parse`
+    // literals, and a tolerance would let 210 pass for 210.4 — exactly the
+    // silence this field exists to remove.
+    let bascule = (origine.trim_mm.w != actuel.trim_mm.w
+        || origine.trim_mm.h != actuel.trim_mm.h)
+        .then(|| Bascule {
+            origine_mm: [origine.trim_mm.w, origine.trim_mm.h],
+            album_mm: [actuel.trim_mm.w, actuel.trim_mm.h],
+        });
+
+    let verdict = if bascule.is_some() {
+        "non mesurable"
+    } else if part < BON {
         "bon"
     } else if part <= REDHIBITOIRE {
         "à surveiller"
@@ -264,6 +305,14 @@ pub fn compare(titre: &str, origine: &Album, actuel: &Album) -> RepriseReport {
     };
 
     let mut notes = Vec::new();
+    if bascule.is_some() {
+        notes.push(format!(
+            "l'album est passé de {} à {} depuis la proposition : les gabarits repliés par \
+             la bascule se comptent comme des mains, le verdict est retiré",
+            crate::format::nom(origine.trim_mm),
+            crate::format::nom(actuel.trim_mm)
+        ));
+    }
     // The badge and the diff can disagree, and the diff wins: a spread edited
     // then put back carries the badge with nothing changed. Worth saying out
     // loud, because the interface shows the badge and not the diff.
@@ -289,6 +338,10 @@ pub fn compare(titre: &str, origine: &Album, actuel: &Album) -> RepriseReport {
         part,
         pourcentage: (part * 1000.0).round() / 10.0,
         verdict,
+        bascule,
+        // A withdrawn verdict is not a failure: a switched album is a normal
+        // album, and the exit code only ever speaks of the rédhibitoire
+        // threshold — which « non mesurable » never crosses.
         ok: verdict != "rédhibitoire",
         couverture: cover_diff(origine.cover.as_ref(), actuel.cover.as_ref()),
         notes,
@@ -468,7 +521,11 @@ mod tests {
     use crate::model::Size;
 
     fn album(spreads: Vec<Spread>) -> Album {
-        let mut a = Album::new("t", Path::new("/p"), Size { w: 210.0, h: 210.0 });
+        album_au_format(spreads, 210.0, 210.0)
+    }
+
+    fn album_au_format(spreads: Vec<Spread>, w: f64, h: f64) -> Album {
+        let mut a = Album::new("t", Path::new("/p"), Size { w, h });
         a.spreads = spreads;
         a
     }
@@ -597,6 +654,65 @@ mod tests {
         let r = compare("t", &a, &album(eight));
         assert_eq!(r.verdict, "rédhibitoire");
         assert!(!r.ok);
+    }
+
+    /// A trim that moved since the proposal means a bascule stood between
+    /// the two albums, and its machine folds would count as hands — in the
+    /// direction that aggravates the GO/NO-GO number. The verdict is
+    /// withdrawn, the observations stay, and the exit code keeps out of it:
+    /// a switched album is a legitimate album.
+    #[test]
+    fn a_trim_change_withdraws_the_verdict() {
+        let a = album(vec![
+            spread("duo", &["a.jpg", "b.jpg"]),
+            spread("solo", &["c.jpg"]),
+        ]);
+        // The same album after a bascule: another trim, one template folded
+        // by the machine, no human anywhere.
+        let b = album_au_format(
+            vec![
+                spread("duo_portrait", &["a.jpg", "b.jpg"]),
+                spread("solo", &["c.jpg"]),
+            ],
+            280.0,
+            210.0,
+        );
+        let r = compare("t", &a, &b);
+        assert_eq!(r.verdict, "non mesurable");
+        assert!(r.ok, "une mesure inapplicable n'est pas un échec");
+        let bascule = r.bascule.expect("le champ porte les deux formats");
+        assert_eq!(bascule.origine_mm, [210.0, 210.0]);
+        assert_eq!(bascule.album_mm, [280.0, 210.0]);
+        // The facts stay: the fold is still an exact observation.
+        assert_eq!(r.planches_touchees, 1);
+        assert_eq!(r.details[0].classes, vec![Classe::Gabarit]);
+        // And one sentence names the two formats.
+        assert!(
+            r.notes
+                .iter()
+                .any(|n| n.contains("carre-21") && n.contains("paysage-28x21")),
+            "notes : {:?}",
+            r.notes
+        );
+    }
+
+    /// The half that protects something: an album that never switched
+    /// serializes without a `bascule` key at all — not a null — and its
+    /// verdict is computed exactly as before. This is the assertion the
+    /// GO/NO-GO milestone rests on.
+    #[test]
+    fn an_unswitched_album_reports_no_bascule_field() {
+        let base: Vec<Spread> = (0..20)
+            .map(|i| spread("solo", &[Box::leak(format!("{i}.jpg").into_boxed_str())]))
+            .collect();
+        let mut one = base.clone();
+        one[0].template = "autre".into();
+        let r = compare("t", &album(base), &album(one));
+        assert!(r.bascule.is_none());
+        let v = serde_json::to_value(&r).unwrap();
+        assert!(v.get("bascule").is_none(), "absent du JSON, pas null");
+        assert_eq!(v["verdict"], "bon");
+        assert_eq!(v["pourcentage"], 5.0);
     }
 
     /// The badge is not the measure: a spread edited then put back costs

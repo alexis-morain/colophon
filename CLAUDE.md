@@ -109,6 +109,11 @@ voit pas, une cellule trahie se voit et se change). Elle ne décode aucune photo
 tailles viennent du relevé, sinon des en-têtes des originaux. Elle n'écrit rien côté app,
 le moteur rendant un album que l'éditeur applique par son historique — d'où ⌘Z. Son bilan
 nomme d'abord les photos passées sous 250 ppi, seul dégât qu'aucune main ne rattrape.
+**Pas de « proposition à côté »** (décision 3.3) : ⌘Z côté app, `album.json.bak` côté CLI
+et `album.<id>.json` pour les variantes occupent déjà les trois places — un quatrième
+mécanisme serait une chose de plus à expliquer. Après une bascule, `--reprise` rend
+`"non mesurable"` (champ `bascule`, les deux formats nommés) : les replis machine se
+confondraient avec des mains, le verdict se retire, les faits restent, `ok` reste vrai.
 **L'aptitude d'un gabarit a une seule définition**, `gabarit::apte` / `gabarit::trahison` ;
 le sélecteur, le cycle clavier et la bascule la lisent.
 

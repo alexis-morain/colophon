@@ -92,9 +92,6 @@ pub fn prevol(dir: &Path, profil: &'static PrinterProfile) -> Result<PrevolRepor
     Ok(check(&album, profil, &dims))
 }
 
-/// Original pixel sizes, EXIF orientation applied, keyed by slot source.
-/// Absent entries mean the folder moved: resolution then goes unchecked and
-/// the report says so rather than passing quietly.
 /// The page the machine writes that the album could do without, named as the
 /// Envoi screen names it. Both are ordinary spreads costing two pages like
 /// any other, which is exactly why the pagination rule has to know about
@@ -110,6 +107,9 @@ fn page_decochable(album: &Album) -> Option<&'static str> {
     }
 }
 
+/// Original pixel sizes, EXIF orientation applied, keyed by slot source.
+/// Absent entries mean the folder moved: resolution then goes unchecked and
+/// the report says so rather than passing quietly.
 fn original_dimensions(album: &Album) -> HashMap<String, (u32, u32)> {
     let root = PathBuf::from(&album.root);
     if !root.is_dir() {
@@ -126,9 +126,8 @@ fn original_dimensions(album: &Album) -> HashMap<String, (u32, u32)> {
         .filter_map(|src| {
             let p = root.join(src);
             let m = meta::read(&p);
-            let (w, h) = heic::dimensions(&p).ok()?;
-            let (w, h) = if (5..=8).contains(&m.orientation) { (h, w) } else { (w, h) };
-            Some(((*src).to_string(), (w, h)))
+            let taille = heic::oriente(heic::dimensions(&p).ok()?, m.orientation);
+            Some(((*src).to_string(), taille))
         })
         .collect()
 }
@@ -647,6 +646,53 @@ mod tests {
     fn the_text_face_is_embeddable() {
         let m = crate::font::metrics().expect("police lisible");
         assert!(m.embeddable());
+    }
+
+    /// A bascule must not degrade the preflight, and « green » is not the
+    /// bar — corse-2013 is red before any bascule, because two photographs
+    /// print at 130 ppi and no format change will ever fix a photograph.
+    /// The bar is: same defects, same blockers, and the only field of the
+    /// whole fiche that moves is `format_page_mm`. Written as a comparison
+    /// of reports, not as a list of expectations copied by hand; only the
+    /// ppi inside the wording may follow the cells.
+    #[test]
+    fn une_bascule_ne_degrade_pas_le_prevol() {
+        let a = album_de(24, 3.0);
+        let mut dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        // A photograph already under the floor before any bascule.
+        dims.insert("3.jpg".into(), (600, 600));
+        let profil = PrinterProfile::par_id("cloudprinter").unwrap();
+
+        let avant = check(&a, profil, &dims);
+        assert!(!avant.ok, "le cas doit avoir quelque chose à dire");
+
+        let (basculee, _) =
+            crate::bascule::bascule(&a, Size { w: 280.0, h: 210.0 }, &dims, profil);
+        let apres = check(&basculee, profil, &dims);
+
+        // Same defects, matched by what they are and where they are.
+        let identite = |r: &PrevolReport| {
+            r.defauts
+                .iter()
+                .map(|d| (d.regle, d.bloquant, d.planche, d.case_idx, d.src.clone()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(identite(&avant), identite(&apres));
+        assert_eq!(avant.bloquants, apres.bloquants);
+        assert_eq!(avant.avertissements, apres.avertissements);
+        assert_eq!(avant.ok, apres.ok);
+        assert_eq!(avant.notes, apres.notes);
+
+        // The whole fiche, compared as data, with the one legitimate move
+        // asserted then masked.
+        let mut fa = serde_json::to_value(&avant.fiche).unwrap();
+        let mut fp = serde_json::to_value(&apres.fiche).unwrap();
+        assert_ne!(fa["format_page_mm"], fp["format_page_mm"]);
+        fa["format_page_mm"] = serde_json::Value::Null;
+        fp["format_page_mm"] = serde_json::Value::Null;
+        assert_eq!(fa, fp);
     }
 
     /// The spec sheet carries what a printer asks on the phone.

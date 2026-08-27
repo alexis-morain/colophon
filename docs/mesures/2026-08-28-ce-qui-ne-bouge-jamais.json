@@ -1,0 +1,87 @@
+{
+  "quoi": "3.3 — ce qui ne bouge jamais : la reprise refuse de mentir a travers une bascule, et le prevol perd sa derniere copie de l'echange EXIF",
+  "comment": "trois jeux composes en carre-21 depuis les photos, binaire de 3.3-ce-qui-ne-bouge-jamais. Pour chaque jeu : --reprise avant et apres le changement de code (identite a l'octet exigee sur album non bascule), copie du dossier, --bascule paysage-28x21, --reprise sur la copie avant et apres le code. Prevol cloudprinter releve avant et apres le remplacement de l'echange (5..=8) par heic::oriente, diff a l'octet.",
+  "le_mensonge_mesure_puis_supprime": {
+    "corse-2013": {
+      "reprise_avant_bascule": { "pourcentage": 0.0, "verdict": "bon" },
+      "reprise_apres_bascule_ancien_code": {
+        "pourcentage": 8.0,
+        "verdict": "bon",
+        "planches_touchees": 4,
+        "planches_origine": 50,
+        "classe": "gabarit",
+        "compteur_parent_accuse_a_tort": "repetition_gabarit, orientation_trahie"
+      },
+      "reprise_apres_bascule_nouveau_code": {
+        "verdict": "non mesurable",
+        "bascule": { "origine_mm": [210.0, 210.0], "album_mm": [280.0, 210.0] },
+        "pourcentage_conserve": 8.0,
+        "ok": true,
+        "code_de_sortie": 0
+      }
+    },
+    "mauritanie-2019": {
+      "reprise_avant_bascule": { "pourcentage": 0.0, "verdict": "bon" },
+      "reprise_apres_bascule_ancien_code": {
+        "pourcentage": 5.1,
+        "verdict": "bon",
+        "planches_touchees": 3,
+        "planches_origine": 59,
+        "classe": "gabarit"
+      },
+      "reprise_apres_bascule_nouveau_code": {
+        "verdict": "non mesurable",
+        "bascule": { "origine_mm": [210.0, 210.0], "album_mm": [280.0, 210.0] },
+        "pourcentage_conserve": 5.1,
+        "ok": true,
+        "code_de_sortie": 0
+      }
+    },
+    "random-2024": {
+      "reprise_avant_bascule": { "pourcentage": 0.0, "verdict": "bon" },
+      "reprise_apres_bascule_ancien_code": {
+        "pourcentage": 28.8,
+        "verdict": "à surveiller",
+        "planches_touchees": 15,
+        "planches_origine": 52,
+        "classe": "gabarit",
+        "note": "a deux replis du seuil redhibitoire (30 %), sans qu'une main ait touche l'album"
+      },
+      "reprise_apres_bascule_nouveau_code": {
+        "verdict": "non mesurable",
+        "bascule": { "origine_mm": [210.0, 210.0], "album_mm": [280.0, 210.0] },
+        "pourcentage_conserve": 28.8,
+        "ok": true,
+        "code_de_sortie": 0
+      }
+    }
+  },
+  "l_assertion_qui_protege_le_jalon": {
+    "quoi": "un album non bascule ne change en rien : --reprise avant et apres le nouveau code, compare a l'octet",
+    "corse-2013": "identique",
+    "mauritanie-2019": "identique",
+    "random-2024": "identique",
+    "et_la_note_d_une_phrase": "l'album est passé de carre-21 à paysage-28x21 depuis la proposition : les gabarits repliés par la bascule se comptent comme des mains, le verdict est retiré"
+  },
+  "prevol_sans_quatrieme_copie": {
+    "quoi": "original_dimensions lit heic::oriente au lieu de porter son propre echange (5..=8) ; --prevol --profil cloudprinter releve avant et apres, compare a l'octet",
+    "corse-2013": {
+      "identique": true,
+      "ok": false,
+      "bloquants": 2,
+      "note": "rouge avant toute bascule : 2013-10-28_144537_IMG_2217.jpg et 2013-10-30_153204_IMG_2257.jpg impriment a 130 ppi — le defaut est dans les photographies, aucun format ne le corrigera. Le bon critere est « ne degrade pas », tenu par test."
+    },
+    "mauritanie-2019": { "identique": true, "ok": true, "bloquants": 0 },
+    "random-2024": { "identique": true, "ok": true, "bloquants": 0 }
+  },
+  "mordant": {
+    "trims_forces_egaux": "a_trim_change_withdraws_the_verdict tombe (13 passed, 1 failed)",
+    "oriente_rendu_identitaire": "une_photo_couchee_echange_ses_cotes tombe (174 passed, 1 failed)",
+    "suite_intacte": "175 tests colophon-core verts avant et apres chaque mutation restauree"
+  },
+  "deja_fait_et_desormais_tenu_par_test": {
+    "schema": "Album::version = SCHEMA = 2 depuis 3.1, assert un_album_neuf_porte_le_schema_courant (model.rs)",
+    "origine_jamais_reecrite": "build.rs ecrit album.origin.json sous garde if !exists ; une_bascule_ne_reecrit_jamais_l_origine tient le chemin dossier : origine identique a l'octet pendant que le trim de l'album bouge, et la reprise du meme dossier rend non mesurable"
+  },
+  "decision_6_consignee": "la bascule n'ecrit pas de proposition a cote : ⌘Z cote app, album.json.bak cote CLI, album.<id>.json pour les variantes — consigne au pilote technique (CLAUDE.md du depot)"
+}

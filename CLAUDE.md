@@ -70,9 +70,27 @@ aboli depuis que le gate est portable, 27/08.)
 
 ## La vague en cours
 
-**2.6, la page qui tourne**, deux sessions. Le geste vit dans l'aperçu fidèle et les
-surfaces de lecture, **jamais dans l'éditeur**. Toute bibliothèque de courbure passe par
-un audit de licence avant d'entrer.
+**2.6, la page qui tourne**, deux sessions. **Session 1 livrée le 27/08** : le geste au
+coin, le clavier, le mouvement réduit, le *fait quand* tenu sur ses cinq points et
+mesuré. Le geste vit dans l'aperçu fidèle, **jamais dans l'éditeur** — et c'est
+aujourd'hui la seule surface de lecture du projet, les autres vues étant une grille, une
+table lumineuse et une revue photo par photo. Aucune bibliothèque n'est entrée, donc
+aucun audit de licence n'était dû ; il le deviendrait le jour où la courbure passerait de
+l'ombrage au maillage.
+
+**La feuille**, et c'est le modèle du livre : elle porte au recto la page de droite de la
+planche N, au verso la page de gauche de la planche N + 1 — donc un tour ne demande que
+les deux planches qu'il joint. `feuille.ts` décide (faces, coin, relâchement, courbe),
+`raster.ts` dessine chaque page une fois dans un canvas que personne ne monte,
+`Feuilletage.tsx` assemble quatre morceaux par `drawImage`. **Ce qui bouge est une image
+du PDF, jamais un redessin de la scène.** Trois règles à ne pas défaire : sans les images
+des deux planches, aucune feuille ne se monte et le changement se fait sec ; une feuille
+en vol garde la main jusqu'au bout, et un saut la retire ; `prefers-reduced-motion`
+supprime le mouvement au lieu de le raccourcir. La couverture ne tourne pas — feuille à
+plat, autre fichier, dos au milieu.
+
+**Session 2 reprend** : le ressenti au bundle (durée du tour, découvrabilité du coin,
+avaler ou mettre en file une demande pendant un tour), la courbure, le tactile.
 
 **La vague 3 est close** (3.1, 3.2 et 3.3 dans `main`). 3.1 a fait de `focal` un point
 de l'image, invariant au ratio ; 3.2 est la bascule, qui en est le premier usage ; 3.3
@@ -233,7 +251,12 @@ force une étape de rendu** : sans capture préalable, `ResizeObserver` n'a jama
 callbacks, l'échelle de la planche vaut 1 et tout relevé DOM est faussé. Capturer, puis
 relever. La cure des fenêtres borgnes : instance Brave dédiée, drapeaux anti-occlusion,
 focus émulé CDP, `scripts/mesure-cdp.mjs` et `scripts/mesure-rendu.md` § « La cure ».
-**pdf.js** : jamais de lambda dans les dépendances de l'effet de rendu.
+**pdf.js** : jamais de lambda dans les dépendances de l'effet de rendu. Et **l'aperçu
+fidèle ne s'affichera jamais dans un harnais borgne**, capture d'écran ou pas : la
+promesse de rendu de pdf.js ne se résout que sur une trame d'animation, qu'une fenêtre
+cachée ne reçoit pas. Tout ce qui lit le PDF à l'écran se vérifie sur l'instance Brave de
+la cure — `scripts/feuille-cdp.mjs` en est le second pilote, 31 épreuves sur la page qui
+tourne, et il se vérifie mordant en mutant le code, comme un test.
 
 **Une UX ne se valide jamais au seul harnais navigateur** (`.claude/launch.json`).
 **Installer le bundle après chaque push** (TCC pour le pilotage à l'écran), 19 Mo.
@@ -275,7 +298,7 @@ résolution sous 250 ppi. Jamais `imazen/heic` (AGPL).
 Autres drapeaux : `--print`, `--cover`, `--prevol --profil <id>`, `--densite`,
 `--variantes`, `--reprise`, `--bascule <FORMAT> [--essai]`, `--dump-scene`, `--dump-geometry`, `--profils`. Scripts :
 `pdfx.sh full`, `install-app.sh`, `fixture-scene.sh`, `notices.sh`, `apercu-fidele.py`,
-`banc-gabarits.sh`, `mesure-cdp.mjs`. App : `npm run tauri dev`.
+`banc-gabarits.sh`, `mesure-cdp.mjs`, `feuille-cdp.mjs`. App : `npm run tauri dev`.
 
 ## Architecture
 
@@ -285,9 +308,10 @@ Workspace Cargo. **`colophon-core`** : `scan` → `meta` → `thumb` → `analyz
 trois actifs), `pdfx`, `reprise`, `log`, `printer`, `prevol`, `colophon` (la page).
 **`colophon-cli`** : clap. **`colophon-app`** : React et Vite (`bridge.ts` seule porte,
 `album.ts` géométries, `scene.ts` la scène et `hitTest`, `SceneCanvas.tsx` le peintre,
-`SceneProxies.tsx` le clavier, `rendu.ts` l'interrupteur, `photos.ts` vignettes décodées
-et badges, `font.ts` la mesure de texte, `menu.ts`, `signaler.ts`, `pdfview.tsx`,
-`reasons.ts`, `icons.tsx`, `recents.ts`) plus la coquille Tauri, marques d'icône dans
+`SceneProxies.tsx` le clavier, `rendu.ts` l'interrupteur, `feuille.ts` le modèle de la
+feuille qui tourne, `raster.ts` le PDF en bitmaps, `Feuilletage.tsx` la scène du
+feuilletage, `photos.ts` vignettes décodées et badges, `font.ts` la mesure de texte,
+`menu.ts`, `signaler.ts`, `pdfview.tsx`, `reasons.ts`, `icons.tsx`, `recents.ts`) plus la coquille Tauri, marques d'icône dans
 `design/marques`.
 
 Chaîne de distribution : `NOTICES.md` généré et embarqué, CSP réelle, CHANGELOG, README,

@@ -74,9 +74,10 @@ aboli depuis que le gate est portable, 27/08.)
 surfaces de lecture, **jamais dans l'éditeur**. Toute bibliothèque de courbure passe par
 un audit de licence avant d'entrer.
 
-**3.1 et 3.2 sont dans `main`** (vague 3, libre d'ordre). 3.1 a fait de `focal` un point
-de l'image, invariant au ratio ; 3.2 est la bascule, qui en est le premier usage. Reste
-de la vague 3 : le reste de 3.3.
+**La vague 3 est close** (3.1, 3.2 et 3.3 dans `main`). 3.1 a fait de `focal` un point
+de l'image, invariant au ratio ; 3.2 est la bascule, qui en est le premier usage ; 3.3
+retire le verdict de la reprise à travers une bascule (« non mesurable ») au lieu de
+compter les replis machine comme des mains. Vagues libres restantes : 4 et 5.
 
 Vagues 0 et 1 closes, 2.1 à 2.5 closes. **Verdict de 2.5 : le défaut reste `dom`**,
 gravé dans `rendu.ts` et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une

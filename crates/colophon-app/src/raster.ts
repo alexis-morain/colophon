@@ -86,12 +86,19 @@ export type Raster = {
 type Entree = { promesse: Promise<Raster>; pret: Raster | null };
 
 /**
- * Kept: the spread on screen, its two neighbours, and a little slack for a
- * reader going back and forth over the same fold. A spread at a thousand CSS
- * pixels on a retina screen is some ten megabytes of bitmap, so this is a
- * ceiling worth having rather than a cache worth growing.
+ * Kept: the spread on screen, its two neighbours — which is exactly what a
+ * gesture can need — and one slot of slack for a reader going back and forth
+ * over the same fold.
+ *
+ * Worth knowing what this costs, because it is the one number here that grows
+ * with somebody else's screen: a spread drawn a thousand CSS pixels wide on a
+ * retina display is 2000 × 1000 pixels, some eight megabytes. On a very large
+ * display the stage can ask for two and a half times that in each direction,
+ * and four of them then hold a couple of hundred megabytes. It is a ceiling
+ * worth having rather than a cache worth growing, and lowering it further
+ * would start refusing gestures rather than saving memory.
  */
-const PLAFOND = 5;
+const PLAFOND = 4;
 
 const rasters = new Map<string, Entree>();
 

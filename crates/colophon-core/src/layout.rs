@@ -713,20 +713,41 @@ fn face_feasible(p: &Photo, cell: &Rect) -> bool {
         && safe_offset(ih, vh, face_extent(p, false), 0.0).1
 }
 
+/// The face-safe image point along one axis, given the point the photograph
+/// asks for. Both the composer ([`face_safe_focal`]) and the bench
+/// (`banc::place`) come through here: the conversion between a point of the
+/// image and a window offset is written **once**, or the two drift and the
+/// bench stops predicting what the composer will do.
+///
+/// Returns the point, and whether the faces could be kept clear of the cut.
+pub(crate) fn safe_focal_axis(
+    total: f64,
+    visible: f64,
+    extent: Option<(f64, f64)>,
+    point: f64,
+) -> (f64, bool) {
+    let span = (total - visible).max(0.0);
+    if span < 0.5 {
+        // The whole axis shows: no offset moves anything, so the point the
+        // photograph asks for is kept as it stands. It is not dead data any
+        // more — a later change of ratio opens room, and it is this point
+        // that must fill it.
+        return (point, true);
+    }
+    let (x0, ok) = safe_offset(total, visible, extent, point * total - visible / 2.0);
+    ((x0 + visible / 2.0) / total, ok)
+}
+
 /// The slot focal for a photo in a cell: the face anchor, nudged so every
-/// significant face keeps its margin from the cropped edges.
+/// significant face keeps its margin from the cropped edges. A point of the
+/// image, like every focal since schema 2.
 fn face_safe_focal(p: &Photo, cell: &Rect) -> [f64; 2] {
-    let base = p.focal.unwrap_or([0.5, 0.42]);
+    let base = p.focal.unwrap_or_else(crate::model::default_focal);
     let (iw, ih, vw, vh) = window(p, cell);
-    let axis = |total: f64, visible: f64, horizontal: bool, f: f64| {
-        let span = (total - visible).max(0.0);
-        if span < 0.5 {
-            return f;
-        }
-        let (x0, _) = safe_offset(total, visible, face_extent(p, horizontal), f * span);
-        x0 / span
-    };
-    [axis(iw, vw, true, base[0]), axis(ih, vh, false, base[1])]
+    [
+        safe_focal_axis(iw, vw, face_extent(p, true), base[0]).0,
+        safe_focal_axis(ih, vh, face_extent(p, false), base[1]).0,
+    ]
 }
 
 #[cfg(test)]
@@ -742,6 +763,23 @@ mod tests {
         assert_eq!(clamp_take(1, 1), 1);
         // 8 of 9 would leave a lonely photo too: 6 + 3 instead
         assert_eq!(clamp_take(8, 9), 6);
+    }
+
+    /// La conversion point d'image ↔ décalage de fenêtre n'est écrite qu'ici,
+    /// donc elle se teste ici. Sans jeu le point demandé est conservé tel
+    /// quel ; avec du jeu et sans visage la fenêtre se centre dessus ; contre
+    /// le bord elle s'ancre, et le point rendu est celui du centre ancré.
+    #[test]
+    fn safe_focal_axis_convertit_dans_les_deux_sens() {
+        assert_eq!(safe_focal_axis(1000.0, 1000.0, None, 0.73).0, 0.73);
+
+        let (pt, ok) = safe_focal_axis(1000.0, 400.0, None, 0.5);
+        assert!(ok);
+        assert!((pt - 0.5).abs() < 1e-9, "centré : {pt}");
+
+        let (pt, ok) = safe_focal_axis(1000.0, 400.0, None, 0.0);
+        assert!(ok);
+        assert!((pt - 0.2).abs() < 1e-9, "ancré au bord : {pt}");
     }
 
     #[test]

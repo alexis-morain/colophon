@@ -521,6 +521,14 @@ pub fn colophon_anchor(g: &SpreadGeometry) -> Point {
 /// the composer and the linter reason about face cuts with it. `zoom` is
 /// the manual magnification past the cover fill (1.0 = exact fill, never
 /// below: a gap inside a slot is not a crop, it is a hole).
+///
+/// `focal` is **a point of the image**, as a fraction of its width and
+/// height: the window centres on it, and only the image borders may move it
+/// off centre. That is what makes a crop survive a change of ratio — the
+/// point is a property of the photograph, not of the cell it landed in.
+/// Before schema 2 the same field meant a fraction of the leftover room,
+/// which is cell-dependent and therefore destroyed manual work on a format
+/// switch; `model::migrate_focal` converts one into the other.
 pub fn crop_window(
     rect: &Rect,
     iw: f64,
@@ -531,8 +539,8 @@ pub fn crop_window(
     let s = (rect.w / iw).max(rect.h / ih) * zoom.max(1.0);
     let vw = rect.w / s;
     let vh = rect.h / s;
-    let x0 = ((iw - vw) * focal[0].clamp(0.0, 1.0)).clamp(0.0, (iw - vw).max(0.0));
-    let y0 = ((ih - vh) * focal[1].clamp(0.0, 1.0)).clamp(0.0, (ih - vh).max(0.0));
+    let x0 = (focal[0].clamp(0.0, 1.0) * iw - vw / 2.0).clamp(0.0, (iw - vw).max(0.0));
+    let y0 = (focal[1].clamp(0.0, 1.0) * ih - vh / 2.0).clamp(0.0, (ih - vh).max(0.0));
     (x0, y0, vw, vh)
 }
 
@@ -882,6 +890,43 @@ impl PdfWriter {
 mod tests {
     use super::*;
     use crate::model::{Size, Slot};
+
+    /// Un `focal` est un point de l'image, donc la fenêtre se centre dessus
+    /// quel que soit le ratio de la cellule. C'est tout 3.1 : une bascule de
+    /// format ne doit pas déplacer ce que l'œil a cadré. Deux cellules de
+    /// ratios opposés, même `focal`, même centre — au zoom 2, où les deux axes
+    /// ont du jeu et où rien n'est donc borné.
+    #[test]
+    fn la_fenetre_se_centre_sur_le_meme_point_quel_que_soit_le_ratio() {
+        let (iw, ih) = (4000.0, 3000.0);
+        let focal = [0.62, 0.38];
+        for (w, h) in [(300.0, 200.0), (200.0, 300.0)] {
+            let rect = Rect { x: 0.0, y: 0.0, w, h };
+            let (x0, y0, vw, vh) = crop_window(&rect, iw, ih, focal, 2.0);
+            assert!(
+                (x0 + vw / 2.0 - focal[0] * iw).abs() < 0.5,
+                "centre x {} attendu {}", x0 + vw / 2.0, focal[0] * iw
+            );
+            assert!(
+                (y0 + vh / 2.0 - focal[1] * ih).abs() < 0.5,
+                "centre y {} attendu {}", y0 + vh / 2.0, focal[1] * ih
+            );
+        }
+    }
+
+    /// Un point contre le bord ne fait pas sortir la fenêtre de l'image : elle
+    /// s'ancre au bord, et le point cesse d'être au centre. Le bornage est la
+    /// seule chose qui a le droit de déplacer le cadrage.
+    #[test]
+    fn le_point_au_bord_ancre_la_fenetre_sans_la_sortir() {
+        let (iw, ih) = (4000.0, 3000.0);
+        let rect = Rect { x: 0.0, y: 0.0, w: 300.0, h: 200.0 };
+        for focal in [[0.0, 0.0], [1.0, 1.0]] {
+            let (x0, y0, vw, vh) = crop_window(&rect, iw, ih, focal, 2.0);
+            assert!(x0 >= 0.0 && x0 + vw <= iw + 0.5, "x0 {x0} vw {vw}");
+            assert!(y0 >= 0.0 && y0 + vh <= ih + 0.5, "y0 {y0} vh {vh}");
+        }
+    }
 
     /// One number carries the caption verdict: declared values pass through
     /// sign first, and the zero case keeps the historic hunt (positive on a

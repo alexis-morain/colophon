@@ -175,6 +175,11 @@ export function captionAnchor(template: string, n: number, g: SpreadGeometry): R
  * parity test compares both over the engine's sample dump. The crop editor
  * converts pointer deltas with it, so a drag moves the print's crop, not an
  * approximation of it.
+ *
+ * `focal` is a point of the image, as a fraction of its width and height:
+ * the window centres on it, and only the image borders may move it off
+ * centre. Ratio-invariant by construction — see the Rust twin for why the
+ * pre-schema-2 meaning was not.
  */
 export function cropWindow(
   rect: { w: number; h: number },
@@ -188,8 +193,8 @@ export function cropWindow(
   const vh = rect.h / s;
   const clamp = (v: number, lo: number, hi: number) =>
     Math.min(Math.max(v, lo), hi);
-  const x0 = clamp((iw - vw) * clamp(focal[0], 0, 1), 0, Math.max(iw - vw, 0));
-  const y0 = clamp((ih - vh) * clamp(focal[1], 0, 1), 0, Math.max(ih - vh, 0));
+  const x0 = clamp(clamp(focal[0], 0, 1) * iw - vw / 2, 0, Math.max(iw - vw, 0));
+  const y0 = clamp(clamp(focal[1], 0, 1) * ih - vh / 2, 0, Math.max(ih - vh, 0));
   return [x0, y0, vw, vh];
 }
 
@@ -214,8 +219,28 @@ export function slidingRoom(
   zoom = 1,
 ): { x: number; y: number } {
   if (iw <= 0 || ih <= 0) return { x: 0, y: 0 };
+  const { x, y } = imageSpan(rect, iw, ih, zoom);
+  return { x: x - rect.w, y: y - rect.h };
+}
+
+/**
+ * How much room the whole photo takes, in the unit `rect` is given in — the
+ * cover-crop scale applied to the full image, overhang included.
+ *
+ * This is the denominator of a manual crop since schema 2: `focal` is a point
+ * of the image, so dragging by one unit moves it by `1 / span` of the image,
+ * whatever the cell's ratio. `slidingRoom` above is this minus the cell, and
+ * answers the other question — whether a drag can move anything at all.
+ */
+export function imageSpan(
+  rect: { w: number; h: number },
+  iw: number,
+  ih: number,
+  zoom = 1,
+): { x: number; y: number } {
+  if (iw <= 0 || ih <= 0) return { x: 0, y: 0 };
   const s = Math.max(rect.w / iw, rect.h / ih) * Math.max(zoom, 1);
-  return { x: iw * s - rect.w, y: ih * s - rect.h };
+  return { x: iw * s, y: ih * s };
 }
 
 /** Hard bounds of the manual zoom: 1 = exact fill, 4 = enough to isolate a

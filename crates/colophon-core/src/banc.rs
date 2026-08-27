@@ -301,18 +301,14 @@ fn assignation(
         let (vw, vh) = (cell.w / s, cell.h / s);
         let mut focal = slot.focal;
         for (axe, total, visible) in [(0usize, info.w, vw), (1usize, info.h, vh)] {
-            let span = (total - visible).max(0.0);
-            if span < 0.5 {
-                continue;
-            }
             let extent =
                 crate::layout::face_extent_dims(&info.faces, info.w, info.h, axe == 0);
-            let (x0, ok) =
-                crate::layout::safe_offset(total, visible, extent, focal[axe] * span);
+            let (point, ok) =
+                crate::layout::safe_focal_axis(total, visible, extent, focal[axe]);
             if !ok {
                 return None;
             }
-            focal[axe] = x0 / span;
+            focal[axe] = point;
         }
         out[ci[k]] = Some(Slot::new(slot.src.clone(), focal));
     }

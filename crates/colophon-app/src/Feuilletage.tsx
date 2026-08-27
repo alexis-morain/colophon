@@ -477,9 +477,19 @@ function Demi({
     const c = canvas.current;
     if (!c || !raster) return;
     const entier = cote === "entier";
-    const largeurSource = entier ? raster.source.width : raster.source.width / 2;
-    const depart = cote === "droite" ? raster.source.width - largeurSource : 0;
-    c.width = Math.round(largeurSource);
+    // Le pli tombe au milieu du bitmap, mais un bitmap de largeur impaire n'a
+    // pas de milieu entier : découper à `width / 2` échantillonnerait la moitié
+    // droite un demi-pixel à côté, et le pli se verrait flou. Les deux moitiés
+    // se partagent donc des pixels entiers, quitte à ce que l'une en ait un de
+    // plus que l'autre.
+    const pli = Math.round(raster.source.width / 2);
+    const largeurSource = entier
+      ? raster.source.width
+      : cote === "droite"
+        ? raster.source.width - pli
+        : pli;
+    const depart = cote === "droite" ? pli : 0;
+    c.width = largeurSource;
     c.height = raster.source.height;
     c.style.width = `${entier ? raster.largeur : raster.largeur / 2}px`;
     c.style.height = `${raster.hauteur}px`;

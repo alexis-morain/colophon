@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "proposition", "gabarits", "banc_gabarits", "depuis_fiches"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "banc_gabarits", "depuis_fiches"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -113,6 +113,17 @@ struct Cli {
     /// the report plus the spec sheet. Exits non-zero on a blocking defect.
     #[arg(long)]
     prevol: bool,
+
+    /// Bascule l'album de --out vers un autre format, et dit ce que ça coûte.
+    /// Le même album : mêmes planches, même ordre, mêmes photos. Seul le
+    /// gabarit d'une planche dont les photos trahiraient leurs nouvelles
+    /// cellules est replié, et le bilan nomme tout ce qui a bougé.
+    #[arg(long, value_name = "FORMAT")]
+    bascule: Option<String>,
+
+    /// Avec --bascule : dit ce qui se passerait, sans rien écrire.
+    #[arg(long)]
+    essai: bool,
 
     /// Printer profile the export and the preflight read: cloudprinter,
     /// prodigi, lulu, generique.
@@ -282,6 +293,20 @@ fn main() -> Result<()> {
         let report = colophon_core::prevol::prevol(&cli.out, profil(&cli.profil)?)?;
         println!("{}", serde_json::to_string_pretty(&report)?);
         if !report.ok {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    if let Some(spec) = &cli.bascule {
+        let vers = format::parse(spec)?;
+        let profil = profil(&cli.profil)?;
+        let (_, bilan) =
+            colophon_core::bascule::bascule_dossier(&cli.out, vers, profil, !cli.essai)?;
+        println!("{}", serde_json::to_string_pretty(&bilan)?);
+        // Une photo sous le plancher d'impression est le seul dégât qu'aucune
+        // main ne rattrape : le shell doit pouvoir s'en apercevoir.
+        if !bilan.sous_resolution.is_empty() || bilan.couverture_sous_resolution.is_some() {
             std::process::exit(1);
         }
         return Ok(());

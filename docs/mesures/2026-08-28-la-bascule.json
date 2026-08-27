@@ -1,0 +1,154 @@
+{
+  "quoi": "3.2 — la bascule : le meme album dans un autre format, sans recomposer",
+  "comment": "albums de reference composes par check.sh. Bascule carre-21 -> paysage-28x21 (le fait quand du plan), puis retour ; agrandissement carre-21 -> carre-30 pour la resolution. Identite mesuree entre l'album compose depuis les photos et celui compose depuis les fiches, tous deux basculés. Binaire de claude/la-bascule.",
+  "jeux": {
+    "corse-2013": {
+      "planches": 50,
+      "slots": 98,
+      "vers_paysage_28x21": {
+        "planches_inchangees": 46,
+        "replis": 4,
+        "inaptes": 0,
+        "sous_resolution": 0,
+        "deja_sous_resolution": 2,
+        "tailles_manquantes": 0,
+        "jeu_de_photos_intact": true,
+        "replis_detail": [
+          "full1 -> solo",
+          "trio_portrait -> g_v_1x3q",
+          "trio_portrait_verso -> g_v_1x3q"
+        ]
+      },
+      "identite_photos_fiches": {
+        "album_bascule": true,
+        "bilan": true
+      },
+      "audit": {
+        "ok_avant": true,
+        "ok_apres": true,
+        "compteurs_identiques": true,
+        "compteurs_apres": {
+          "visage_coupe": 0,
+          "orientation_trahie": 0,
+          "doublon_planche": 0,
+          "sous_resolution": 2,
+          "chapitre_orphelin": 0,
+          "ouverture_faible": 0,
+          "rythme_plat": 0,
+          "legende_manquante": 0,
+          "legende_sur_photo": 0,
+          "repetition_gabarit": 0
+        }
+      },
+      "aller_retour": {
+        "recadrages_intacts": true,
+        "gabarits_non_rendus": 4,
+        "egale_les_replis_de_l_aller": true
+      },
+      "vers_carre_30": {
+        "sous_resolution": 16,
+        "replis": 0,
+        "exemple": "2013-10-28_125233_L1110840.jpg 353 -> 249 ppi"
+      }
+    },
+    "mauritanie-2019": {
+      "planches": 59,
+      "slots": 97,
+      "vers_paysage_28x21": {
+        "planches_inchangees": 56,
+        "replis": 3,
+        "inaptes": 0,
+        "sous_resolution": 0,
+        "deja_sous_resolution": 0,
+        "tailles_manquantes": 0,
+        "jeu_de_photos_intact": true,
+        "replis_detail": [
+          "full1 -> solo",
+          "trio_portrait -> g_v_1x3q",
+          "trio_portrait_verso -> g_v_1x3q"
+        ]
+      },
+      "identite_photos_fiches": {
+        "album_bascule": true,
+        "bilan": true
+      },
+      "audit": {
+        "ok_avant": true,
+        "ok_apres": true,
+        "compteurs_identiques": true,
+        "compteurs_apres": {
+          "visage_coupe": 0,
+          "orientation_trahie": 0,
+          "doublon_planche": 0,
+          "sous_resolution": 0,
+          "chapitre_orphelin": 0,
+          "ouverture_faible": 0,
+          "rythme_plat": 0,
+          "legende_manquante": 0,
+          "legende_sur_photo": 0,
+          "repetition_gabarit": 0
+        }
+      },
+      "aller_retour": {
+        "recadrages_intacts": true,
+        "gabarits_non_rendus": 3,
+        "egale_les_replis_de_l_aller": true
+      },
+      "vers_carre_30": {
+        "sous_resolution": 0,
+        "replis": 0,
+        "exemple": null
+      }
+    },
+    "random-2024": {
+      "planches": 52,
+      "slots": 99,
+      "vers_paysage_28x21": {
+        "planches_inchangees": 37,
+        "replis": 15,
+        "inaptes": 0,
+        "sous_resolution": 0,
+        "deja_sous_resolution": 0,
+        "tailles_manquantes": 0,
+        "jeu_de_photos_intact": true,
+        "replis_detail": [
+          "full1 -> solo",
+          "full1_verso -> solo",
+          "trio_portrait -> g_v_1x3q",
+          "trio_portrait_verso -> g_v_1x3q"
+        ]
+      },
+      "identite_photos_fiches": {
+        "album_bascule": true,
+        "bilan": true
+      },
+      "audit": {
+        "ok_avant": true,
+        "ok_apres": true,
+        "compteurs_identiques": true,
+        "compteurs_apres": {
+          "visage_coupe": 0,
+          "orientation_trahie": 0,
+          "doublon_planche": 0,
+          "sous_resolution": 0,
+          "chapitre_orphelin": 0,
+          "ouverture_faible": 0,
+          "rythme_plat": 0,
+          "legende_manquante": 0,
+          "legende_sur_photo": 0,
+          "repetition_gabarit": 0
+        }
+      },
+      "aller_retour": {
+        "recadrages_intacts": true,
+        "gabarits_non_rendus": 15,
+        "egale_les_replis_de_l_aller": true
+      },
+      "vers_carre_30": {
+        "sous_resolution": 15,
+        "replis": 0,
+        "exemple": "2024-01-09/IMG_5148.jpg 313 -> 220 ppi"
+      }
+    }
+  }
+}

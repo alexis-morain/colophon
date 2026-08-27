@@ -106,6 +106,52 @@ pub fn default_zoom() -> f64 {
     1.0
 }
 
+/// The `album.json` schema this build writes.
+///
+/// 1 read `focal` as a fraction of the leftover room inside the cell, which
+/// is cell-dependent: the same number showed a different part of the photo
+/// as soon as the format changed, and a bascule therefore destroyed manual
+/// work in silence. 2 reads it as a point of the image, which is a property
+/// of the photograph and survives any ratio.
+pub const SCHEMA: u32 = 2;
+
+/// One schema-1 `focal`, converted into a schema-2 `focal`.
+///
+/// A schema-1 focal placed the window at `x0 = (iw - vw) · focal`, so the
+/// point of the image that window was centred on is `(x0 + vw/2) / iw`.
+/// Written with `r = vw / iw` that is `focal · (1 - r) + r/2`, and `r` needs
+/// no pixel count at all — only the two aspect ratios and the zoom:
+///
+/// ```text
+/// rx = min(1, cellule / image) / zoom      ry = min(1, image / cellule) / zoom
+/// ```
+///
+/// A thumbnail therefore answers as well as the original, its aspect ratio
+/// being the original's to within one rounded pixel — about 0,03 % on a
+/// 1600 px box, which moves a focal by 2·10⁻⁴.
+///
+/// There is no case to write for a photo with no room: `r` is 1 there, and
+/// the formula gives 0,5 — the centre, which is exactly what "the whole axis
+/// shows" means. The value stored under schema 1 was dead data; this reads
+/// it as what it always meant.
+pub fn point_from_room(
+    cell_ratio: f64,
+    image_ratio: f64,
+    focal: [f64; 2],
+    zoom: f64,
+) -> [f64; 2] {
+    if !(cell_ratio > 0.0) || !(image_ratio > 0.0) {
+        return focal;
+    }
+    let z = zoom.max(1.0);
+    let rx = ((cell_ratio / image_ratio).min(1.0) / z).clamp(0.0, 1.0);
+    let ry = ((image_ratio / cell_ratio).min(1.0) / z).clamp(0.0, 1.0);
+    [
+        focal[0].clamp(0.0, 1.0) * (1.0 - rx) + rx / 2.0,
+        focal[1].clamp(0.0, 1.0) * (1.0 - ry) + ry / 2.0,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +190,60 @@ mod tests {
         assert!(!out.contains("edited"));
         assert!(!out.contains("locked"));
         assert!(!out.contains("cover"));
+    }
+
+    /// La conversion d'un focal de schéma 1 vers le schéma 2 se lit sur la
+    /// fenêtre : le point rendu doit être celui sur lequel l'ancienne fenêtre
+    /// était centrée. On le vérifie en refaisant les deux arithmétiques à la
+    /// main, sans passer par crop_window, pour que les deux se surveillent.
+    #[test]
+    fn le_focal_migre_tombe_au_centre_de_lancienne_fenetre() {
+        let (iw, ih) = (4000.0_f64, 3000.0_f64);
+        let (rw, rh) = (300.0_f64, 200.0_f64);
+        for zoom in [1.0_f64, 1.6, 3.0] {
+            for f in [[0.0, 0.0], [0.42, 0.5], [1.0, 1.0], [0.73, 0.18]] {
+                let s = (rw / iw).max(rh / ih) * zoom;
+                let (vw, vh) = (rw / s, rh / s);
+                // Ce que le schéma 1 montrait.
+                let x0 = ((iw - vw) * f[0]).clamp(0.0, (iw - vw).max(0.0));
+                let y0 = ((ih - vh) * f[1]).clamp(0.0, (ih - vh).max(0.0));
+                let attendu = [(x0 + vw / 2.0) / iw, (y0 + vh / 2.0) / ih];
+
+                let got = point_from_room(rw / rh, iw / ih, f, zoom);
+                assert!(
+                    (got[0] - attendu[0]).abs() < 1e-9,
+                    "zoom {zoom} focal {f:?} : x {} attendu {}", got[0], attendu[0]
+                );
+                assert!(
+                    (got[1] - attendu[1]).abs() < 1e-9,
+                    "zoom {zoom} focal {f:?} : y {} attendu {}", got[1], attendu[1]
+                );
+            }
+        }
+    }
+
+    /// Sans jeu, la valeur du schéma 1 ne voulait rien dire et n'était lue par
+    /// personne. La migration rend le centre, et n'a aucun cas particulier.
+    #[test]
+    fn sans_jeu_la_migration_rend_le_centre() {
+        // Cellule au ratio exact de l'image, zoom 1 : aucun jeu sur aucun axe.
+        let got = point_from_room(4.0 / 3.0, 4.0 / 3.0, [0.13, 0.87], 1.0);
+        assert!((got[0] - 0.5).abs() < 1e-12, "{got:?}");
+        assert!((got[1] - 0.5).abs() < 1e-12, "{got:?}");
+    }
+
+    /// Un album neuf porte le schéma courant, jamais un littéral. Sans cette
+    /// assertion, `Album::new` peut retomber sur un `1` et une composition
+    /// toute neuve se ferait convertir au premier rendu comme si elle portait
+    /// l'ancien sens de `focal`.
+    #[test]
+    fn un_album_neuf_porte_le_schema_courant() {
+        let a = Album::new(
+            "t",
+            std::path::Path::new("/p"),
+            Size { w: 210.0, h: 210.0 },
+        );
+        assert_eq!(a.version, SCHEMA);
     }
 
     /// A manual crop survives the round trip.
@@ -205,7 +305,10 @@ pub fn default_focal() -> [f64; 2] {
 impl Album {
     pub fn new(title: &str, root: &std::path::Path, trim_mm: Size) -> Self {
         Self {
-            version: 1,
+            // Le schéma courant, jamais un littéral : un album neuf estampillé
+            // 1 serait « migré » au premier rendu, donc converti comme s'il
+            // portait l'ancien sens de `focal`. Le pire des deux mondes.
+            version: SCHEMA,
             title: title.to_string(),
             root: root.to_string_lossy().to_string(),
             trim_mm,

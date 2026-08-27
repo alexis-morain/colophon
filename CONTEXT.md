@@ -20,9 +20,22 @@ slot fills one.
 _Avoid_: frame, box, placeholder
 
 **Slot**:
-The photo assigned to a cell, with its framing: a source path, a focal point
-and a manual zoom. Stored in `album.json`; the cell it lands in is derived.
+The photo assigned to a cell, with its framing: a focal, a manual zoom and a
+source path. Stored in `album.json`; the cell it lands in is derived.
 _Avoid_: image, picture, photo entry
+
+**Focal**:
+The point of a photograph a slot is framed on, as a fraction of its width and
+its height. A property of the photograph and not of the cell, which is what
+lets a crop survive a change of format: the window centres on the focal, and
+only the image borders may move it off centre.
+
+Before `album.json` schema 2 the same field held a fraction of the leftover
+room inside the cell. That is cell-dependent, so the same number showed a
+different part of the photo as soon as the format changed — a bascule
+destroyed hand-set framing in silence. An album is converted once, on open,
+and stamped; the conversion needs only the two aspect ratios and the zoom.
+_Avoid_: offset, crop position, centre of interest
 
 **Template**:
 The named parameters that place a spread's cells: what covers each page, how

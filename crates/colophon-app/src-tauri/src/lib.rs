@@ -72,6 +72,19 @@ fn load_album(path: &Path) -> Result<(PathBuf, Album, ThumbIndex), String> {
         )
     };
 
+    // Avant la moindre lecture, et donc avant le moindre pixel affiché : un
+    // dossier d'avant le schéma 2 porte des `focal` qui ne veulent plus ce
+    // qu'ils disent. L'ouvrir sans migrer montrerait un autre recadrage que
+    // celui qu'on avait réglé à la main — et un glissement de plus l'écrirait
+    // sous le nouveau sens dans un fichier qui se déclare encore ancien, que
+    // la migration convertirait alors une seconde fois. C'est le seul vrai
+    // danger de ce changement de schéma, et il se ferme ici.
+    //
+    // L'échec ne bloque pas l'ouverture : la migration ne peut plus échouer
+    // faute de vignettes, et si `album.json` est en cause la lecture juste
+    // en dessous le dira mieux, avec son chemin.
+    let _ = colophon_core::build::migrate_album_folder(&dir);
+
     let text = std::fs::read_to_string(&json)
         .map_err(|e| format!("lecture de {} : {e}", json.display()))?;
     let album: Album =

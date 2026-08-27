@@ -914,10 +914,123 @@ pub fn write_album_json(dir: &Path, album: &model::Album) -> Result<PathBuf> {
     Ok(target)
 }
 
+/// What a migration did, so a bilan can say it instead of staying quiet.
+#[derive(Debug, Clone, Copy)]
+pub struct Migration {
+    /// The schema the folder was written under.
+    pub depuis: u32,
+    pub slots: usize,
+    /// Slots whose photo could not be resolved, and whose `focal` was
+    /// therefore left as it stood. Approximate, and named as such.
+    pub irresolus: usize,
+}
+
+/// Bring an album folder up to [`model::SCHEMA`], in place, and say what it
+/// cost. `Ok(None)` when there was nothing to do.
+///
+/// **One hook, one write.** The migration rewrites `album.json`, so every
+/// later reader — the audit, the print pass, the cover, the bench — sees the
+/// current schema without knowing a migration exists. Wiring the conversion
+/// into each reader instead would mean six places to keep in step, and the
+/// first one forgotten would read a point of the image as a fraction of the
+/// room without anything failing.
+///
+/// The aspect ratios come from the cached thumbnails: they are in the folder
+/// by construction, `image_dimensions` reads only their header, and their
+/// ratio is the original's to within a rounded pixel. A photo with no
+/// thumbnail keeps its `focal` and is counted.
+pub fn migrate_album_folder(dir: &Path) -> Result<Option<Migration>> {
+    let json = dir.join("album.json");
+    let mut album: model::Album = serde_json::from_str(
+        &fs::read_to_string(&json).with_context(|| format!("read {}", json.display()))?,
+    )
+    .context("album.json illisible")?;
+    if album.version >= model::SCHEMA {
+        return Ok(None);
+    }
+    let depuis = album.version;
+
+    // Un index de vignettes absent ou illisible ne fait pas échouer la
+    // migration : il la rend intégralement irrésolue, et c'est le compteur
+    // qui le dit. Refuser d'ouvrir un album parce qu'on n'a pas su le migrer
+    // serait punir l'utilisateur d'un changement de schéma qui est le nôtre.
+    let thumbs: std::collections::BTreeMap<String, String> =
+        fs::read_to_string(dir.join("thumbs.json"))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+    let mut ratios: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut ratio = |src: &str| -> Option<f64> {
+        if let Some(r) = ratios.get(src) {
+            return Some(*r);
+        }
+        let name = thumbs.get(src)?;
+        let (w, h) = image::image_dimensions(dir.join(".cache").join("thumbs").join(name)).ok()?;
+        if w == 0 || h == 0 {
+            return None;
+        }
+        let r = f64::from(w) / f64::from(h);
+        ratios.insert(src.to_string(), r);
+        Some(r)
+    };
+
+    let g = crate::pdf::geometry(&album);
+    let (mut slots, mut irresolus) = (0usize, 0usize);
+    for spread in &mut album.spreads {
+        let rects = crate::pdf::slots_for(&spread.template, spread.slots.len(), &g);
+        for (i, slot) in spread.slots.iter_mut().enumerate() {
+            slots += 1;
+            let (Some(r), Some(rect)) = (ratio(&slot.src), rects.get(i)) else {
+                irresolus += 1;
+                continue;
+            };
+            slot.focal = model::point_from_room(rect.w / rect.h, r, slot.focal, slot.zoom);
+        }
+    }
+
+    // La couverture est un second site : son rect ne vient pas de `slots_for`
+    // mais de la géométrie de couverture. Le dos n'y entre pas — `photo_rect`
+    // fait `trim.w + fond perdu extérieur` sur `trim.h + haut + bas` — donc
+    // seuls les fonds perdus du profil font varier son ratio, de l'ordre du
+    // pour cent. N'importe quel profil répond donc au pixel près, et ne pas
+    // la migrer du tout serait l'erreur bien plus grosse.
+    if let Some(profil) = crate::printer::PrinterProfile::tous().first() {
+        let cg = crate::cover::geometry(&album, profil);
+        let rect = crate::cover::photo_rect(&cg);
+        if let Some(slot) = album.cover.as_mut().and_then(|c| c.photo.as_mut()) {
+            slots += 1;
+            match ratios.get(&slot.src).copied().or_else(|| {
+                let name = thumbs.get(&slot.src)?;
+                let (w, h) =
+                    image::image_dimensions(dir.join(".cache").join("thumbs").join(name)).ok()?;
+                (w > 0 && h > 0).then(|| f64::from(w) / f64::from(h))
+            }) {
+                Some(r) => {
+                    slot.focal =
+                        model::point_from_room(rect.w / rect.h, r, slot.focal, slot.zoom)
+                }
+                None => irresolus += 1,
+            }
+        }
+    }
+
+    // Estampiller même quand tout ne s'est pas résolu : ne pas le faire ferait
+    // re-migrer au chargement suivant les slots déjà convertis, et une double
+    // migration abîme ce qu'une simple réparait.
+    album.version = model::SCHEMA;
+    fs::write(&json, serde_json::to_string_pretty(&album)?)
+        .with_context(|| format!("write {}", json.display()))?;
+    Ok(Some(Migration { depuis, slots, irresolus }))
+}
+
 /// Re-render `album.pdf` from `album.json` alone, resolving every photo
 /// through `thumbs.json`. No scan, no analysis: this is what the editor calls
 /// after a change, and it works even when the original folder has moved.
 pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
+    // Avant toute lecture : un dossier d'avant le schéma 2 porte des `focal`
+    // qui ne veulent plus ce qu'ils disent, et le rendre sans migrer le
+    // recadrerait en silence.
+    migrate_album_folder(dir)?;
     let json = dir.join("album.json");
     let album: model::Album = serde_json::from_str(
         &fs::read_to_string(&json).with_context(|| format!("read {}", json.display()))?,
@@ -1122,6 +1235,109 @@ mod tests {
             }
         });
         img.save(path).unwrap();
+    }
+
+    /// La migration du schéma 1 vers le 2 : elle lit le ratio dans la
+    /// vignette, prend le rect dans le gabarit, convertit, estampille — et
+    /// **ne recommence pas**. La double migration est le seul vrai danger
+    /// ici : elle abîmerait ce qu'une simple réparait, en silence.
+    #[test]
+    fn la_migration_convertit_une_fois_et_pas_deux() {
+        let (_photos, out) = dossier_test("migration");
+        let thumbs = out.join(".cache").join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        // Deux vignettes de ratios francs et différents : 1,5 et 0,5.
+        image::RgbImage::from_fn(120, 80, |_, _| image::Rgb([120, 40, 200]))
+            .save(thumbs.join("ta.jpg"))
+            .unwrap();
+        image::RgbImage::from_fn(60, 120, |_, _| image::Rgb([20, 180, 90]))
+            .save(thumbs.join("tb.jpg"))
+            .unwrap();
+        fs::write(
+            out.join("thumbs.json"),
+            r#"{"a.jpg":"ta.jpg","b.jpg":"tb.jpg"}"#,
+        )
+        .unwrap();
+        let avant = [[0.2_f64, 0.8_f64], [0.9, 0.1]];
+        fs::write(
+            out.join("album.json"),
+            format!(
+                r#"{{"version":1,"title":"t","root":"{}","trim_mm":{{"w":210.0,"h":210.0}},
+                    "bleed_mm":3.0,"spreads":[{{"template":"duo","slots":[
+                      {{"src":"a.jpg","focal":[{},{}]}},
+                      {{"src":"b.jpg","focal":[{},{}]}}]}}]}}"#,
+                out.display(),
+                avant[0][0], avant[0][1], avant[1][0], avant[1][1],
+            ),
+        )
+        .unwrap();
+
+        let m = migrate_album_folder(&out).unwrap().expect("il y avait à migrer");
+        assert_eq!(m.depuis, 1);
+        assert_eq!(m.slots, 2);
+        assert_eq!(m.irresolus, 0, "les deux vignettes étaient là");
+
+        let lu: model::Album =
+            serde_json::from_str(&fs::read_to_string(out.join("album.json")).unwrap()).unwrap();
+        assert_eq!(lu.version, model::SCHEMA);
+
+        let g = crate::pdf::geometry(&lu);
+        let rects = crate::pdf::slots_for("duo", 2, &g);
+        for (i, ratio) in [120.0 / 80.0, 60.0 / 120.0].iter().enumerate() {
+            let attendu = model::point_from_room(
+                rects[i].w / rects[i].h,
+                *ratio,
+                avant[i],
+                1.0,
+            );
+            assert!(
+                (lu.spreads[0].slots[i].focal[0] - attendu[0]).abs() < 1e-12
+                    && (lu.spreads[0].slots[i].focal[1] - attendu[1]).abs() < 1e-12,
+                "slot {i} : {:?} attendu {attendu:?}", lu.spreads[0].slots[i].focal
+            );
+            assert!(
+                (lu.spreads[0].slots[i].focal[1] - avant[i][1]).abs() > 1e-6,
+                "slot {i} : le focal n'a pas bougé, la migration n'a rien fait"
+            );
+        }
+
+        // Deuxième passage : plus rien à faire, et surtout rien de touché.
+        assert!(migrate_album_folder(&out).unwrap().is_none());
+        let relu: model::Album =
+            serde_json::from_str(&fs::read_to_string(out.join("album.json")).unwrap()).unwrap();
+        for i in 0..2 {
+            assert_eq!(
+                relu.spreads[0].slots[i].focal, lu.spreads[0].slots[i].focal,
+                "slot {i} : migré deux fois"
+            );
+        }
+    }
+
+    /// Une photo sans vignette garde son focal, et se compte. Un album qui
+    /// migre à moitié le dit ; il ne se tait pas, et il ne re-migre pas.
+    #[test]
+    fn une_photo_irresolue_est_comptee_et_lalbum_est_quand_meme_estampille() {
+        let (_photos, out) = dossier_test("migration-trou");
+        fs::create_dir_all(out.join(".cache").join("thumbs")).unwrap();
+        fs::write(out.join("thumbs.json"), r#"{}"#).unwrap();
+        fs::write(
+            out.join("album.json"),
+            format!(
+                r#"{{"version":1,"title":"t","root":"{}","trim_mm":{{"w":210.0,"h":210.0}},
+                    "bleed_mm":3.0,"spreads":[{{"template":"duo","slots":[
+                      {{"src":"a.jpg","focal":[0.2,0.8]}}]}}]}}"#,
+                out.display(),
+            ),
+        )
+        .unwrap();
+
+        let m = migrate_album_folder(&out).unwrap().expect("il y avait à migrer");
+        assert_eq!((m.slots, m.irresolus), (1, 1));
+        let lu: model::Album =
+            serde_json::from_str(&fs::read_to_string(out.join("album.json")).unwrap()).unwrap();
+        assert_eq!(lu.version, model::SCHEMA, "estampillé quand même");
+        assert_eq!(lu.spreads[0].slots[0].focal, [0.2, 0.8], "gardé tel quel");
+        assert!(migrate_album_folder(&out).unwrap().is_none(), "ne re-migre pas");
     }
 
     /// The 16/08 case, first form: an empty folder. The old behaviour was a

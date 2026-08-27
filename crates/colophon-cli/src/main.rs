@@ -175,6 +175,16 @@ fn main() -> Result<()> {
 
     let trim = format::parse(&cli.format)?;
 
+    // Toute commande qui travaille sur un dossier d'album existant le migre
+    // d'abord. Un `focal` d'avant le schéma 2 ne veut plus ce qu'il dit :
+    // l'auditer, l'imprimer, le reprendre ou en tirer une scène sans migrer
+    // rendrait un verdict sur un autre recadrage que celui qui est réglé.
+    // Un dossier neuf n'a pas d'album.json, et un album déjà au schéma
+    // courant ressort sans être réécrit — la migration s'arrête avant.
+    if cli.out.join("album.json").exists() {
+        let _ = colophon_core::build::migrate_album_folder(&cli.out);
+    }
+
     if cli.dump_geometry {
         let mut album = Album::new("geometry", std::path::Path::new("."), trim);
         album.bleed_mm = cli.bleed;

@@ -1,8 +1,11 @@
 {
-  "version": 1,
+  "version": 2,
   "title": "scène de référence",
   "root": "/nulle-part",
-  "trim_mm": { "w": 210.0, "h": 210.0 },
+  "trim_mm": {
+    "w": 210.0,
+    "h": 210.0
+  },
   "bleed_mm": 3.0,
   "spreads": [
     {
@@ -12,39 +15,110 @@
     },
     {
       "template": "full1",
-      "slots": [{ "src": "a.jpg", "focal": [0.5, 0.42] }],
+      "slots": [
+        {
+          "src": "a.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        }
+      ],
       "caption": "Corse, 2013"
     },
     {
       "template": "duo",
       "slots": [
-        { "src": "b.jpg", "focal": [0.3, 0.6], "zoom": 1.8, "caption": "la plage" },
-        { "src": "c.jpg", "focal": [0.5, 0.42], "caption": "" }
+        {
+          "src": "b.jpg",
+          "focal": [
+            0.3,
+            0.6
+          ],
+          "zoom": 1.8,
+          "caption": "la plage"
+        },
+        {
+          "src": "c.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ],
+          "caption": ""
+        }
       ],
       "caption": "Une légende de chapitre assez longue pour mesurer"
     },
     {
       "template": "quad",
       "slots": [
-        { "src": "d.jpg", "focal": [0.5, 0.42] },
-        { "src": "e.jpg", "focal": [0.5, 0.42] },
-        { "src": "f.jpg", "focal": [0.5, 0.42] },
-        { "src": "g.jpg", "focal": [0.5, 0.42] }
+        {
+          "src": "d.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        },
+        {
+          "src": "e.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        },
+        {
+          "src": "f.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        },
+        {
+          "src": "g.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        }
       ]
     },
     {
       "template": "trio_verso",
       "slots": [
-        { "src": "h.jpg", "focal": [0.5, 0.42] },
-        { "src": "i.jpg", "focal": [0.5, 0.42] }
+        {
+          "src": "h.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        },
+        {
+          "src": "i.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        }
       ],
       "caption": "un trio tronqué à deux"
     },
     {
       "template": "g_v_1x2q_b8",
       "slots": [
-        { "src": "j.jpg", "focal": [0.5, 0.42] },
-        { "src": "k.jpg", "focal": [0.5, 0.42] }
+        {
+          "src": "j.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        },
+        {
+          "src": "k.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        }
       ],
       "caption": "une bande déclarée"
     },
@@ -55,7 +129,15 @@
     },
     {
       "template": "gabarit-inconnu-repare-a-la-main",
-      "slots": [{ "src": "l.jpg", "focal": [0.5, 0.42] }],
+      "slots": [
+        {
+          "src": "l.jpg",
+          "focal": [
+            0.5,
+            0.42
+          ]
+        }
+      ],
       "caption": "le repli honnête"
     },
     {

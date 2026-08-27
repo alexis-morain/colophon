@@ -86,7 +86,7 @@
    "nom": "la flèche monte la même feuille",
    "ok": true,
    "detail": {
-    "deg": -67,
+    "deg": -65,
     "classe": "feuillet vers-avant"
    }
   },
@@ -138,6 +138,40 @@
    }
   },
   {
+   "nom": "le livre ne saute pas sous la feuille en vol",
+   "ok": true,
+   "detail": {
+    "avant": "1 / 50",
+    "pendant": "1 / 50"
+   }
+  },
+  {
+   "nom": "cinq flèches en rafale ne tournent qu'une page",
+   "ok": true,
+   "detail": {
+    "avant": "1 / 50",
+    "apres": "2 / 50"
+   }
+  },
+  {
+   "nom": "et exactement une",
+   "ok": true,
+   "detail": {
+    "obtenu": "2 / 50"
+   }
+  },
+  {
+   "nom": "un saut retire la feuille en vol",
+   "ok": true
+  },
+  {
+   "nom": "et le saut est le dernier mot",
+   "ok": true,
+   "detail": {
+    "obtenu": "50 / 50"
+   }
+  },
+  {
    "nom": "mouvement réduit : aucune feuille ne se monte",
    "ok": true
   },
@@ -153,8 +187,8 @@
    "nom": "mouvement réduit : pas une trame d'animation de plus",
    "ok": true,
    "detail": {
-    "avant": 143,
-    "apres": 143
+    "avant": 175,
+    "apres": 175
    }
   },
   {
@@ -170,8 +204,8 @@
    "detail": {
     "n": 500,
     "median": 16.7,
-    "p95": 17.6,
-    "max": 17.7
+    "p95": 18.6,
+    "max": 18.7
    }
   },
   {
@@ -183,14 +217,14 @@
   "feuille.trame": {
    "n": 500,
    "median": 16.7,
-   "p95": 17.6,
-   "max": 17.7
+   "p95": 18.6,
+   "max": 18.7
   },
   "planche.suivante": {
    "n": 30,
    "median": 32.7,
-   "p95": 33.7,
-   "max": 33.7
+   "p95": 34.7,
+   "max": 34.8
   }
  },
  "contexte": {

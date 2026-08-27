@@ -1,0 +1,88 @@
+{
+  "quoi": "3.1 — focal passe d'une fraction du jeu restant a un point de l'image",
+  "comment": "meme album compose depuis les fiches des deux cotes, avant = 3db1faa, apres = 7fed4ee",
+  "jeux": {
+    "corse-2013": {
+      "slots": 98,
+      "focal_deplaces": 6,
+      "ecart_max": 0.1643,
+      "compteurs_identiques": true,
+      "compteurs": {
+        "chapitre_orphelin": 0,
+        "doublon_planche": 0,
+        "legende_manquante": 0,
+        "legende_sur_photo": 0,
+        "orientation_trahie": 0,
+        "ouverture_faible": 0,
+        "repetition_gabarit": 0,
+        "rythme_plat": 0,
+        "sous_resolution": 2,
+        "visage_coupe": 0
+      }
+    },
+    "mauritanie-2019": {
+      "slots": 97,
+      "focal_deplaces": 32,
+      "ecart_max": 0.3096,
+      "compteurs_identiques": true,
+      "compteurs": {
+        "chapitre_orphelin": 0,
+        "doublon_planche": 0,
+        "legende_manquante": 0,
+        "legende_sur_photo": 0,
+        "orientation_trahie": 0,
+        "ouverture_faible": 0,
+        "repetition_gabarit": 0,
+        "rythme_plat": 0,
+        "sous_resolution": 0,
+        "visage_coupe": 0
+      }
+    },
+    "random-2024": {
+      "slots": 99,
+      "focal_deplaces": 15,
+      "ecart_max": 0.4795,
+      "compteurs_identiques": true,
+      "compteurs": {
+        "chapitre_orphelin": 0,
+        "doublon_planche": 0,
+        "legende_manquante": 0,
+        "legende_sur_photo": 0,
+        "orientation_trahie": 0,
+        "ouverture_faible": 0,
+        "repetition_gabarit": 0,
+        "rythme_plat": 0,
+        "sous_resolution": 0,
+        "visage_coupe": 0
+      }
+    }
+  },
+  "lecture": "Les compteurs d'audit sont identiques sur les trois jeux : aucun visage coupe en plus ou en moins, aucune sous-resolution nouvelle. Les valeurs de focal, elles, bougent — et c'est voulu. Deux causes. Un : le sens a change, donc la meme fenetre s'ecrit avec un autre nombre. Deux : l'ancien code passait a safe_offset un desired de f*span, ou f est un point d'image rendu par focal_from_boxes ; il traitait donc un point comme une fraction de jeu, et le calage sur les visages partait d'un decalage faux. Le nouveau passe f*total - visible/2, qui est le decalage dont ce point a besoin. La ou les deux divergent, le cadrage se deplace, vers ce que le visage demandait.",
+  "migration_bout_en_bout": {
+    "protocole": "Trois vrais albums remis au schema 1 avec les focals que main produit, dans un dossier dont la racine et les vignettes fonctionnent. Puis `colophon --audit`, qui declenche la migration par le crochet CLI. On compare les compteurs a ceux que main rendait sur les memes donnees.",
+    "jeux": {
+      "corse-2013": {
+        "slots": 98,
+        "focal_reecrits": 98,
+        "ecart_max": 0.3359,
+        "schema_apres": 2,
+        "compteurs_identiques": true
+      },
+      "mauritanie-2019": {
+        "slots": 97,
+        "focal_reecrits": 97,
+        "ecart_max": 0.3151,
+        "schema_apres": 2,
+        "compteurs_identiques": true
+      },
+      "random-2024": {
+        "slots": 99,
+        "focal_reecrits": 99,
+        "ecart_max": 0.4795,
+        "schema_apres": 2,
+        "compteurs_identiques": true
+      }
+    },
+    "lecture": "Les compteurs sont identiques sur les trois jeux, donc la migration conserve la fenetre rendue : le meme morceau de photo est montre, ecrit autrement. C'est la promesse de point_from_room, verifiee ici sur 294 slots reels et plus seulement sur l'album synthetique du test unitaire."
+  }
+}

@@ -130,7 +130,7 @@ async function dessiner(
   source.width = Math.round(viewport.width);
   source.height = Math.round(viewport.height);
   const ctx = source.getContext("2d");
-  if (!ctx) throw new Error("2d");
+  if (!ctx) throw new Error("le contexte 2d du bitmap est indisponible");
   await p.render({ canvasContext: ctx, viewport }).promise;
   return { source, largeur, hauteur: Math.round(viewport.height / dpr) };
 }

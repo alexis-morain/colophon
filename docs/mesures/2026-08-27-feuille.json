@@ -86,7 +86,7 @@
    "nom": "la flèche monte la même feuille",
    "ok": true,
    "detail": {
-    "deg": -67,
+    "deg": -63,
     "classe": "feuillet vers-avant"
    }
   },
@@ -187,8 +187,8 @@
    "nom": "mouvement réduit : pas une trame d'animation de plus",
    "ok": true,
    "detail": {
-    "avant": 174,
-    "apres": 174
+    "avant": 176,
+    "apres": 176
    }
   },
   {
@@ -204,8 +204,8 @@
    "detail": {
     "n": 500,
     "median": 16.7,
-    "p95": 18.6,
-    "max": 18.6
+    "p95": 17.4,
+    "max": 17.7
    }
   },
   {
@@ -217,14 +217,14 @@
   "feuille.trame": {
    "n": 500,
    "median": 16.7,
-   "p95": 18.6,
-   "max": 18.6
+   "p95": 17.4,
+   "max": 17.7
   },
   "planche.suivante": {
    "n": 30,
-   "median": 32.6,
-   "p95": 34.5,
-   "max": 34.6
+   "median": 32.4,
+   "p95": 33.6,
+   "max": 33.7
   }
  },
  "contexte": {

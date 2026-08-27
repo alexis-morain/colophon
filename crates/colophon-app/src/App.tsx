@@ -28,6 +28,8 @@ import {
   Printer,
   gabaritsCompatibles,
   recomposeAlbum,
+  basculeAlbum,
+  BasculeBilan,
   renderCoverPreview,
   renderPdf,
   saveAlbum,
@@ -83,6 +85,7 @@ import { EnvoiView } from "./EnvoiView";
 import { Cle, FR, langue, t, useLangue } from "./i18n";
 import { jusquAuRendu } from "./mesure";
 import { RaccourcisView } from "./Raccourcis";
+import { BasculeView } from "./BasculeView";
 import { SignalerView } from "./SignalerView";
 import { SignalKind } from "./signaler";
 import { Chevron, CoverGlyph } from "./icons";
@@ -178,6 +181,17 @@ export default function App() {
   const [proposition, setProposition] = useState<string | null>(null);
   // The keyboard cheat-sheet overlay (⌘/, menu Aide).
   const [shortcuts, setShortcuts] = useState(false);
+  // Le panneau « Changer de format ». Il ne détient rien : le moteur rend un
+  // album et un bilan, l'aperçu se lit, et l'appliquer passe par `apply` —
+  // donc par l'historique, donc par ⌘Z. Rien n'atteint le disque avant ⌘S.
+  const [bascule, setBascule] = useState(false);
+  const [basculeFormats, setBasculeFormats] = useState<FormatPreset[]>([]);
+  const [basculeChoisi, setBasculeChoisi] = useState<string | null>(null);
+  const [basculeApercu, setBasculeApercu] = useState<{
+    album: Album;
+    bilan: BasculeBilan;
+  } | null>(null);
+  const [basculeEnCours, setBasculeEnCours] = useState(false);
   // The report panel (Aide → Signaler), one of the three issue variants.
   const [signaler, setSignaler] = useState<SignalKind | null>(null);
   // The storage panel (Fichier → Stockage…): what the app wrote on the disk.
@@ -597,6 +611,50 @@ export default function App() {
     }
   }, [hist, building, dirty, save, adopt]);
 
+  /** Ouvrir le panneau de format, en chargeant la liste une seule fois.
+   *
+   *  Enregistrer d'abord, comme la recomposition : le moteur bascule
+   *  `album.json`, donc l'album tel qu'il est sur le disque. Avec des
+   *  retouches non enregistrées, l'aperçu porterait sur une version
+   *  périmée et l'appliquer les effacerait sans rien dire — précisément la
+   *  perte silencieuse que cette vague existe pour empêcher. */
+  const ouvrirBascule = useCallback(async () => {
+    if (dirty && !(await save())) return;
+    setBasculeChoisi(null);
+    setBasculeApercu(null);
+    setBascule(true);
+    if (basculeFormats.length === 0) listFormats().then(setBasculeFormats, () => {});
+  }, [basculeFormats.length, dirty, save]);
+
+  /** Demander au moteur ce que ce format donnerait. Il n'écrit rien. */
+  const apercuBascule = useCallback(
+    async (f: FormatPreset) => {
+      setBasculeChoisi(f.name);
+      setBasculeApercu(null);
+      setBasculeEnCours(true);
+      try {
+        setBasculeApercu(await basculeAlbum(f.w, f.h, profilRef.current));
+      } catch (e) {
+        setBascule(false);
+        setError(fault(t("erreur.bascule"), e));
+      } finally {
+        setBasculeEnCours(false);
+      }
+    },
+    [],
+  );
+
+  /** Appliquer l'aperçu. Par `apply`, donc annulable par ⌘Z comme une
+   *  retouche : c'est pour ça que le moteur rend un album au lieu d'en
+   *  enregistrer un. */
+  const appliquerBascule = useCallback(() => {
+    if (!basculeApercu) return;
+    const { album } = basculeApercu;
+    apply(() => album);
+    setBascule(false);
+    setStatus(t("bascule.faite", { w: album.trim_mm.w, h: album.trim_mm.h }));
+  }, [basculeApercu, apply]);
+
   /** Back to the creation screen. Unsaved work asks before dying. */
   const closeAlbum = useCallback(async () => {
     if (
@@ -845,6 +903,7 @@ export default function App() {
       setApropos(false);
       setSignaler(null);
       setPrefs(false);
+      setBascule(false);
       setShortcuts((s) => !s);
     },
     stockage: () => {
@@ -1531,6 +1590,7 @@ export default function App() {
           setStatus(t("etat.titre.modifie"));
         }}
         onRecompose={inTauri ? () => void recompose() : undefined}
+        onFormat={inTauri ? () => void ouvrirBascule() : undefined}
         onOpen={inTauri ? undefined : openAlbum}
         onClose={inTauri ? undefined : closeAlbum}
       />
@@ -1757,6 +1817,18 @@ export default function App() {
       )}
       {error && <FaultBlock fault={error} onDismiss={() => setError(null)} />}
       {shortcuts && <RaccourcisView onClose={() => setShortcuts(false)} />}
+      {bascule && hist && (
+        <BasculeView
+          formats={basculeFormats}
+          courant={hist.album.trim_mm}
+          choisi={basculeChoisi}
+          apercu={basculeApercu?.bilan ?? null}
+          enCours={basculeEnCours}
+          onChoisir={(f) => void apercuBascule(f)}
+          onAppliquer={appliquerBascule}
+          onClose={() => setBascule(false)}
+        />
+      )}
       {signaler && (
         <SignalerView
           kind={signaler}
@@ -1918,6 +1990,7 @@ function Bar({
   onSave,
   onRename,
   onRecompose,
+  onFormat,
   onOpen,
   onClose,
 }: {
@@ -1933,6 +2006,7 @@ function Bar({
   onSave: () => void;
   onRename: (titre: string) => void;
   onRecompose?: () => void;
+  onFormat?: () => void;
   /** Browser harness only: the shell reaches these through the menu. */
   onOpen?: () => void;
   onClose?: () => void;
@@ -1993,6 +2067,11 @@ function Bar({
             title={t("bar.recomposer.titre")}
           >
             {t("bar.recomposer")}
+          </button>
+        )}
+        {onFormat && (
+          <button className="link" onClick={onFormat} title={t("bar.format.titre")}>
+            {t("bar.format")}
           </button>
         )}
         <button

@@ -48,6 +48,29 @@ The finished page, the piece the guillotine leaves. Anything that must survive
 the cut is measured from here, never from the media edge.
 _Avoid_: page size, final size
 
+**Bascule**:
+Carrying a composed album into another trim. Not a recomposition: every
+spread, its order, its photographs and their framing come across untouched,
+and only the template of a spread whose photos would betray their new cells is
+replaced. It reads no pixel — the photo sizes come from the relevé, or from
+the originals' headers — and writes nothing until the editor's own save, so
+⌘Z undoes a change of format like any other edit.
+_Avoid_: resize, convert, reflow, re-layout
+
+**Aptitude**:
+Whether a template can carry given photographs on a given geometry: it holds
+all of them, and none betrays its cell past `audit::ASPECT_BETRAYAL`. One
+rule, in `gabarit::apte`; the picker, the keyboard cycle and the bascule read
+it and none of them rewrites it.
+_Avoid_: fit, compatibility, suitability
+
+**Repli**:
+The template a spread falls back to when its own stops being apt, always of
+the same capacity so no photograph is dropped. When nothing of that capacity
+is apt the spread keeps what it has and the bilan names it: a betrayed cell is
+visible and one click from being changed, a lost photograph is neither.
+_Avoid_: fallback, downgrade, substitution
+
 **Bleed**:
 The margin of print beyond the trim, cut away in binding. Photos bleed on
 purpose; text never does.

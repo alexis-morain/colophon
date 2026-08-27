@@ -1095,6 +1095,41 @@ async fn preflight(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// What a bascule would do, without doing it.
+#[derive(serde::Serialize)]
+struct BasculeApercu {
+    album: Album,
+    bilan: colophon_core::bascule::Bilan,
+}
+
+/// The same album in another format, proposed and never written.
+///
+/// The interface applies the returned album through its own edit history, so
+/// ⌘Z undoes a format change like any other edit and ⌘S is what commits it.
+/// Writing here instead would put a change on disk that the undo stack knows
+/// nothing about.
+#[tauri::command]
+async fn bascule_album(
+    w: f64,
+    h: f64,
+    profil: String,
+    state: State<'_, AppState>,
+) -> Result<BasculeApercu, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let profil = printer_profile(&profil)?;
+    let trim = colophon_core::model::Size { w, h };
+    tauri::async_runtime::spawn_blocking(move || {
+        colophon_core::bascule::bascule_dossier(&dir, trim, profil, false)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|(album, bilan)| BasculeApercu { album, bilan })
+    .map_err(|e| format!("{e:#}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1127,6 +1162,7 @@ pub fn run() {
             list_formats,
             build_album_from_folder,
             recompose_album,
+            bascule_album,
             cancel_build,
             cancel_export,
             caption_suggestion,

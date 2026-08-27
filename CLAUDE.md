@@ -74,6 +74,10 @@ aboli depuis que le gate est portable, 27/08.)
 surfaces de lecture, **jamais dans l'éditeur**. Toute bibliothèque de courbure passe par
 un audit de licence avant d'entrer.
 
+**3.1 et 3.2 sont dans `main`** (vague 3, libre d'ordre). 3.1 a fait de `focal` un point
+de l'image, invariant au ratio ; 3.2 est la bascule, qui en est le premier usage. Reste
+de la vague 3 : le reste de 3.3.
+
 Vagues 0 et 1 closes, 2.1 à 2.5 closes. **Verdict de 2.5 : le défaut reste `dom`**,
 gravé dans `rendu.ts` et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une
 bascule future resterait un commit qui ne fait que ça. À la passe humaine au bundle, non
@@ -96,6 +100,17 @@ avant comparaison, une étoilée vaut ×1,18 par étoile. `album.json.bak` à ch
 visages à 4 % des bords au moins, jamais deux quasi-doublons sur une planche, une
 ouverture au quartile haut, jamais quatre gabarits d'affilée. Plancher 250 ppi visé,
 **pas garanti** : l'audit en tolère trois, le prévol aucun.
+
+**La bascule (`core::bascule`) n'est pas une recomposition.** `recompose_album` rebâtit
+tout ce qui n'est pas épinglé ; la bascule ne rebâtit rien — mêmes planches, même ordre,
+mêmes photos, mêmes recadrages —, elle ne change que `trim_mm` et le `template` d'une
+planche devenue inapte, et jamais vers une capacité plus basse (une photo perdue ne se
+voit pas, une cellule trahie se voit et se change). Elle ne décode aucune photo : les
+tailles viennent du relevé, sinon des en-têtes des originaux. Elle n'écrit rien côté app,
+le moteur rendant un album que l'éditeur applique par son historique — d'où ⌘Z. Son bilan
+nomme d'abord les photos passées sous 250 ppi, seul dégât qu'aucune main ne rattrape.
+**L'aptitude d'un gabarit a une seule définition**, `gabarit::apte` / `gabarit::trahison` ;
+le sélecteur, le cycle clavier et la bascule la lisent.
 
 Titres de chapitre depuis le GPS (`core::places`, GeoNames CC-BY) ; seul
 `DateTimeOriginal` date un chapitre. **Deux rythmes** choisis au lancement, stockés dans
@@ -226,6 +241,15 @@ chaîne du moteur, il cesse de servir les deux rendus.
 d'échec silencieux à l'export.** **Tout ce qui touche le PDF remesure la conformité**
 (cinq tests Rust plus veraPDF) dans la vague où c'est écrit.
 
+**Trois manières de mesurer une photo, et deux qui mentent.** `image::image_dimensions`
+perd toute photo HEIC : la seule répartition du projet est `heic::dimensions`. Un en-tête
+brut n'est pas orienté alors que `Photo::orig` l'est : passer par `heic::oriente`, sans
+quoi toute photo couchée se lit paysage. Et `Releve::lire` recompose ses chemins depuis la
+racine, donc une fiche relue porte `jeu/photo.jpg` là où un slot porte `photo.jpg` :
+la clé est `Releve::src`. Les trois se sont trouvées en confrontant la bascule depuis les
+photos et depuis les fiches ; aucune n'aurait été vue autrement, la troisième rendant un
+succès parfait sur zéro travail.
+
 ## Décisions à ne pas rouvrir, côté code
 
 Tauri 2 et React. GPL-3.0. `album.json` état unique réparable à la main. Le PDF fait foi.
@@ -243,7 +267,7 @@ résolution sous 250 ppi. Jamais `imazen/heic` (AGPL).
 ```
 
 Autres drapeaux : `--print`, `--cover`, `--prevol --profil <id>`, `--densite`,
-`--variantes`, `--reprise`, `--dump-scene`, `--dump-geometry`, `--profils`. Scripts :
+`--variantes`, `--reprise`, `--bascule <FORMAT> [--essai]`, `--dump-scene`, `--dump-geometry`, `--profils`. Scripts :
 `pdfx.sh full`, `install-app.sh`, `fixture-scene.sh`, `notices.sh`, `apercu-fidele.py`,
 `banc-gabarits.sh`, `mesure-cdp.mjs`. App : `npm run tauri dev`.
 

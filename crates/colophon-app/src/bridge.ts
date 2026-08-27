@@ -295,6 +295,34 @@ export async function recomposeAlbum(): Promise<OpenedAlbum> {
 }
 
 /** Abandon the composition in flight. The engine stops between photos. */
+/** What a bascule would do to the open album, without doing it. */
+export type BasculeBilan = {
+  trim_avant: { w: number; h: number };
+  trim_apres: { w: number; h: number };
+  planches: number;
+  planches_inchangees: number;
+  sous_resolution: { planche: number; src: string; ppi_avant: number; ppi_apres: number }[];
+  deja_sous_resolution: number;
+  replis: { planche: number; avant: string; apres: string }[];
+  inaptes: { planche: number; gabarit: string; trahison: number }[];
+  epinglees_touchees: number[];
+  tailles_manquantes: string[];
+  couverture_sous_resolution:
+    | { planche: number; src: string; ppi_avant: number; ppi_apres: number }
+    | null;
+};
+
+/** The same album in another format, proposed. Nothing is written: the caller
+ *  applies the album through the edit history, so ⌘Z undoes it and ⌘S commits
+ *  it, exactly like every other edit. */
+export async function basculeAlbum(
+  w: number,
+  h: number,
+  profil: string,
+): Promise<{ album: Album; bilan: BasculeBilan }> {
+  return invoke<{ album: Album; bilan: BasculeBilan }>("bascule_album", { w, h, profil });
+}
+
 export async function cancelBuild(): Promise<void> {
   if (!inTauri) return;
   return invoke("cancel_build");

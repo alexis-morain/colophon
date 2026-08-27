@@ -229,10 +229,7 @@ pub fn releve(photos_dir: &Path, out: &Path, opts: &BuildOptions) -> Result<Rele
             // Original size, oriented. Header read only, no decode. Falls
             // back to the thumbnail size, which understates the pixels and
             // keeps the composer conservative about big cells.
-            let orig = crate::heic::dimensions(path)
-                .map(|(w, h)| {
-                    if (5..=8).contains(&meta.orientation) { (h, w) } else { (w, h) }
-                })
+            let orig = crate::heic::oriented_dimensions(path, meta.orientation)
                 .unwrap_or((analysis.width, analysis.height));
             Some(Analysed::Photo(Box::new(Photo {
                 path: path.clone(),

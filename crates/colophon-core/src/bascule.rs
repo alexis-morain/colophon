@@ -11,11 +11,14 @@
 //! `pinned` rebuilds everything not pinned; the bascule rebuilds nothing. It
 //! carries every spread across and re-fits only what stopped fitting.
 //!
-//! **It never opens a photograph.** The only measurement it needs is each
-//! photo's pixel size, which the relevé carries ([`crate::releve`]). A
-//! bascule therefore answers in a second rather than in minutes, works on an
-//! album whose photo folder is absent, and is verifiable in full on a machine
-//! that holds no photographs — the portable gate.
+//! **It decodes no photograph.** The only measurement it needs is each
+//! photo's pixel size. An album carrying a relevé ([`crate::releve`]) gives
+//! it in one file, and that album may hold no photograph at all — which is
+//! what makes the bascule verifiable in full in the portable gate, on the
+//! three OS. An album composed *from* photographs carries no relevé, and the
+//! sizes then come from the originals' own headers: a few bytes per file,
+//! never a decode. Either way a bascule answers in a second rather than in
+//! the minutes a recomposition costs.
 //!
 //! Two things can change, and nothing else: `trim_mm`, and the `template` of
 //! a spread whose photos would betray their new cells. Everything the bilan
@@ -28,6 +31,7 @@ use crate::model::{Album, Size};
 use crate::pdf::{self, Rect, SpreadGeometry};
 use crate::print;
 use crate::printer::PrinterProfile;
+use anyhow::{Context, Result};
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 
@@ -112,12 +116,87 @@ impl Bilan {
 }
 
 /// The photo sizes of a relevé, keyed the way a `Slot` names its photograph.
+///
+/// Through `Releve::src`, and never through `path` directly: `Releve::lire`
+/// recomposes every path from the root the file names, so a fiche read back
+/// carries `corse-2013/photo.jpg` where a slot carries `photo.jpg`. Keyed on
+/// the raw path the map matches nothing at all, and the bascule then reports
+/// every spread as untouched — a no-op that looks exactly like a success, on
+/// precisely the albums this path exists to serve.
 pub fn tailles_du_releve(releve: &crate::releve::Releve) -> Tailles {
-    releve
-        .photos
+    releve.photos.iter().map(|p| (releve.src(&p.path), p.orig)).collect()
+}
+
+/// Every photograph's **original** pixel size, for one album folder.
+///
+/// Original, and never a thumbnail's: the aspect ratio would survive the
+/// reduction, but the resolution would not, and a bascule judging 1600 px
+/// thumbnails would declare the whole album under the printable floor. The
+/// two things this module measures need the same number, so `Tailles` means
+/// one thing only.
+///
+/// Two sources, in order. A relevé answers everything and costs one file —
+/// that is the portable path, and an album composed without photographs has
+/// nothing else. Otherwise the originals' own headers answer, which is a
+/// read of a few bytes per file and never a decode. A photograph neither can
+/// account for is simply absent from the map: its spread is then carried
+/// across untouched and named in the bilan, rather than judged on a guess.
+pub fn tailles_du_dossier(dir: &std::path::Path, album: &Album) -> Result<Tailles> {
+    if let Some(releve) = crate::releve::Releve::dans_album(dir)? {
+        return Ok(tailles_du_releve(&releve));
+    }
+    let root = std::path::Path::new(&album.root);
+    let mut out = Tailles::new();
+    let mut srcs: BTreeSet<&str> = album
+        .spreads
         .iter()
-        .map(|p| (p.path.to_string_lossy().to_string(), p.orig))
-        .collect()
+        .flat_map(|s| s.slots.iter())
+        .map(|s| s.src.as_str())
+        .collect();
+    if let Some(slot) = album.cover.as_ref().and_then(|c| c.photo.as_ref()) {
+        srcs.insert(slot.src.as_str());
+    }
+    for src in srcs {
+        // Two traps, both measured rather than guessed. One:
+        // `heic::dimensions` and never `image::image_dimensions`, the former
+        // being the project's one dispatch — the direct call silently lost
+        // every iPhone photograph, 31 of mauritanie-2019's. Two: the EXIF
+        // orientation must be applied, because `Photo::orig` is oriented and
+        // a raw header is not — without it every rotated photograph reads
+        // landscape when it is portrait, and the two paths disagreed on
+        // three sets out of three.
+        let p = root.join(src);
+        if let Ok(taille) = crate::heic::oriented_dimensions(&p, crate::meta::read(&p).orientation)
+        {
+            out.insert(src.to_string(), taille);
+        }
+    }
+    Ok(out)
+}
+
+/// The same album in another format, read from and written back to a folder.
+///
+/// `album.origin.json` is never touched: it is the reprise's reference, and
+/// 3.3 decides the rest. The previous `album.json` survives as `.bak`, like
+/// every other save.
+pub fn bascule_dossier(
+    dir: &std::path::Path,
+    trim: Size,
+    profil: &PrinterProfile,
+    ecrire: bool,
+) -> Result<(Album, Bilan)> {
+    let path = dir.join("album.json");
+    let album: Album = serde_json::from_str(
+        &std::fs::read_to_string(&path)
+            .with_context(|| format!("lecture de {}", path.display()))?,
+    )
+    .context("album.json illisible")?;
+    let tailles = tailles_du_dossier(dir, &album)?;
+    let (apres, bilan) = bascule(&album, trim, &tailles, profil);
+    if ecrire {
+        crate::build::write_album_json(dir, &apres)?;
+    }
+    Ok((apres, bilan))
 }
 
 /// The same album, in another format.
@@ -609,5 +688,90 @@ mod tests {
         assert_eq!(apres.spreads[0].template, "texte");
         assert_eq!(bilan.planches_inchangees, 1);
         assert!(bilan.tailles_manquantes.is_empty());
+    }
+
+    /// Le relevé écrit puis relu doit rendre des clés que les slots
+    /// reconnaissent. `Releve::lire` recompose chaque chemin depuis la racine
+    /// que le fichier nomme, donc une fiche relue porte
+    /// `corse-2013/photo.jpg` là où un slot porte `photo.jpg` : indexé sur le
+    /// chemin brut, le tableau ne correspond à rien et la bascule déclare
+    /// toutes les planches inchangées. Un faux vert parfait, sur exactement
+    /// les albums que ce chemin existe pour servir — mesuré sur les trois
+    /// jeux avant d'être corrigé.
+    #[test]
+    fn un_releve_relu_donne_des_cles_que_les_slots_reconnaissent() {
+        use crate::analyze::Analysis;
+        use crate::meta::PhotoMeta;
+        use crate::pipeline::Photo;
+        use crate::releve::Releve;
+
+        let dir = std::env::temp_dir()
+            .join(format!("colophon-bascule-releve-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let racine = std::path::PathBuf::from("/ailleurs/corse-2013");
+
+        let fiche = |nom: &str, orig: (u32, u32)| Photo {
+            path: racine.join(nom),
+            meta: PhotoMeta {
+                taken: chrono::NaiveDateTime::parse_from_str(
+                    "2013-10-27 15:34:11",
+                    "%Y-%m-%d %H:%M:%S",
+                )
+                .unwrap(),
+                taken_reliable: true,
+                orientation: 1,
+                gps: None,
+                model: None,
+                rating: None,
+            },
+            analysis: Analysis {
+                dhash: 1,
+                phash: 2,
+                colorsig: [0; 12],
+                sharpness: 1.0,
+                exposure: 0.5,
+                width: 500,
+                height: 500,
+            },
+            orig,
+            faces: Vec::new(),
+            focal: None,
+        };
+
+        let releve = Releve {
+            version: crate::releve::VERSION,
+            racine: racine.clone(),
+            skipped_heic: 0,
+            skipped_other: 0,
+            illisibles: Vec::new(),
+            photos: vec![fiche("p1.jpg", (3000, 4000)), fiche("p2.jpg", (3000, 4000))],
+            vignettes: false,
+        };
+        let chemin = dir.join(crate::releve::FICHIER);
+        releve.ecrire(&chemin).unwrap();
+        let relu = Releve::lire(&chemin).unwrap();
+
+        let tailles = tailles_du_releve(&relu);
+        assert_eq!(
+            tailles.get("p1.jpg"),
+            Some(&(3000, 4000)),
+            "clés relues : {:?}",
+            tailles.keys().collect::<Vec<_>>()
+        );
+
+        // Et le tableau doit vraiment servir : une planche jugée, pas une
+        // planche « inchangée » faute de mesure.
+        let album = album_de(vec![planche("duo", &["p1.jpg", "p2.jpg"])], carre());
+        let (apres, bilan) = bascule(&album, paysage(), &tailles, profil());
+        assert!(
+            bilan.tailles_manquantes.is_empty(),
+            "manquantes : {:?}",
+            bilan.tailles_manquantes
+        );
+        assert_eq!(apres.spreads[0].template, "duo_portrait");
+        assert_eq!(bilan.replis.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

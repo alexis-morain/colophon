@@ -242,8 +242,7 @@ pub(crate) fn mesure_photos(
             // A photo whose header will not give its size is named and
             // refused, never averaged over: the counter it feeds is the one
             // that keeps a book above 250 ppi.
-            let orig = crate::heic::dimensions(&p)
-                .map(|(w, h)| if (5..=8).contains(&m.orientation) { (h, w) } else { (w, h) })
+            let orig = crate::heic::oriented_dimensions(&p, m.orientation)
                 .with_context(|| {
                     format!("taille d'origine illisible pour {src}, régénérez l'album")
                 })?;

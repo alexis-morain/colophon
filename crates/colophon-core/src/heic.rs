@@ -64,6 +64,29 @@ pub fn dimensions(path: &Path) -> Result<(u32, u32)> {
     }
 }
 
+/// The same size, with the EXIF orientation applied: what every caller means
+/// when it says a photo is 4000 × 3000. Tags 5 to 8 turn the picture on its
+/// side, so width and height swap.
+///
+/// The orientation is passed in rather than read here: the composer and the
+/// linter have already read the EXIF block for other reasons, and re-opening
+/// the file once per photograph to learn one integer is a cost neither
+/// should pay. What they must not each own is the swap — a photo judged on
+/// an unswapped header reads landscape when it is portrait, which silently
+/// inverts every aspect ratio downstream.
+pub fn oriented_dimensions(path: &Path, orientation: u32) -> Result<(u32, u32)> {
+    dimensions(path).map(|(w, h)| oriente((w, h), orientation))
+}
+
+/// The swap alone, for callers that already hold the header size.
+pub fn oriente((w, h): (u32, u32), orientation: u32) -> (u32, u32) {
+    if (5..=8).contains(&orientation) {
+        (h, w)
+    } else {
+        (w, h)
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod imageio {
     //! Minimal ImageIO + CoreGraphics FFI. The frameworks are stable C API
@@ -255,6 +278,26 @@ mod imageio {
                     _ => Err(anyhow!("taille absente : {}", path.display())),
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tags 5 to 8 turn the picture on its side. The composer, the linter and
+    /// the bascule all read this one function, because when they each owned a
+    /// copy the bascule's was simply missing: every rotated photograph then
+    /// read landscape when it was portrait, and two paths that must agree
+    /// disagreed on three reference sets out of three.
+    #[test]
+    fn une_photo_couchee_echange_ses_cotes() {
+        for droit in [1, 2, 3, 4] {
+            assert_eq!(oriente((4000, 3000), droit), (4000, 3000), "tag {droit}");
+        }
+        for couche in [5, 6, 7, 8] {
+            assert_eq!(oriente((4000, 3000), couche), (3000, 4000), "tag {couche}");
         }
     }
 }

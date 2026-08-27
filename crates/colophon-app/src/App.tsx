@@ -98,7 +98,9 @@ import { readRecents, pushRecent, forgetRecent, albumId } from "./recents";
 import { StockageView } from "./StockageView";
 import { AProposView } from "./AProposView";
 import { PrefsView } from "./PrefsView";
-import { ApercuFidele, forgetPdfs } from "./pdfview";
+import { ApercuFidele } from "./pdfview";
+import { forgetPdfs } from "./raster";
+import { Tourneur } from "./Feuilletage";
 import { cachedThumb, loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
 
@@ -212,6 +214,10 @@ export default function App() {
   const [maj, setMaj] = useState<Awaited<ReturnType<typeof checkUpdate>>>(null);
   const [majEnCours, setMajEnCours] = useState(false);
   const [pdfCle, setPdfCle] = useState(0);
+  // La feuille de l'aperçu fidèle, quand il y en a une à l'écran. Le clavier
+  // lui propose le tour avant de changer la planche sèchement : le geste n'est
+  // jamais le seul chemin, et les deux chemins doivent donner le même livre.
+  const feuilletage = useRef<Tourneur | null>(null);
   // The recent-albums list: welcome screen and Fichier menu read it.
   const [recents, setRecents] = useState<RecentAlbum[]>(readRecents);
 
@@ -1417,17 +1423,28 @@ export default function App() {
         fire("kbd", e.shiftKey ? "gabarit-precedent" : "gabarit-suivant");
         return;
       }
-      const step = (d: number) =>
+      // La feuille d'abord : si l'aperçu fidèle est à l'écran et qu'elle peut
+      // tourner, elle prend la commande et changera la planche au bout de son
+      // mouvement. Sinon la planche change sèchement, comme avant — c'est
+      // aussi ce que reçoit un lecteur qui a demandé moins de mouvement.
+      const step = (d: number) => {
+        if (feuilletage.current?.tourner(d)) return;
         setIndex((i) => Math.min(total - 1, Math.max(COVER, i + d)));
+      };
       switch (e.key) {
         case "ArrowRight":
         case "ArrowDown":
         case " ":
+        // Page haut et Page bas font ce que fait le coin de la feuille : le
+        // geste n'est jamais le seul chemin, et un clavier de portable qui
+        // n'a pas de pavé les porte quand même.
+        case "PageDown":
           e.preventDefault();
           step(1);
           break;
         case "ArrowLeft":
         case "ArrowUp":
+        case "PageUp":
           e.preventDefault();
           step(-1);
           break;
@@ -1583,6 +1600,19 @@ export default function App() {
 
   const onCover = index === COVER && view === "livre";
   const spread = onCover ? null : album.spreads[Math.min(index, total - 1)];
+  /** Une planche de plus ou de moins, et l'application le dit. Le clavier de
+   *  l'éditeur et la feuille de l'aperçu fidèle passent tous deux par ici :
+   *  ce qui change la page ne doit exister qu'une fois. */
+  const allerPlanche = (sens: number) => {
+    const to = index + sens;
+    if (to < 0 || to >= total) return false;
+    setIndex(to);
+    // Le clavier vient de traverser une page sans que rien ne le dise : la
+    // ligne de statut est la seule voix de l'application, et elle est vivante
+    // depuis peu.
+    setStatus(t("planche.position", { n: to + 1, total }));
+    return true;
+  };
   const entries = triEntries(album, curation, opened?.thumb_srcs ?? []);
   const triEntry = entries.find((e) => e.src === triSelected) ?? null;
 
@@ -1662,13 +1692,20 @@ export default function App() {
         />
       ) : (
         <main className="stage">
-          <div className="turn" key={index}>
+          {/* La clé rejoue l'animation d'entrée à chaque planche — sauf dans
+              l'aperçu fidèle, où le tour de feuille EST la transition : la
+              remonter à chaque page tuerait le mouvement au milieu, et sa
+              mémoire avec. */}
+          <div className="turn" key={fidele ? "fidele" : index}>
             {fidele ? (
               <ApercuFidele
                 onCover={onCover}
                 page={index + 1}
+                total={total}
                 cle={pdfCle}
                 album={album}
+                onPlanche={allerPlanche}
+                ref={feuilletage}
                 onErreur={(m) =>
                   setError(fault(t("erreur.fidele"), m))
                 }
@@ -1703,16 +1740,7 @@ export default function App() {
                   onText={(text) => apply((a) => setSpreadText(a, index, text))}
                   onOverflow={setOverflow}
                   onSansMarge={() => setStatus(t("planche.recadrer.pleine.status"))}
-                  onPlanche={(sens) => {
-                    const to = index + sens;
-                    if (to < 0 || to >= total) return false;
-                    setIndex(to);
-                    // Le clavier vient de traverser une page sans que rien
-                    // ne le dise : la ligne de statut est la seule voix de
-                    // l'application, et elle est vivante depuis peu.
-                    setStatus(t("planche.position", { n: to + 1, total }));
-                    return true;
-                  }}
+                  onPlanche={allerPlanche}
                 />
               )
             )}

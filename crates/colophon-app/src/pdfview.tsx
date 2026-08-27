@@ -10,59 +10,14 @@
 // the spread; the eye button beside the ruler shows what will print. Leaving
 // the mode costs nothing, entering it costs one PDF render when the album has
 // moved since the last one.
+//
+// The bitmaps themselves live in `raster.ts`: two views need them, and the
+// sheet that turns needs the same page in two places at once.
 
 import { useEffect, useRef, useState } from "react";
-import { albumPdfBytes } from "./bridge";
+import { Feuilletage, Tourneur } from "./Feuilletage";
 import { t } from "./i18n";
-
-/** pdf.js and its worker, loaded once, on the first faithful preview. The
- *  library is a megabyte: nobody who never opens the preview pays for it. */
-let pdfjs: Promise<typeof import("pdfjs-dist")> | null = null;
-
-async function lib() {
-  if (!pdfjs) {
-    pdfjs = (async () => {
-      const mod = await import("pdfjs-dist");
-      // The worker travels in the bundle, never from a CDN: the app has to
-      // work with no network at all, and the CSP forbids the other case.
-      const url = (await import("pdfjs-dist/build/pdf.worker.mjs?url")).default;
-      mod.GlobalWorkerOptions.workerSrc = url;
-      return mod;
-    })();
-  }
-  return pdfjs;
-}
-
-/** One opened document, per file, so flipping through the book does not
- *  reparse a hundred-megabyte PDF at every page. Dropped when the file is
- *  re-rendered, which is what `cle` changes for. */
-const docs = new Map<string, { cle: number; doc: Promise<PdfDoc> }>();
-
-type PdfDoc = { numPages: number; getPage(n: number): Promise<PdfPageProxy> };
-type PdfPageProxy = {
-  getViewport(o: { scale: number }): { width: number; height: number };
-  render(o: {
-    canvasContext: CanvasRenderingContext2D;
-    viewport: { width: number; height: number };
-  }): { promise: Promise<void>; cancel(): void };
-};
-
-async function document(quoi: "album" | "couverture", cle: number): Promise<PdfDoc> {
-  const hit = docs.get(quoi);
-  if (hit && hit.cle === cle) return hit.doc;
-  const doc = (async () => {
-    const [mod, bytes] = await Promise.all([lib(), albumPdfBytes(quoi)]);
-    return mod.getDocument({ data: new Uint8Array(bytes) }).promise as Promise<PdfDoc>;
-  })();
-  docs.set(quoi, { cle, doc });
-  return doc;
-}
-
-/** Forget every opened document: called after a re-render, when the bytes on
- *  disk no longer match what is parsed in memory. */
-export function forgetPdfs() {
-  docs.clear();
-}
+import { Quoi, ouvrir } from "./raster";
 
 /**
  * One page of one of the album's PDFs, drawn to a canvas at the device's own
@@ -75,7 +30,7 @@ export function PdfPage({
   largeur,
   onErreur,
 }: {
-  quoi: "album" | "couverture";
+  quoi: Quoi;
   page: number;
   /** Bumped whenever the file on disk is re-rendered. */
   cle: number;
@@ -95,7 +50,7 @@ export function PdfPage({
     let vivant = true;
     let job: { promise: Promise<void>; cancel(): void } | null = null;
     (async () => {
-      const doc = await document(quoi, cle);
+      const doc = await ouvrir(quoi, cle);
       if (!vivant) return;
       const n = Math.min(Math.max(page, 1), doc.numPages);
       const p = await doc.getPage(n);
@@ -142,22 +97,33 @@ export function PdfPage({
  * room available, on the same paper-coloured ground as the DOM spread so
  * switching between the two compares like with like.
  *
- * The cover is its own file, a flat sheet with the spine in the middle: one
- * page, and the interior's page numbering does not apply to it.
+ * It measures the room and hands the width on; what stands in it depends on
+ * where the reader is. The interior is a run of sheets, and sheets turn, so
+ * it goes to `Feuilletage`. The cover is its own file, a flat sheet with the
+ * spine in the middle: one page, no fold to turn about, and the interior's
+ * page numbering does not apply to it — it stays a plain drawn page.
  */
 export function ApercuFidele({
   onCover,
   page,
+  total,
   cle,
   album,
+  onPlanche,
   onErreur,
+  ref,
 }: {
   onCover: boolean;
   /** 1-based page of the interior PDF, one page per spread. */
   page: number;
+  /** How many spreads the album has. */
+  total: number;
   cle: number;
   album: { trim_mm: { w: number; h: number } };
+  /** Commits a turn the sheet finished. Returns false when there is none. */
+  onPlanche: (sens: number) => boolean;
   onErreur: (message: string) => void;
+  ref?: React.Ref<Tourneur | null>;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [largeur, setLargeur] = useState(0);
@@ -203,15 +169,26 @@ export function ApercuFidele({
 
   return (
     <div className="pdf-stage" ref={box}>
-      {largeur > 0 && (
-        <PdfPage
-          quoi={onCover ? "couverture" : "album"}
-          page={onCover ? 1 : page}
-          cle={cle}
-          largeur={largeur}
-          onErreur={onErreur}
-        />
-      )}
+      {largeur > 0 &&
+        (onCover ? (
+          <PdfPage
+            quoi="couverture"
+            page={1}
+            cle={cle}
+            largeur={largeur}
+            onErreur={onErreur}
+          />
+        ) : (
+          <Feuilletage
+            planche={page - 1}
+            total={total}
+            cle={cle}
+            largeur={largeur}
+            onPlanche={onPlanche}
+            onErreur={onErreur}
+            ref={ref}
+          />
+        ))}
     </div>
   );
 }

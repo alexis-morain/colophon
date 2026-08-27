@@ -1,0 +1,203 @@
+{
+ "album": "mesure-50",
+ "verdict": "vert",
+ "epreuves": [
+  {
+   "nom": "la planche du PDF est dessinée",
+   "ok": true
+  },
+  {
+   "nom": "le coin monte une feuille",
+   "ok": true,
+   "detail": {
+    "vus": 14
+   }
+  },
+  {
+   "nom": "la feuille suit le pointeur",
+   "ok": true,
+   "detail": {
+    "premier": -32,
+    "dernier": -66
+   }
+  },
+  {
+   "nom": "elle tourne vers l'avant, charnière au pli",
+   "ok": true,
+   "detail": "feuillet vers-avant"
+  },
+  {
+   "nom": "le voile de courbure se voit",
+   "ok": true,
+   "detail": {
+    "courbure": 0.31149,
+    "ombre": 0.274844
+   }
+  },
+  {
+   "nom": "l'ombre portée se voit",
+   "ok": true,
+   "detail": {
+    "courbure": 0.31149,
+    "ombre": 0.274844
+   }
+  },
+  {
+   "nom": "un glisser passé le pli tourne la page",
+   "ok": true,
+   "detail": {
+    "avant": "1 / 50",
+    "apres": "2 / 50"
+   }
+  },
+  {
+   "nom": "la feuille est retirée à l'arrivée",
+   "ok": true
+  },
+  {
+   "nom": "lâchée avant le pli, la page revient",
+   "ok": true,
+   "detail": {
+    "avant": "2 / 50",
+    "apres": "2 / 50"
+   }
+  },
+  {
+   "nom": "et la feuille est retirée aussi",
+   "ok": true
+  },
+  {
+   "nom": "un clic sur le coin tourne la page",
+   "ok": true,
+   "detail": {
+    "avant": "2 / 50",
+    "apres": "3 / 50"
+   }
+  },
+  {
+   "nom": "le coin gauche revient en arrière",
+   "ok": true,
+   "detail": {
+    "avant": "3 / 50",
+    "apres": "2 / 50"
+   }
+  },
+  {
+   "nom": "la flèche monte la même feuille",
+   "ok": true,
+   "detail": {
+    "deg": -67,
+    "classe": "feuillet vers-avant"
+   }
+  },
+  {
+   "nom": "et elle tourne la page",
+   "ok": true,
+   "detail": {
+    "avant": "2 / 50",
+    "apres": "3 / 50"
+   }
+  },
+  {
+   "nom": "Page bas avance",
+   "ok": true,
+   "detail": {
+    "avant": "3 / 50",
+    "apres": "4 / 50"
+   }
+  },
+  {
+   "nom": "Page haut revient",
+   "ok": true,
+   "detail": {
+    "attendu": "3 / 50",
+    "obtenu": "3 / 50"
+   }
+  },
+  {
+   "nom": "vers la couverture, aucune feuille ne se monte",
+   "ok": true
+  },
+  {
+   "nom": "mais on y arrive quand même",
+   "ok": true,
+   "detail": {
+    "obtenu": "C / 50"
+   }
+  },
+  {
+   "nom": "à la dernière planche, aucune feuille ne se monte",
+   "ok": true
+  },
+  {
+   "nom": "et le livre ne va pas plus loin",
+   "ok": true,
+   "detail": {
+    "attendu": "50 / 50",
+    "obtenu": "50 / 50"
+   }
+  },
+  {
+   "nom": "mouvement réduit : aucune feuille ne se monte",
+   "ok": true
+  },
+  {
+   "nom": "mouvement réduit : la page a quand même changé",
+   "ok": true,
+   "detail": {
+    "avant": "1 / 50",
+    "apres": "2 / 50"
+   }
+  },
+  {
+   "nom": "mouvement réduit : pas une trame d'animation de plus",
+   "ok": true,
+   "detail": {
+    "avant": 143,
+    "apres": 143
+   }
+  },
+  {
+   "nom": "trente tours ont été mesurés",
+   "ok": true,
+   "detail": {
+    "n": 500
+   }
+  },
+  {
+   "nom": "la médiane tient une trame d'écran",
+   "ok": true,
+   "detail": {
+    "n": 500,
+    "median": 16.7,
+    "p95": 17.6,
+    "max": 17.7
+   }
+  },
+  {
+   "nom": "aucune erreur n'est restée ouverte",
+   "ok": true
+  }
+ ],
+ "releve": {
+  "feuille.trame": {
+   "n": 500,
+   "median": 16.7,
+   "p95": 17.6,
+   "max": 17.7
+  },
+  "planche.suivante": {
+   "n": 30,
+   "median": 32.7,
+   "p95": 33.7,
+   "max": 33.7
+  }
+ },
+ "contexte": {
+  "vis": "visible",
+  "focus": true,
+  "dpr": 2,
+  "w": 1200,
+  "h": 738
+ }
+}

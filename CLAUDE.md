@@ -70,13 +70,15 @@ aboli depuis que le gate est portable, 27/08.)
 
 ## La vague en cours
 
-**2.6, la page qui tourne**, deux sessions. **Session 1 livrée le 27/08** : le geste au
-coin, le clavier, le mouvement réduit, le *fait quand* tenu sur ses cinq points et
-mesuré. Le geste vit dans l'aperçu fidèle, **jamais dans l'éditeur** — et c'est
-aujourd'hui la seule surface de lecture du projet, les autres vues étant une grille, une
-table lumineuse et une revue photo par photo. Aucune bibliothèque n'est entrée, donc
-aucun audit de licence n'était dû ; il le deviendrait le jour où la courbure passerait de
-l'ombrage au maillage.
+**2.6, la page qui tourne, est close — et la vague 2 avec elle (28/08).** Session 1
+livrée le 27/08 : le geste au coin, le clavier, le mouvement réduit, le *fait quand*
+tenu sur ses cinq points et mesuré. Les sept verdicts humains du bundle sont tombés le
+28/08, tous favorables : la session 2 n'avait rien à coder, et **l'état actuel est
+figé** — `DUREE_TOUR`/`DUREE_MIN` restent, une demande pendant un tour reste avalée, la
+courbure reste un ombrage (**la lamelle est morte, l'audit de licence de courbure ne
+sera jamais dû**), pas de chantier tactile. Le geste vit dans l'aperçu fidèle, **jamais
+dans l'éditeur** — la seule surface de lecture du projet, les autres vues étant une
+grille, une table lumineuse et une revue photo par photo.
 
 **La feuille**, et c'est le modèle du livre : elle porte au recto la page de droite de la
 planche N, au verso la page de gauche de la planche N + 1 — donc un tour ne demande que
@@ -89,18 +91,19 @@ en vol garde la main jusqu'au bout, et un saut la retire ; `prefers-reduced-moti
 supprime le mouvement au lieu de le raccourcir. La couverture ne tourne pas — feuille à
 plat, autre fichier, dos au milieu.
 
-**Session 2 reprend** : le ressenti au bundle (durée du tour, découvrabilité du coin,
-avaler ou mettre en file une demande pendant un tour), la courbure, le tactile.
-
 **La vague 3 est close** (3.1, 3.2 et 3.3 dans `main`). 3.1 a fait de `focal` un point
 de l'image, invariant au ratio ; 3.2 est la bascule, qui en est le premier usage ; 3.3
 retire le verdict de la reprise à travers une bascule (« non mesurable ») au lieu de
-compter les replis machine comme des mains. Vagues libres restantes : 4 et 5.
+compter les replis machine comme des mains. **La vague 4 est close sauf 4.2**, différée
+(compenser le papier sans épreuve imprimée serait deviner). **5.1 est dans `main`**
+(les sidecars Takeout, voir « Le moteur ») ; 5.2 (PhotoKit) et 5.3 (RAW, audit de
+licence d'abord) restent. **La prochaine de la séquence imposée est la vague 6**, ses
+deux notes de décision ne bloquant que 6.2.
 
-Vagues 0 et 1 closes, 2.1 à 2.5 closes. **Verdict de 2.5 : le défaut reste `dom`**,
-gravé dans `rendu.ts` et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une
-bascule future resterait un commit qui ne fait que ça. À la passe humaine au bundle, non
-bloquant : VoiceOver, et le rang gardé via le menu natif.
+Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
+et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une bascule future resterait
+un commit qui ne fait que ça. VoiceOver et le rang via le menu natif : entendus et
+validés le 28/08 avec le questionnaire du bundle.
 
 ## Le moteur
 
@@ -111,6 +114,14 @@ Hors macOS, `heic::system()` rend `None` et `scan.rs` compte `skipped_heic` : ri
 **Le catalogue a un seuil d'entrée** : le banc (`scripts/banc-gabarits.sh`) a retenu 186
 générés sur 1893 dans `gabarit::RETENUS` ; `offerts()` = historique + retenus (387 au
 dump), le Composer reste sur l'historique, `spec()` reparse tout nom `g_*`.
+
+**Les sidecars Takeout comblent ce que l'EXIF a tu** (`meta.rs`, 5.1) : liste fermée
+d'orthographes — jamais un listage de dossier —, l'EXIF gagne toujours, la date de
+sidecar est un epoch UTC assumé naïf et dite fiable, `(0,0)` refusé, `favorited` et
+`geoDataExif` jamais lus. `-edited` gagne dans un Takeout seulement (la base porte un
+sidecar) et l'originale entre dans `curation.json` en `originale_editee`, portée par le
+relevé. Un cache de sondes par photo et par processus paie les dix appelants de
+`meta::read` (chrono ×1,03 ; ×1,72 sans lui).
 
 **Les notes de l'utilisateur entrent dans le score** (`meta.rs`) : une photo rejetée sort
 avant comparaison, une étoilée vaut ×1,18 par étoile. `album.json.bak` à chaque sauvegarde.

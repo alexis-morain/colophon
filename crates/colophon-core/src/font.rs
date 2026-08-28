@@ -26,8 +26,17 @@
 //! rather than through arithmetic that could overflow, and anything unreadable
 //! comes back as a refusal carrying its reason — never a panic, never silence.
 //!
-//! Reading is all this module does. It embeds one face, the one below, and
-//! knowing about the others is not yet using them.
+//! Beside the reader stands a writer, and it is here rather than in a module
+//! of its own so that the two cannot drift apart: it emits a face as a font
+//! file of its own. Seven faces in ten on a stock machine live inside a
+//! collection, a PDF's `FontFile2` carries a single-face sfnt, and no reader
+//! is obliged to accept a `.ttc` — so pulling a face out of its file is what
+//! lets the engine embed it at all. It is surgery on the table directory and
+//! never on a glyph: tables are copied verbatim, whole, and the ones a PDF
+//! does not need are dropped rather than rewritten.
+//!
+//! Reading and writing are all this module does. It embeds one face, the one
+//! below, and knowing about the others is not yet using them.
 
 use anyhow::{anyhow, Result};
 use std::io::{Read, Seek, SeekFrom};
@@ -59,6 +68,10 @@ pub const REFUS_BITMAP_SEULEMENT: &str = "bitmap_seulement";
 /// A character map in no format we read, or none at all. The face may be
 /// perfectly good; we simply cannot say how wide a caption sets in it.
 pub const REFUS_CMAP_ILLISIBLE: &str = "cmap_illisible";
+/// Outlines in a shape no PDF can carry. `CFF2` is the only one: the format
+/// defines no embedding for it, so a face that has nothing else can be read,
+/// named and measured, and still never enter a file.
+pub const REFUS_FORMAT_NON_EMBARQUABLE: &str = "format_non_embarquable";
 
 /// What the PDF needs to know about the face, all in the 1000-unit em space
 /// PDF works in.
@@ -94,6 +107,10 @@ impl Metrics {
 pub enum Genre {
     Glyf,
     Cff,
+    /// The shape a variable face gives CFF outlines. Kept apart from `Cff`
+    /// rather than folded into it because PDF defines no embedding for it:
+    /// the difference is the whole of [`REFUS_FORMAT_NON_EMBARQUABLE`].
+    Cff2,
 }
 
 impl Genre {
@@ -103,6 +120,7 @@ impl Genre {
         match self {
             Genre::Glyf => "glyf",
             Genre::Cff => "cff",
+            Genre::Cff2 => "cff2",
         }
     }
 }
@@ -165,9 +183,11 @@ impl Face {
 
         // Presence comes from the directory, not from the bytes: the walk
         // never pulls an outline table off the disk, so asking for its
-        // content here would read as "absent". `CFF2` counts as CFF — it is
-        // the shape a variable face carries those outlines in, and refusing
-        // it would drop the nine Indic faces of a stock macOS on the floor.
+        // content here would read as "absent". `CFF2` is a kind of its own,
+        // not a flavour of CFF: PDF defines no embedding for it, and a face
+        // we will never be able to embed has to say so when it is read, not
+        // when someone picks it. Nine faces of a stock macOS come out that
+        // way, every one an internal `.SF` nobody chooses.
         //
         // No outline table is the only bitmap rule, and it is deliberate.
         // Refusing on a bitmap strike instead — `sbix`, `CBDT`, `EBDT`,
@@ -180,8 +200,10 @@ impl Face {
         // `NISC18030.ttf`, `bdat` and no `glyf` — and this is what catches it.
         let genre = if table_range(data, dir, b"glyf").is_some() {
             Some(Genre::Glyf)
-        } else if [b"CFF ", b"CFF2"].iter().any(|t| table_range(data, dir, t).is_some()) {
+        } else if table_range(data, dir, b"CFF ").is_some() {
             Some(Genre::Cff)
+        } else if table_range(data, dir, b"CFF2").is_some() {
+            Some(Genre::Cff2)
         } else {
             None
         };
@@ -200,9 +222,13 @@ impl Face {
             .and_then(|c| table(data, dir, b"cmap").and_then(|m| c.metrics(m)));
 
         // Licence first: what the vendor forbids outranks what the file
-        // happens to carry.
+        // happens to carry. Then the outlines, whose absence or whose shape
+        // settles the matter before any question of measurement: a face we
+        // could not embed if we wanted to is refused for that, not for a
+        // character map it happens to lack as well.
         let refus = verdict_fs_type(fs_type)
             .or(genre.is_none().then_some(REFUS_BITMAP_SEULEMENT))
+            .or((genre == Some(Genre::Cff2)).then_some(REFUS_FORMAT_NON_EMBARQUABLE))
             .or(metrics.is_none().then_some(REFUS_CMAP_ILLISIBLE));
 
         Ok(Face {
@@ -220,6 +246,121 @@ impl Face {
     /// True when this face may go in a file.
     pub fn embeddable(&self) -> bool {
         self.refus.is_none()
+    }
+
+    /// Pull face `index` out of `data` as a font file of its own: one sfnt,
+    /// one face, carrying only the tables a PDF asks of it.
+    ///
+    /// The bytes come back rather than a path: what is written and where is
+    /// not this reader's business. What comes back is a real font file — a
+    /// directory, checksums and all — not one our own tests would accept.
+    ///
+    /// `data` must be **the whole file**. The buffer [`lire_tables`] hands
+    /// the walk is not: outlines were never read into it, so extracting from
+    /// it yields a face that is sound in structure and empty of drawing, and
+    /// no metric on earth would notice. Discovery reads little, extraction
+    /// reads everything; that is deliberate, and it is the sharpest edge in
+    /// this module.
+    ///
+    /// `Err` is the refusal code the face carries, so a screen says the same
+    /// thing whether it read the face or tried to take it: a face the vendor
+    /// forbids, or whose outlines are `CFF2`, is refused here too.
+    pub fn extraire(data: &[u8], index: u32) -> std::result::Result<Vec<u8>, &'static str> {
+        let face = Self::parse(data, index)?;
+        if let Some(code) = face.refus {
+            return Err(code);
+        }
+        let dir = sfnt_dir(data, index).ok_or(REFUS_ILLISIBLE)?;
+        // The face's own signature, never one we picked: a `.ttc` holds
+        // `OTTO` faces and TrueType ones side by side, and the file we emit
+        // has to say which it carries.
+        let version = data.get(dir..dir.saturating_add(4)).ok_or(REFUS_ILLISIBLE)?.to_vec();
+
+        let (par_genre, requises_du_genre): (&[&[u8; 4]], &[&[u8; 4]]) = match face.genre {
+            Some(Genre::Glyf) => (&TABLES_GARDEES_GLYF, &[b"glyf", b"loca"]),
+            Some(Genre::Cff) => (&TABLES_GARDEES_CFF, &TABLES_GARDEES_CFF),
+            // Unreachable: `parse` refuses a face with no outlines and a
+            // `CFF2` one above. Written as a refusal rather than an
+            // `unreachable!` because a panic here would be a crash on a
+            // font file, which this module does not do.
+            _ => return Err(REFUS_FORMAT_NON_EMBARQUABLE),
+        };
+
+        let mut tables: Vec<(&[u8; 4], &[u8])> = Vec::new();
+        for tag in TABLES_GARDEES.iter().chain(par_genre) {
+            match table(data, dir, tag) {
+                Some(bytes) => tables.push((tag, bytes)),
+                // Absent, or long enough to run off the end of the file —
+                // the same thing to us. Dropped, unless the face would not
+                // be a face without it.
+                None if TABLES_REQUISES.contains(tag) || requises_du_genre.contains(tag) => {
+                    return Err(REFUS_ILLISIBLE)
+                }
+                None => {}
+            }
+        }
+        tables.sort_by_key(|(tag, _)| **tag);
+
+        let n = u16::try_from(tables.len()).map_err(|_| REFUS_ILLISIBLE)?;
+        let mut out = vec![0u8; 12 + tables.len() * 16];
+        out[0..4].copy_from_slice(&version);
+        out[4..6].copy_from_slice(&n.to_be_bytes());
+        // The binary-search hints of the directory: the largest power of two
+        // that fits, times sixteen. Nothing in this file reads them back; a
+        // font file carries them, and one that carries nonsense is one a
+        // validator has an opinion about.
+        let selector = 15u16.saturating_sub(n.leading_zeros() as u16);
+        let range = 16u16 << selector;
+        out[6..8].copy_from_slice(&range.to_be_bytes());
+        out[8..10].copy_from_slice(&selector.to_be_bytes());
+        out[10..12].copy_from_slice(&(n * 16 - range).to_be_bytes());
+
+        // Tables verbatim, in directory order, each starting on a four-byte
+        // boundary. Nothing is renumbered: `loca`, `glyf`, `maxp` and `head`
+        // travel together and stay consistent because none of them is
+        // touched. Rebuild one without the others and every glyph shifts.
+        let mut head_at = None;
+        for (i, (tag, bytes)) in tables.iter().enumerate() {
+            while out.len() % 4 != 0 {
+                out.push(0);
+            }
+            let off = out.len();
+            if *tag == b"head" {
+                head_at = Some(off);
+            }
+            out.extend_from_slice(bytes);
+            let rec = 12 + i * 16;
+            out[rec..rec + 4].copy_from_slice(*tag);
+            out[rec + 8..rec + 12]
+                .copy_from_slice(&u32::try_from(off).map_err(|_| REFUS_ILLISIBLE)?.to_be_bytes());
+            out[rec + 12..rec + 16].copy_from_slice(
+                &u32::try_from(bytes.len()).map_err(|_| REFUS_ILLISIBLE)?.to_be_bytes(),
+            );
+        }
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
+
+        // `head.checkSumAdjustment` is the one field an extraction rewrites,
+        // and it is zero while every checksum is computed — its own table's
+        // included, which is how the format defines it. Written last, over
+        // a sum taken on the finished file.
+        let head_at = head_at.ok_or(REFUS_ILLISIBLE)?;
+        if out.len() < head_at + 12 {
+            return Err(REFUS_ILLISIBLE);
+        }
+        out[head_at + 8..head_at + 12].copy_from_slice(&0u32.to_be_bytes());
+        for i in 0..tables.len() {
+            let rec = 12 + i * 16;
+            let off = usize::try_from(u32b(&out, rec + 8).ok_or(REFUS_ILLISIBLE)?).unwrap_or(0);
+            let len = usize::try_from(u32b(&out, rec + 12).ok_or(REFUS_ILLISIBLE)?).unwrap_or(0);
+            let fin = off.saturating_add(len.next_multiple_of(4)).min(out.len());
+            let somme = somme_sfnt(out.get(off..fin).ok_or(REFUS_ILLISIBLE)?);
+            out[rec + 4..rec + 8].copy_from_slice(&somme.to_be_bytes());
+        }
+        let ajustement = 0xB1B0_AFBAu32.wrapping_sub(somme_sfnt(&out));
+        out[head_at + 8..head_at + 12].copy_from_slice(&ajustement.to_be_bytes());
+        Ok(out)
     }
 
     /// A face we could not read, named by nothing but its rank. The walk
@@ -918,6 +1059,44 @@ fn i32b(d: &[u8], at: usize) -> Option<i32> {
     u32b(d, at).map(|v| v as i32)
 }
 
+// --- L'écrivain -------------------------------------------------------------
+
+/// The tables an extracted face keeps, whatever its outlines are made of.
+///
+/// A closed list, never "everything but": a table we kept because we did not
+/// recognise it is a byte in the file we cannot account for. What falls, and
+/// it is most of the weight, is every layout table (`GSUB`, `GPOS`, `GDEF`,
+/// `morx`, `kern`, `feat`, `trak`), every bitmap strike (`sbix`, `CBDT`,
+/// `CBLC`, `EBDT`, `EBLC`, `bdat`, `bloc`), the vendor's signature (`DSIG`,
+/// which would no longer be worth anything over bytes we rearranged), the
+/// variation tables (`fvar`, `gvar`, `HVAR`, `MVAR`, `STAT`, `avar`) and
+/// everything else. The face that comes out is the default instance, which
+/// is what the tables here already describe, and it is static.
+const TABLES_GARDEES: [&[u8; 4]; 8] =
+    [b"head", b"hhea", b"hmtx", b"maxp", b"cmap", b"name", b"OS/2", b"post"];
+
+/// Kept as well when the outlines are quadratic. `loca` travels with `glyf`
+/// or the glyphs shift; `cvt `, `fpgm` and `prep` are the hinting, which a
+/// print PDF has no use for and which weighs nothing beside the contours.
+const TABLES_GARDEES_GLYF: [&[u8; 4]; 5] = [b"glyf", b"loca", b"cvt ", b"fpgm", b"prep"];
+
+/// And when they are CFF, where the one table holds everything.
+const TABLES_GARDEES_CFF: [&[u8; 4]; 1] = [b"CFF "];
+
+/// Without one of these there is no face to emit, whatever the outlines are.
+/// `OS/2` and `post` are deliberately not here: plenty of faces carry
+/// neither, and the reader falls back the same way on the other side.
+const TABLES_REQUISES: [&[u8; 4]; 6] =
+    [b"head", b"hhea", b"hmtx", b"maxp", b"cmap", b"name"];
+
+/// The sfnt checksum: big-endian 32-bit words, summed and allowed to wrap.
+/// Every table is written padded to four bytes, and so is the whole file, so
+/// there is never a tail to worry about.
+fn somme_sfnt(data: &[u8]) -> u32 {
+    data.chunks_exact(4)
+        .fold(0u32, |s, w| s.wrapping_add(u32::from_be_bytes([w[0], w[1], w[2], w[3]])))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1028,6 +1207,10 @@ mod tests {
         /// Filler declared under the outline tag: the bytes the walk must
         /// never read, and the only reason a real font file is large.
         gras: usize,
+        /// Tables an extraction must leave behind, by tag and by weight:
+        /// layout, strikes, signature. Every one of them is real, and on a
+        /// stock machine they are most of what a font file weighs.
+        bagage: Vec<([u8; 4], usize)>,
     }
 
     const NUM_GLYPHS: u16 = 256;
@@ -1052,7 +1235,17 @@ mod tests {
                 bitmap: false,
                 autre_langue: None,
                 gras: 64,
+                bagage: Vec::new(),
             }
+        }
+
+        /// `loca`, which a `glyf` face cannot be read without: `numGlyphs + 1`
+        /// offsets in the short format `head` declares, the last one closing
+        /// on the end of the outlines.
+        fn loca(&self) -> Vec<u8> {
+            let mut v = vec![0u8; usize::from(NUM_GLYPHS) * 2];
+            v.extend_from_slice(&((self.gras / 2) as u16).to_be_bytes());
+            v
         }
 
         fn head(&self) -> Vec<u8> {
@@ -1203,9 +1396,15 @@ mod tests {
             }
             if let Some(tag) = self.contours.filter(|_| !self.bitmap) {
                 t.push((tag, vec![0x2a; self.gras]));
+                if &tag == b"glyf" {
+                    t.push((*b"loca", self.loca()));
+                }
             }
             if self.variable {
                 t.push((*b"fvar", vec![0u8; 16]));
+            }
+            for (tag, poids) in &self.bagage {
+                t.push((*tag, vec![0x5a; *poids]));
             }
             t.sort_by_key(|(tag, _)| *tag);
             t
@@ -1468,16 +1667,6 @@ mod tests {
         assert!(f.embeddable());
         assert_eq!(f.metrics.expect("métriques par les tables communes").widths[0], 500);
 
-        // `CFF2`, la forme qu'une face variable donne aux mêmes contours :
-        // les neuf faces indiennes d'un macOS de série passent par là.
-        let mut cff2 = Fonte::neuve();
-        cff2.tag = *b"OTTO";
-        cff2.contours = Some(*b"CFF2");
-        cff2.variable = true;
-        let f = Face::parse(&fichier(&[cff2]), 0).expect("CFF2 lisible");
-        assert_eq!(f.genre, Some(Genre::Cff));
-        assert!(f.variable && f.embeddable());
-
         let mut var = Fonte::neuve();
         var.variable = true;
         var.cmap = Cmap::Format12;
@@ -1526,6 +1715,263 @@ mod tests {
         let mut muette = Fonte::neuve();
         muette.plateformes = &[];
         assert_eq!(Face::parse(&fichier(&[muette]), 0).err(), Some(REFUS_ILLISIBLE));
+    }
+
+    // --- Ce que l'écrivain doit savoir faire -------------------------------
+
+    /// The tags of a font file's directory, in the order it lists them.
+    fn tags(data: &[u8]) -> Vec<String> {
+        let count = usize::from(u16b(data, 4).unwrap());
+        (0..count)
+            .map(|i| String::from_utf8_lossy(&data[12 + i * 16..16 + i * 16]).into_owned())
+            .collect()
+    }
+
+    /// Every field of the metrics, so an extraction that loses one is seen
+    /// here rather than at a printer.
+    fn identiques(a: &Metrics, b: &Metrics) {
+        assert_eq!(a.widths, b.widths, "les chasses");
+        assert_eq!(
+            (a.bbox, a.ascent, a.descent, a.cap_height, a.italic_angle, a.fs_type),
+            (b.bbox, b.ascent, b.descent, b.cap_height, b.italic_angle, b.fs_type)
+        );
+    }
+
+    /// The round trip: a face written here, extracted, and read back. Same
+    /// name, same numbers, one face in the file. Nothing else proves an
+    /// extraction, since nothing else is what a PDF will ask of it.
+    #[test]
+    fn une_face_extraite_se_relit_a_l_identique() {
+        let data = fichier(&[Fonte::neuve()]);
+        let avant = Face::parse(&data, 0).expect("face lisible");
+        let sortie = Face::extraire(&data, 0).expect("extraction");
+        let apres = Face::parse(&sortie, 0).expect("la face extraite se relit");
+
+        assert_eq!(face_count(&sortie), 1, "un fichier, une face");
+        assert_eq!(&sortie[0..4], b"\x00\x01\x00\x00", "la signature de la face");
+        assert_eq!((apres.nom, apres.postscript), (avant.nom, avant.postscript));
+        assert_eq!(apres.genre, Some(Genre::Glyf));
+        identiques(&avant.metrics.unwrap(), &apres.metrics.unwrap());
+
+        // Mordant : la liste fermée, tag par tag. Oublier une table la fait
+        // tomber ici — y compris `loca`, que pas une métrique ne consulte et
+        // dont l'absence décalerait tous les glyphes d'un cran.
+        assert_eq!(
+            tags(&sortie),
+            ["OS/2", "cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "name", "post"],
+            "trié par tag, et rien d'autre"
+        );
+    }
+
+    /// A face of a collection comes out alone, with its own numbers. Seven
+    /// faces in ten on a stock macOS live like that, and a `FontFile2`
+    /// carries one face: this is what the whole wave rests on.
+    #[test]
+    fn une_face_de_collection_sort_seule() {
+        let mut une = Fonte::neuve();
+        une.famille = "Colophon Une".into();
+        let mut deux = Fonte::neuve();
+        deux.famille = "Colophon Deux".into();
+        deux.style = "Italic".into();
+        deux.postscript = Some("ColophonDeux-Italic".into());
+        // Un em différent : lire la mauvaise face se verrait au chiffre.
+        deux.upem = 1000;
+
+        let data = fichier(&[une, deux]);
+        let sortie = Face::extraire(&data, 1).expect("la face 1 sort de sa collection");
+        assert_ne!(&sortie[0..4], b"ttcf", "un sfnt, plus une collection");
+        assert_eq!(face_count(&sortie), 1);
+
+        let f = Face::parse(&sortie, 0).expect("relue");
+        assert_eq!(f.nom, "Colophon Deux Italic");
+        assert_eq!(f.postscript, "ColophonDeux-Italic");
+        // Mordant : ses métriques à elle. Extraire la face 0 rendrait 500.
+        assert_eq!(f.metrics.unwrap().widths[0], 1024);
+        assert_eq!(
+            Face::parse(&sortie, 1).err(),
+            Some(REFUS_ILLISIBLE),
+            "il n'y a plus de face 1 dans ce fichier"
+        );
+    }
+
+    /// The bundled face makes the round trip. The reader's integration test
+    /// was this face; the writer's is the same one, on a real font file
+    /// nobody wrote for a test.
+    #[test]
+    fn la_face_embarquee_fait_l_aller_retour() {
+        let sortie = Face::extraire(FONT_DATA, 0).expect("Source Sans 3 s'extrait");
+        let f = Face::parse(&sortie, 0).expect("relue");
+        assert_eq!(f.postscript, FONT_NAME, "le /BaseFont du PDF");
+        assert_eq!(f.genre, Some(Genre::Glyf));
+        assert_eq!(face_count(&sortie), 1);
+        identiques(&metrics().unwrap(), &f.metrics.as_ref().unwrap());
+        // Une face déjà seule dans son fichier rétrécit quand même : ce qui
+        // part, c'est la composition, pas un glyphe.
+        assert!(sortie.len() < FONT_DATA.len(), "{} contre {}", sortie.len(), FONT_DATA.len());
+    }
+
+    /// The closed list, from the other side: layout, strikes, signature and
+    /// axes are named, and none of them is in the file that comes out.
+    #[test]
+    fn les_tables_ecartees_le_sont_vraiment() {
+        let mut lourde = Fonte::neuve();
+        lourde.bagage = vec![
+            (*b"GSUB", 4096),
+            (*b"GPOS", 4096),
+            (*b"DSIG", 2048),
+            (*b"sbix", 8192),
+            (*b"kern", 512),
+            (*b"morx", 512),
+        ];
+        let data = fichier(&[lourde]);
+        let sortie = Face::extraire(&data, 0).expect("extraction");
+        for tag in ["GSUB", "GPOS", "DSIG", "sbix", "kern", "morx"] {
+            assert!(!tags(&sortie).contains(&tag.to_string()), "{tag} a suivi la face");
+        }
+        // Et le fichier a maigri d'autant : c'est le gain que le report du
+        // sous-ensemblage met en banque.
+        assert!(
+            data.len() - sortie.len() > 19_000,
+            "{} octets de moins seulement",
+            data.len() - sortie.len()
+        );
+        // Une strike n'a pas fait passer la face pour une bitmap au passage.
+        assert_eq!(Face::parse(&sortie, 0).unwrap().genre, Some(Genre::Glyf));
+
+        // Arbitrage 6 : une face variable s'extrait à son instance par
+        // défaut. `fvar` ne part pas, donc la face qui sort est statique —
+        // et ses mesures sont celles que le lecteur rendait déjà.
+        let mut var = Fonte::neuve();
+        var.variable = true;
+        let variable = fichier(&[var]);
+        let sortie = Face::extraire(&variable, 0).expect("extraction");
+        let f = Face::parse(&sortie, 0).expect("relue");
+        assert!(!f.variable, "les axes ne suivent pas");
+        identiques(
+            &Face::parse(&variable, 0).unwrap().metrics.unwrap(),
+            &f.metrics.unwrap(),
+        );
+    }
+
+    /// What comes out is a font file, not a file our own reader happens to
+    /// accept: checksums recomputed here and compared, the file-wide
+    /// adjustment redone by hand, directory sorted, tables aligned.
+    #[test]
+    fn le_fichier_emis_est_un_vrai_fichier_de_police() {
+        let data = fichier(&[Fonte::neuve()]);
+        let out = Face::extraire(&data, 0).expect("extraction");
+
+        let n = usize::from(u16b(&out, 4).unwrap());
+        let mut ordonnes = tags(&out);
+        ordonnes.sort();
+        assert_eq!(tags(&out), ordonnes, "le répertoire est trié par tag");
+        // Les hints de recherche binaire : la puissance de deux qui tient.
+        let selector = usize::from(u16b(&out, 8).unwrap());
+        assert!(1 << selector <= n && 1 << (selector + 1) > n, "{n} tables, sélecteur {selector}");
+        assert_eq!(u16b(&out, 6).unwrap(), (16 << selector) as u16);
+        assert_eq!(u16b(&out, 10).unwrap(), (n * 16) as u16 - u16b(&out, 6).unwrap());
+
+        assert_eq!(out.len() % 4, 0, "le fichier entier est aligné");
+        // Toutes les sommes se prennent sur le fichier dont
+        // `head.checkSumAdjustment` est mis à zéro, celle de `head`
+        // comprise : le champ ne peut pas entrer dans un calcul dont il est
+        // le résultat. Vérifier la somme de `head` sur le fichier fini est
+        // le mordant de cette phrase — il est tombé ici avant d'être écrit.
+        let head = table_range(&out, 0, b"head").unwrap().0;
+        let mut zero = out.clone();
+        zero[head + 8..head + 12].copy_from_slice(&0u32.to_be_bytes());
+        for i in 0..n {
+            let rec = 12 + i * 16;
+            let off = u32b(&out, rec + 8).unwrap() as usize;
+            let len = u32b(&out, rec + 12).unwrap() as usize;
+            assert_eq!(off % 4, 0, "{} n'est pas alignée", tags(&out)[i]);
+            assert!(off + len <= out.len(), "{} déborde", tags(&out)[i]);
+            assert_eq!(
+                u32b(&out, rec + 4).unwrap(),
+                somme_sfnt(&zero[off..off + len.next_multiple_of(4)]),
+                "somme de contrôle de {}",
+                tags(&out)[i]
+            );
+        }
+
+        // head.checkSumAdjustment : sur le fichier entier, ce champ mis à
+        // zéro, une fois tout le reste en place. La calculer avant, ou
+        // l'oublier, donne un fichier que nos tests acceptent et qu'un
+        // validateur refuse — donc on la refait ici, à la main.
+        assert_eq!(
+            u32b(&out, head + 8).unwrap(),
+            0xB1B0_AFBAu32.wrapping_sub(somme_sfnt(&zero)),
+            "l'ajustement du fichier entier"
+        );
+        assert_ne!(u32b(&out, head + 8).unwrap(), 0, "elle est calculée, pas laissée vide");
+    }
+
+    /// CFF2 is refused when it is read, not when it is picked — and the
+    /// extraction says the same word. Plain CFF, next to it, comes out fine
+    /// and comes out `OTTO`.
+    #[test]
+    fn le_cff2_se_refuse_a_la_lecture_comme_a_l_extraction() {
+        let mut cff2 = Fonte::neuve();
+        cff2.tag = *b"OTTO";
+        cff2.contours = Some(*b"CFF2");
+        cff2.variable = true;
+        let data = fichier(&[cff2]);
+        let f = Face::parse(&data, 0).expect("elle se lit, et se nomme");
+        assert_eq!(f.genre, Some(Genre::Cff2));
+        assert_eq!(f.genre.unwrap().code(), "cff2");
+        assert_eq!(f.refus, Some(REFUS_FORMAT_NON_EMBARQUABLE));
+        assert!(!f.embeddable());
+        assert_eq!(f.nom, "Colophon Test Regular", "refusée, et nommée quand même");
+        assert_eq!(Face::extraire(&data, 0).err(), Some(REFUS_FORMAT_NON_EMBARQUABLE));
+
+        let mut cff = Fonte::neuve();
+        cff.tag = *b"OTTO";
+        cff.contours = Some(*b"CFF ");
+        let data = fichier(&[cff]);
+        let sortie = Face::extraire(&data, 0).expect("un OTTO s'extrait");
+        assert_eq!(&sortie[0..4], b"OTTO", "la signature de la face, jamais la nôtre");
+        assert!(tags(&sortie).contains(&"CFF ".to_string()));
+        assert!(!tags(&sortie).contains(&"loca".to_string()), "un CFF n'a pas de loca");
+        assert_eq!(Face::parse(&sortie, 0).unwrap().genre, Some(Genre::Cff));
+
+        // Et un refus de licence se dit pareil des deux côtés.
+        let mut interdite = Fonte::neuve();
+        interdite.fs_type = 0x0002;
+        let data = fichier(&[interdite]);
+        assert_eq!(Face::extraire(&data, 0).err(), Some(REFUS_EMBARQUEMENT_INTERDIT));
+    }
+
+    /// The silent trap, made loud. The walk's buffer holds zeros where the
+    /// outlines are — they were never read — so extracting from it emits a
+    /// font that is sound in structure and empty of drawing, with metrics
+    /// identical to the real one's. No assertion about widths would ever see
+    /// it. `Face::extraire` takes the whole file, and here is why.
+    #[test]
+    fn l_extraction_lit_le_fichier_entier_jamais_le_tampon() {
+        let dir = dossier("extraction");
+        let mut grasse = Fonte::neuve();
+        grasse.gras = 20_000;
+        let chemin = dir.join("grasse.ttf");
+        fs::write(&chemin, fichier(&[grasse])).unwrap();
+
+        let entier = fs::read(&chemin).unwrap();
+        let sortie = Face::extraire(&entier, 0).expect("extraction");
+        let (off, len) = table_range(&sortie, 0, b"glyf").unwrap();
+        assert_eq!(len, 20_000);
+        assert!(sortie[off..off + len].iter().all(|b| *b == 0x2a), "les contours du fichier");
+
+        let (tampon, lus) = lire_tables(&chemin).expect("tables lues");
+        assert!(lus < 4096, "{lus} octets : la découverte lit peu, c'est le sujet");
+        let creuse = Face::extraire(&tampon, 0).expect("elle s'extrait quand même, et c'est ça");
+        let (off, len) = table_range(&creuse, 0, b"glyf").unwrap();
+        assert_eq!(len, 20_000);
+        assert!(creuse[off..off + len].iter().all(|b| *b == 0), "des zéros, pas un contour");
+        // Les deux polices se lisent pareil : la métrique ne voit rien.
+        identiques(
+            &Face::parse(&creuse, 0).unwrap().metrics.unwrap(),
+            &Face::parse(&sortie, 0).unwrap().metrics.unwrap(),
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// The walk: whole, sorted, refusals included, sub-folders in, hidden
@@ -1596,6 +2042,7 @@ mod tests {
         let data = fichier(&[Fonte::neuve()]);
         for n in 0..=data.len() {
             let _ = Face::parse(&data[..n], 0);
+            let _ = Face::extraire(&data[..n], 0);
             let _ = face_count(&data[..n]);
         }
         for i in (0..data.len()).step_by(7) {
@@ -1603,6 +2050,11 @@ mod tests {
             mute[i] ^= 0xFF;
             let _ = Face::parse(&mute, 0);
             let _ = Face::parse(&mute, 1);
+            // L'écrivain lit les mêmes octets hostiles que le lecteur, et
+            // écrit à partir d'eux : une longueur inventée doit sortir en
+            // refus, jamais en allocation ni en panic.
+            let _ = Face::extraire(&mute, 0);
+            let _ = Face::extraire(&mute, 1);
         }
         // Une collection dont l'en-tête ment sur le nombre de faces.
         let mut ttc = fichier(&[Fonte::neuve(), Fonte::neuve()]);
@@ -1654,6 +2106,7 @@ mod tests {
             REFUS_EMBARQUEMENT_INTERDIT,
             REFUS_BITMAP_SEULEMENT,
             REFUS_CMAP_ILLISIBLE,
+            REFUS_FORMAT_NON_EMBARQUABLE,
         ];
         for i in &installed() {
             match i.face.refus {
@@ -1750,5 +2203,126 @@ mod tests {
             100.0 * lus as f64 / sur_disque.max(1) as f64,
             tampon / 1_048_576
         );
+    }
+
+    /// Le coup d'œil humain de cette session : de combien chaque face
+    /// rétrécit en sortant de son fichier, et l'aller-retour tenu sur
+    /// chacune. C'est le chiffre sur lequel repose le report du
+    /// sous-ensemblage — et il doit être honnête sur le `glyf` partagé, que
+    /// deux faces d'une même collection se repassent : sortir l'une copie
+    /// l'union des dessins des deux, donc une collection rétrécit bien moins
+    /// que son nombre de faces ne le laisse croire.
+    /// `cargo test -p colophon-core --release banc_extraction_du_mac -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn banc_extraction_du_mac() {
+        // Un fichier à la fois : la liste est triée par chemin, et certains
+        // pèsent 187 Mo.
+        let mut ouvert: Option<(PathBuf, Vec<u8>)> = None;
+        let mut par_genre: std::collections::BTreeMap<&str, (usize, u64, u64)> =
+            std::collections::BTreeMap::new();
+        let (mut seules, mut collections) = ((0usize, 0f64), (0usize, 0f64));
+        let (mut refusees, mut cassees) = (0usize, 0usize);
+        let t = std::time::Instant::now();
+
+        for i in installed() {
+            if !i.face.embeddable() {
+                refusees += 1;
+                continue;
+            }
+            if ouvert.as_ref().is_none_or(|(c, _)| *c != i.chemin) {
+                let Ok(octets) = fs::read(&i.chemin) else { continue };
+                ouvert = Some((i.chemin.clone(), octets));
+            }
+            let (_, octets) = ouvert.as_ref().unwrap();
+            let avant = octets.len() as u64;
+            let sortie = match Face::extraire(octets, i.face.index) {
+                Ok(s) => s,
+                Err(code) => {
+                    cassees += 1;
+                    println!("EXTRACTION {code:<24} {}#{}", i.face.nom, i.face.index);
+                    continue;
+                }
+            };
+            // L'aller-retour, sur chacune : le nom, le rang, les mesures.
+            let relue = match Face::parse(&sortie, 0) {
+                Ok(f) => f,
+                Err(code) => {
+                    cassees += 1;
+                    println!("RELECTURE  {code:<24} {}#{}", i.face.nom, i.face.index);
+                    continue;
+                }
+            };
+            let mut avaries = Vec::new();
+            if relue.postscript != i.face.postscript {
+                avaries.push(format!("nom {} → {}", i.face.postscript, relue.postscript));
+            }
+            if face_count(&sortie) != 1 {
+                avaries.push(format!("{} faces dans le fichier sorti", face_count(&sortie)));
+            }
+            match (&i.face.metrics, &relue.metrics) {
+                (Some(a), Some(b)) => {
+                    if a.widths != b.widths {
+                        avaries.push("chasses".into());
+                    }
+                    if (a.bbox, a.ascent, a.descent, a.cap_height) != (b.bbox, b.ascent, b.descent, b.cap_height) {
+                        avaries.push("mesures".into());
+                    }
+                }
+                _ => avaries.push("métriques perdues".into()),
+            }
+            if !avaries.is_empty() {
+                cassees += 1;
+            }
+
+            let apres = sortie.len() as u64;
+            let part = apres as f64 / avant.max(1) as f64;
+            let e = par_genre.entry(i.face.genre.map(Genre::code).unwrap_or("?")).or_default();
+            *e = (e.0 + 1, e.1 + avant, e.2 + apres);
+            let dans_une_collection = face_count(octets) > 1;
+            if dans_une_collection {
+                collections = (collections.0 + 1, collections.1 + part);
+            } else {
+                seules = (seules.0 + 1, seules.1 + part);
+            }
+            println!(
+                "{:>9} → {:>9}  {:>5.1} %  {:<5}{:<4} {:<38} {}#{}",
+                avant,
+                apres,
+                100.0 * part,
+                i.face.genre.map(Genre::code).unwrap_or("?"),
+                if dans_une_collection { "ttc" } else { "" },
+                i.face.nom,
+                i.chemin.file_name().unwrap_or_default().to_string_lossy(),
+                i.face.index
+            );
+            if !avaries.is_empty() {
+                println!("            ALLER-RETOUR CASSÉ : {}", avaries.join(", "));
+            }
+        }
+
+        println!("\n{refusees} faces refusées, {cassees} aller-retours cassés, {:?}", t.elapsed());
+        for (genre, (n, avant, apres)) in &par_genre {
+            println!(
+                "{genre:<6} {n:>4} faces, {} Mo de fichiers → {} Mo extraits ({:.1} %)",
+                avant / 1_048_576,
+                apres / 1_048_576,
+                100.0 * *apres as f64 / (*avant).max(1) as f64
+            );
+        }
+        // Le piège du `glyf` partagé se lit dans l'écart entre ces deux
+        // lignes : une face seule paye peu, une face de collection devrait
+        // beaucoup payer — et paye moins que son rang ne le promet.
+        println!(
+            "face seule       : {} faces, {:.1} % du fichier en moyenne",
+            seules.0,
+            100.0 * seules.1 / seules.0.max(1) as f64
+        );
+        println!(
+            "face de ttc      : {} faces, {:.1} % du fichier en moyenne",
+            collections.0,
+            100.0 * collections.1 / collections.0.max(1) as f64
+        );
+        assert_eq!(cassees, 0, "un aller-retour cassé sur une police du système");
     }
 }

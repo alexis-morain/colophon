@@ -1,0 +1,56 @@
+{
+  "quoi": "6.1 session 2 sur 4 — le moteur sort une face de son fichier : Face::extraire rend un sfnt autonome d'une seule face, portant la liste fermee des tables qu'un PDF reclame. Aucun glyphe n'est touche, aucun PDF ne change, aucune dependance n'entre.",
+  "comment": "banc font::tests::banc_extraction_du_mac (release, ignore) sur un macOS de serie : chaque face acceptee est extraite de son vrai fichier, puis relue par Face::parse et comparee au nom, au rang et aux mesures d'avant. Diff confine a font.rs et CONTEXT.md.",
+  "extraction_du_zoo": {
+    "faces_extraites": 756,
+    "aller_retours_casses": 0,
+    "secondes": 5.4,
+    "refusees": 31,
+    "par_genre": {
+      "glyf": {"faces": 629, "fichiers_Mo": 1851, "extraits_Mo": 530, "part": "28,7 %"},
+      "cff": {"faces": 127, "fichiers_Mo": 1311, "extraits_Mo": 296, "part": "22,6 %"}
+    },
+    "poids_extrait": {
+      "mediane_Ko": 123,
+      "sous_1_Mo": "681 faces sur 756, soit 90 %",
+      "au_dessus_de_2_Mo": 72
+    }
+  },
+  "le_glyf_partage_mesure": {
+    "quoi": "Deux faces d'une meme collection pointent souvent vers le meme glyf, ou le meme CFF : extraire l'une copie l'union des dessins de toutes. Le gain n'est donc pas celui que le nombre de faces promet, et le banc devait le dire honnetement.",
+    "face_seule": "233 faces, 80,5 % du fichier d'origine en moyenne",
+    "face_de_collection": "523 faces, 25,9 % du fichier d'origine en moyenne",
+    "le_cas_qui_ne_gagne_rien": "Heiti TC Light : 55,8 Mo de .ttc, 53,9 Mo extraits (96,7 %) — deux faces, un seul glyf. Les Hiragino CFF sont entre 88 et 97 % pour la meme raison.",
+    "le_cas_qui_gagne_tout": "Apple Color Emoji : 192,1 Mo de .ttc, 199 Ko extraits (0,1 %). La strike sbix part avec le reste, sans qu'un contour soit lu."
+  },
+  "les_faces_d_un_vrai_choix": {
+    "Helvetica Neue Regular": "4 472 716 → 639 096 octets (14,3 %)",
+    "Palatino Regular": "1 788 068 → 396 780 (22,2 %)",
+    "Baskerville Regular": "1 373 016 → 269 080 (19,6 %)",
+    "Times Regular": "919 104 → 154 916 (16,9 %)",
+    "Georgia Regular": "379 588 → 341 036 (89,8 %)",
+    "Optima Regular": "265 552 → 41 976 (15,8 %)",
+    "lecture": "Une face latine qu'un utilisateur choisirait vraiment sort sous 700 Ko, la plus lourde du lot. C'est le chiffre sur lequel repose le report du sous-ensemblage."
+  },
+  "ce_qui_rouvrirait_le_sous_ensemblage": {
+    "regle": "plans/2026-08-28-note-decision-6.1-s2.md, section « Ce qui la rouvre » : un album reel dont la legende est composee dans une face du systeme sortant un PDF que le poids rend intransportable.",
+    "verdict_du_jour": "Pas rouvert pour le latin : sous 700 Ko la plus lourde, mediane 123 Ko, 90 % des faces sous 1 Mo. Ouvert en fait pour le CJK : Songti TC Bold sort a 21,0 Mo, Heiti TC Light a 53,9 Mo, Arial Unicode MS a 22,8 Mo. Une legende composee dans une de ces 72 faces alourdit le PDF d'autant. Le fait est pose, la decision reste celle de la note tant qu'un album reel ne l'a pas provoquee."
+  },
+  "le_cff2_refuse_a_la_lecture": {
+    "quoi": "Genre gagne Cff2, et le verdict le code REFUS_FORMAT_NON_EMBARQUABLE : le PDF ne definit aucun embarquement pour CFF2, donc la face le dit quand on la lit, pas quand on la choisit.",
+    "faces": 9,
+    "qui": "les neuf .SF internes de SFIndia.ttc (Bangla, Devanagari, Gujarati, Gurmukhi, Kannada, Malayalam, Odia, Tamil, Telugu), qu'aucun utilisateur ne choisit",
+    "les_autres_refus_inchanges": "16 embarquement_interdit, 5 cmap_illisible, 1 bitmap_seulement — les 22 de la session 1, a l'identique"
+  },
+  "ce_qui_ne_bouge_pas": {
+    "pdf": "les trois PDF de corse-2013 (album, --print, --cover) identiques a l'octet avec le binaire de main puis celui de la branche, SOURCE_DATE_EPOCH fixe ; album.json identique",
+    "gate": "check.sh a zero : 209 tests Rust, 159 vitest, pdf-png 1526 cases sur 6 formats, identite photos/fiches et memes compteurs sur les trois jeux, fiches intactes",
+    "dependances": "aucune ajoutee — anyhow, std et walkdir etaient deja la, Cargo.toml intacts. Aucun audit de licence du, conformement a l'arbitrage 1 de la session 1."
+  },
+  "mordants_sondes_par_mutation": {
+    "loca hors de la liste fermee": "une_face_extraite_se_relit_a_l_identique tombe",
+    "somme de head prise sur un checkSumAdjustment non nul": "le_fichier_emis_est_un_vrai_fichier_de_police tombe",
+    "extraire ignorant le rang de la face": "une_face_de_collection_sort_seule tombe",
+    "le piege du tampon parcimonieux": "prouve plutot que sonde : l_extraction_lit_le_fichier_entier_jamais_le_tampon extrait des deux cotes et montre les zeros, avec des metriques identiques des deux cotes"
+  }
+}

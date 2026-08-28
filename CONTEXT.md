@@ -101,8 +101,10 @@ _Avoid_: fallback, downgrade, substitution
 One named design inside a font file. `Helvetica.ttc` is a file and carries
 several faces; each has its own name, its own metrics, and its own right to
 enter a PDF, which the licence bits grant or refuse. The engine addresses a
-face by path and index, and reads faces rather than files. The album's own
-travels inside every PDF it exports.
+face by path and index, and reads faces rather than files. A face can be
+pulled out of its file as a font file of its own — one face, the tables a PDF
+asks for, no glyph touched — which is what lets one that lives in a collection
+be embedded at all. The album's own travels inside every PDF it exports.
 _Avoid_: font, typeface, family, style
 
 **Bleed**:

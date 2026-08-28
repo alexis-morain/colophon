@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "./i18n";
 import { Album, Spread, spreadGeometry, slotsFor } from "./album";
+import { useReglages } from "./reglages";
 import { thumbCropStyle } from "./SpreadView";
 import { cachedThumb, loadThumb } from "./thumbs";
 
@@ -364,6 +365,8 @@ function MiniSpread({ album, spread }: { album: Album; spread: Spread }) {
 
 function MiniImg({ slot }: { slot: { src: string; focal: [number, number]; zoom?: number } }) {
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(slot.src));
+  // thumbCropStyle carries the photo's adjustment: follow it.
+  useReglages();
   useEffect(() => {
     let alive = true;
     if (!cachedThumb(slot.src)) setUrl(undefined);

@@ -67,12 +67,20 @@ fn jpeg_sof(data: &[u8]) -> Option<(u32, u32, u8)> {
 /// One original resolved for print: passthrough when the file is a plain
 /// upright JPEG already at or below the slot's need, decode + orient +
 /// downscale + re-encode otherwise.
+///
+/// An adjustment forces the decode path: its pixels have to change, so the
+/// file cannot travel as-is. The LUT lands **after** the downscale — the
+/// screen filters pixels already at display scale, and contrast does not
+/// commute with averaging, so the export adjusts at final scale too. Without
+/// an adjustment the passthrough stays byte-identical: that absence is held
+/// by a test.
 pub(crate) fn print_asset(
     src: &Path,
     orientation: u32,
     rect: &pdf::Rect,
     focal: [f64; 2],
     zoom: f64,
+    reglage: Option<&crate::model::Reglage>,
 ) -> Result<pdf::JpegAsset> {
     let zoom = zoom.max(1.0);
     let is_jpeg = src
@@ -81,7 +89,7 @@ pub(crate) fn print_asset(
         .map(|e| e.eq_ignore_ascii_case("jpg") || e.eq_ignore_ascii_case("jpeg"))
         .unwrap_or(false);
 
-    if is_jpeg && orientation == 1 {
+    if is_jpeg && orientation == 1 && reglage.is_none() {
         let data = fs::read(src).with_context(|| format!("lecture de {}", src.display()))?;
         if let Some((w, h, 3)) = jpeg_sof(&data) {
             // A zoomed slot shows fewer source pixels, so it needs more of
@@ -102,7 +110,10 @@ pub(crate) fn print_asset(
     } else {
         img
     };
-    let rgb = img.to_rgb8();
+    let mut rgb = img.to_rgb8();
+    if let Some(r) = reglage {
+        crate::reglage::appliquer(&mut rgb, r);
+    }
     let mut data = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut data, JPEG_QUALITY)
         .encode_image(&rgb)
@@ -175,8 +186,15 @@ pub fn render_print_pdf(
             anyhow::ensure!(!cancel(), "export annulé");
             let path = root.join(src);
             let orientation = meta::read(&path).orientation;
-            let asset = print_asset(&path, orientation, &object.rect, *focal, *zoom)
-                .with_context(|| format!("planche {} : {}", i + 1, src))?;
+            let asset = print_asset(
+                &path,
+                orientation,
+                &object.rect,
+                *focal,
+                *zoom,
+                album.reglages.get(src),
+            )
+            .with_context(|| format!("planche {} : {}", i + 1, src))?;
             assets.push(asset);
             done += 1;
             progress(&format!("render: {done}/{total}"));
@@ -287,24 +305,64 @@ mod tests {
             .unwrap();
 
         // Big slot: the 400 px original is far below print need, passthrough.
-        let a = print_asset(&src, 1, &rect(200.0, 150.0), [0.5, 0.5], 1.0).unwrap();
+        // Byte identity, not pixel identity: an album without adjustments
+        // must produce exactly today's PDF, and forcing the decode path even
+        // without an adjustment makes this line fall.
+        let a = print_asset(&src, 1, &rect(200.0, 150.0), [0.5, 0.5], 1.0, None).unwrap();
         assert_eq!((a.width, a.height), (400, 300));
         assert_eq!(a.data, fs::read(&src).unwrap());
 
         // Tiny slot: 10 mm at 300 dpi is 118 px, the original is downscaled.
-        let a = print_asset(&src, 1, &rect(10.0, 10.0), [0.5, 0.5], 1.0).unwrap();
+        let a = print_asset(&src, 1, &rect(10.0, 10.0), [0.5, 0.5], 1.0, None).unwrap();
         assert_eq!(a.height, 118);
         assert!(a.width < 400);
 
         // Same tiny slot zoomed ×2: the crop shows half the frame, so twice
         // the pixels are kept for the same printed millimetres.
-        let a = print_asset(&src, 1, &rect(10.0, 10.0), [0.5, 0.5], 2.0).unwrap();
+        let a = print_asset(&src, 1, &rect(10.0, 10.0), [0.5, 0.5], 2.0, None).unwrap();
         assert_eq!(a.height, 236);
 
         // Rotated EXIF: no passthrough, the pixels come out oriented.
-        let a = print_asset(&src, 6, &rect(200.0, 150.0), [0.5, 0.5], 1.0).unwrap();
+        let a = print_asset(&src, 6, &rect(200.0, 150.0), [0.5, 0.5], 1.0, None).unwrap();
         assert_eq!((a.width, a.height), (300, 400));
 
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An adjustment reaches the printed pixels: the passthrough is refused,
+    /// the bytes change, and the decoded values are the LUT's to within the
+    /// JPEG's own rounding. Neutralising the application in `print_asset`
+    /// makes this fall.
+    #[test]
+    fn un_reglage_change_les_pixels_du_tirage() {
+        let dir = std::env::temp_dir().join(format!("colophon-reglage-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("t.jpg");
+        // A flat mid-grey: JPEG round-trips a uniform block almost exactly,
+        // so the LUT's value is readable on the decoded pixels.
+        let img = image::RgbImage::from_pixel(400, 300, image::Rgb([128, 128, 128]));
+        image::DynamicImage::ImageRgb8(img)
+            .save_with_format(&src, image::ImageFormat::Jpeg)
+            .unwrap();
+
+        let r = crate::model::Reglage { expo: 0.5, contraste: 0.0, nb: false };
+        let plain = print_asset(&src, 1, &rect(200.0, 150.0), [0.5, 0.5], 1.0, None).unwrap();
+        let regle =
+            print_asset(&src, 1, &rect(200.0, 150.0), [0.5, 0.5], 1.0, Some(&r)).unwrap();
+        assert_ne!(plain.data, regle.data, "un réglage doit changer les octets");
+        // No passthrough under an adjustment, even though the file was
+        // eligible: the dimensions still match (no downscale needed here).
+        assert_eq!((regle.width, regle.height), (400, 300));
+
+        let attendu = crate::reglage::lut(&r)[128];
+        let back = image::load_from_memory(&regle.data).unwrap().to_rgb8();
+        let p = back.get_pixel(200, 150).0;
+        for canal in p {
+            assert!(
+                (i16::from(canal) - i16::from(attendu)).unsigned_abs() <= 2,
+                "canal {canal} loin de la LUT {attendu}"
+            );
+        }
         fs::remove_dir_all(&dir).ok();
     }
 }

@@ -26,7 +26,8 @@ import {
   SpreadGeometry,
 } from "./album";
 import { Scene } from "./scene";
-import { imageDe, surImage } from "./photos";
+import { imageDe, imageRegleeDe, surImage } from "./photos";
+import { filtreDe, reglagePose, surReglage } from "./reglages";
 
 /** The screen has always shown small type bigger than it prints: below
  *  these, in CSS pixels, a line stops being readable on a screen. The DOM
@@ -126,11 +127,24 @@ export function peindre(
           role.focal,
           role.zoom,
         );
+        // The adjustment, where the pixels resolve. `ctx.filter` when the
+        // engine has it (WebView2 yes; WKWebView from Safari 18 — detect
+        // the property, never the agent), the draft riding along like on
+        // the DOM. Without it, the fallback is a bitmap pre-adjusted by the
+        // LUT port — committed réglage only, so a drag costs nothing and
+        // the case follows at release. The fallback is never « no
+        // adjustment »: a canvas that dropped the réglage would be a
+        // renderer that lies.
+        const filtre = typeof ctx.filter === "string";
+        const regle = filtre ? undefined : reglagePose(role.src);
+        const source =
+          regle !== undefined ? imageRegleeDe(role.src, regle) ?? img : img;
         ctx.save();
         ctx.beginPath();
         ctx.rect(o.rect.x, o.rect.y, o.rect.w, o.rect.h);
         ctx.clip();
-        ctx.drawImage(img, sx, sy, sw, sh, o.rect.x, o.rect.y, o.rect.w, o.rect.h);
+        if (filtre) ctx.filter = filtreDe(role.src) ?? "none";
+        ctx.drawImage(source, sx, sy, sw, sh, o.rect.x, o.rect.y, o.rect.w, o.rect.h);
         ctx.restore();
         break;
       }
@@ -250,8 +264,15 @@ export function SceneCanvas({
     dernier.current = dessiner;
     dessiner();
     // A thumbnail that lands after the first paint repaints the page: the
-    // canvas has no `<img>` to wait for on its behalf.
-    return surImage(() => dernier.current());
+    // canvas has no `<img>` to wait for on its behalf. Same deal for an
+    // adjustment — a réglage committed without a repaint is a picture that
+    // lies until the next nudge.
+    const offImage = surImage(() => dernier.current());
+    const offReglage = surReglage(() => dernier.current());
+    return () => {
+      offImage();
+      offReglage();
+    };
   });
 
   return (

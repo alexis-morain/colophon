@@ -39,12 +39,15 @@ import {
   Discard,
   spreadGeometry,
   OpenedAlbum,
+  Reglage,
   Slot,
   slotsFor,
   Spread,
   templateCapacity,
   TITRE_MAX,
 } from "./album";
+import { ReglageBloc } from "./ReglageBloc";
+import { filtreDe, poserReglages, useReglages } from "./reglages";
 import {
   changeTemplate,
   duplicateSpread,
@@ -63,6 +66,7 @@ import {
   rescuePhoto,
   restoreSpread,
   setCover,
+  setReglage,
   setSlotCaption,
   setSlotCrop,
   setSpreadCaption,
@@ -226,6 +230,16 @@ export default function App() {
   const album = hist?.album ?? null;
   const total = album?.spreads.length ?? 0;
   const dirty = album !== null && album !== savedAlbum;
+
+  // The adjustments store is a reading mirror, and App is its single truth:
+  // after any album change — opening, an edit, ⌘Z, a bascule, a
+  // recomposition, closing — the whole table is re-posed. A component
+  // writing a committed réglage into the store instead of through
+  // `edits.ts` would make ⌘Z lie; this effect is what keeps that invariant
+  // cheap to hold.
+  useEffect(() => {
+    poserReglages(album?.reglages);
+  }, [album]);
 
   // Deux chronos de rendu, dev seulement (`mesure.ts`), pris avant le port en
   // Canvas pour qu'après il y ait quelque chose à comparer. Ils se ferment
@@ -1664,6 +1678,7 @@ export default function App() {
                 album={album}
                 printer={printers?.find((p) => p.id === profil) ?? null}
                 onCover={(c) => apply((a) => setCover(a, c))}
+                onReglage={(src, r) => apply((a) => setReglage(a, src, r))}
               />
             ) : (
               spread && (
@@ -1711,6 +1726,7 @@ export default function App() {
           onCover={onCover}
           selected={selected}
           onTemplate={(t) => apply((a) => changeTemplate(a, index, t))}
+          onReglage={(src, r) => apply((a) => setReglage(a, src, r))}
           spreadIndex={index}
           fidele={fidele}
           onFidele={() => void basculerFidele()}
@@ -2116,6 +2132,7 @@ function ContextLine({
   spreadIndex,
   onTemplate,
   onLock,
+  onReglage,
   fidele,
   onFidele,
 }: {
@@ -2126,6 +2143,8 @@ function ContextLine({
   spreadIndex: number;
   onTemplate: (t: string) => void;
   onLock?: () => void;
+  /** One history step through `edits.ts::setReglage`, at slider release. */
+  onReglage: (src: string, reglage: Reglage) => void;
   /** The faithful preview is on, and the toggle that turns it off. */
   fidele: boolean;
   onFidele: () => void;
@@ -2180,6 +2199,14 @@ function ContextLine({
                 </button>
               )}
             </span>
+            {/* The three adjustments of the chosen photo, native controls in
+                a bar already tabbable: no sixth panel, no menu entry. */}
+            {selected !== null && spread.slots[selected] && (
+              <ReglageBloc
+                src={spread.slots[selected].src}
+                onCommit={onReglage}
+              />
+            )}
             <span className="context-hint">
               {selected !== null
                 ? t("contexte.recadrage")
@@ -2386,6 +2413,7 @@ function TriFoot({
 /** A postage-stamp thumbnail, for the foot. */
 function MiniThumb({ src }: { src: string }) {
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(src));
+  useReglages();
   useEffect(() => {
     let alive = true;
     if (!cachedThumb(src)) setUrl(undefined);
@@ -2398,7 +2426,9 @@ function MiniThumb({ src }: { src: string }) {
     };
   }, [src]);
   return (
-    <span className="mini-thumb">{url && <img src={url} alt="" />}</span>
+    <span className="mini-thumb">
+      {url && <img src={url} alt="" style={{ filter: filtreDe(src) }} />}
+    </span>
   );
 }
 

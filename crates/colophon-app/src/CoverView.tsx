@@ -21,12 +21,16 @@ import {
 import { t } from "./i18n";
 import { Printer } from "./bridge";
 import { LazyThumb } from "./TriView";
+import { ReglageBloc } from "./ReglageBloc";
+import type { Reglage } from "./album";
+import { filtreDe, useReglages } from "./reglages";
 import { cachedThumb, loadThumb } from "./thumbs";
 
 export function CoverView({
   album,
   printer,
   onCover,
+  onReglage,
 }: {
   album: Album;
   /** The supplier the sheet is drawn for. Null while the profiles load: the
@@ -34,6 +38,10 @@ export function CoverView({
    *  supplier building its own cover receives anyway. */
   printer: Printer | null;
   onCover: (cover: Cover) => void;
+  /** One history step through `edits.ts::setReglage`: the cover photo is
+   *  adjustable here even when it sits on no spread — the alternative is a
+   *  dead end. */
+  onReglage: (src: string, reglage: Reglage) => void;
 }) {
   const cover: Cover = album.cover ?? { title: album.title };
   // Text fields edit a local form and land on the undo stack at blur:
@@ -166,6 +174,15 @@ export function CoverView({
         </div>
       </div>
 
+      {/* The same three adjustments as the spread bar, on the same store:
+          the photo is keyed by source, so a cover photo also on a spread is
+          adjusted once and both surfaces follow. */}
+      {cover.photo && (
+        <div className="cover-reglages">
+          <ReglageBloc src={cover.photo.src} onCommit={onReglage} />
+        </div>
+      )}
+
       <p className="cover-note">
         {sheet.spine ? (
           <>
@@ -231,6 +248,7 @@ function CoverPhoto({
 }) {
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(photo.src));
   const [draft, setDraft] = useState<Slot | null>(null);
+  useReglages();
   const box = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
   const gesture = useRef<{ id: number; x: number; y: number; focal: [number, number] } | null>(null);
@@ -328,6 +346,7 @@ function CoverPhoto({
             objectPosition: `${shown.focal[0] * 100}% ${shown.focal[1] * 100}%`,
             transform: zoom > 1.001 ? `scale(${zoom})` : undefined,
             transformOrigin: `${shown.focal[0] * 100}% ${shown.focal[1] * 100}%`,
+            filter: filtreDe(photo.src),
           }}
         />
       )}

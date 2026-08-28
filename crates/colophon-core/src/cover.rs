@@ -162,8 +162,17 @@ pub fn render_cover_pdf(
         let src = root.join(&slot.src);
         let rect = photo_rect(&g);
         let orientation = meta::read(&src).orientation;
-        let asset = print::print_asset(&src, orientation, &rect, slot.focal, slot.zoom)
-            .with_context(|| format!("photo de couverture : {}", slot.src))?;
+        // The adjustment is keyed by source, so a photo on the cover and on
+        // a spread is adjusted once and prints the same on both.
+        let asset = print::print_asset(
+            &src,
+            orientation,
+            &rect,
+            slot.focal,
+            slot.zoom,
+            album.reglages.get(&slot.src),
+        )
+        .with_context(|| format!("photo de couverture : {}", slot.src))?;
         writer.draw_image(&mut content, &mut xobjects, 0, &asset, &rect);
     }
 
@@ -278,8 +287,15 @@ pub(crate) fn add_cover_page(
                 let src = root.join(&slot.src);
                 let rect = Rect { x: 0.0, y: 0.0, w: g.media_w, h: g.media_h };
                 let orientation = meta::read(&src).orientation;
-                let asset = print::print_asset(&src, orientation, &rect, slot.focal, slot.zoom)
-                    .with_context(|| format!("photo de couverture : {}", slot.src))?;
+                let asset = print::print_asset(
+                    &src,
+                    orientation,
+                    &rect,
+                    slot.focal,
+                    slot.zoom,
+                    album.reglages.get(&slot.src),
+                )
+                .with_context(|| format!("photo de couverture : {}", slot.src))?;
                 writer.draw_image(&mut content, &mut xobjects, 0, &asset, &rect);
             }
             draw_front(&mut content, &g, album, &cover);

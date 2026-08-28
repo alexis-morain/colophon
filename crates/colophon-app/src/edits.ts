@@ -8,6 +8,7 @@ import {
   Cover,
   Discard,
   GARDE_TEMPLATE,
+  Reglage,
   Slot,
   Spread,
   templates,
@@ -18,6 +19,7 @@ import {
   templateForCount,
   titreDuLivre,
 } from "./album";
+import { REGLAGE_BORNE, estIdentite } from "./reglage";
 
 function withSpread(album: Album, at: number, spread: Spread | null): Album {
   const spreads = album.spreads.slice();
@@ -242,6 +244,43 @@ export function setSlotCrop(
   const slots = spread.slots.slice();
   slots[slot] = next;
   return withSpread(album, at, touched({ ...spread, slots }));
+}
+
+/**
+ * Set one photo's adjustment, by source: the step ⌘Z undoes, one per slider
+ * release. Values clamp to ±1; the identity leaves the table, so absence
+ * keeps meaning « no adjustment » and the file stays diffable. Deliberately
+ * not `touched()`: adjusting a photo is not editing a spread — it neither
+ * shields anything from a recomposition nor counts as a hand in `--reprise`.
+ */
+export function setReglage(album: Album, src: string, reglage: Reglage): Album {
+  const clamp = (v: number) =>
+    Math.min(Math.max(v, -REGLAGE_BORNE), REGLAGE_BORNE);
+  const next: Reglage = {
+    expo: clamp(reglage.expo),
+    contraste: clamp(reglage.contraste),
+    nb: reglage.nb,
+  };
+  const avant = album.reglages?.[src];
+  if (estIdentite(next)) {
+    if (!avant) return album;
+    const table = { ...album.reglages };
+    delete table[src];
+    if (Object.keys(table).length === 0) {
+      const { reglages: _, ...sans } = album;
+      return sans;
+    }
+    return { ...album, reglages: table };
+  }
+  if (
+    avant &&
+    avant.expo === next.expo &&
+    avant.contraste === next.contraste &&
+    avant.nb === next.nb
+  ) {
+    return album;
+  }
+  return { ...album, reglages: { ...album.reglages, [src]: next } };
 }
 
 /** Set or clear a photo's caption. */

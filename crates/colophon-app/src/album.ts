@@ -34,6 +34,19 @@ export type Cover = {
   back_text?: string;
 };
 
+/** One photograph's adjustments, mirror of `model.rs::Reglage`. The
+ *  transform the numbers name is defined in core (`reglage.rs`) and ported
+ *  in `reglage.ts`; it is the CSS filter formula, which is what lets the
+ *  screen show it with one line of style. */
+export type Reglage = {
+  /** Exposure, in stops of `brightness(2^expo)`, clamped to ±1. */
+  expo: number;
+  /** Contrast, `contrast(2^contraste)` around the 0,5 pivot, clamped to ±1. */
+  contraste: number;
+  /** Black and white: luma 709, the coefficients of `grayscale(1)`. */
+  nb: boolean;
+};
+
 export type Album = {
   version: number;
   title: string;
@@ -47,6 +60,11 @@ export type Album = {
    *  because nothing here can be invented after the fact. The shape is
    *  opaque to the front, which only asks the engine to render it. */
   colophon?: unknown;
+  /** Non-destructive adjustments, keyed by `Slot::src`: a property of the
+   *  photograph, never of the cell. Applied at render time only, never an
+   *  octet on the original. Absent = none; an identity entry leaves the
+   *  table at the edit that produced it (`edits.ts::setReglage`). */
+  reglages?: Record<string, Reglage>;
 };
 
 export type OpenedAlbum = {

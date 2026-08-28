@@ -2938,6 +2938,51 @@ kbd {
   white-space: nowrap;
 }
 
+/* ---- the adjustments block ---------------------------------------------- */
+
+/* Three native controls in the context line (and under the cover sheet):
+   no panel, no menu entry, one block. */
+.reglage-bloc {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.reglage-champ {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.reglage-champ input[type="range"] {
+  width: 88px;
+  accent-color: var(--accent);
+}
+
+.reglage-nb input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.reglage-libelle {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.reglage-rendre {
+  white-space: nowrap;
+}
+
+/* The cover's copy of the block sits under the sheet, quiet. */
+.cover-reglages {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+
 /* ---- the caption popover ------------------------------------------------- */
 
 /* Anchored under the selected case (above it near the window's bottom):

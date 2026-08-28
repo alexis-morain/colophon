@@ -301,6 +301,10 @@ export const FR = {
     "La couverture : titre et sous-titre en place, glissez la photo pour la recadrer. Le tiroir de photos revient sur les planches.",
   "contexte.recadrage":
     "Recadrage : glisser déplace, molette zoome, ⌥ affine, ⌫ retire la photo",
+  "reglage.exposition": "Exposition",
+  "reglage.contraste": "Contraste",
+  "reglage.nb": "Noir et blanc",
+  "reglage.rendre": "Rendre à l’original",
   "nav.precedente": "Planche précédente",
   "nav.suivante": "Planche suivante",
   "nav.aller": "Aller à une planche",
@@ -930,6 +934,10 @@ export const EN: Record<Cle, string> = {
     "The cover: title and subtitle in place, drag the photo to recrop it. The photo drawer returns on the spreads.",
   "contexte.recadrage":
     "Crop: drag moves, wheel zooms, ⌥ refines, ⌫ removes the photo",
+  "reglage.exposition": "Exposure",
+  "reglage.contraste": "Contrast",
+  "reglage.nb": "Black and white",
+  "reglage.rendre": "Back to the original",
   "nav.precedente": "Previous spread",
   "nav.suivante": "Next spread",
   "nav.aller": "Go to a spread",

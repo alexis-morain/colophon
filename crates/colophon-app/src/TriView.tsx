@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TriEntry } from "./edits";
 import { t } from "./i18n";
 import { REASON_KEYS, reasonLabel } from "./reasons";
+import { filtreDe, useReglages } from "./reglages";
 import { cachedThumb, loadThumb } from "./thumbs";
 
 export function TriView({
@@ -145,6 +146,9 @@ export function RevueView({
   const [url, setUrl] = useState<string | undefined>(() =>
     cachedThumb(entry.src),
   );
+  // A rescued-then-discarded photo may carry an adjustment: show it here
+  // too, the réglage being a property of the photograph.
+  useReglages();
 
   useEffect(() => {
     let alive = true;
@@ -165,7 +169,7 @@ export function RevueView({
   return (
     <div className="revue">
       <figure className="revue-stage">
-        {url && <img src={url} alt={name} />}
+        {url && <img src={url} alt={name} style={{ filter: filtreDe(entry.src) }} />}
         <span className="revue-reason">{reasonLabel(entry.reason)}</span>
         <span className="revue-pos">
           {i + 1} / {entries.length}
@@ -206,6 +210,7 @@ export function RevueView({
 export function LazyThumb({ src }: { src: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(src));
+  useReglages();
 
   useEffect(() => {
     if (url) return;
@@ -232,7 +237,7 @@ export function LazyThumb({ src }: { src: string }) {
 
   return (
     <div ref={ref} className="tri-thumb">
-      {url && <img src={url} alt="" loading="lazy" />}
+      {url && <img src={url} alt="" loading="lazy" style={{ filter: filtreDe(src) }} />}
     </div>
   );
 }

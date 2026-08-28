@@ -13,6 +13,7 @@ import { BuildBilan, VarianteResume } from "./bridge";
 import { Album, Discard } from "./album";
 import { t } from "./i18n";
 import { REASON_KEYS, reasonLabel } from "./reasons";
+import { filtreDe, useReglages } from "./reglages";
 import { cachedThumb, loadThumb } from "./thumbs";
 
 export function BilanView({
@@ -169,6 +170,7 @@ function apercuDe(album: Album): string[] {
  *  are a rhythm, and a row of mixed aspect ratios is a mess. */
 function Vignette({ src }: { src: string }) {
   const [url, setUrl] = useState(() => cachedThumb(src));
+  useReglages();
   useEffect(() => {
     let alive = true;
     loadThumb(src).then((u) => alive && setUrl(u), () => {});
@@ -178,7 +180,9 @@ function Vignette({ src }: { src: string }) {
   }, [src]);
   return (
     <span className="bilan-vignette">
-      {url && <img src={url} alt="" draggable={false} />}
+      {url && (
+        <img src={url} alt="" draggable={false} style={{ filter: filtreDe(src) }} />
+      )}
     </span>
   );
 }

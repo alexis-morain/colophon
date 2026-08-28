@@ -48,6 +48,17 @@ The finished page, the piece the guillotine leaves. Anything that must survive
 the cut is measured from here, never from the media edge.
 _Avoid_: page size, final size
 
+**Réglage**:
+The non-destructive adjustment of one photograph — exposure, contrast, black
+and white — stored in `album.json` (`Album::reglages`, keyed by source),
+applied where pixels are resolved (screen and export), never an octet on the
+original. A property of the photograph, not of the cell: never in `Slot`,
+never posing `edited`, invisible to `--reprise` by construction. The
+transform is defined once, in `core::reglage`, and it is the CSS filter
+formula; `reglage.ts` is its port, held by the LUT parity fixture.
+_Avoid_: retouche (already drifting in comments as « any edit »), filtre,
+correction
+
 **Bascule**:
 Carrying a composed album into another trim. Not a recomposition: every
 spread, its order, its photographs and their framing come across untouched,

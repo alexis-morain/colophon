@@ -496,6 +496,9 @@ async fn recompose_album(
         // that one, and a second offer would throw away every hand edit that
         // the pinned spreads were kept for.
         variantes: Vec::new(),
+        // The adjustments follow the photographs, not the spreads: a field
+        // BuildOptions did not carry would be destroyed by the rebuild.
+        reglages: album.reglages.clone(),
     };
     tauri::async_runtime::spawn_blocking(move || {
         colophon_core::build_album(&root, &build_out, opts)

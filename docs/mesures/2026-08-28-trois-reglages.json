@@ -1,0 +1,41 @@
+{
+  "quoi": "4.1 — trois reglages, pas une chambre noire : exposition, contraste, noir et blanc, par photo, appliques au rendu seulement",
+  "comment": "binaire release de claude/trois-reglages. Raster : album de trois photos de corse-2013 (copies jetables), tirage 300 dpi rendu avant puis apres expo +0,5 sur toutes les photos, rasterise a 100 dpi par pypdfium2 ; sur les pixels touches, ecart moyen entre le raster apres et LUT(raster avant). Chrono : corse-2013 entier (.albums/check du gate), tirage nu puis toutes photos reglees (expo 0,5, contraste 0,15). Reproductibilite : deux tirages regles de corse-2013 sous SOURCE_DATE_EPOCH, cmp a l'octet.",
+  "raster": {
+    "reglage": { "expo": 0.5, "contraste": 0.0, "nb": false },
+    "dpi_raster": 100,
+    "pages_touchees": [
+      { "page": 2, "pixels_touches": 446409, "ecart_moyen": 0.92 },
+      { "page": 3, "pixels_touches": 443065, "ecart_moyen": 0.817 },
+      { "page": 4, "pixels_touches": 411996, "ecart_moyen": 0.838 }
+    ],
+    "pages_intactes": ["garde", "colophon"],
+    "ecart_moyen_global_sur_255": 0.859,
+    "tolerance_sur_255": 3.0,
+    "ok": true
+  },
+  "chrono_corse_2013": {
+    "planches": 50,
+    "photos": 98,
+    "tirage_nu_s": 11.17,
+    "tirage_nu_octets": 95553675,
+    "tirage_regle_s": 11.74,
+    "tirage_regle_octets": 107717234,
+    "reglage": { "expo": 0.5, "contraste": 0.15, "nb": false },
+    "note": "meme ordre de grandeur (+5 %) : l'essentiel du chemin decodait deja (sur-resolution, downscale), la LUT par-dessus ne coute rien. Le poids monte de 12 Mo : les passthroughs re-encodes q92, et un peu d'entropie en plus apres reglage.",
+    "base_du_27_08_s": 10.7
+  },
+  "reproductibilite": {
+    "deux_tirages_regles_identiques_a_l_octet": true,
+    "source_date_epoch": 1700000000
+  },
+  "conformite": {
+    "tirage_regle_verapdf_2b": "PASS",
+    "pdfx_full": "exit 0, tout passe en PDF/A-2b : 383 gabarits x 6 formats, puis 3 jeux x 6 formats x 3 fichiers (apercu, impression, couverture), zero refus"
+  },
+  "gate": {
+    "check_sh": 0,
+    "vitest": "113 tests, 7 fichiers",
+    "parite_lut": "fixture reglage.fixture.json, grille 7x7 expo/contraste bornes comprises, port TS identique a l'octet"
+  }
+}

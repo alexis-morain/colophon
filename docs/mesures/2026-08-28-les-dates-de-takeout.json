@@ -1,0 +1,24 @@
+{
+  "quoi": "5.1 — Google Takeout : les dates et le GPS des sidecars JSON comblent ce que l'EXIF a tu, la version -edited gagne dans un Takeout",
+  "comment": "banc meta::tests::banc_meta_read_1000 (release, 10 passes x 1000 photos 80 px sans EXIF, simulant les dix appelants de meta::read), avant la session sur main a fd3ff69 puis apres sur la branche. Le seuil du prompt : facteur <= 1,5 sur le dossier sans sidecars.",
+  "chrono_ms_10x1000": {
+    "avant": { "sans_sidecars": 264, "avec_sidecars": 263 },
+    "apres_sans_cache": { "sans_sidecars": 455, "avec_sidecars": 577 },
+    "apres_avec_cache": { "sans_sidecars": 273, "avec_sidecars": 284 },
+    "facteur_sans_sidecars": 1.03,
+    "note": "le facteur 1,72 sans cache a motive le cache de sondes par photo et par processus dans meta.rs ; trois open infructueux par photo multiplies par dix appelants etaient exactement le piege nomme par le prompt"
+  },
+  "fixture": {
+    "takeout_synthetique": "30 photos 2000 px sans EXIF + sidecars sur trois jours -> 3 chapitres, 30 photos au livre, 0 parasite, l'originale de la paire -edited dans curation.json avec kept",
+    "sans_sidecars": "le meme dossier -> refus, tout parasite",
+    "edited_ordinaire": "mariage-edited.jpg sans sidecar sur la base -> les trois photos au livre, la regle ne s'arme pas"
+  },
+  "mordants": {
+    "date_sidecar_non_fiable": "les_cinq_orthographes_de_sidecar_takeout tombe",
+    "priorite_inversee_sidecar_sur_exif": "l_exif_garde_la_main_sur_le_sidecar tombe",
+    "zero_accepte": "le_zero_du_golfe_de_guinee_est_refuse tombe",
+    "edited_sans_condition_sidecar": "edited_hors_takeout_reste_une_photo_comme_une_autre tombe"
+  },
+  "mesure_en_passant": "place_of(0,0) rend None : le MAX_KM de l'atlas protege deja les titres du golfe de Guinee ; le refus du zero reste, il garde la coordonnee inventee hors des votes et de split_junk",
+  "fiches": "identiques a l'octet sur les trois jeux (verifie par check.sh), releve::VERSION reste 1, le champ editees ne se serialise que non vide"
+}

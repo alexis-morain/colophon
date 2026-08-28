@@ -174,6 +174,14 @@ as a content diff against `album.origin.json`. The number the GO/NO-GO
 milestone hangs on.
 _Avoid_: rework rate, edit distance
 
+**Sidecar**:
+A file another program wrote next to a photograph and named after it, read
+where the photo's own metadata is silent: the `.xmp` of a cataloguing app
+(rating), the `.json` of a Google Takeout (capture date, GPS). Found by a
+closed list of spellings, never by listing the folder. A sidecar is always
+someone else's; what Colophon writes about a photo is a fiche.
+_Avoid_: companion file, metadata file
+
 **Fiche**:
 What one reading of one photo measured — metadata, analysis, original size,
 faces — exactly as the composer consumes it. A fiche is the `Photo` struct

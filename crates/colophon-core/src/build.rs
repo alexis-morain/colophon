@@ -189,6 +189,20 @@ pub fn releve(photos_dir: &Path, out: &Path, opts: &BuildOptions) -> Result<Rele
         anyhow::bail!("aucune photo exploitable : {detail}");
     }
 
+    // A Takeout writes `IMG-edited.jpg` next to `IMG.jpg`: keeping both is
+    // the same photograph twice in the book, so the edited version wins and
+    // the original leaves here, before anything is measured on it. It is
+    // counted and carried by the relevé into `curation.json`: an album that
+    // quietly loses a photo is an album that lies.
+    let editees;
+    (scanned.images, editees) = ecarte_originales_editees(scanned.images);
+    if !editees.is_empty() {
+        say(&format!(
+            "takeout : {} originales écartées, leur version éditée est gardée",
+            editees.len()
+        ));
+    }
+
     // 2. metadata + thumbnails + analysis, in parallel. The longest phase by
     // far, so it reports counts as it goes: a progress bar with nothing to
     // say for ten seconds is a frozen app to the person watching.
@@ -293,9 +307,43 @@ pub fn releve(photos_dir: &Path, out: &Path, opts: &BuildOptions) -> Result<Rele
         // nothing downstream reads it, and it would churn the fiches at
         // every bump of the image crate.
         illisibles: unreadable.into_iter().map(|(p, _)| p).collect(),
+        editees,
         photos,
         vignettes: true,
     })
+}
+
+/// The `-edited` rule of a Takeout. It only arms when the base photo
+/// carries a Takeout sidecar: `mariage-edited.jpg` exists in ordinary
+/// folders too, and setting its original aside there would delete a photo
+/// for no reason. Returns the kept images and the (originale, éditée)
+/// pairs, sorted — the relevé serializes them, and fiches are deterministic.
+fn ecarte_originales_editees(
+    images: Vec<PathBuf>,
+) -> (Vec<PathBuf>, Vec<(PathBuf, PathBuf)>) {
+    let noms: std::collections::HashSet<&PathBuf> = images.iter().collect();
+    let mut ecartees: std::collections::HashMap<PathBuf, PathBuf> =
+        std::collections::HashMap::new();
+    for p in &images {
+        let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else { continue };
+        let Some(racine) = stem.strip_suffix("-edited") else { continue };
+        let ext = p
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or_default();
+        let base = p.with_file_name(format!("{racine}{ext}"));
+        if noms.contains(&base) && meta::takeout_sidecar_exists(&base) {
+            ecartees.insert(base, p.clone());
+        }
+    }
+    if ecartees.is_empty() {
+        return (images, Vec::new());
+    }
+    let gardees: Vec<PathBuf> =
+        images.into_iter().filter(|p| !ecartees.contains_key(p)).collect();
+    let mut paires: Vec<(PathBuf, PathBuf)> = ecartees.into_iter().collect();
+    paires.sort();
+    (gardees, paires)
 }
 
 /// The composing half: curation, chapters, layout, and the files that come
@@ -331,6 +379,7 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
         releve.ecrire(&out.join(crate::releve::FICHIER))?;
     }
     let unreadable = releve.illisibles;
+    let editees = releve.editees;
     let photos = releve.photos;
 
     // Capture times, for re-inserting pinned spreads chronologically.
@@ -356,6 +405,17 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
         src: rel(p),
         reason: "illisible".into(),
         kept: None,
+        focal: model::default_focal(),
+    }));
+
+    // Takeout originals whose edited version is in the album. Set aside
+    // before analysis, so like the unreadable ones they enter the report
+    // with no thumbnail and a default focal — but with their winner named,
+    // the way a duplicate names the photo that beat it.
+    discards.extend(editees.iter().map(|(originale, editee)| model::Discard {
+        src: rel(originale),
+        reason: "originale_editee".into(),
+        kept: Some(rel(editee)),
         focal: model::default_focal(),
     }));
 
@@ -1574,6 +1634,101 @@ mod tests {
             .expect("tout est écarté");
         let msg = format!("{err:#}");
         assert!(msg.contains("parasite"), "à 25, le filtre parasite revient : {msg}");
+    }
+
+    /// Le Takeout de 5.1, en synthétique : des photos sans EXIF dont les
+    /// dates vivent dans les sidecars JSON de Google, étalées sur trois
+    /// jours. Les dates réparées font trois chapitres et aucun parasite ;
+    /// la paire `-edited` garde la version éditée et écarte l'originale,
+    /// nommée dans `curation.json` avec son vainqueur. Mordant : rendre la
+    /// date de sidecar non fiable fait tout tomber en parasites (le test
+    /// d'à côté le montre), inverser la règle `-edited` casse les deux
+    /// assertions de la paire.
+    #[test]
+    fn un_takeout_synthetique_compose_avec_les_dates_reparees() {
+        let (photos, out) = dossier_test("takeout");
+        for i in 0..30 {
+            jpeg_imprimable(&photos.join(format!("photo-{i:02}.jpg")), i);
+        }
+        // Trois jours, dix photos par jour, une heure d'écart : le fuseau
+        // n'existe pas dans un Takeout, ces timestamps sont des epochs UTC.
+        for i in 0u64..30 {
+            let ts = 1_600_000_000 + (i / 10) * 2 * 86_400 + (i % 10) * 3_600;
+            fs::write(
+                photos.join(format!("photo-{i:02}.jpg.json")),
+                format!(r#"{{"photoTakenTime":{{"timestamp":"{ts}"}}}}"#),
+            )
+            .unwrap();
+        }
+        // Google pose la version éditée sans sidecar, à côté de l'originale
+        // qui en a un : la date de l'éditée vient du sidecar de sa base.
+        jpeg_imprimable(&photos.join("photo-00-edited.jpg"), 60);
+
+        let report = build_album(&photos, &out, BuildOptions::default())
+            .expect("un Takeout dézippé est un dossier ordinaire qui compose");
+        assert_eq!(report.chapters, 3, "trois jours font trois chapitres");
+        let srcs: std::collections::HashSet<String> = report
+            .album
+            .spreads
+            .iter()
+            .flat_map(|s| s.slots.iter().map(|sl| sl.src.clone()))
+            .collect();
+        assert_eq!(srcs.len(), 30, "les trente photographies sont dans le livre");
+        assert!(srcs.contains("photo-00-edited.jpg"), "la version éditée gagne");
+        assert!(!srcs.contains("photo-00.jpg"), "l'originale est sortie du livre");
+
+        let curation: Vec<model::Discard> =
+            serde_json::from_str(&fs::read_to_string(out.join("curation.json")).unwrap())
+                .unwrap();
+        let originale = curation
+            .iter()
+            .find(|d| d.src == "photo-00.jpg")
+            .expect("l'originale écartée est dans curation.json, pas perdue en silence");
+        assert_eq!(originale.reason, "originale_editee");
+        assert_eq!(originale.kept.as_deref(), Some("photo-00-edited.jpg"));
+        assert!(
+            curation.iter().all(|d| d.reason != "parasite"),
+            "les dates réparées ne laissent aucun parasite"
+        );
+    }
+
+    /// Le même dossier sans ses sidecars : aucune date fiable, une seule
+    /// masse de parasites, le refus les nomme. C'est le mordant de
+    /// l'arbitrage 3 — si la date de sidecar cessait d'être fiable, le
+    /// test au-dessus tomberait exactement ici.
+    #[test]
+    fn le_meme_takeout_sans_sidecars_est_une_masse_de_parasites() {
+        let (photos, out) = dossier_test("takeout-nu");
+        for i in 0..30 {
+            jpeg_imprimable(&photos.join(format!("photo-{i:02}.jpg")), i);
+        }
+        let err = build_album(&photos, &out, BuildOptions::default())
+            .err()
+            .expect("sans dates fiables, tout est parasite");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("parasite"), "{msg}");
+    }
+
+    /// `mariage-edited.jpg` existe dans les vrais dossiers de gens qui
+    /// n'ont jamais vu un Takeout : sans sidecar sur la base, la règle ne
+    /// s'arme pas et les deux photos restent des photos comme les autres.
+    #[test]
+    fn edited_hors_takeout_reste_une_photo_comme_une_autre() {
+        let (photos, out) = dossier_test("edited-ordinaire");
+        jpeg_imprimable(&photos.join("mariage.jpg"), 0);
+        jpeg_imprimable(&photos.join("mariage-edited.jpg"), 1);
+        jpeg_imprimable(&photos.join("autre.jpg"), 2);
+        let report = build_album(&photos, &out, BuildOptions::default())
+            .expect("trois photos font un album");
+        let slots: usize = report.album.spreads.iter().map(|s| s.slots.len()).sum();
+        assert_eq!(slots, 3, "aucune photo n'est écartée dans un dossier ordinaire");
+        let curation: Vec<model::Discard> =
+            serde_json::from_str(&fs::read_to_string(out.join("curation.json")).unwrap())
+                .unwrap();
+        assert!(
+            curation.iter().all(|d| d.reason != "originale_editee"),
+            "la règle -edited ne s'arme jamais hors d'un Takeout"
+        );
     }
 
     /// Every save keeps one step back: album.json.bak carries the previous

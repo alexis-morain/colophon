@@ -30,8 +30,13 @@ export function reglageOuIdentite(r: Reglage | undefined): Reglage {
 }
 
 /** The mono-channel transfer on [0,1], clamped after each step like CSS
- *  clamps between primitives. Mirror of `reglage.rs::transfert`. */
-function transfert(v: number, expo: number, contraste: number): number {
+ *  clamps between primitives. Mirror of `reglage.rs::transfert`.
+ *
+ *  Exported for `thumbs.ts`, which needs the transfer of one luminance and
+ *  not a table of 256: the « sombre » badge averages a histogram *through*
+ *  this function. Not a second definition — the same one, read from one more
+ *  place. */
+export function transfert(v: number, expo: number, contraste: number): number {
   const b = Math.pow(2, clamp(expo, -REGLAGE_BORNE, REGLAGE_BORNE));
   const monte = clamp(v * b, 0, 1);
   const c = Math.pow(2, clamp(contraste, -REGLAGE_BORNE, REGLAGE_BORNE));

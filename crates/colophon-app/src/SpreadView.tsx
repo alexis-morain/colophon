@@ -49,7 +49,7 @@ import { captionSuggestion, detectedFocal } from "./bridge";
 import { SceneProxies } from "./SceneProxies";
 import { fontLoaded, measureMm } from "./font";
 import { badgesDe, imageDe, ROOM_EPSILON, surImage } from "./photos";
-import { filtreDe, useReglages } from "./reglages";
+import { filtreDe, reglagePose, useReglages } from "./reglages";
 import { useRendu } from "./rendu";
 import { SceneCanvas } from "./SceneCanvas";
 import { t } from "./i18n";
@@ -786,7 +786,9 @@ export function SpreadView({
             if (!slot || !img) return null;
             const zoomPose = slot.zoom ?? 1;
             const zoom = draft?.slot === cell ? draft.zoom : zoomPose;
-            const b = badgesDe(slot.src, img, r, mm, zoom);
+            // The posed réglage, like the posed zoom just above: the badges
+            // speak about the album, not about the gesture in flight.
+            const b = badgesDe(slot.src, img, r, mm, zoom, reglagePose(slot.src));
             const montreZoom = selected === cell && zoomPose > 1.001;
             if (b.ppi === null && !b.dark && !montreZoom) return null;
             return (
@@ -1197,13 +1199,19 @@ function CropPhoto({
   // it from the same function rather than reading this, so a stale render can
   // never make a drag lie.
   const [sansMarge, setSansMarge] = useState(false);
+  // The adjustment the album carries, draft excluded on purpose: the
+  // « sombre » badge must fall at the release, not flicker under the slider.
+  // `useReglages` above re-renders on every change; this key is what re-runs
+  // the inspection below, which has no other reason to.
+  const reglagePosee = reglagePose(src);
+  const clePosee = `${reglagePosee?.expo ?? 0}|${reglagePosee?.contraste ?? 0}|${reglagePosee?.nb ?? false}`;
   useEffect(() => {
     const el = img.current;
     if (!el || !url) return;
     const inspect = () => {
       if (!el.naturalWidth) return;
       // The same rule the canvas renderer reads, written once.
-      const b = badgesDe(src, el, rect, mm, zoom);
+      const b = badgesDe(src, el, rect, mm, zoom, reglagePose(src));
       setWarn({ ppi: b.ppi, dark: b.dark });
       setSansMarge(b.sansMarge);
     };
@@ -1213,7 +1221,7 @@ function CropPhoto({
     }
     el.addEventListener("load", inspect, { once: true });
     return () => el.removeEventListener("load", inspect);
-  }, [url, src, rect.w, rect.h, zoom, mm]);
+  }, [url, src, rect.w, rect.h, zoom, mm, clePosee]);
 
   // Wheel zoom needs a non-passive listener to swallow the page scroll.
   const box = useRef<HTMLDivElement>(null);

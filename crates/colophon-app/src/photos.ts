@@ -131,6 +131,9 @@ export function badgesDe(
   );
   return {
     ppi: connu && p < MIN_EFFECTIVE_PPI ? Math.round(p) : null,
+    // Deliberately the RAW pixels: a photo brightened by a réglage still
+    // wears its « sombre » badge. Making the badge (and the analysis's
+    // exposure score) read the adjusted values is 4.4, not this session.
     dark: luma !== undefined && luma < DARK_MEAN_LUMA,
     sansMarge: room.x <= ROOM_EPSILON && room.y <= ROOM_EPSILON,
   };

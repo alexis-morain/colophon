@@ -148,11 +148,23 @@ pub struct RepriseReport {
     /// object, not a spread, and everyone retitles their own album.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub couverture: Vec<&'static str>,
+    /// Photographs of the book carrying an adjustment. Counted and named,
+    /// never judged: it enters neither `planches_touchees`, nor `part`, nor
+    /// `verdict`, nor `classes`. Retouching a photograph is not correcting a
+    /// composition, and folding it into the metric would make the composer
+    /// answer for work it never did. It is here because a number the report
+    /// stays silent about is a number nobody can check.
+    #[serde(skip_serializing_if = "est_zero")]
+    pub photos_reglees: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
     pub classes: Vec<ClasseCount>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub details: Vec<Reprise>,
+}
+
+fn est_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 /// Measure one album folder against the proposal it started from.
@@ -329,6 +341,15 @@ pub fn compare(titre: &str, origine: &Album, actuel: &Album) -> RepriseReport {
              elles ne comptent pas comme une reprise"
         ));
     }
+    // The number is reported a few lines above; this is where it explains
+    // itself, beside the two other things the metric counts without judging.
+    let reglees = photos_reglees(actuel);
+    if reglees > 0 {
+        notes.push(format!(
+            "{reglees} photos réglées, hors verdict : une retouche de photographie \
+             ne dit rien de la qualité du Composer"
+        ));
+    }
 
     RepriseReport {
         album: titre.to_string(),
@@ -344,6 +365,7 @@ pub fn compare(titre: &str, origine: &Album, actuel: &Album) -> RepriseReport {
         // threshold — which « non mesurable » never crosses.
         ok: verdict != "rédhibitoire",
         couverture: cover_diff(origine.cover.as_ref(), actuel.cover.as_ref()),
+        photos_reglees: reglees,
         notes,
         classes,
         details,
@@ -413,6 +435,27 @@ fn match_spreads(origine: &[Spread], actuel: &[Spread]) -> Vec<(usize, usize)> {
 
 fn srcs(s: &Spread) -> HashSet<&str> {
     s.slots.iter().map(|sl| sl.src.as_str()).collect()
+}
+
+/// Photographs the book shows — spreads and cover — that carry an entry in
+/// the album's adjustment table.
+///
+/// The book, not the table: an entry can outlive the photograph's presence,
+/// a réglage posed then the photo pulled back to the drawer, and counting
+/// that would report a retouch nobody can see. A photograph placed twice is
+/// one photograph, since this counts photographs and not slots.
+fn photos_reglees(album: &Album) -> usize {
+    if album.reglages.is_empty() {
+        return 0;
+    }
+    let mut montrees: HashSet<&str> = album.spreads.iter().flat_map(srcs).collect();
+    if let Some(photo) = album.cover.as_ref().and_then(|c| c.photo.as_ref()) {
+        montrees.insert(photo.src.as_str());
+    }
+    montrees
+        .into_iter()
+        .filter(|src| album.reglages.contains_key(*src))
+        .count()
 }
 
 /// Everything that changed between a spread and what it became.
@@ -572,9 +615,64 @@ mod tests {
             "a.jpg".into(),
             crate::model::Reglage { expo: 1.0, contraste: 0.5, nb: true },
         );
-        let sans = serde_json::to_string(&compare("t", &origine, &nu)).unwrap();
-        let avec = serde_json::to_string(&compare("t", &origine, &regle)).unwrap();
-        assert_eq!(sans, avec, "le rapport ne doit pas voir les réglages");
+        // An entry on a photograph the book does not show: posed, then the
+        // photo pulled back to the drawer. It is not a retouch anyone sees.
+        regle.reglages.insert(
+            "tiroir.jpg".into(),
+            crate::model::Reglage { expo: -1.0, contraste: 0.0, nb: false },
+        );
+        let sans = compare("t", &origine, &nu);
+        let avec = compare("t", &origine, &regle);
+
+        // Every field that judges, unmoved. `classes` and `details` carry no
+        // PartialEq, so they are compared as the report serialises them.
+        assert_eq!(sans.planches_touchees, avec.planches_touchees);
+        assert_eq!(sans.part, avec.part);
+        assert_eq!(sans.pourcentage, avec.pourcentage);
+        assert_eq!(sans.verdict, avec.verdict);
+        assert_eq!(sans.ok, avec.ok);
+        assert_eq!(
+            serde_json::to_string(&sans.classes).unwrap(),
+            serde_json::to_string(&avec.classes).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_string(&sans.details).unwrap(),
+            serde_json::to_string(&avec.details).unwrap()
+        );
+
+        // And the count is exact: the placed photograph, never the drawer's.
+        assert_eq!(sans.photos_reglees, 0);
+        assert_eq!(avec.photos_reglees, 1, "a.jpg compte, tiroir.jpg non");
+        assert!(sans.notes.iter().all(|n| !n.contains("photos réglées")));
+        assert!(
+            avec.notes.iter().any(|n| n.contains("1 photos réglées, hors verdict")),
+            "le chiffre s'explique là où on le lit : {:?}",
+            avec.notes
+        );
+        // Absent from the JSON at zero, so an album nobody retouched reads
+        // exactly as it did before this field existed.
+        assert!(!serde_json::to_string(&sans).unwrap().contains("photos_reglees"));
+    }
+
+    /// The cover is part of the book: a réglage on its photograph counts,
+    /// even though the cover is kept out of the percentage.
+    #[test]
+    fn le_reglage_de_la_couverture_compte() {
+        let origine = album(vec![spread("solo", &["a.jpg"])]);
+        let mut actuel = album(vec![spread("solo", &["a.jpg"])]);
+        actuel.cover = Some(Cover {
+            title: "Corse".into(),
+            subtitle: String::new(),
+            photo: Some(Slot::new("couv.jpg".into(), [0.5, 0.5])),
+            back_text: String::new(),
+        });
+        actuel.reglages.insert(
+            "couv.jpg".into(),
+            crate::model::Reglage { expo: 0.4, contraste: 0.0, nb: false },
+        );
+        let r = compare("t", &origine, &actuel);
+        assert_eq!(r.photos_reglees, 1);
+        assert_eq!(r.planches_touchees, 0, "une retouche n'est pas une reprise");
     }
 
     /// Each class is named for what it is, and one spread carrying two

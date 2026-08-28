@@ -397,6 +397,16 @@ pub fn dossiers_systeme() -> Vec<PathBuf> {
     dirs
 }
 
+/// The most faces a collection is believed on. Measured on a stock macOS on
+/// 28/08: the fattest `.ttc` on the machine carries 46 faces, the next 18.
+/// The format lets the header claim any 32-bit count, and nothing but this
+/// stands between a corrupt one and a walk that tries to read millions of
+/// faces out of a file that has two — measured before the cap: a 20 MB file
+/// claiming 0xFFFFFFFF produced five million entries and a gigabyte in six
+/// seconds. A file that claims more than this is corrupt, not a font with a
+/// thousand designs, and is read for its first faces and no further.
+const FACES_MAX: u32 = 256;
+
 /// How many faces a file carries: a collection says so, anything else is one
 /// face — including a file that is no font at all, which then comes back as
 /// one refusal rather than as nothing.
@@ -404,8 +414,10 @@ pub fn face_count(data: &[u8]) -> u32 {
     if data.get(0..4) != Some(&b"ttcf"[..]) {
         return 1;
     }
+    // Two ceilings, both against a header that lies: what the file is
+    // physically long enough to hold, and what a real collection ever is.
     let plafond = u32::try_from(data.len().saturating_sub(12) / 4).unwrap_or(u32::MAX);
-    u32b(data, 8).unwrap_or(0).min(plafond)
+    u32b(data, 8).unwrap_or(0).min(plafond).min(FACES_MAX)
 }
 
 /// Pull off the disk exactly the tables a reading needs, and nothing else.
@@ -428,16 +440,16 @@ fn lire_tables(path: &Path) -> Option<(Vec<u8>, u64)> {
     prendre(&mut f, &mut buf, &mut lus, taille, 0, 12)?;
 
     // A collection lists its faces' directories behind a header of its own.
-    let mut faces = 1u32;
+    // Read enough of it for the most faces a collection is believed on, then
+    // let `face_count` say how many there are: one ceiling, in one place.
     if buf.get(0..4) == Some(&b"ttcf"[..]) {
-        let plafond = u32::try_from(taille.saturating_sub(12) / 4).unwrap_or(u32::MAX);
-        faces = u32b(&buf, 8)?.min(plafond);
-        let entetes = 12usize.saturating_add((faces as usize).saturating_mul(4));
-        prendre(&mut f, &mut buf, &mut lus, taille, 0, entetes)?;
+        let entetes = 12usize.saturating_add(FACES_MAX as usize * 4);
+        let _ = prendre(&mut f, &mut buf, &mut lus, taille, 0, entetes);
     }
+    let faces = face_count(&buf);
 
     for index in 0..faces {
-        let Some(dir) = sfnt_dir(&buf, index) else { continue };
+        let Some(dir) = dir_offset(&buf, index) else { continue };
         if prendre(&mut f, &mut buf, &mut lus, taille, dir, 12).is_none() {
             continue;
         }
@@ -613,6 +625,20 @@ impl<'a> Communes<'a> {
 /// never from the directory. Reading those offsets as relative is the classic
 /// way to get a reader that works on a `.ttf` and returns nonsense on a `.ttc`.
 fn sfnt_dir(data: &[u8], index: u32) -> Option<usize> {
+    let dir = dir_offset(data, index)?;
+    // The directory has to start with a signature, in a collection as much as
+    // in a lone file. Without this, an offset out of a corrupt header walks
+    // the reader straight into the outlines and asks them for a name.
+    match data.get(dir..dir.saturating_add(4))? {
+        b"\x00\x01\x00\x00" | b"true" | b"OTTO" | b"typ1" => Some(dir),
+        _ => None,
+    }
+}
+
+/// Where face `index`'s directory is *said* to start, signature unchecked.
+/// [`lire_tables`] needs this before it can read the bytes that signature is
+/// written in; everything else goes through [`sfnt_dir`].
+fn dir_offset(data: &[u8], index: u32) -> Option<usize> {
     if data.get(0..4) == Some(&b"ttcf"[..]) {
         if index >= face_count(data) {
             return None;
@@ -620,13 +646,7 @@ fn sfnt_dir(data: &[u8], index: u32) -> Option<usize> {
         let at = 12usize.saturating_add(usize::try_from(index).ok()?.saturating_mul(4));
         return usize::try_from(u32b(data, at)?).ok();
     }
-    if index != 0 {
-        return None;
-    }
-    match data.get(0..4)? {
-        b"\x00\x01\x00\x00" | b"true" | b"OTTO" | b"typ1" => Some(0),
-        _ => None,
-    }
+    (index == 0).then_some(0)
 }
 
 /// Locate a table in the sfnt directory at `dir`.
@@ -1650,6 +1670,30 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A collection that lies about its face count is bounded, not believed.
+    /// Before the ceiling, a 20 MB file claiming 0xFFFFFFFF faces produced
+    /// five million entries and a gigabyte of them in six seconds — no
+    /// panic, and no way back either.
+    #[test]
+    fn une_collection_menteuse_est_plafonnee() {
+        let dir = dossier("menteuse");
+        let mut data = fichier(&[Fonte::neuve(), Fonte::neuve()]);
+        // Du remplissage, pour que le plafond physique ne suffise pas.
+        data.resize(data.len() + 2_000_000, 0);
+        data[8..12].copy_from_slice(&u32::MAX.to_be_bytes());
+        fs::write(dir.join("menteuse.ttc"), &data).unwrap();
+
+        assert_eq!(face_count(&data), FACES_MAX);
+        let t = std::time::Instant::now();
+        let liste = installed_in(&[dir.clone()]);
+        assert!(liste.len() <= FACES_MAX as usize, "{} entrées", liste.len());
+        assert!(t.elapsed().as_secs_f64() < 1.0);
+        // Les deux vraies faces se lisent, les autres offsets ne mènent à
+        // aucune signature sfnt et sont refusés plutôt qu'inventés.
+        assert_eq!(liste.iter().filter(|i| i.face.embeddable()).count(), 2);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Le coup d'œil humain de la session : les faces de cette machine, avec

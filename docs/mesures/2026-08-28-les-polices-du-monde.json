@@ -5,7 +5,7 @@
     "faces": 787,
     "fichiers": 370,
     "dossiers": 3,
-    "enumeration_ms": 29,
+    "enumeration_ms": 48,
     "refusees": 22,
     "par_code": {
       "embarquement_interdit": 16,
@@ -17,8 +17,8 @@
   },
   "jamais_un_glyphe": {
     "sur_le_disque_Mo": 777,
-    "lus_Ko": 33155,
-    "part_lue": "4,16 %",
+    "lus_Ko": 33280,
+    "part_lue": "4,18 %",
     "plus_grand_tampon_Mo": 63,
     "banc_de_gate": "500 fichiers de 22 Ko dont 20 Ko de glyf : 500 faces enumerees sous la seconde, 1,6 Ko lus par fichier (plancher du test : 4 Ko)",
     "comment": "lire_tables ouvre, cherche et lit les huit tables de TABLES_LUES a leur offset ; glyf et CFF ne sont jamais lus, leur presence venant du repertoire. Le tampon porte les tables a leur offset de fichier, d'ou les zeros et le pic de 63 Mo, transitoire."
@@ -45,7 +45,9 @@
     "symlinks_suivis": "la_decouverte_marche_le_dossier_et_le_trie tombe",
     "fichiers_caches_marches": "la_decouverte_marche_le_dossier_et_le_trie tombe",
     "liste_non_triee": "la_decouverte_marche_le_dossier_et_le_trie tombe",
-    "em_non_converti": "une_ttf_synthetique_se_lit_en_entier tombe"
+    "em_non_converti": "une_ttf_synthetique_se_lit_en_entier tombe",
+    "face_count_sans_plafond": "une_collection_menteuse_est_plafonnee tombe",
+    "signature_sfnt_non_verifiee": "une_collection_menteuse_est_plafonnee tombe"
   },
   "ce_qui_ne_bouge_pas": {
     "pdf": "album.pdf, album-print.pdf et album-cover.pdf de corse-2013 identiques a l'octet avant et apres, SOURCE_DATE_EPOCH fixe, binaire de main puis de la branche",
@@ -53,5 +55,13 @@
     "fiches": "identiques a l'octet sur les trois jeux (check.sh), releve::VERSION inchangee",
     "app": "aucun fichier de colophon-app touche, font.ts compris",
     "dependances": "aucune : anyhow, std et walkdir etaient deja la, Cargo.toml intacts. Aucun audit de licence du sur cette session."
+  },
+  "collection_menteuse": {
+    "trouve": "une TTC dont l'en-tete ment sur numFonts (0xFFFFFFFF) : le format autorise n'importe quel compte 32 bits, et rien ne s'y opposait",
+    "mesure_avant": "fichier de 20 Mo, 5 000 822 entrees produites en 5,7 s, soit environ un gigaoctet de Vec<Installee> depuis un seul fichier corrompu d'un dossier systeme. Pas de panique, pas de retour non plus.",
+    "remede": "FACES_MAX = 256, une seule definition dans face_count, plus la signature sfnt exigee au repertoire de chaque face de collection — sans quoi un offset de garbage mene le lecteur droit dans les contours et leur demande un nom",
+    "base_mesuree": "la plus grosse TTC de la machine porte 46 faces (MN.ttc), la suivante 18 (NotoSansMyanmar.ttc, AppleSDGothicNeo.ttc)",
+    "apres": "face_count plafonne a 256, les deux vraies faces du fichier menteur se lisent, le reste est refuse, sous la seconde",
+    "mordants": "face_count sans plafond → une_collection_menteuse_est_plafonnee tombe ; signature sfnt non verifiee → idem"
   }
 }

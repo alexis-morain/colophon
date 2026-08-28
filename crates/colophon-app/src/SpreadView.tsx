@@ -49,6 +49,7 @@ import { captionSuggestion, detectedFocal } from "./bridge";
 import { SceneProxies } from "./SceneProxies";
 import { fontLoaded, measureMm } from "./font";
 import { badgesDe, imageDe, ROOM_EPSILON, surImage } from "./photos";
+import { filtreDe, useReglages } from "./reglages";
 import { useRendu } from "./rendu";
 import { SceneCanvas } from "./SceneCanvas";
 import { t } from "./i18n";
@@ -1144,6 +1145,9 @@ function CropPhoto({
 }) {
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(src));
   const [over, setOver] = useState(false);
+  // The adjustment lives in its own store (draft included): re-render when
+  // it moves, so the filter below is never stale.
+  useReglages();
   const img = useRef<HTMLImageElement>(null);
   const gesture = useRef<{
     id: number;
@@ -1404,11 +1408,14 @@ function CropPhoto({
           draggable={false}
           // Cover-crop plus manual zoom: object-position anchors the focal,
           // the scale around that same origin reproduces pdf.rs::crop_window
-          // exactly (same fixed point, same visible window).
+          // exactly (same fixed point, same visible window). The filter is
+          // the adjustment: the same chain every surface reads from
+          // `filtreDe`, draft included while a slider moves.
           style={{
             objectPosition: `${focal[0] * 100}% ${focal[1] * 100}%`,
             transform: zoom > 1.001 ? `scale(${zoom})` : undefined,
             transformOrigin: `${focal[0] * 100}% ${focal[1] * 100}%`,
+            filter: filtreDe(src),
           }}
         />
       )}
@@ -1443,12 +1450,15 @@ function CropPhoto({
 }
 
 /** Shared with the light table: the crop of one slot as CSS, the same
- *  cover + focal + scale-around-focal maths as the print (see CropPhoto). */
+ *  cover + focal + scale-around-focal maths as the print (see CropPhoto),
+ *  plus the photo's adjustment — a photo that changed its face between two
+ *  surfaces would read as a bug. Callers subscribe via `useReglages`. */
 export function thumbCropStyle(slot: Slot): React.CSSProperties {
   const zoom = slot.zoom ?? 1;
   return {
     objectPosition: `${slot.focal[0] * 100}% ${slot.focal[1] * 100}%`,
     transform: zoom > 1.001 ? `scale(${zoom})` : undefined,
     transformOrigin: `${slot.focal[0] * 100}% ${slot.focal[1] * 100}%`,
+    filter: filtreDe(slot.src),
   };
 }

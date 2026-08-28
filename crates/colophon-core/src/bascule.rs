@@ -465,6 +465,22 @@ mod tests {
         assert!(bilan.tailles_manquantes.is_empty());
     }
 
+    /// The adjustments table crosses the bascule whole: the module clones
+    /// the album, so there is nothing to code and this test holds the
+    /// nothing. A réglage is a property of the photograph, and the
+    /// photograph does not change page shape.
+    #[test]
+    fn les_reglages_traversent_la_bascule() {
+        let mut album = album_de(vec![planche("duo", &["a.jpg", "b.jpg"])], carre());
+        album.reglages.insert(
+            "a.jpg".into(),
+            crate::model::Reglage { expo: 0.5, contraste: -1.0, nb: true },
+        );
+        let t = tailles(&[("a.jpg", 4000, 3000), ("b.jpg", 4000, 3000)]);
+        let (apres, _) = bascule(&album, paysage(), &t, profil());
+        assert_eq!(apres.reglages, album.reglages);
+    }
+
     /// Every focal is untouched. This is 3.1's promise, and the bascule is
     /// its first real user: the crop means the same thing on any page shape,
     /// so there is nothing to convert and nothing to lose.

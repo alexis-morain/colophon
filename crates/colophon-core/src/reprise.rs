@@ -556,6 +556,27 @@ mod tests {
         assert!(r.ok);
     }
 
+    /// A photo adjustment is not a spread correction: the report of an
+    /// adjusted album is byte-identical to the unadjusted one's. Held by
+    /// construction — `compare` reads `spreads` and the cover only — and
+    /// this is the assertion 4.1's storage choice was made for: réglages in
+    /// a table of the album, never in `Slot`, never posing `edited`. 4.4's
+    /// « une retouche de photo n'est pas une correction de planche » starts
+    /// here.
+    #[test]
+    fn un_reglage_ne_touche_pas_la_reprise() {
+        let origine = album(vec![spread("duo", &["a.jpg", "b.jpg"])]);
+        let nu = album(vec![spread("duo", &["a.jpg", "b.jpg"])]);
+        let mut regle = album(vec![spread("duo", &["a.jpg", "b.jpg"])]);
+        regle.reglages.insert(
+            "a.jpg".into(),
+            crate::model::Reglage { expo: 1.0, contraste: 0.5, nb: true },
+        );
+        let sans = serde_json::to_string(&compare("t", &origine, &nu)).unwrap();
+        let avec = serde_json::to_string(&compare("t", &origine, &regle)).unwrap();
+        assert_eq!(sans, avec, "le rapport ne doit pas voir les réglages");
+    }
+
     /// Each class is named for what it is, and one spread carrying two
     /// corrections is still one corrected spread.
     #[test]

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "banc_gabarits", "depuis_fiches"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "banc_gabarits", "depuis_fiches"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -65,6 +65,13 @@ struct Cli {
     /// parity check against the editor's TypeScript port.
     #[arg(long)]
     dump_geometry: bool,
+
+    /// Print the adjustment LUTs over a fixed grid of settings as JSON and
+    /// exit. Feeds the parity check like --dump-geometry: the committed
+    /// fixture of `reglage.test.ts` is this output. Not a user feature —
+    /// adjustments are born in the editor, never on this command line.
+    #[arg(long)]
+    dump_lut: bool,
 
     /// Print the scene of every spread as JSON and exit: what each spread
     /// actually holds, as objects, in paint order. The committed fixture of
@@ -200,6 +207,14 @@ fn main() -> Result<()> {
         let mut album = Album::new("geometry", std::path::Path::new("."), trim);
         album.bleed_mm = cli.bleed;
         println!("{}", serde_json::to_string_pretty(&pdf::dump_geometry(&album))?);
+        return Ok(());
+    }
+
+    if cli.dump_lut {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&colophon_core::reglage::dump_luts())?
+        );
         return Ok(());
     }
 

@@ -25,6 +25,7 @@ import {
   renameAlbum,
   rescuePhoto,
   restoreSpread,
+  setReglage,
   setSlotCaption,
   setSlotCrop,
   setCover,
@@ -423,5 +424,50 @@ describe("renameAlbum", () => {
     const a = album(spread("duo", 2));
     expect(renameAlbum(a, "   ")).toBe(a);
     expect(renameAlbum(a, "test")).toBe(a);
+  });
+});
+
+describe("setReglage", () => {
+  it("stores by source and clamps to the bounds", () => {
+    const a = album(spread("duo", 2));
+    const b = setReglage(a, "p0.jpg", { expo: 3, contraste: -2, nb: true });
+    expect(b.reglages).toEqual({
+      "p0.jpg": { expo: 1, contraste: -1, nb: true },
+    });
+    // Pure: the input album is what the undo stack keeps.
+    expect(a.reglages).toBeUndefined();
+  });
+
+  it("never marks a spread edited: adjusting a photo is not editing a spread", () => {
+    const a = album(spread("duo", 2));
+    const b = setReglage(a, "p0.jpg", { expo: 0.5, contraste: 0, nb: false });
+    expect(b.spreads[0].edited).toBeUndefined();
+    expect(b.spreads).toBe(a.spreads);
+  });
+
+  it("drops the identity entry, and the empty table with it", () => {
+    const a = album(spread("duo", 2));
+    const regle = setReglage(a, "p0.jpg", { expo: 0.5, contraste: 0, nb: false });
+    const rendu = setReglage(regle, "p0.jpg", { expo: 0, contraste: 0, nb: false });
+    expect(rendu.reglages).toBeUndefined();
+    // Setting the identity on an untouched photo is a no-op, not a step.
+    expect(setReglage(a, "p0.jpg", { expo: 0, contraste: 0, nb: false })).toBe(a);
+  });
+
+  it("an unchanged value is a no-op, so no empty undo step", () => {
+    const a = setReglage(album(spread("duo", 2)), "p0.jpg", {
+      expo: 0.5,
+      contraste: 0,
+      nb: false,
+    });
+    expect(setReglage(a, "p0.jpg", { expo: 0.5, contraste: 0, nb: false })).toBe(a);
+  });
+
+  it("leaves the other photos' entries alone", () => {
+    let a = album(spread("duo", 2));
+    a = setReglage(a, "p0.jpg", { expo: 0.5, contraste: 0, nb: false });
+    a = setReglage(a, "p1.jpg", { expo: 0, contraste: 0, nb: true });
+    a = setReglage(a, "p0.jpg", { expo: 0, contraste: 0, nb: false });
+    expect(a.reglages).toEqual({ "p1.jpg": { expo: 0, contraste: 0, nb: true } });
   });
 });

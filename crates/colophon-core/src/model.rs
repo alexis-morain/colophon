@@ -32,6 +32,41 @@ pub struct Album {
     /// offered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub colophon: Option<crate::colophon::Faits>,
+    /// Non-destructive adjustments, keyed by `Slot::src`. A property of the
+    /// photograph, never of the cell: a photo on a spread and on the cover is
+    /// adjusted once, a recomposition that rebuilds the spreads cannot lose
+    /// it, and `reprise` — which reads `spreads` only — stays blind to it by
+    /// construction. Applied where pixels are resolved (screen and export),
+    /// never written to an original. An identity entry leaves the table at
+    /// the edit that produced it, so absence means « no adjustment ».
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub reglages: std::collections::BTreeMap<String, Reglage>,
+}
+
+/// One photograph's adjustments: exposure, contrast, black and white.
+/// The transform these numbers name is defined once, in [`crate::reglage`],
+/// and it is the CSS filter formula — which is what lets the editor show it
+/// with one line of style.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Reglage {
+    /// Exposure, in stops of the CSS `brightness(2^expo)`, clamped to ±1:
+    /// enough to rescue a shot, not a darkroom.
+    #[serde(default)]
+    pub expo: f64,
+    /// Contrast, `contrast(2^contraste)` around the 0,5 pivot, clamped to ±1.
+    #[serde(default)]
+    pub contraste: f64,
+    /// Black and white: luma 709, the coefficients of `grayscale(1)`.
+    #[serde(default)]
+    pub nb: bool,
+}
+
+impl Reglage {
+    /// The adjustment that adjusts nothing. Never stored: an identity entry
+    /// leaves the table at the edit that produced it.
+    pub fn est_identite(&self) -> bool {
+        self.expo == 0.0 && self.contraste == 0.0 && !self.nb
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -190,6 +225,31 @@ mod tests {
         assert!(!out.contains("edited"));
         assert!(!out.contains("locked"));
         assert!(!out.contains("cover"));
+        assert!(!out.contains("reglages"));
+    }
+
+    /// The adjustments table survives the round trip, and an album without
+    /// one writes no field at all: `reglages` is additive, absence means
+    /// « no adjustment », the schema stays at 2.
+    #[test]
+    fn reglages_round_trip_et_absence_muette() {
+        let mut album = Album::new("t", std::path::Path::new("/p"), Size { w: 210.0, h: 210.0 });
+        assert!(album.reglages.is_empty());
+        album.reglages.insert(
+            "a.jpg".into(),
+            Reglage { expo: 0.5, contraste: -0.25, nb: true },
+        );
+        let back: Album =
+            serde_json::from_str(&serde_json::to_string(&album).unwrap()).unwrap();
+        let r = back.reglages.get("a.jpg").expect("l'entrée survit");
+        assert_eq!(r.expo, 0.5);
+        assert_eq!(r.contraste, -0.25);
+        assert!(r.nb);
+        // A hand-repaired entry may name one field only: the others default.
+        let partiel: Reglage = serde_json::from_str(r#"{ "nb": true }"#).unwrap();
+        assert_eq!(partiel, Reglage { expo: 0.0, contraste: 0.0, nb: true });
+        assert!(Reglage { expo: 0.0, contraste: 0.0, nb: false }.est_identite());
+        assert!(!partiel.est_identite());
     }
 
     /// La conversion d'un focal de schéma 1 vers le schéma 2 se lit sur la
@@ -317,6 +377,7 @@ impl Album {
             cover: None,
             densite: crate::layout::Densite::default(),
             colophon: None,
+            reglages: std::collections::BTreeMap::new(),
         }
     }
 

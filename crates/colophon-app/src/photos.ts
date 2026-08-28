@@ -12,10 +12,12 @@ import {
   DARK_MEAN_LUMA,
   MIN_EFFECTIVE_PPI,
   Rect,
+  Reglage,
   THUMB_SIZE,
   effectivePpi,
   slidingRoom,
 } from "./album";
+import { appliquer } from "./reglage";
 import { cachedThumb, loadThumb, meanLuma } from "./thumbs";
 
 const images = new Map<string, HTMLImageElement>();
@@ -45,6 +47,37 @@ export function imageDe(src: string): HTMLImageElement | null {
   if (dejaLa) poser(dejaLa);
   else loadThumb(src).then(poser, () => enCours.delete(src));
   return null;
+}
+
+/** One pre-adjusted bitmap per photo — the last committed réglage only, so
+ *  the pool stays the size of the thumbnail pool. */
+const reglees = new Map<string, { cle: string; bitmap: HTMLCanvasElement }>();
+
+/**
+ * The thumbnail of a photo with its committed adjustment burnt in: the
+ * canvas renderer's fallback where `ctx.filter` does not exist. Computed
+ * lazily at the repaint a commit triggers, cached by (src, réglage), and
+ * never during a slider drag — the caller ignores the draft on this path,
+ * so the case follows at release, and that is all. The thumbnail cache on
+ * disk stays untouched: this adjusts a copy, in memory, for the screen.
+ */
+export function imageRegleeDe(src: string, r: Reglage): CanvasImageSource | null {
+  const img = imageDe(src);
+  if (!img) return null;
+  const cle = `${r.expo}|${r.contraste}|${r.nb}`;
+  const hit = reglees.get(src);
+  if (hit && hit.cle === cle) return hit.bitmap;
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth;
+  c.height = img.naturalHeight;
+  const ctx = c.getContext("2d");
+  if (!ctx) return img;
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, c.width, c.height);
+  appliquer(data.data, r);
+  ctx.putImageData(data, 0, 0);
+  reglees.set(src, { cle, bitmap: c });
+  return c;
 }
 
 /** Runs whenever a thumbnail finishes decoding. */

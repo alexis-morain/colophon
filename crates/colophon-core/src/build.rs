@@ -42,6 +42,11 @@ pub struct BuildOptions {
     /// Alternative proposals to compose beside the one asked for. Empty is
     /// the plain path: one album, exactly as before.
     pub variantes: Vec<VarianteSpec>,
+    /// Adjustments carried over on recomposition, keyed by source like
+    /// `Album::reglages`. A field the recomposition does not carry is a
+    /// field it destroys in silence — same rule as `densite` and `cover`.
+    /// A fresh build has none.
+    pub reglages: std::collections::BTreeMap<String, model::Reglage>,
 }
 
 impl Default for BuildOptions {
@@ -58,6 +63,7 @@ impl Default for BuildOptions {
             colophon: true,
             garde: true,
             variantes: Vec::new(),
+            reglages: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -523,6 +529,7 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
         let mut album = model::Album::new(&title, &root, opts.trim);
         album.cover = opts.cover.clone();
         album.densite = densite;
+        album.reglages = opts.reglages.clone();
         let total_kept: usize = base.iter().map(|c| c.photos.len()).sum();
         let mut budget = if petit {
             total_kept
@@ -801,7 +808,16 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
                 let src = root.join(&slot.src);
                 let thumb_path = cache.path_for(&src);
                 let data = fs::read(&thumb_path).ok()?;
-                let (w, h) = jpeg_dimensions(&data)?;
+                // A recomposition of an adjusted album comes through here:
+                // the cached thumbnail stays untouched on disk, its copy is
+                // adjusted on the way into the preview PDF.
+                let (data, w, h) = match album.reglages.get(&slot.src) {
+                    Some(r) => crate::reglage::regler_jpeg(&data, r, 92).ok()?,
+                    None => {
+                        let (w, h) = jpeg_dimensions(&data)?;
+                        (data, w, h)
+                    }
+                };
                 Some(pdf::JpegAsset { data, width: w, height: h, focal: slot.focal, zoom: slot.zoom })
             })
             .collect();
@@ -1051,7 +1067,16 @@ pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
             .filter_map(|slot| {
                 let name = thumbs.get(&slot.src)?;
                 let data = fs::read(dir.join(".cache").join("thumbs").join(name)).ok()?;
-                let (w, h) = jpeg_dimensions(&data)?;
+                // The faithful preview and the page turn both read this PDF:
+                // an adjusted photo shows adjusted there too, the cache file
+                // itself staying pixel-for-pixel what the analysis measured.
+                let (data, w, h) = match album.reglages.get(&slot.src) {
+                    Some(r) => crate::reglage::regler_jpeg(&data, r, 92).ok()?,
+                    None => {
+                        let (w, h) = jpeg_dimensions(&data)?;
+                        (data, w, h)
+                    }
+                };
                 Some(pdf::JpegAsset { data, width: w, height: h, focal: slot.focal, zoom: slot.zoom })
             })
             .collect();
@@ -1432,6 +1457,73 @@ mod tests {
     /// colophon mis à part.
     fn planches_photo(album: &model::Album) -> usize {
         album.spreads.iter().filter(|s| !s.slots.is_empty()).count()
+    }
+
+    /// The three promises of the adjustments' storage, on a real build.
+    /// A recomposition carries the table (dropping the field from
+    /// `BuildOptions` makes this fall); the preview render applies it
+    /// (neutralising the application in `render_album_pdf` makes this fall);
+    /// and two renders of the same adjusted album are byte-identical under
+    /// `SOURCE_DATE_EPOCH`, exactly like the unadjusted ones.
+    #[test]
+    fn la_recomposition_garde_les_reglages_et_lapercu_les_applique() {
+        let (photos, out) = dossier_test("reglages");
+        for i in 0..3 {
+            jpeg_imprimable(&photos.join(format!("photo-{i}.jpg")), i);
+        }
+        let report = build_album(&photos, &out, BuildOptions::default())
+            .expect("trois photos font un album");
+        let src = report
+            .album
+            .spreads
+            .iter()
+            .flat_map(|s| s.slots.iter())
+            .next()
+            .expect("au moins une photo")
+            .src
+            .clone();
+
+        // One clock for every render below: the diffs are about pixels.
+        std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
+        let nu = {
+            render_album_pdf(&out).unwrap();
+            fs::read(out.join("album.pdf")).unwrap()
+        };
+
+        // The recomposition path: same folder, the réglage in the options,
+        // exactly what `recompose_album` passes.
+        let mut opts = BuildOptions::default();
+        opts.reglages.insert(
+            src.clone(),
+            model::Reglage { expo: 1.0, contraste: 0.0, nb: false },
+        );
+        let repris = build_album(&photos, &out, opts).expect("recomposition");
+        assert_eq!(
+            repris.album.reglages.get(&src),
+            Some(&model::Reglage { expo: 1.0, contraste: 0.0, nb: false }),
+            "la table survit à la recomposition"
+        );
+
+        let regle = {
+            render_album_pdf(&out).unwrap();
+            fs::read(out.join("album.pdf")).unwrap()
+        };
+        assert_ne!(nu, regle, "le réglage doit atteindre l'aperçu rendu");
+
+        let regle_bis = {
+            render_album_pdf(&out).unwrap();
+            fs::read(out.join("album.pdf")).unwrap()
+        };
+        assert_eq!(regle, regle_bis, "deux rendus du même album réglé, à l'octet");
+
+        // Take the réglage away and the render is today's again: the
+        // identity is the default, not a near miss.
+        let mut album = repris.album.clone();
+        album.reglages.clear();
+        write_album_json(&out, &album).unwrap();
+        render_album_pdf(&out).unwrap();
+        assert_eq!(nu, fs::read(out.join("album.pdf")).unwrap());
+        std::env::remove_var("SOURCE_DATE_EPOCH");
     }
 
     /// Ten photos: the album is sized on the folder, not on the 48 spreads

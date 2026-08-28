@@ -7,8 +7,18 @@
     "secondes": 5.4,
     "refusees": 31,
     "par_genre": {
-      "glyf": {"faces": 629, "fichiers_Mo": 1851, "extraits_Mo": 530, "part": "28,7 %"},
-      "cff": {"faces": 127, "fichiers_Mo": 1311, "extraits_Mo": 296, "part": "22,6 %"}
+      "glyf": {
+        "faces": 629,
+        "fichiers_Mo": 1851,
+        "extraits_Mo": 530,
+        "part": "28,7 %"
+      },
+      "cff": {
+        "faces": 127,
+        "fichiers_Mo": 1311,
+        "extraits_Mo": 296,
+        "part": "22,6 %"
+      }
     },
     "poids_extrait": {
       "mediane_Ko": 123,
@@ -52,5 +62,17 @@
     "somme de head prise sur un checkSumAdjustment non nul": "le_fichier_emis_est_un_vrai_fichier_de_police tombe",
     "extraire ignorant le rang de la face": "une_face_de_collection_sort_seule tombe",
     "le piege du tampon parcimonieux": "prouve plutot que sonde : l_extraction_lit_le_fichier_entier_jamais_le_tampon extrait des deux cotes et montre les zeros, avec des metriques identiques des deux cotes"
+  },
+  "un_juge_exterieur": {
+    "quoi": "L'arbitrage 5 demande un vrai fichier de police, pas un fichier que nos seuls tests acceptent. Nos tests ne peuvent pas juger cela : le lecteur qui relit est celui qui a ecrit. macOS, lui, est exterieur.",
+    "comment": "CGFontCreateWithDataProvider puis CTFontCreateWithGraphicsFont sur cinq faces extraites de vrais fichiers, une par genre et par forme de fichier, plus la face embarquee. Sonde jetable en ctypes, hors depot, rien d'installe.",
+    "verdict": "macOS accepte les cinq, avec le bon nom PostScript et la bonne famille",
+    "detail": [
+      "SourceSans3-Regular (notre asset extrait) — famille « Source Sans 3 », 2478 glyphes",
+      "AppleSDGothicNeo-Regular, face CFF tiree d'une .ttc — famille « Apple SD Gothic Neo », 18 662 glyphes",
+      ".SFNumeric-Regular, face glyf tiree d'une .ttc — famille « .SF Numeric », 311 glyphes",
+      "AppleBraille-Outline6Dot, face glyf d'un fichier isole — 276 glyphes",
+      "NotoSansCanadianAboriginal-Regular, face CFF d'un fichier isole — 755 glyphes"
+    ]
   }
 }

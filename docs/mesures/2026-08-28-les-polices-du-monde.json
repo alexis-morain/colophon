@@ -1,0 +1,57 @@
+{
+  "quoi": "6.1 session 1 sur 4 — le moteur lit les faces de la machine : Face::parse generalise, verdict d'embarquement code, decouverte des dossiers systeme. Aucune face n'est utilisee, aucun PDF ne change.",
+  "comment": "banc font::tests::banc_polices_du_mac (release, ignore) sur un macOS de serie, plus le banc de gate font::tests::le_banc_enumere_sans_charger sur 500 fichiers synthetiques. Diff confine a font.rs et CONTEXT.md.",
+  "zoo_du_mac": {
+    "faces": 787,
+    "fichiers": 370,
+    "dossiers": 3,
+    "enumeration_ms": 29,
+    "refusees": 22,
+    "par_code": {
+      "embarquement_interdit": 16,
+      "cmap_illisible": 5,
+      "bitmap_seulement": 1,
+      "illisible": 0
+    },
+    "qui": "embarquement_interdit : Gill Sans (7 faces), Futura (4), Lucida Grande (2), Songti SC, Zapf Dingbats, Brush Script MT, Ayuthaya — des sous licence Monotype/Apple, fsType bit 1. cmap_illisible : Wingdings 1/2/3, Webdings, .LastResort — tables symbole (3,0), exactement le cas de l'arbitrage 4. bitmap_seulement : NISC18030.ttf, bdat/bloc et pas un glyf."
+  },
+  "jamais_un_glyphe": {
+    "sur_le_disque_Mo": 777,
+    "lus_Ko": 33155,
+    "part_lue": "4,16 %",
+    "plus_grand_tampon_Mo": 63,
+    "banc_de_gate": "500 fichiers de 22 Ko dont 20 Ko de glyf : 500 faces enumerees sous la seconde, 1,6 Ko lus par fichier (plancher du test : 4 Ko)",
+    "comment": "lire_tables ouvre, cherche et lit les huit tables de TABLES_LUES a leur offset ; glyf et CFF ne sont jamais lus, leur presence venant du repertoire. Le tampon porte les tables a leur offset de fichier, d'ou les zeros et le pic de 63 Mo, transitoire."
+  },
+  "trois_trouvailles_du_zoo": {
+    "CFF2": "les neuf faces indiennes de SFIndia.ttc sont des OTTO variables a contours CFF2, pas CFF : refusees a tort en bitmap_seulement avant correction. CFF2 compte desormais comme cff.",
+    "bitmap_sans_head": "NISC18030.ttf n'a pas de head (il a un bhed) : le refus se decide sur les contours avant les tables communes, sinon la face sort illisible et sans son nom. Elle s'appelle GB18030 Bitmap Regular.",
+    "langue_du_nom": "chaque face de macOS se nomme en six langues. Sans preference pour l'anglais, Times.ttc rend Times 標準體 et Brush Script rend Brush Script MT kursiv. Rang : (3,0x0409), (1,0), (0,*), (3,*), (1,*)."
+  },
+  "piege_de_l_emoji_mesure": {
+    "regle_retenue": "aucune table de contour du tout -> bitmap_seulement",
+    "regle_ecartee": "presence d'une strike bitmap (sbix, CBDT, EBDT, bdat) -> refus",
+    "pourquoi": "la regle ecartee aurait refuse Courier New, Monaco, Geneva, Cochin, PT Sans (8 faces), Euphemia et AppleMyungjo, toutes des polices de texte qui livrent leurs petits corps en bitmap a cote de contours complets. Apple Color Emoji n'est pas une face sans contours non plus : 3811 de ses 3844 glyphes en portent, sous la couleur. Une seule face de la machine n'a aucun contour, et c'est celle que la regle retenue attrape."
+  },
+  "mordants": {
+    "offsets_de_ttc_lus_comme_relatifs": "une_collection_rend_ses_deux_faces et la_decouverte_marche_le_dossier_et_le_trie tombent",
+    "test_du_bit_0x0002_inverse": "sept tests tombent, dont the_bundled_face_parses_and_may_be_embedded",
+    "longueur_de_table_rognee_au_lieu_d_etre_refusee": "une_ttf_synthetique_se_lit_en_entier tombe",
+    "u16b_sans_borne": "un_fichier_hostile_ne_fait_jamais_paniquer panique",
+    "cmap_format_inconnu_accepte": "les_verdicts_d_embarquement_sortent_leurs_codes tombe",
+    "refus_bitmap_decide_apres_les_tables_communes": "les_verdicts_d_embarquement_sortent_leurs_codes tombe",
+    "preference_de_langue_retiree": "le_nom_se_lit_des_deux_plateformes tombe",
+    "CFF2_non_reconnu": "otto_se_lit_et_fvar_marque_la_variable tombe",
+    "symlinks_suivis": "la_decouverte_marche_le_dossier_et_le_trie tombe",
+    "fichiers_caches_marches": "la_decouverte_marche_le_dossier_et_le_trie tombe",
+    "liste_non_triee": "la_decouverte_marche_le_dossier_et_le_trie tombe",
+    "em_non_converti": "une_ttf_synthetique_se_lit_en_entier tombe"
+  },
+  "ce_qui_ne_bouge_pas": {
+    "pdf": "album.pdf, album-print.pdf et album-cover.pdf de corse-2013 identiques a l'octet avant et apres, SOURCE_DATE_EPOCH fixe, binaire de main puis de la branche",
+    "album_json": "identique",
+    "fiches": "identiques a l'octet sur les trois jeux (check.sh), releve::VERSION inchangee",
+    "app": "aucun fichier de colophon-app touche, font.ts compris",
+    "dependances": "aucune : anyhow, std et walkdir etaient deja la, Cargo.toml intacts. Aucun audit de licence du sur cette session."
+  }
+}

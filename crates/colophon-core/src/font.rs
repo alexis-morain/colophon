@@ -1,4 +1,4 @@
-//! The album's text face, embedded in every PDF.
+//! The album's text face, and every face the machine carries.
 //!
 //! PDF readers carry the base-14 fonts (Helvetica and friends) themselves, so
 //! a file that names one embeds nothing. It renders anywhere and fails every
@@ -15,8 +15,24 @@
 //! The metrics come out of the TrueType tables by hand, the way `print.rs`
 //! reads a JPEG's SOF marker: a font file is a handful of big-endian tables at
 //! known offsets, and a parser crate would be more code to audit than this.
+//!
+//! The same reader answers a second question — *which faces does this machine
+//! carry, and which of them may enter a file* — and that question changes what
+//! it has to survive. It no longer reads our asset, known and sound: it reads
+//! whatever a system folder holds. Collections of a dozen faces, CFF outlines,
+//! variable fonts, colour emoji, bitmap-only faces, and files that are not
+//! fonts at all. So every offset and every length now comes out of the file
+//! being read, every access goes through a bounded read that returns `None`
+//! rather than through arithmetic that could overflow, and anything unreadable
+//! comes back as a refusal carrying its reason — never a panic, never silence.
+//!
+//! Reading is all this module does. It embeds one face, the one below, and
+//! knowing about the others is not yet using them.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Result};
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 /// The face itself. ~430 kB, embedded whole rather than subset: PDF/X asks for
 /// embedded, not minimal, and a print PDF runs to tens of megabytes of photos.
@@ -30,6 +46,19 @@ pub const FONT_NAME: &str = "SourceSans3-Regular";
 /// into WinAnsi, so this covers every glyph a caption can reach.
 pub const FIRST_CHAR: u8 = 32;
 pub const LAST_CHAR: u8 = 255;
+
+/// A face we cannot identify at all: not a font, truncated before its tables,
+/// nameless, or a collection index that does not exist.
+pub const REFUS_ILLISIBLE: &str = "illisible";
+/// `fsType` bit 0x0002: the vendor forbids embedding outright.
+pub const REFUS_EMBARQUEMENT_INTERDIT: &str = "embarquement_interdit";
+/// Nothing to embed but bitmaps: either the licence says so (`fsType` bit
+/// 0x0200), or the face carries no outline table at all, which is how colour
+/// emoji and bitmap faces come out.
+pub const REFUS_BITMAP_SEULEMENT: &str = "bitmap_seulement";
+/// A character map in no format we read, or none at all. The face may be
+/// perfectly good; we simply cannot say how wide a caption sets in it.
+pub const REFUS_CMAP_ILLISIBLE: &str = "cmap_illisible";
 
 /// What the PDF needs to know about the face, all in the 1000-unit em space
 /// PDF works in.
@@ -51,15 +80,187 @@ pub struct Metrics {
 impl Metrics {
     /// True when the licence bits allow us to put the face in a file at all.
     /// Checked rather than assumed: swapping the asset must not quietly ship
-    /// a font whose vendor forbade embedding.
+    /// a font whose vendor forbade embedding. The same rule the coded verdict
+    /// uses, read as the yes-or-no the emitter asks for.
     pub fn embeddable(&self) -> bool {
-        self.fs_type & 0x0002 == 0
+        verdict_fs_type(self.fs_type).is_none()
     }
 }
 
-/// Read the face bundled above.
+/// What a face's outlines are made of. Read from the tables the file
+/// declares, never from its extension: a `.ttf` may hold CFF outlines and
+/// an `.otf` may hold quadratic ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Genre {
+    Glyf,
+    Cff,
+}
+
+impl Genre {
+    /// The code the engine speaks. Like the refusals, a screen turns it into
+    /// a word; the engine never carries the word.
+    pub fn code(self) -> &'static str {
+        match self {
+            Genre::Glyf => "glyf",
+            Genre::Cff => "cff",
+        }
+    }
+}
+
+/// One named design inside a font file. `Helvetica.ttc` is a file; it carries
+/// several faces, each with its own name, its own metrics, and its own right
+/// to enter a PDF.
+#[derive(Debug, Clone)]
+pub struct Face {
+    /// Rank in the file: zero for a lone face, the collection's index in a
+    /// `.ttc`. With the path, it is the face's address.
+    pub index: u32,
+    /// PostScript name (name ID 6), what would go in `/BaseFont`.
+    pub postscript: String,
+    /// Readable name: family (ID 1) and style (ID 2), joined. Trimming a
+    /// trailing "Regular" out of it is a screen's decision, not the engine's.
+    pub nom: String,
+    /// What the outlines are made of; `None` when there are none, which is a
+    /// refusal rather than a kind.
+    pub genre: Option<Genre>,
+    /// Carries an `fvar` table. The metrics below are the default instance,
+    /// which is exactly what the shared tables describe, so they need no
+    /// correction. The axes are deliberately not exposed: that is interface.
+    pub variable: bool,
+    /// `fsType` bit 0x0100: the face may be embedded, whole only. The engine
+    /// embeds faces whole anyway, so this is remembered, never refused.
+    pub sous_ensemblage_interdit: bool,
+    /// The metrics, in the 1000-unit em. `None` only when the character map
+    /// could not be read, since no width can be measured without one.
+    pub metrics: Option<Metrics>,
+    /// `None` when the face may be embedded, the refusal code otherwise. A
+    /// code, never a sentence: the wording belongs to the screen, the way
+    /// `curation.json` carries `illisible` and the app writes the line.
+    pub refus: Option<&'static str>,
+}
+
+impl Face {
+    /// Read face `index` out of a font file.
+    ///
+    /// `Err` is [`REFUS_ILLISIBLE`] and means the bytes name no face at all.
+    /// Every other refusal comes back as a `Face` that still names itself and
+    /// carries its code: a screen has to say *which* face it is refusing, and
+    /// it must never have to work the reason out a second time.
+    pub fn parse(data: &[u8], index: u32) -> std::result::Result<Self, &'static str> {
+        let dir = sfnt_dir(data, index).ok_or(REFUS_ILLISIBLE)?;
+        let name = table(data, dir, b"name").ok_or(REFUS_ILLISIBLE)?;
+        let postscript = name_string(name, 6);
+        let famille = name_string(name, 1);
+        if postscript.is_none() && famille.is_none() {
+            return Err(REFUS_ILLISIBLE);
+        }
+        let nom = match (famille, name_string(name, 2)) {
+            (Some(f), Some(s)) if !s.is_empty() => format!("{f} {s}"),
+            (Some(f), _) => f,
+            // Nothing readable but the PostScript name. Better than a blank
+            // line; pulling a style back out of it would be guesswork.
+            (None, _) => postscript.clone().unwrap_or_default(),
+        };
+        let postscript = postscript.unwrap_or_else(|| nom.replace(' ', ""));
+
+        // Presence comes from the directory, not from the bytes: the walk
+        // never pulls an outline table off the disk, so asking for its
+        // content here would read as "absent". `CFF2` counts as CFF — it is
+        // the shape a variable face carries those outlines in, and refusing
+        // it would drop the nine Indic faces of a stock macOS on the floor.
+        //
+        // No outline table is the only bitmap rule, and it is deliberate.
+        // Refusing on a bitmap strike instead — `sbix`, `CBDT`, `EBDT`,
+        // `bdat` — was measured against a stock macOS on 28/08 and would
+        // have refused Courier New, Monaco, Geneva, Cochin, PT Sans and
+        // Euphemia, every one of them a text face that merely ships small
+        // sizes as bitmaps beside full outlines. Apple Color Emoji is no
+        // exception either: 3811 of its 3844 glyphs carry real contours
+        // under the colour. One face on that machine has none at all —
+        // `NISC18030.ttf`, `bdat` and no `glyf` — and this is what catches it.
+        let genre = if table_range(data, dir, b"glyf").is_some() {
+            Some(Genre::Glyf)
+        } else if [b"CFF ", b"CFF2"].iter().any(|t| table_range(data, dir, t).is_some()) {
+            Some(Genre::Cff)
+        } else {
+            None
+        };
+
+        // A face whose shared tables will not read is unreadable — unless it
+        // has no outlines at all, which is a refusal of its own and the more
+        // useful thing to say. Apple's bitmap faces carry no `head`, only a
+        // `bhed`, and would otherwise come back as unnameable rubble.
+        let communes = Communes::lire(data, dir);
+        if communes.is_none() && genre.is_some() {
+            return Err(REFUS_ILLISIBLE);
+        }
+        let fs_type = communes.as_ref().map_or(0, |c| c.fs_type);
+        let metrics = communes
+            .as_ref()
+            .and_then(|c| table(data, dir, b"cmap").and_then(|m| c.metrics(m)));
+
+        // Licence first: what the vendor forbids outranks what the file
+        // happens to carry.
+        let refus = verdict_fs_type(fs_type)
+            .or(genre.is_none().then_some(REFUS_BITMAP_SEULEMENT))
+            .or(metrics.is_none().then_some(REFUS_CMAP_ILLISIBLE));
+
+        Ok(Face {
+            index,
+            postscript,
+            nom,
+            genre,
+            variable: table_range(data, dir, b"fvar").is_some(),
+            sous_ensemblage_interdit: fs_type & 0x0100 != 0,
+            metrics,
+            refus,
+        })
+    }
+
+    /// True when this face may go in a file.
+    pub fn embeddable(&self) -> bool {
+        self.refus.is_none()
+    }
+
+    /// A face we could not read, named by nothing but its rank. The walk
+    /// still lists it: a file that will not open is a refusal a screen can
+    /// show, where a silently skipped file is a face the reader will hunt for.
+    fn refusee(index: u32, code: &'static str) -> Self {
+        Face {
+            index,
+            postscript: String::new(),
+            nom: String::new(),
+            genre: None,
+            variable: false,
+            sous_ensemblage_interdit: false,
+            metrics: None,
+            refus: Some(code),
+        }
+    }
+}
+
+/// What the licence bits alone forbid.
+///
+/// 0x0004 (Preview & Print) is accepted: an album's PDF is exactly viewing
+/// and printing, which is what that bit licenses. 0x0100 (no subsetting) is
+/// accepted too and remembered on the face, the engine embedding faces whole.
+fn verdict_fs_type(fs_type: u16) -> Option<&'static str> {
+    if fs_type & 0x0002 != 0 {
+        Some(REFUS_EMBARQUEMENT_INTERDIT)
+    } else if fs_type & 0x0200 != 0 {
+        Some(REFUS_BITMAP_SEULEMENT)
+    } else {
+        None
+    }
+}
+
+/// Read the face bundled above. One reader for every face, and Source Sans 3
+/// is the reader's first integration test.
 pub fn metrics() -> Result<Metrics> {
-    parse(FONT_DATA)
+    let face = Face::parse(FONT_DATA, 0)
+        .map_err(|code| anyhow!("police incorporée illisible : {code}"))?;
+    face.metrics
+        .ok_or_else(|| anyhow!("police incorporée refusée : {}", face.refus.unwrap_or("?")))
 }
 
 /// The metrics, parsed once. Wrapping a paragraph asks for the widths on
@@ -93,105 +294,460 @@ pub fn winansi_code(c: char) -> Option<u8> {
     (FIRST_CHAR..=LAST_CHAR).find(|code| winansi_char(*code) == Some(c))
 }
 
-fn parse(data: &[u8]) -> Result<Metrics> {
-    let head = table(data, b"head").context("table head absente")?;
-    let hhea = table(data, b"hhea").context("table hhea absente")?;
-    let hmtx = table(data, b"hmtx").context("table hmtx absente")?;
-    let maxp = table(data, b"maxp").context("table maxp absente")?;
-    let cmap = table(data, b"cmap").context("table cmap absente")?;
-    let os2 = table(data, b"OS/2").context("table OS/2 absente")?;
+// --- Les faces installées ---------------------------------------------------
 
-    let upem = f64::from(u16b(head, 18).context("unitsPerEm illisible")?);
-    anyhow::ensure!(upem > 0.0, "unitsPerEm nul");
-    // Everything below is expressed in the font's own units; PDF wants a
-    // 1000-unit em, so every measure goes through here.
-    let to_em = |v: i32| -> i32 { (f64::from(v) * 1000.0 / upem).round() as i32 };
-
-    let bbox = [
-        to_em(i16b(head, 36).context("xMin")?.into()),
-        to_em(i16b(head, 38).context("yMin")?.into()),
-        to_em(i16b(head, 40).context("xMax")?.into()),
-        to_em(i16b(head, 42).context("yMax")?.into()),
-    ];
-
-    let num_h = usize::from(u16b(hhea, 34).context("numberOfHMetrics illisible")?);
-    anyhow::ensure!(num_h > 0, "police sans métrique horizontale");
-    let num_glyphs = u16b(maxp, 4).context("numGlyphs illisible")?;
-
-    // OS/2 carries the typographic ascent and descent, and from version 2 the
-    // cap height. Older faces fall back to hhea, which is what readers do.
-    let os2_version = u16b(os2, 0).unwrap_or(0);
-    let fs_type = u16b(os2, 8).unwrap_or(0);
-    let ascent = i16b(os2, 68)
-        .filter(|v| *v != 0)
-        .or_else(|| i16b(hhea, 4))
-        .context("ascendante illisible")?;
-    let descent = i16b(os2, 70)
-        .filter(|v| *v != 0)
-        .or_else(|| i16b(hhea, 6))
-        .context("descendante illisible")?;
-    let cap_height = if os2_version >= 2 {
-        i16b(os2, 88).filter(|v| *v != 0).unwrap_or(ascent)
-    } else {
-        ascent
-    };
-
-    let italic_angle = table(data, b"post")
-        .and_then(|p| i32b(p, 4))
-        // post stores the angle as a 16.16 fixed-point number.
-        .map(|v| f64::from(v) / 65536.0)
-        .unwrap_or(0.0);
-
-    let sub = unicode_subtable(cmap).context("aucune sous-table cmap Unicode")?;
-    let widths = (FIRST_CHAR..=LAST_CHAR)
-        .map(|code| {
-            // A code with no WinAnsi meaning, or a glyph the face does not
-            // carry, takes the .notdef advance. It can never be drawn: the
-            // renderer only emits what it escaped into WinAnsi.
-            let gid = winansi_char(code)
-                .and_then(|c| lookup(sub, c as u32))
-                .filter(|g| *g < num_glyphs)
-                .unwrap_or(0);
-            to_em(i32::from(advance(hmtx, num_h, gid)))
-        })
-        .collect();
-
-    Ok(Metrics {
-        bbox,
-        ascent: to_em(ascent.into()),
-        descent: to_em(descent.into()),
-        cap_height: to_em(cap_height.into()),
-        italic_angle,
-        fs_type,
-        widths,
-    })
+/// A face this machine carries, and the file it lives in. Path and index are
+/// the address; everything else the face knows about itself.
+#[derive(Debug, Clone)]
+pub struct Installee {
+    pub chemin: PathBuf,
+    pub face: Face,
 }
 
-/// Locate a table in the sfnt directory.
-fn table<'a>(data: &'a [u8], tag: &[u8; 4]) -> Option<&'a [u8]> {
-    let count = usize::from(u16b(data, 4)?);
+/// The extensions a font file goes by. A file named otherwise is not opened:
+/// this is an enumeration, not a sniffing pass over every system file.
+const EXTENSIONS: [&str; 4] = ["ttf", "otf", "ttc", "otc"];
+
+/// The tables a reading needs — and, just as much, the ones it does not.
+/// `glyf` and `CFF ` are absent on purpose: their presence is read off the
+/// directory, their bytes never leave the disk. Over six hundred system faces
+/// that is the difference between an enumeration and a load.
+const TABLES_LUES: [&[u8; 4]; 8] = [
+    b"head", b"hhea", b"hmtx", b"maxp", b"cmap", b"OS/2", b"post", b"name",
+];
+
+/// Every face the platform's font folders carry.
+pub fn installed() -> Vec<Installee> {
+    installed_in(&dossiers_systeme())
+}
+
+/// Every face `dirs` carry, refused ones included, sorted by path then index.
+///
+/// The manners are `scan.rs`'s: symlinks are not followed, hidden files are
+/// skipped, sub-folders are walked, and the order is ours rather than the file
+/// system's — two runs on one machine must list the same thing in the same
+/// order. A file that will not parse is one refused face rather than a
+/// silence, because a screen listing faces has to be able to say why one is
+/// missing, and it reads the code from here rather than working it out again.
+pub fn installed_in(dirs: &[PathBuf]) -> Vec<Installee> {
+    let mut out = Vec::new();
+    for dir in dirs {
+        for entry in WalkDir::new(dir)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let ext = entry
+                .path()
+                .extension()
+                .map(|e| e.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            if !EXTENSIONS.contains(&ext.as_str()) {
+                continue;
+            }
+            let chemin = entry.into_path();
+            let Some((data, _)) = lire_tables(&chemin) else {
+                out.push(Installee { chemin, face: Face::refusee(0, REFUS_ILLISIBLE) });
+                continue;
+            };
+            for index in 0..face_count(&data).max(1) {
+                let face = Face::parse(&data, index).unwrap_or_else(|c| Face::refusee(index, c));
+                out.push(Installee { chemin: chemin.clone(), face });
+            }
+        }
+    }
+    out.sort_by(|a, b| (&a.chemin, a.face.index).cmp(&(&b.chemin, b.face.index)));
+    out
+}
+
+/// Where the platform keeps its fonts. Folders that do not exist are dropped
+/// rather than walked: a machine without a user font folder is normal, and so
+/// is a Linux box with no system fonts at all.
+pub fn dossiers_systeme() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    #[cfg(target_os = "macos")]
+    {
+        dirs.push(PathBuf::from("/System/Library/Fonts"));
+        dirs.push(PathBuf::from("/Library/Fonts"));
+        if let Some(h) = std::env::var_os("HOME") {
+            dirs.push(PathBuf::from(h).join("Library/Fonts"));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let racine = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+        dirs.push(PathBuf::from(racine).join("Fonts"));
+        if let Some(l) = std::env::var_os("LOCALAPPDATA") {
+            dirs.push(PathBuf::from(l).join("Microsoft").join("Windows").join("Fonts"));
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        dirs.push(PathBuf::from("/usr/share/fonts"));
+        dirs.push(PathBuf::from("/usr/local/share/fonts"));
+        if let Some(h) = std::env::var_os("HOME") {
+            dirs.push(PathBuf::from(h).join(".local/share/fonts"));
+        }
+    }
+    dirs.retain(|d| d.is_dir());
+    dirs
+}
+
+/// How many faces a file carries: a collection says so, anything else is one
+/// face — including a file that is no font at all, which then comes back as
+/// one refusal rather than as nothing.
+pub fn face_count(data: &[u8]) -> u32 {
+    if data.get(0..4) != Some(&b"ttcf"[..]) {
+        return 1;
+    }
+    let plafond = u32::try_from(data.len().saturating_sub(12) / 4).unwrap_or(u32::MAX);
+    u32b(data, 8).unwrap_or(0).min(plafond)
+}
+
+/// Pull off the disk exactly the tables a reading needs, and nothing else.
+///
+/// What comes back holds every table read at its own file offset, so the
+/// reader below is the very one the tests feed a whole file — table offsets
+/// being absolute is what makes that possible. Everything not read stays
+/// zero. The second value is how many bytes actually came off the disk: what
+/// the bench measures, and the reason a font's outlines never do.
+///
+/// The cost of absolute offsets is that the buffer runs to the far end of the
+/// last table read, zeros and all. Measured on a stock macOS on 28/08: 370
+/// files, 777 MB on disk, 32 MB actually read (4.2 %), the largest buffer
+/// 63 MB and transient, 787 faces enumerated in 29 ms.
+fn lire_tables(path: &Path) -> Option<(Vec<u8>, u64)> {
+    let mut f = std::fs::File::open(path).ok()?;
+    let taille = usize::try_from(f.metadata().ok()?.len()).ok()?;
+    let mut buf: Vec<u8> = Vec::new();
+    let mut lus = 0u64;
+    prendre(&mut f, &mut buf, &mut lus, taille, 0, 12)?;
+
+    // A collection lists its faces' directories behind a header of its own.
+    let mut faces = 1u32;
+    if buf.get(0..4) == Some(&b"ttcf"[..]) {
+        let plafond = u32::try_from(taille.saturating_sub(12) / 4).unwrap_or(u32::MAX);
+        faces = u32b(&buf, 8)?.min(plafond);
+        let entetes = 12usize.saturating_add((faces as usize).saturating_mul(4));
+        prendre(&mut f, &mut buf, &mut lus, taille, 0, entetes)?;
+    }
+
+    for index in 0..faces {
+        let Some(dir) = sfnt_dir(&buf, index) else { continue };
+        if prendre(&mut f, &mut buf, &mut lus, taille, dir, 12).is_none() {
+            continue;
+        }
+        let Some(count) = u16b(&buf, dir.saturating_add(4)) else { continue };
+        let _ = prendre(
+            &mut f,
+            &mut buf,
+            &mut lus,
+            taille,
+            dir.saturating_add(12),
+            usize::from(count).saturating_mul(16),
+        );
+        for tag in TABLES_LUES {
+            if let Some((off, len)) = table_range(&buf, dir, tag) {
+                let _ = prendre(&mut f, &mut buf, &mut lus, taille, off, len);
+            }
+        }
+    }
+    Some((buf, lus))
+}
+
+/// Read `len` bytes at `off` into `buf`, at that same offset, growing the
+/// buffer with zeros for everything not read. Every one of these numbers came
+/// out of the file being read, so a length that runs off the end is clamped
+/// rather than trusted. `None` when nothing, or not all of it, could be read.
+fn prendre(
+    f: &mut std::fs::File,
+    buf: &mut Vec<u8>,
+    lus: &mut u64,
+    taille: usize,
+    off: usize,
+    len: usize,
+) -> Option<()> {
+    let fin = off.saturating_add(len).min(taille);
+    if off >= fin {
+        return None;
+    }
+    if buf.len() < fin {
+        buf.resize(fin, 0);
+    }
+    f.seek(SeekFrom::Start(off as u64)).ok()?;
+    let mut at = off;
+    while at < fin {
+        match f.read(&mut buf[at..fin]) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => at += n,
+        }
+    }
+    *lus += (at - off) as u64;
+    (at == fin).then_some(())
+}
+
+// --- Le lecteur -------------------------------------------------------------
+
+/// What the tables every face shares say about it — everything but the
+/// widths, which need a character map. A face can lack one and still be a
+/// face we can name, which is why that reading is separate.
+struct Communes<'a> {
+    hmtx: &'a [u8],
+    num_h: usize,
+    num_glyphs: u16,
+    upem: f64,
+    fs_type: u16,
+    bbox: [i32; 4],
+    ascent: i32,
+    descent: i32,
+    cap_height: i32,
+    italic_angle: f64,
+}
+
+impl<'a> Communes<'a> {
+    /// `None` when a table no face can do without is missing or truncated.
+    /// `OS/2` and `post` are not among them: plenty of older faces carry
+    /// neither, and a reader falls back the same way we do here.
+    fn lire(data: &'a [u8], dir: usize) -> Option<Self> {
+        let head = table(data, dir, b"head")?;
+        let hhea = table(data, dir, b"hhea")?;
+        let hmtx = table(data, dir, b"hmtx")?;
+        let maxp = table(data, dir, b"maxp")?;
+        let os2 = table(data, dir, b"OS/2");
+
+        let upem = f64::from(u16b(head, 18)?);
+        if upem <= 0.0 {
+            return None;
+        }
+        // Everything below is expressed in the font's own units; PDF wants a
+        // 1000-unit em, so every measure goes through here.
+        let to_em = |v: i32| -> i32 { (f64::from(v) * 1000.0 / upem).round() as i32 };
+
+        let num_h = usize::from(u16b(hhea, 34)?);
+        if num_h == 0 {
+            return None;
+        }
+
+        // OS/2 carries the typographic ascent and descent, and from version 2
+        // the cap height. Older faces fall back to hhea, which readers do too.
+        let os2_version = os2.and_then(|o| u16b(o, 0)).unwrap_or(0);
+        let ascent = os2
+            .and_then(|o| i16b(o, 68))
+            .filter(|v| *v != 0)
+            .or_else(|| i16b(hhea, 4))?;
+        let descent = os2
+            .and_then(|o| i16b(o, 70))
+            .filter(|v| *v != 0)
+            .or_else(|| i16b(hhea, 6))?;
+        let cap_height = if os2_version >= 2 {
+            os2.and_then(|o| i16b(o, 88)).filter(|v| *v != 0).unwrap_or(ascent)
+        } else {
+            ascent
+        };
+
+        Some(Communes {
+            hmtx,
+            num_h,
+            num_glyphs: u16b(maxp, 4)?,
+            upem,
+            fs_type: os2.and_then(|o| u16b(o, 8)).unwrap_or(0),
+            bbox: [
+                to_em(i16b(head, 36)?.into()),
+                to_em(i16b(head, 38)?.into()),
+                to_em(i16b(head, 40)?.into()),
+                to_em(i16b(head, 42)?.into()),
+            ],
+            ascent: to_em(ascent.into()),
+            descent: to_em(descent.into()),
+            cap_height: to_em(cap_height.into()),
+            italic_angle: table(data, dir, b"post")
+                .and_then(|p| i32b(p, 4))
+                // post stores the angle as a 16.16 fixed-point number.
+                .map(|v| f64::from(v) / 65536.0)
+                .unwrap_or(0.0),
+        })
+    }
+
+    /// The widths, and with them the whole of [`Metrics`]. `None` when the
+    /// character map is unusable — no Unicode subtable, or one in a format
+    /// this reader does not know — which is the face's one refusal that
+    /// leaves it named and measured everywhere else.
+    fn metrics(&self, cmap: &[u8]) -> Option<Metrics> {
+        let sub = unicode_subtable(cmap)?;
+        // A format we cannot walk is a character map we cannot read, not a
+        // face whose glyphs are all missing.
+        lookup(sub, u32::from('A'))?;
+        let to_em = |v: i32| -> i32 { (f64::from(v) * 1000.0 / self.upem).round() as i32 };
+        let widths = (FIRST_CHAR..=LAST_CHAR)
+            .map(|code| {
+                // A code with no WinAnsi meaning, or a glyph the face does not
+                // carry, takes the .notdef advance. It can never be drawn: the
+                // renderer only emits what it escaped into WinAnsi.
+                let gid = winansi_char(code)
+                    .and_then(|c| lookup(sub, c as u32))
+                    .filter(|g| *g < self.num_glyphs)
+                    .unwrap_or(0);
+                to_em(i32::from(advance(self.hmtx, self.num_h, gid)))
+            })
+            .collect();
+        Some(Metrics {
+            bbox: self.bbox,
+            ascent: self.ascent,
+            descent: self.descent,
+            cap_height: self.cap_height,
+            italic_angle: self.italic_angle,
+            fs_type: self.fs_type,
+            widths,
+        })
+    }
+}
+
+/// Where face `index`'s table directory starts.
+///
+/// A lone file has one directory, at zero. A collection (`ttcf`) lists one per
+/// face — **and its tables are still addressed from the start of the file**,
+/// never from the directory. Reading those offsets as relative is the classic
+/// way to get a reader that works on a `.ttf` and returns nonsense on a `.ttc`.
+fn sfnt_dir(data: &[u8], index: u32) -> Option<usize> {
+    if data.get(0..4) == Some(&b"ttcf"[..]) {
+        if index >= face_count(data) {
+            return None;
+        }
+        let at = 12usize.saturating_add(usize::try_from(index).ok()?.saturating_mul(4));
+        return usize::try_from(u32b(data, at)?).ok();
+    }
+    if index != 0 {
+        return None;
+    }
+    match data.get(0..4)? {
+        b"\x00\x01\x00\x00" | b"true" | b"OTTO" | b"typ1" => Some(0),
+        _ => None,
+    }
+}
+
+/// Locate a table in the sfnt directory at `dir`.
+fn table<'a>(data: &'a [u8], dir: usize, tag: &[u8; 4]) -> Option<&'a [u8]> {
+    let (off, len) = table_range(data, dir, tag)?;
+    data.get(off..off.saturating_add(len))
+}
+
+/// Where a table says it is, before any bounds check: what [`lire_tables`]
+/// needs to pull exactly those bytes, and what tells a face's kind apart
+/// without reading a single outline.
+fn table_range(data: &[u8], dir: usize, tag: &[u8; 4]) -> Option<(usize, usize)> {
+    let count = usize::from(u16b(data, dir.saturating_add(4))?);
     for i in 0..count {
-        let rec = 12 + i * 16;
-        if data.get(rec..rec + 4)? == tag {
-            let off = u32b(data, rec + 8)? as usize;
-            let len = u32b(data, rec + 12)? as usize;
-            return data.get(off..off.saturating_add(len));
+        let rec = dir.saturating_add(12).saturating_add(i.saturating_mul(16));
+        if data.get(rec..rec.saturating_add(4))? == tag {
+            let off = usize::try_from(u32b(data, rec + 8)?).ok()?;
+            let len = usize::try_from(u32b(data, rec + 12)?).ok()?;
+            return Some((off, len));
         }
     }
     None
 }
 
+/// A string of the `name` table, by name id, decoded from the platform that
+/// carries it. Windows (platform 3) stores UTF-16BE and is preferred;
+/// Macintosh (platform 1) stores MacRoman and is often all an older face
+/// carries. Reading only one of the two ends in a name that is either empty
+/// or a row of alternating NULs — the classic symptom.
+fn name_string(name: &[u8], id: u16) -> Option<String> {
+    let count = usize::from(u16b(name, 2)?);
+    let storage = usize::from(u16b(name, 4)?);
+    let mut best: Option<(u8, String)> = None;
+    for i in 0..count {
+        let rec = 6usize.saturating_add(i.saturating_mul(12));
+        // A malformed record is skipped, never fatal: one bad row must not
+        // cost the face its name.
+        let lu = || -> Option<(u8, String)> {
+            if u16b(name, rec.saturating_add(6))? != id {
+                return None;
+            }
+            let len = usize::from(u16b(name, rec.saturating_add(8))?);
+            let off = usize::from(u16b(name, rec.saturating_add(10))?);
+            let at = storage.saturating_add(off);
+            let bytes = name.get(at..at.saturating_add(len))?;
+            let plateforme = u16b(name, rec)?;
+            // English first, platform second. A face that names itself in six
+            // languages — every stock macOS one does — must not come back
+            // named in whichever it happened to list first: "Times 標準體" is
+            // a real reading of a real file, and a useless name.
+            let rang = match (plateforme, u16b(name, rec.saturating_add(4))?) {
+                (3, 0x0409) => 0u8,
+                (1, 0) => 1,
+                // The Unicode platform declares no language of its own.
+                (0, _) => 2,
+                (3, _) => 3,
+                (1, _) => 4,
+                _ => return None,
+            };
+            let texte = if plateforme == 1 {
+                macroman(bytes)
+            } else {
+                utf16be(bytes)?
+            };
+            Some((rang, texte))
+        };
+        if let Some((rang, s)) = lu() {
+            if !s.is_empty() && best.as_ref().is_none_or(|(r, _)| rang < *r) {
+                best = Some((rang, s));
+            }
+        }
+    }
+    best.map(|(_, s)| s)
+}
+
+/// UTF-16BE, as platforms 3 and 0 store their names. An odd length or a
+/// broken surrogate pair is a name we do not have.
+fn utf16be(bytes: &[u8]) -> Option<String> {
+    if bytes.len() % 2 != 0 {
+        return None;
+    }
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_be_bytes([c[0], c[1]]))
+        .collect();
+    String::from_utf16(&units).ok()
+}
+
+/// The upper half of MacRoman, which is what a Macintosh-platform `name`
+/// record is written in. The lower half is ASCII. 0xF0 is Apple's own logo,
+/// which Unicode leaves in the private use area.
+const MACROMAN_HAUT: &str = "ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø¿¡¬√ƒ≈∆«»…\u{00a0}ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔ\u{f8ff}ÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ";
+
+fn macroman(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| {
+            if *b < 0x80 {
+                char::from(*b)
+            } else {
+                MACROMAN_HAUT.chars().nth(usize::from(*b - 0x80)).unwrap_or('\u{fffd}')
+            }
+        })
+        .collect()
+}
+
 /// The first Unicode character map: Windows BMP, Windows full, or a plain
-/// Unicode platform table, in that order of preference.
+/// Unicode platform table, in that order of preference. A symbol table (3, 0)
+/// is not one: it maps a private range no caption reaches, and a face that
+/// carries nothing else is refused rather than measured wrong.
 fn unicode_subtable(cmap: &[u8]) -> Option<&[u8]> {
     let count = usize::from(u16b(cmap, 2)?);
     let mut best: Option<(u8, &[u8])> = None;
     for i in 0..count {
-        let rec = 4 + i * 8;
-        let platform = u16b(cmap, rec)?;
-        let encoding = u16b(cmap, rec + 2)?;
-        let off = u32b(cmap, rec + 4)? as usize;
-        let sub = cmap.get(off..)?;
+        let rec = 4usize.saturating_add(i.saturating_mul(8));
+        let Some(platform) = u16b(cmap, rec) else { continue };
+        let Some(encoding) = u16b(cmap, rec + 2) else { continue };
+        let Some(off) = u32b(cmap, rec + 4).and_then(|o| usize::try_from(o).ok()) else {
+            continue;
+        };
+        let Some(sub) = cmap.get(off..) else { continue };
         let rank = match (platform, encoding) {
             (3, 1) => 0,
             (3, 10) => 1,
@@ -206,7 +762,9 @@ fn unicode_subtable(cmap: &[u8]) -> Option<&[u8]> {
 }
 
 /// Glyph id for a character. Handles the two subtable formats a text face
-/// actually uses: segmented BMP (4) and trimmed/sparse full range (12).
+/// actually uses: segmented BMP (4) and trimmed/sparse full range (12), plus
+/// the trimmed byte map (6) some older faces still carry. `None` says the
+/// format is one this reader does not walk, which refuses the face.
 fn lookup(sub: &[u8], ch: u32) -> Option<u16> {
     match u16b(sub, 0)? {
         4 => lookup_segmented(sub, u16::try_from(ch).ok()?),
@@ -258,9 +816,9 @@ fn lookup_segmented(sub: &[u8], ch: u16) -> Option<u16> {
 
 /// cmap format 12: sorted groups over the full Unicode range.
 fn lookup_groups(sub: &[u8], ch: u32) -> Option<u16> {
-    let count = u32b(sub, 12)? as usize;
+    let count = usize::try_from(u32b(sub, 12)?).ok()?;
     for i in 0..count {
-        let g = 16 + i * 12;
+        let g = 16usize.saturating_add(i.saturating_mul(12));
         let start = u32b(sub, g)?;
         let end = u32b(sub, g + 4)?;
         if ch < start {
@@ -320,7 +878,7 @@ fn winansi_char(code: u8) -> Option<char> {
 }
 
 fn u16b(d: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_be_bytes([*d.get(at)?, *d.get(at + 1)?]))
+    Some(u16::from_be_bytes([*d.get(at)?, *d.get(at.checked_add(1)?)?]))
 }
 
 fn i16b(d: &[u8], at: usize) -> Option<i16> {
@@ -330,9 +888,9 @@ fn i16b(d: &[u8], at: usize) -> Option<i16> {
 fn u32b(d: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_be_bytes([
         *d.get(at)?,
-        *d.get(at + 1)?,
-        *d.get(at + 2)?,
-        *d.get(at + 3)?,
+        *d.get(at.checked_add(1)?)?,
+        *d.get(at.checked_add(2)?)?,
+        *d.get(at.checked_add(3)?)?,
     ]))
 }
 
@@ -343,6 +901,7 @@ fn i32b(d: &[u8], at: usize) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     /// The bundled face parses, and its licence bits allow embedding. If a
     /// future asset swap breaks either, it breaks here and not at a printer.
@@ -355,6 +914,25 @@ mod tests {
         assert!(m.cap_height > 0);
         assert_eq!(m.italic_angle, 0.0, "la romaine n'est pas inclinée");
         assert!(m.bbox[0] < m.bbox[2] && m.bbox[1] < m.bbox[3], "{:?}", m.bbox);
+    }
+
+    /// The face travels through the general reader, and names itself the way
+    /// the PDF names it. One reader for every face on earth, and this one is
+    /// its first integration test.
+    #[test]
+    fn la_face_embarquee_passe_par_le_lecteur_general() {
+        let f = Face::parse(FONT_DATA, 0).expect("face lisible");
+        assert_eq!(f.postscript, FONT_NAME, "le /BaseFont du PDF");
+        assert_eq!(f.index, 0);
+        assert_eq!(f.genre, Some(Genre::Glyf));
+        assert!(!f.variable);
+        assert!(f.embeddable() && !f.sous_ensemblage_interdit);
+        assert_eq!(face_count(FONT_DATA), 1, "un fichier, une face");
+        // Le même objet que `metrics()` rend, au chiffre près.
+        let a = f.metrics.expect("métriques");
+        let b = metrics().unwrap();
+        assert_eq!(a.widths, b.widths);
+        assert_eq!((a.bbox, a.ascent, a.descent, a.cap_height), (b.bbox, b.ascent, b.descent, b.cap_height));
     }
 
     /// Widths are real: a space is narrow, an M is wide, and nothing a caption
@@ -378,7 +956,7 @@ mod tests {
     /// a glyph, one it cannot resolves to none.
     #[test]
     fn cmap_resolves_glyphs() {
-        let cmap = table(FONT_DATA, b"cmap").unwrap();
+        let cmap = table(FONT_DATA, 0, b"cmap").unwrap();
         let sub = unicode_subtable(cmap).unwrap();
         assert!(lookup(sub, 'A' as u32).unwrap() > 0);
         assert!(lookup(sub, 'é' as u32).unwrap() > 0);
@@ -387,10 +965,746 @@ mod tests {
         assert_eq!(lookup(sub, 0x4E2D).unwrap(), 0);
     }
 
-    /// A truncated file is refused rather than read past its end.
+    // --- Des polices écrites à la main ------------------------------------
+
+    /// The character map a synthetic face carries.
+    #[derive(Clone, Copy)]
+    enum Cmap {
+        /// Segmented BMP under (3, 1): what a text face carries.
+        Format4,
+        /// Sparse groups under (3, 10).
+        Format12,
+        /// A symbol table (3, 0) and nothing else: unreadable on purpose.
+        Symbole,
+        /// A byte map under (3, 1): a Unicode table in a format we refuse.
+        Format0,
+        Aucune,
+    }
+
+    /// A font file written byte by byte, the way `meta.rs` writes its EXIF and
+    /// `build.rs` its JPEG. A font is a directory of big-endian tables at
+    /// known offsets; a test that needs a face with one exact property is
+    /// better served by this than by an asset nobody can read.
+    struct Fonte {
+        tag: [u8; 4],
+        upem: u16,
+        fs_type: u16,
+        famille: String,
+        style: String,
+        postscript: Option<String>,
+        /// Which `name` platforms carry the strings: 3 Windows, 1 Macintosh.
+        plateformes: &'static [u16],
+        cmap: Cmap,
+        /// The outline table declared, if any. `None` is a bitmap face.
+        contours: Option<[u8; 4]>,
+        variable: bool,
+        /// An Apple bitmap face: `bdat` and `bloc`, no outlines, and no
+        /// `head` either — those faces carry a `bhed` instead, which is why
+        /// they read as rubble unless the refusal is decided on the outlines.
+        bitmap: bool,
+        /// A second `name` record for family, in another language, written
+        /// *before* the English one. Every stock macOS face carries six.
+        autre_langue: Option<(u16, String)>,
+        /// Filler declared under the outline tag: the bytes the walk must
+        /// never read, and the only reason a real font file is large.
+        gras: usize,
+    }
+
+    const NUM_GLYPHS: u16 = 256;
+    const CHASSE: u16 = 1024;
+
+    impl Fonte {
+        fn neuve() -> Self {
+            Fonte {
+                tag: *b"\x00\x01\x00\x00",
+                // Deliberately not 1000: every measure below has to travel
+                // through the em conversion, and a conversion that vanished
+                // would go unnoticed against a 1000-unit em.
+                upem: 2048,
+                fs_type: 0,
+                famille: "Colophon Test".into(),
+                style: "Regular".into(),
+                postscript: Some("ColophonTest-Regular".into()),
+                plateformes: &[3],
+                cmap: Cmap::Format4,
+                contours: Some(*b"glyf"),
+                variable: false,
+                bitmap: false,
+                autre_langue: None,
+                gras: 64,
+            }
+        }
+
+        fn head(&self) -> Vec<u8> {
+            let mut v = vec![0u8; 54];
+            v[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+            v[12..16].copy_from_slice(&0x5F0F_3CF5u32.to_be_bytes());
+            v[18..20].copy_from_slice(&self.upem.to_be_bytes());
+            v[36..38].copy_from_slice(&(-100i16).to_be_bytes());
+            v[38..40].copy_from_slice(&(-500i16).to_be_bytes());
+            v[40..42].copy_from_slice(&2000i16.to_be_bytes());
+            v[42..44].copy_from_slice(&1800i16.to_be_bytes());
+            v
+        }
+
+        /// hhea's ascent and descent differ from OS/2's on purpose: a reader
+        /// that stopped preferring OS/2 would show it in the numbers.
+        fn hhea(&self) -> Vec<u8> {
+            let mut v = vec![0u8; 36];
+            v[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+            v[4..6].copy_from_slice(&1500i16.to_be_bytes());
+            v[6..8].copy_from_slice(&(-300i16).to_be_bytes());
+            v[34..36].copy_from_slice(&NUM_GLYPHS.to_be_bytes());
+            v
+        }
+
+        fn hmtx(&self) -> Vec<u8> {
+            let mut v = Vec::new();
+            for _ in 0..NUM_GLYPHS {
+                v.extend_from_slice(&CHASSE.to_be_bytes());
+                v.extend_from_slice(&0i16.to_be_bytes());
+            }
+            v
+        }
+
+        fn maxp(&self) -> Vec<u8> {
+            let mut v = Vec::new();
+            v.extend_from_slice(&0x0000_5000u32.to_be_bytes());
+            v.extend_from_slice(&NUM_GLYPHS.to_be_bytes());
+            v
+        }
+
+        fn os2(&self) -> Vec<u8> {
+            let mut v = vec![0u8; 96];
+            v[0..2].copy_from_slice(&2u16.to_be_bytes());
+            v[8..10].copy_from_slice(&self.fs_type.to_be_bytes());
+            v[68..70].copy_from_slice(&1600i16.to_be_bytes());
+            v[70..72].copy_from_slice(&(-400i16).to_be_bytes());
+            v[88..90].copy_from_slice(&1400i16.to_be_bytes());
+            v
+        }
+
+        fn post(&self) -> Vec<u8> {
+            let mut v = vec![0u8; 32];
+            v[0..4].copy_from_slice(&0x0003_0000u32.to_be_bytes());
+            v
+        }
+
+        fn name(&self) -> Vec<u8> {
+            // (plateforme, langue, nameID, octets)
+            let mut entrees: Vec<(u16, u16, u16, Vec<u8>)> = Vec::new();
+            for &p in self.plateformes {
+                let encode = |s: &str| -> Vec<u8> {
+                    if p == 1 {
+                        s.chars()
+                            .map(|c| {
+                                if (c as u32) < 0x80 {
+                                    c as u8
+                                } else {
+                                    MACROMAN_HAUT
+                                        .chars()
+                                        .position(|m| m == c)
+                                        .map(|i| (i + 0x80) as u8)
+                                        .unwrap_or(b'?')
+                                }
+                            })
+                            .collect()
+                    } else {
+                        s.encode_utf16().flat_map(u16::to_be_bytes).collect()
+                    }
+                };
+                let anglais = if p == 1 { 0 } else { 0x0409 };
+                if let Some((langue, autre)) = &self.autre_langue {
+                    entrees.push((p, *langue, 1, encode(autre)));
+                }
+                entrees.push((p, anglais, 1, encode(&self.famille)));
+                entrees.push((p, anglais, 2, encode(&self.style)));
+                if let Some(ps) = &self.postscript {
+                    entrees.push((p, anglais, 6, encode(ps)));
+                }
+            }
+            let debut = 6 + entrees.len() * 12;
+            let (mut records, mut storage) = (Vec::new(), Vec::new());
+            for (p, langue, id, bytes) in &entrees {
+                let off = storage.len();
+                storage.extend_from_slice(bytes);
+                records.extend_from_slice(&p.to_be_bytes());
+                records.extend_from_slice(&(if *p == 1 { 0u16 } else { 1 }).to_be_bytes());
+                records.extend_from_slice(&langue.to_be_bytes());
+                records.extend_from_slice(&id.to_be_bytes());
+                records.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+                records.extend_from_slice(&(off as u16).to_be_bytes());
+            }
+            let mut v = Vec::new();
+            v.extend_from_slice(&0u16.to_be_bytes());
+            v.extend_from_slice(&(entrees.len() as u16).to_be_bytes());
+            v.extend_from_slice(&(debut as u16).to_be_bytes());
+            v.extend_from_slice(&records);
+            v.extend_from_slice(&storage);
+            v
+        }
+
+        fn cmap(&self) -> Option<Vec<u8>> {
+            let (plateforme, encodage, sub) = match self.cmap {
+                Cmap::Aucune => return None,
+                Cmap::Format4 => (3u16, 1u16, sous_table_4()),
+                Cmap::Format12 => (3, 10, sous_table_12()),
+                Cmap::Symbole => (3, 0, sous_table_4()),
+                Cmap::Format0 => (3, 1, sous_table_0()),
+            };
+            let mut v = Vec::new();
+            v.extend_from_slice(&0u16.to_be_bytes());
+            v.extend_from_slice(&1u16.to_be_bytes());
+            v.extend_from_slice(&plateforme.to_be_bytes());
+            v.extend_from_slice(&encodage.to_be_bytes());
+            v.extend_from_slice(&12u32.to_be_bytes());
+            v.extend_from_slice(&sub);
+            Some(v)
+        }
+
+        /// Every table, in tag order the way a real file lays them out.
+        fn tables(&self) -> Vec<([u8; 4], Vec<u8>)> {
+            let mut t: Vec<([u8; 4], Vec<u8>)> =
+                vec![(*b"name", self.name()), (*b"OS/2", self.os2()), (*b"post", self.post())];
+            if self.bitmap {
+                // Ni head ni hhea : la variante bitmap range les siennes dans
+                // un `bhed`, que rien ici ne lit.
+                t.push((*b"bhed", self.head()));
+                t.push((*b"bdat", vec![0x2a; self.gras]));
+                t.push((*b"bloc", vec![0u8; 16]));
+            } else {
+                t.push((*b"head", self.head()));
+                t.push((*b"hhea", self.hhea()));
+                t.push((*b"hmtx", self.hmtx()));
+                t.push((*b"maxp", self.maxp()));
+            }
+            if let Some(c) = self.cmap() {
+                t.push((*b"cmap", c));
+            }
+            if let Some(tag) = self.contours.filter(|_| !self.bitmap) {
+                t.push((tag, vec![0x2a; self.gras]));
+            }
+            if self.variable {
+                t.push((*b"fvar", vec![0u8; 16]));
+            }
+            t.sort_by_key(|(tag, _)| *tag);
+            t
+        }
+    }
+
+    /// cmap format 4, two segments: 0x20..0xFF onto glyphs 1.., then the
+    /// mandatory 0xFFFF terminator.
+    fn sous_table_4() -> Vec<u8> {
+        let mut v = Vec::new();
+        for n in [4u16, 32, 0, 4, 4, 1, 0] {
+            v.extend_from_slice(&n.to_be_bytes());
+        }
+        v.extend_from_slice(&0x00FFu16.to_be_bytes()); // endCode
+        v.extend_from_slice(&0xFFFFu16.to_be_bytes());
+        v.extend_from_slice(&0u16.to_be_bytes()); // reservedPad
+        v.extend_from_slice(&0x0020u16.to_be_bytes()); // startCode
+        v.extend_from_slice(&0xFFFFu16.to_be_bytes());
+        v.extend_from_slice(&(-31i16).to_be_bytes()); // idDelta : 0x20 → 1
+        v.extend_from_slice(&1i16.to_be_bytes()); // 0xFFFF → 0
+        v.extend_from_slice(&0u16.to_be_bytes()); // idRangeOffset
+        v.extend_from_slice(&0u16.to_be_bytes());
+        v
+    }
+
+    /// cmap format 12, one group over the same range.
+    fn sous_table_12() -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(&12u16.to_be_bytes());
+        v.extend_from_slice(&0u16.to_be_bytes());
+        for n in [28u32, 0, 1, 0x20, 0xFF, 1] {
+            v.extend_from_slice(&n.to_be_bytes());
+        }
+        v
+    }
+
+    /// cmap format 0: a byte map. Legal, Unicode-declared, and a format this
+    /// reader does not walk — which is a refusal, not a face without glyphs.
+    fn sous_table_0() -> Vec<u8> {
+        let mut v = vec![0u8; 262];
+        v[2..4].copy_from_slice(&262u16.to_be_bytes());
+        for (i, slot) in v[6..262].iter_mut().enumerate() {
+            *slot = i as u8;
+        }
+        v
+    }
+
+    /// Lay faces out as one file: a lone face at offset zero, or a collection
+    /// whose per-face directories sit behind a `ttcf` header — **and whose
+    /// table offsets stay absolute in the file**, which is the trap this
+    /// fixture exists to spring.
+    fn fichier(faces: &[Fonte]) -> Vec<u8> {
+        let jeux: Vec<Vec<([u8; 4], Vec<u8>)>> = faces.iter().map(Fonte::tables).collect();
+        let ttc = faces.len() > 1;
+        let mut curseur = if ttc { 12 + faces.len() * 4 } else { 0 };
+        let mut dirs = Vec::new();
+        for tables in &jeux {
+            dirs.push(curseur);
+            curseur += 12 + tables.len() * 16;
+        }
+        let mut out = vec![0u8; curseur];
+        if ttc {
+            out[0..4].copy_from_slice(b"ttcf");
+            out[4..8].copy_from_slice(&0x0002_0000u32.to_be_bytes());
+            out[8..12].copy_from_slice(&(faces.len() as u32).to_be_bytes());
+            for (i, d) in dirs.iter().enumerate() {
+                out[12 + i * 4..16 + i * 4].copy_from_slice(&(*d as u32).to_be_bytes());
+            }
+        }
+        for (fi, tables) in jeux.iter().enumerate() {
+            let dir = dirs[fi];
+            out[dir..dir + 4].copy_from_slice(&faces[fi].tag);
+            out[dir + 4..dir + 6].copy_from_slice(&(tables.len() as u16).to_be_bytes());
+            for (ti, (tag, data)) in tables.iter().enumerate() {
+                while out.len() % 4 != 0 {
+                    out.push(0);
+                }
+                let off = out.len();
+                out.extend_from_slice(data);
+                let rec = dir + 12 + ti * 16;
+                out[rec..rec + 4].copy_from_slice(tag);
+                // The checksum is never written and never read.
+                out[rec + 8..rec + 12].copy_from_slice(&(off as u32).to_be_bytes());
+                out[rec + 12..rec + 16].copy_from_slice(&(data.len() as u32).to_be_bytes());
+            }
+        }
+        out
+    }
+
+    /// The directory record of one table, so a test can corrupt exactly it.
+    fn record(data: &[u8], dir: usize, tag: &[u8; 4]) -> usize {
+        let count = usize::from(u16b(data, dir + 4).unwrap());
+        (0..count)
+            .map(|i| dir + 12 + i * 16)
+            .find(|r| &data[*r..*r + 4] == tag)
+            .expect("table présente")
+    }
+
+    fn dossier(nom: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("colophon-font-{nom}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // --- Ce que le lecteur doit savoir faire ------------------------------
+
+    /// A face written here, read back whole: the names off both name ids, the
+    /// metrics converted out of a 2048-unit em, the kind off the tables.
     #[test]
-    fn a_truncated_font_is_refused() {
-        assert!(parse(&FONT_DATA[..200]).is_err());
-        assert!(parse(b"pas une police").is_err());
+    fn une_ttf_synthetique_se_lit_en_entier() {
+        let data = fichier(&[Fonte::neuve()]);
+        let f = Face::parse(&data, 0).expect("face lisible");
+        assert_eq!(f.postscript, "ColophonTest-Regular");
+        assert_eq!(f.nom, "Colophon Test Regular");
+        assert_eq!(f.genre, Some(Genre::Glyf));
+        assert!(!f.variable);
+        assert!(f.embeddable());
+        assert!(!f.sous_ensemblage_interdit);
+
+        let m = f.metrics.expect("métriques");
+        assert_eq!(m.widths.len(), 224);
+        // 1024 sur un em de 2048, soit la moitié de l'em de mille.
+        assert!(m.widths.iter().all(|w| *w == 500), "{:?}", &m.widths[..4]);
+        assert_eq!(m.bbox, [-49, -244, 977, 879]);
+        // OS/2 l'emporte sur hhea, qui dirait 1500 et -300.
+        assert_eq!((m.ascent, m.descent, m.cap_height), (781, -195, 684));
+
+        // Un offset de table pointé n'importe où rend une face illisible,
+        // jamais un panic.
+        let r = record(&data, 0, b"head");
+        let mut casse = data.clone();
+        casse[r + 8..r + 12].copy_from_slice(&0xDEAD_BEEFu32.to_be_bytes());
+        assert_eq!(Face::parse(&casse, 0).err(), Some(REFUS_ILLISIBLE));
+
+        // Et une longueur qui déborde du fichier est refusée plutôt que
+        // rognée : une lecture courte rendrait des mesures inventées là où
+        // le fichier ne dit rien. C'est le mordant de la lecture bornée —
+        // rogner au lieu de refuser fait tomber cette ligne.
+        let r = record(&data, 0, b"hmtx");
+        let mut deborde = data.clone();
+        deborde[r + 12..r + 16].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(table(&deborde, 0, b"hmtx").is_none());
+        assert_eq!(Face::parse(&deborde, 0).err(), Some(REFUS_ILLISIBLE));
+    }
+
+    /// A collection carries two faces, each with its own name and its own
+    /// numbers — and its tables addressed from the start of the file. A
+    /// reader that took those offsets as relative to the directory would read
+    /// twenty bytes beside every table and name neither face.
+    #[test]
+    fn une_collection_rend_ses_deux_faces() {
+        let mut une = Fonte::neuve();
+        une.famille = "Colophon Une".into();
+        une.postscript = Some("ColophonUne-Regular".into());
+        let mut deux = Fonte::neuve();
+        deux.famille = "Colophon Deux".into();
+        deux.style = "Italic".into();
+        deux.postscript = Some("ColophonDeux-Italic".into());
+        // Un em différent : lire la mauvaise face se verrait au chiffre.
+        deux.upem = 1000;
+
+        let data = fichier(&[une, deux]);
+        assert_eq!(face_count(&data), 2);
+        assert!(sfnt_dir(&data, 0).unwrap() > 0, "le répertoire suit l'en-tête ttcf");
+
+        let f0 = Face::parse(&data, 0).expect("face 0");
+        let f1 = Face::parse(&data, 1).expect("face 1");
+        assert_eq!((f0.index, f1.index), (0, 1));
+        assert_eq!(f0.nom, "Colophon Une Regular");
+        assert_eq!(f1.nom, "Colophon Deux Italic");
+        assert_eq!(f0.postscript, "ColophonUne-Regular");
+        assert_eq!(f1.postscript, "ColophonDeux-Italic");
+        assert_eq!(f0.metrics.unwrap().widths[0], 500);
+        assert_eq!(f1.metrics.unwrap().widths[0], 1024);
+        assert_eq!(Face::parse(&data, 2).err(), Some(REFUS_ILLISIBLE), "il n'y a pas de face 2");
+    }
+
+    /// The four verdicts of the arbitration, one fixture per bit, plus the
+    /// two character maps and the two files that name no face at all. A
+    /// refused face still names itself: the screen has to say which one.
+    #[test]
+    fn les_verdicts_d_embarquement_sortent_leurs_codes() {
+        let verdict = |fs_type: u16| {
+            let mut f = Fonte::neuve();
+            f.fs_type = fs_type;
+            Face::parse(&fichier(&[f]), 0).expect("face lisible")
+        };
+        // 0x0002 : le vendeur interdit l'incorporation, tout court.
+        assert_eq!(verdict(0x0002).refus, Some(REFUS_EMBARQUEMENT_INTERDIT));
+        // 0x0200 : rien à embarquer que des bitmaps.
+        assert_eq!(verdict(0x0200).refus, Some(REFUS_BITMAP_SEULEMENT));
+        // 0x0004 : Preview & Print, ce qu'est exactement le PDF d'un album.
+        assert!(verdict(0x0004).embeddable());
+        assert!(!verdict(0x0004).sous_ensemblage_interdit);
+        // 0x0100 : pas de sous-ensemblage. Accepté, et retenu — le moteur
+        // embarque les faces entières de toute façon.
+        let entiere = verdict(0x0100);
+        assert!(entiere.embeddable());
+        assert!(entiere.sous_ensemblage_interdit);
+
+        // Une table symbole (3, 0) ne mesure rien, et la face se nomme quand
+        // même : c'est tout l'intérêt d'un refus qui n'est pas une absence.
+        let mut symbole = Fonte::neuve();
+        symbole.cmap = Cmap::Symbole;
+        let s = Face::parse(&fichier(&[symbole]), 0).unwrap();
+        assert_eq!(s.refus, Some(REFUS_CMAP_ILLISIBLE));
+        assert!(s.metrics.is_none());
+        assert_eq!(s.nom, "Colophon Test Regular");
+
+        // Un format que le lecteur ne parcourt pas, et pas de cmap du tout.
+        for cmap in [Cmap::Format0, Cmap::Aucune] {
+            let mut f = Fonte::neuve();
+            f.cmap = cmap;
+            let lue = Face::parse(&fichier(&[f]), 0).unwrap();
+            assert_eq!(lue.refus, Some(REFUS_CMAP_ILLISIBLE));
+        }
+
+        // Pas de contours du tout : l'emoji couleur et les polices bitmap
+        // sortent par là, en refus propre plutôt qu'en face sans dessin.
+        let mut bitmap = Fonte::neuve();
+        bitmap.contours = None;
+        let bm = Face::parse(&fichier(&[bitmap]), 0).unwrap();
+        assert_eq!(bm.refus, Some(REFUS_BITMAP_SEULEMENT));
+        assert_eq!(bm.genre, None);
+
+        // Une police bitmap d'Apple : `bdat` et `bloc`, pas de `head` du
+        // tout. Sans contours, le refus se décide avant les tables communes,
+        // sinon la face sortirait en `illisible` — vrai, mais moins utile,
+        // et sans son nom.
+        let mut apple = Fonte::neuve();
+        apple.bitmap = true;
+        let a = Face::parse(&fichier(&[apple]), 0).unwrap();
+        assert_eq!(a.refus, Some(REFUS_BITMAP_SEULEMENT));
+        assert_eq!(a.nom, "Colophon Test Regular");
+        assert!(a.metrics.is_none());
+
+        // Un fichier tronqué, un fichier qui n'est pas une police.
+        let entier = fichier(&[Fonte::neuve()]);
+        assert_eq!(Face::parse(&entier[..40], 0).err(), Some(REFUS_ILLISIBLE));
+        assert_eq!(Face::parse(b"pas une police", 0).err(), Some(REFUS_ILLISIBLE));
+        assert_eq!(Face::parse(&[], 0).err(), Some(REFUS_ILLISIBLE));
+
+        // Mordant : inverser le test du bit 0x0002 dans `verdict_fs_type`
+        // fait tomber la première ligne et l'avant-dernier bloc. (Vérifié.)
+        assert!(verdict(0x0000).embeddable());
+    }
+
+    /// CFF outlines read through the same shared tables, and an `fvar` marks
+    /// the face variable without exposing a single axis: the default instance
+    /// is what those tables already describe.
+    #[test]
+    fn otto_se_lit_et_fvar_marque_la_variable() {
+        let mut otto = Fonte::neuve();
+        otto.tag = *b"OTTO";
+        otto.contours = Some(*b"CFF ");
+        let f = Face::parse(&fichier(&[otto]), 0).expect("OTTO lisible");
+        assert_eq!(f.genre, Some(Genre::Cff));
+        assert_eq!(f.genre.unwrap().code(), "cff");
+        assert!(f.embeddable());
+        assert_eq!(f.metrics.expect("métriques par les tables communes").widths[0], 500);
+
+        // `CFF2`, la forme qu'une face variable donne aux mêmes contours :
+        // les neuf faces indiennes d'un macOS de série passent par là.
+        let mut cff2 = Fonte::neuve();
+        cff2.tag = *b"OTTO";
+        cff2.contours = Some(*b"CFF2");
+        cff2.variable = true;
+        let f = Face::parse(&fichier(&[cff2]), 0).expect("CFF2 lisible");
+        assert_eq!(f.genre, Some(Genre::Cff));
+        assert!(f.variable && f.embeddable());
+
+        let mut var = Fonte::neuve();
+        var.variable = true;
+        var.cmap = Cmap::Format12;
+        let v = Face::parse(&fichier(&[var]), 0).expect("variable lisible");
+        assert!(v.variable);
+        assert!(v.embeddable());
+        assert_eq!(v.metrics.expect("l'instance par défaut se mesure").widths[0], 500);
+    }
+
+    /// The PostScript name lives on the Windows platform, or the Macintosh
+    /// one, or both. Reading one alone leaves a face nameless; reading the
+    /// Windows one as bytes leaves a row of NULs.
+    #[test]
+    fn le_nom_se_lit_des_deux_plateformes() {
+        assert_eq!(MACROMAN_HAUT.chars().count(), 128, "la moitié haute de MacRoman");
+
+        let mut windows = Fonte::neuve();
+        windows.plateformes = &[3];
+        let f = Face::parse(&fichier(&[windows]), 0).unwrap();
+        assert_eq!(f.postscript, "ColophonTest-Regular");
+        assert!(!f.nom.contains('\0'), "UTF-16BE décodé, pas recopié : {:?}", f.nom);
+
+        // Macintosh seul, MacRoman, accents compris.
+        let mut mac = Fonte::neuve();
+        mac.plateformes = &[1];
+        mac.famille = "Colophon Été".into();
+        let f = Face::parse(&fichier(&[mac]), 0).unwrap();
+        assert_eq!(f.nom, "Colophon Été Regular");
+        assert_eq!(f.postscript, "ColophonTest-Regular");
+
+        // Six langues dans le `name`, l'anglais listé après : le nom rendu
+        // est l'anglais, pas le premier venu. Sans la règle, la face
+        // s'appellerait « Colophon 標準體 », ce que rend vraiment Times.ttc.
+        let mut polyglotte = Fonte::neuve();
+        polyglotte.autre_langue = Some((0x0404, "Colophon 標準體".into()));
+        let f = Face::parse(&fichier(&[polyglotte]), 0).unwrap();
+        assert_eq!(f.nom, "Colophon Test Regular");
+
+        // Les deux : Windows préféré, et rien de perdu.
+        let mut deux = Fonte::neuve();
+        deux.plateformes = &[3, 1];
+        let f = Face::parse(&fichier(&[deux]), 0).unwrap();
+        assert_eq!(f.nom, "Colophon Test Regular");
+
+        // Sans aucun nom lisible, il n'y a pas de face à montrer.
+        let mut muette = Fonte::neuve();
+        muette.plateformes = &[];
+        assert_eq!(Face::parse(&fichier(&[muette]), 0).err(), Some(REFUS_ILLISIBLE));
+    }
+
+    /// The walk: whole, sorted, refusals included, sub-folders in, hidden
+    /// files and symlinks out, and the same list twice running.
+    #[test]
+    fn la_decouverte_marche_le_dossier_et_le_trie() {
+        let dir = dossier("decouverte");
+        let sous = dir.join("sous-dossier");
+        fs::create_dir_all(&sous).unwrap();
+
+        let mut une = Fonte::neuve();
+        une.famille = "Colophon Une".into();
+        let mut deux = Fonte::neuve();
+        deux.famille = "Colophon Deux".into();
+        let mut otto = Fonte::neuve();
+        otto.tag = *b"OTTO";
+        otto.contours = Some(*b"CFF ");
+
+        fs::write(dir.join("b.ttf"), fichier(&[Fonte::neuve()])).unwrap();
+        fs::write(dir.join("a.otf"), fichier(&[otto])).unwrap();
+        fs::write(sous.join("c.ttc"), fichier(&[une, deux])).unwrap();
+        fs::write(dir.join("cassee.ttf"), b"pas une police du tout").unwrap();
+        fs::write(dir.join(".cachee.ttf"), fichier(&[Fonte::neuve()])).unwrap();
+        fs::write(dir.join("notes.txt"), b"ni police ni photo").unwrap();
+        let dehors = dossier("decouverte-dehors");
+        fs::write(dehors.join("d.ttf"), fichier(&[Fonte::neuve()])).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dehors.join("d.ttf"), dir.join("lien.ttf")).unwrap();
+
+        let adresses = |liste: &[Installee]| -> Vec<String> {
+            liste
+                .iter()
+                .map(|i| {
+                    format!(
+                        "{}#{}",
+                        i.chemin.file_name().unwrap().to_string_lossy(),
+                        i.face.index
+                    )
+                })
+                .collect()
+        };
+        let liste = installed_in(&[dir.clone()]);
+        assert_eq!(
+            adresses(&liste),
+            ["a.otf#0", "b.ttf#0", "cassee.ttf#0", "c.ttc#0", "c.ttc#1"],
+            "trié par chemin puis rang, jamais l'ordre du système de fichiers"
+        );
+        // Le fichier illisible est listé, avec son code : la session 4
+        // l'affichera, elle ne le recalculera pas.
+        let cassee = liste.iter().find(|i| i.chemin.ends_with("cassee.ttf")).unwrap();
+        assert_eq!(cassee.face.refus, Some(REFUS_ILLISIBLE));
+        // Aucune face sans verdict.
+        assert!(liste.iter().all(|i| i.face.refus.is_some() || i.face.metrics.is_some()));
+        assert_eq!(liste.iter().filter(|i| i.face.embeddable()).count(), 4);
+        // Le sous-dossier est marché, le caché et le lien ne le sont pas.
+        assert!(liste.iter().any(|i| i.chemin.ends_with("sous-dossier/c.ttc") || i.chemin.ends_with("sous-dossier\\c.ttc")));
+
+        assert_eq!(adresses(&installed_in(&[dir.clone()])), adresses(&liste), "deux appels, une liste");
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&dehors);
+    }
+
+    /// The poor man's fuzz: the fixture cut at every length, then one byte
+    /// flipped every seven. Nothing here asserts a result — only that no
+    /// reading of a hostile file ever panics or runs away.
+    #[test]
+    fn un_fichier_hostile_ne_fait_jamais_paniquer() {
+        let data = fichier(&[Fonte::neuve()]);
+        for n in 0..=data.len() {
+            let _ = Face::parse(&data[..n], 0);
+            let _ = face_count(&data[..n]);
+        }
+        for i in (0..data.len()).step_by(7) {
+            let mut mute = data.clone();
+            mute[i] ^= 0xFF;
+            let _ = Face::parse(&mute, 0);
+            let _ = Face::parse(&mute, 1);
+        }
+        // Une collection dont l'en-tête ment sur le nombre de faces.
+        let mut ttc = fichier(&[Fonte::neuve(), Fonte::neuve()]);
+        ttc[8..12].copy_from_slice(&u32::MAX.to_be_bytes());
+        assert!(face_count(&ttc) as usize <= ttc.len() / 4);
+        for i in 0..face_count(&ttc).min(8) {
+            let _ = Face::parse(&ttc, i);
+        }
+    }
+
+    /// The bench of arbitration 8: enumerating is not loading. Five hundred
+    /// files whose bulk is outline data, walked in under a second, and not
+    /// one byte of `glyf` read — which is the measure, not the intent.
+    #[test]
+    fn le_banc_enumere_sans_charger() {
+        let dir = dossier("banc");
+        let mut grasse = Fonte::neuve();
+        grasse.gras = 20_000;
+        let data = fichier(&[grasse]);
+        assert!(data.len() > 20_000, "le fichier est du contour, comme une vraie police");
+        for i in 0..500 {
+            fs::write(dir.join(format!("f{i:03}.ttf")), &data).unwrap();
+        }
+
+        let t = std::time::Instant::now();
+        let liste = installed_in(&[dir.clone()]);
+        let ecoule = t.elapsed();
+        assert_eq!(liste.len(), 500);
+        assert!(liste.iter().all(|i| i.face.embeddable()));
+        assert!(ecoule.as_secs_f64() < 1.0, "500 faces énumérées en {ecoule:?}");
+
+        let (_, lus) = lire_tables(&dir.join("f000.ttf")).expect("tables lues");
+        assert!(
+            lus < 4096,
+            "{lus} octets lus sur {} : un contour est passé sur le fil",
+            data.len()
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The smoke test: the platform's real folders, zoo and all. It asserts
+    /// nothing about what it finds — a CI Ubuntu may carry no font at all —
+    /// and everything about the manner: no panic, and not one face without a
+    /// verdict.
+    #[test]
+    fn le_zoo_du_systeme_ne_fait_pas_paniquer_la_lecture() {
+        let connus = [
+            REFUS_ILLISIBLE,
+            REFUS_EMBARQUEMENT_INTERDIT,
+            REFUS_BITMAP_SEULEMENT,
+            REFUS_CMAP_ILLISIBLE,
+        ];
+        for i in &installed() {
+            match i.face.refus {
+                Some(code) => assert!(
+                    connus.contains(&code),
+                    "code inconnu {code} pour {}",
+                    i.chemin.display()
+                ),
+                None => {
+                    let m = i.face.metrics.as_ref().expect("une face acceptée est mesurée");
+                    assert_eq!(m.widths.len(), 224, "{}", i.chemin.display());
+                    assert!(i.face.genre.is_some(), "{}", i.chemin.display());
+                    assert!(!i.face.postscript.is_empty(), "{} sans nom", i.chemin.display());
+                }
+            }
+        }
+    }
+
+    /// Le coup d'œil humain de la session : les faces de cette machine, avec
+    /// leur verdict. Les noms sont-ils sensés, les refus rares et
+    /// explicables ?
+    /// `cargo test -p colophon-core --release banc_polices_du_mac -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn banc_polices_du_mac() {
+        let t = std::time::Instant::now();
+        let liste = installed();
+        let ecoule = t.elapsed();
+        let mut refusees = 0usize;
+        let (mut fichiers, mut lus, mut tampon, mut sur_disque) = (0usize, 0u64, 0usize, 0u64);
+        let mut vus: Vec<&PathBuf> = liste.iter().map(|i| &i.chemin).collect();
+        vus.dedup();
+        for chemin in vus {
+            if let Some((buf, n)) = lire_tables(chemin) {
+                fichiers += 1;
+                lus += n;
+                tampon = tampon.max(buf.len());
+                sur_disque += fs::metadata(chemin).map(|m| m.len()).unwrap_or(0);
+            }
+        }
+        for i in &liste {
+            let verdict = match i.face.refus {
+                None => format!(
+                    "ok   {:<6}{}",
+                    i.face.genre.map(Genre::code).unwrap_or("?"),
+                    if i.face.variable { " variable" } else { "" }
+                ),
+                Some(code) => {
+                    refusees += 1;
+                    format!("REFUS {code}")
+                }
+            };
+            println!(
+                "{verdict:<24} {:<40} {}#{}",
+                i.face.nom,
+                i.chemin.file_name().unwrap_or_default().to_string_lossy(),
+                i.face.index
+            );
+        }
+        println!(
+            "\n{} faces, {refusees} refusées, {} dossiers, {} ms",
+            liste.len(),
+            dossiers_systeme().len(),
+            ecoule.as_millis()
+        );
+        println!(
+            "{fichiers} fichiers, {} Mo sur le disque, {} Ko lus ({:.2} %), plus grand tampon {} Mo",
+            sur_disque / 1_048_576,
+            lus / 1024,
+            100.0 * lus as f64 / sur_disque.max(1) as f64,
+            tampon / 1_048_576
+        );
     }
 }

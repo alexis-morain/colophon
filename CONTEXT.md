@@ -97,6 +97,14 @@ is apt the spread keeps what it has and the bilan names it: a betrayed cell is
 visible and one click from being changed, a lost photograph is neither.
 _Avoid_: fallback, downgrade, substitution
 
+**Face**:
+One named design inside a font file. `Helvetica.ttc` is a file and carries
+several faces; each has its own name, its own metrics, and its own right to
+enter a PDF, which the licence bits grant or refuse. The engine addresses a
+face by path and index, and reads faces rather than files. The album's own
+travels inside every PDF it exports.
+_Avoid_: font, typeface, family, style
+
 **Bleed**:
 The margin of print beyond the trim, cut away in binding. Photos bleed on
 purpose; text never does.

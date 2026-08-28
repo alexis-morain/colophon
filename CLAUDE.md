@@ -97,8 +97,14 @@ retire le verdict de la reprise à travers une bascule (« non mesurable ») au 
 compter les replis machine comme des mains. **La vague 4 est close sauf 4.2**, différée
 (compenser le papier sans épreuve imprimée serait deviner). **5.1 est dans `main`**
 (les sidecars Takeout, voir « Le moteur ») ; 5.2 (PhotoKit) et 5.3 (RAW, audit de
-licence d'abord) restent. **La prochaine de la séquence imposée est la vague 6**, ses
-deux notes de décision ne bloquant que 6.2.
+licence d'abord) restent.
+
+**6.1 session 1 sur 4 est faite** : le moteur *lit* les polices du système, il n'en
+*utilise* aucune. Session de capacité — le PDF ne bouge pas d'un octet (vérifié sur les
+trois fichiers de corse-2013, binaire de `main` puis de la branche), l'app pas d'un
+pixel. Restent les sessions 2 à 4 : sous-ensemblage, composite Identity-H + ToUnicode,
+copie dans l'album, portabilité, sélecteur, refus à l'écran. Les deux notes de décision
+de la vague ne bloquent que 6.2.
 
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
 et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une bascule future resterait
@@ -122,6 +128,23 @@ sidecar est un epoch UTC assumé naïf et dite fiable, `(0,0)` refusé, `favorit
 sidecar) et l'originale entre dans `curation.json` en `originale_editee`, portée par le
 relevé. Un cache de sondes par photo et par processus paie les dix appelants de
 `meta::read` (chrono ×1,03 ; ×1,72 sans lui).
+
+**`font.rs` lit les faces du monde, et n'en embarque toujours qu'une.** `Face::parse`
+(données, index) rend nom PostScript, nom lisible, métriques, genre (`glyf`/`cff`),
+`variable`, et un **verdict codé** — `illisible`, `embarquement_interdit`,
+`bitmap_seulement`, `cmap_illisible` — parce que le refus s'affichera un jour avec sa
+raison. Une face refusée **se nomme quand même** : seule l'illisible perd son nom.
+`installed()` marche les dossiers de la plate-forme aux manières de `scan.rs` (symlinks
+non suivis, cachés ignorés, tri par chemin puis rang) et rend **toutes** les faces,
+refusées comprises. **Jamais un glyphe n'est lu** : `lire_tables` ne tire du disque que
+les huit tables de `TABLES_LUES`, la présence de `glyf`/`CFF `/`CFF2` venant du
+répertoire — 787 faces d'un Mac de série en 29 ms, 4,2 % des octets. `metrics()` passe
+par le même lecteur, `text_width_mm` et l'aval ne bougent pas. Trois pièges mesurés le
+28/08 : `CFF2` est du CFF (sinon neuf faces indiennes tombent), un refus bitmap se
+décide sur les contours **avant** les tables communes (une police `bdat` n'a pas de
+`head`), et le nom se choisit **en anglais d'abord** (sinon Times s'appelle
+« Times 標準體 »). La règle bitmap est « aucune table de contour », jamais « une strike
+présente » : cette dernière refuserait Courier New, Monaco, Geneva et Cochin.
 
 **Les notes de l'utilisateur entrent dans le score** (`meta.rs`) : une photo rejetée sort
 avant comparaison, une étoilée vaut ×1,18 par étoile. `album.json.bak` à chaque sauvegarde.

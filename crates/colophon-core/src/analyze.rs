@@ -122,6 +122,27 @@ fn laplacian_variance(gray: &GrayImage) -> f64 {
     vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / vals.len() as f64
 }
 
+/// Exposure, 0..1, measured on the original and only ever on the original —
+/// a réglage does not move this number, and that is a decision, not an
+/// oversight (4.4).
+///
+/// It cannot be corrected, only recomputed, and recomputing is barred twice
+/// over. The score is a scalar: clipping plus a penalty on the mean, both
+/// collapsed into one number. A LUT cannot be unfolded through it — what the
+/// clipping would have become after an adjustment is not recoverable from
+/// the result, only from the pixels. And going back to the pixels is the wall
+/// this crate is built on: the analysis measures the original, always, so
+/// that an album composed from the photographs is identical byte for byte to
+/// one composed from the versioned fiches, which hold this very score.
+///
+/// The consequence is assumed. A recomposition judges an adjusted photograph
+/// on its original, because at the moment of choosing, the photograph has not
+/// changed — and the réglage survives the recomposition, so nothing is lost.
+/// The « sombre » badge is the other side of it: it *has* the pixels under
+/// its hand, so it reads the photograph as it will print
+/// (`photos.ts::badgesDe`). Where there are pixels, correct; where there is
+/// only a scalar, say so. Inventing a model of what the score would have
+/// become would be one more lie, not one less.
 fn exposure_score(gray: &GrayImage) -> f64 {
     let g = image::imageops::resize(gray, 128, 128, FilterType::Triangle);
     let total = (g.width() * g.height()) as f64;

@@ -761,6 +761,7 @@ mod tests {
             skipped_heic: 0,
             skipped_other: 0,
             illisibles: Vec::new(),
+            editees: Vec::new(),
             photos: vec![fiche("p1.jpg", (3000, 4000)), fiche("p2.jpg", (3000, 4000))],
             vignettes: false,
         };

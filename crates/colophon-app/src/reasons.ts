@@ -1,4 +1,4 @@
-// The ten discard reasons, named once. Every screen that speaks of a
+// The eleven discard reasons, named once. Every screen that speaks of a
 // discard (sorting view, end-of-build report, drawer, keyboard review)
 // reads this table: one wording, one order, no drift between surfaces.
 // The wording itself lives in the dictionaries (`raison.*`).
@@ -17,6 +17,7 @@ export const REASON_KEYS = [
   "definition",
   "parasite",
   // No thumbnail exists for these, the review shows the file name alone.
+  "originale_editee",
   "illisible",
 ] as const;
 

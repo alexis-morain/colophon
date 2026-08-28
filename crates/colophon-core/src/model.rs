@@ -345,7 +345,8 @@ pub struct Discard {
     /// Path relative to the album root, like `Slot::src`.
     pub src: String,
     /// Machine-readable reason: `rejetee`, `parasite`, `panorama`,
-    /// `definition`, `doublon`, `jumeau`, `meme_moment`, `hors_budget`.
+    /// `definition`, `doublon`, `jumeau`, `meme_moment`, `hors_budget`,
+    /// `originale_editee`.
     pub reason: String,
     /// The photo that won over this one, when the drop came from a
     /// comparison. Relative to the album root too.

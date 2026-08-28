@@ -51,6 +51,15 @@ pub struct Releve {
     /// progress line, and it would churn the file at every image bump.
     #[serde(default)]
     pub illisibles: Vec<PathBuf>,
+    /// Originals a Google Takeout keeps next to their `-edited` version:
+    /// `(originale écartée, éditée gardée)`. Keeping both would print the
+    /// same photograph twice, so the original is set aside before analysis
+    /// — nothing was measured on it — and enters `curation.json` as
+    /// `originale_editee`, its winner named. Absent from every fiche that
+    /// predates the field and from every non-Takeout folder, which is what
+    /// keeps the reference fiches byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub editees: Vec<(PathBuf, PathBuf)>,
     pub photos: Vec<Photo>,
     /// True while the thumbnails these fiches were measured from are still
     /// in the album folder's cache. False for a relevé read back from a
@@ -64,9 +73,10 @@ pub struct Releve {
 impl Releve {
     /// Photographs the folder held, readable or not. The colophon page
     /// prints this figure, so the two paths have to agree on it: every
-    /// scanned image is either a fiche or an unreadable file, never neither.
+    /// scanned image is a fiche, an unreadable file, or an original set
+    /// aside for its edited version — never none of the three.
     pub fn photos_scannees(&self) -> usize {
-        self.photos.len() + self.illisibles.len()
+        self.photos.len() + self.illisibles.len() + self.editees.len()
     }
 
     /// The source an album file names a photo by: its path relative to the
@@ -86,6 +96,11 @@ impl Releve {
             skipped_heic: self.skipped_heic,
             skipped_other: self.skipped_other,
             illisibles: self.illisibles.iter().map(|p| relatif(p, &self.racine)).collect(),
+            editees: self
+                .editees
+                .iter()
+                .map(|(o, e)| (relatif(o, &self.racine), relatif(e, &self.racine)))
+                .collect(),
             photos: self
                 .photos
                 .iter()
@@ -122,6 +137,10 @@ impl Releve {
         }
         for p in &mut releve.illisibles {
             *p = racine.join(&*p);
+        }
+        for (o, e) in &mut releve.editees {
+            *o = racine.join(&*o);
+            *e = racine.join(&*e);
         }
         Ok(releve)
     }
@@ -191,6 +210,7 @@ mod tests {
             skipped_heic: 3,
             skipped_other: 1,
             illisibles: vec![racine.join("casse.jpg")],
+            editees: vec![(racine.join("IMG_2.jpg"), racine.join("IMG_2-edited.jpg"))],
             photos: vec![photo(&racine, "plage/IMG_0001.jpg")],
             vignettes: true,
         };
@@ -208,7 +228,14 @@ mod tests {
         assert_eq!(relu.racine, PathBuf::from("vacances"));
         assert_eq!(relu.photos[0].path, PathBuf::from("vacances/plage/IMG_0001.jpg"));
         assert_eq!(relu.illisibles, vec![PathBuf::from("vacances/casse.jpg")]);
-        assert_eq!(relu.photos_scannees(), 2);
+        assert_eq!(
+            relu.editees,
+            vec![(
+                PathBuf::from("vacances/IMG_2.jpg"),
+                PathBuf::from("vacances/IMG_2-edited.jpg")
+            )]
+        );
+        assert_eq!(relu.photos_scannees(), 3);
         assert!(!relu.vignettes, "un relevé relu n'a pas de vignettes");
 
         // Bit-for-bit: floats survive the round trip whole, or the identity

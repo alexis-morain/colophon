@@ -348,6 +348,7 @@ export const FR = {
   "raison.panorama": "Panoramas : trop larges pour une page",
   "raison.definition": "Définition trop faible pour ce format",
   "raison.parasite": "Parasites : captures, images reçues",
+  "raison.originale_editee": "Originales : leur version retouchée est dans l'album",
   "raison.illisible": "Illisibles : fichiers endommagés ou tronqués",
 
   // -- le menu natif
@@ -1255,6 +1256,7 @@ export const EN: Record<Cle, string> = {
   "raison.panorama": "Panoramas: too wide for a page",
   "raison.definition": "Resolution too low for this format",
   "raison.parasite": "Strays: screenshots, received images",
+  "raison.originale_editee": "Originals: their edited version is in the album",
   "raison.illisible": "Unreadable: damaged or truncated files",
 
   "tri.vide": "Nothing to sort: every photo in the folder is in the album.",

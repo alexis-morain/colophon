@@ -112,6 +112,18 @@ one path both measures and draws, so what an editor shows and what a printer
 receives cannot drift apart.
 _Avoid_: font, typeface, family, style
 
+**The album's face**:
+The one face a book is set in, whatever else the machine carries: captions,
+chapter titles, half-title, colophon, cover and spine. It is a property of the
+album, never of an object on a page, and it is recorded in `album.json` by the
+name of the file **copied beside it** — so a folder carried to another machine
+opens and prints the same, and nothing ever looks a face up by name on the
+machine that opens it. Absent means the face the engine ships. Changing it
+recomposes nothing: same spreads, same photographs, same crops, and only the
+line breaks follow the new set widths.
+_Avoid_: the album font, the chosen font, embedded font
+
+
 **Bleed**:
 The margin of print beyond the trim, cut away in binding. Photos bleed on
 purpose; text never does.

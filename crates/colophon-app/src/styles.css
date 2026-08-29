@@ -1596,9 +1596,10 @@ input[type="radio"] {
   cursor: pointer;
 }
 
-.police-face:hover:not(:disabled) {
+.police-face:hover:not([aria-disabled="true"]) {
   border-color: var(--accent);
 }
+
 
 .police-face.choisie {
   border-color: var(--accent);
@@ -1612,6 +1613,12 @@ input[type="radio"] {
   color: var(--muted);
   cursor: default;
 }
+
+.police-face.refusee .police-face-nom {
+  text-decoration: line-through;
+  text-decoration-color: var(--rule);
+}
+
 
 .police-face-refus {
   flex: none;

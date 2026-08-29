@@ -11,7 +11,22 @@ sur la page des releases.
 
 ### Ajouté
 
+- **Choisir la police du livre.** Dans *Format*, à côté du format de page :
+  les polices installées sur votre machine, groupées par famille, avec un
+  champ pour filtrer. Une police pour tout le livre — légendes, titres de
+  chapitre, page de garde, colophon, couverture et dos. Rien n'est
+  recomposé : les planches, les photos et les recadrages ne bougent pas,
+  seules les coupures de ligne suivent. ⌘Z annule le choix, ⌘S l'enregistre.
+  La police retenue est **copiée dans le dossier de l'album**, donc l'album
+  s'ouvre et s'imprime à l'identique sur une machine qui ne l'a pas.
+  Les polices que leur licence interdit d'incorporer, ou qu'un PDF ne peut
+  pas porter, restent dans la liste, grisées, avec la raison : mieux vaut
+  lire pourquoi qu'aller la chercher. Et si le fichier de la police disparaît
+  du dossier, l'album sort dans celle de Colophon et l'écran le dit — jamais
+  un livre imprimé dans une police que personne n'a choisie.
+
 - **Page de garde.** La première page du livre, comme dans un livre imprimé :
+
   le titre de l'album, les dates du voyage, les villes traversées. Trois
   lignes, rien d'autre. Activée par défaut, décochable dans Envoi à côté de
   la page de colophon. Le titre suit le renommage de l'album ; les dates et

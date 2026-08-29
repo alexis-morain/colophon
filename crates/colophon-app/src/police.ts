@@ -79,3 +79,129 @@ export function parFamille(
     );
 }
 
+
+/** Une des dix voix du choix court, et les familles qui la portent selon
+ *  la machine. La première présente gagne : la liste va du plus courant au
+ *  plus rare, macOS puis Windows puis les libres. */
+type Voix = { cle: string; familles: string[] };
+
+/**
+ * Les dix voix, et rien de plus.
+ *
+ * Le panneau montrait les 787 faces de la machine, familles internes en
+ * tête, dans un mur qu'aucun filtre ne rendait choisissable — et personne
+ * ne compose un album en parcourant huit cents noms. Ce qui se choisit
+ * ici, c'est une **voix** : une linéale neutre, une humaniste, une
+ * géométrique, un romain classique, un romain de texte, une didone, un
+ * égyptien, une machine à écrire, un romain élégant, une chasse fixe. Dix
+ * cases, une famille par case, la première que cette machine porte.
+ *
+ * C'est un raccourci, jamais une clôture : « toutes les polices » ouvre la
+ * liste entière, filtre compris, refus compris. Un raccourci qui cacherait
+ * définitivement une police installée serait le défaut que ce panneau
+ * existe pour éviter.
+ *
+ * Aucun de ces noms n'atteint jamais une feuille de style : ils servent à
+ * *reconnaître* une famille dans ce que le moteur a listé, et ce qui se
+ * dessine ensuite, ce sont ses octets (`specimen.ts`).
+ */
+const VOIX: Voix[] = [
+  {
+    cle: "grotesque",
+    familles: ["Helvetica Neue", "Helvetica", "Arial", "Inter", "Segoe UI", "Roboto", "Liberation Sans"],
+  },
+  {
+    cle: "humaniste",
+    familles: ["Optima", "Gill Sans", "Lucida Grande", "Candara", "Trebuchet MS", "Verdana", "Tahoma"],
+  },
+  {
+    cle: "geometrique",
+    familles: ["Avenir Next", "Avenir", "Futura", "Century Gothic", "Poppins", "Montserrat"],
+  },
+  {
+    cle: "ancien",
+    familles: ["Palatino", "Palatino Linotype", "Book Antiqua", "Iowan Old Style", "Garamond", "EB Garamond", "Hoefler Text"],
+  },
+  {
+    cle: "texte",
+    familles: ["Georgia", "Charter", "Cambria", "Times New Roman", "Times", "Constantia", "Liberation Serif"],
+  },
+  {
+    cle: "didone",
+    familles: ["Didot", "Bodoni 72", "Bodoni MT", "Playfair Display"],
+  },
+  {
+    cle: "egyptienne",
+    familles: ["Superclarendon", "Rockwell", "Roboto Slab", "Zilla Slab"],
+  },
+  {
+    cle: "machine",
+    familles: ["American Typewriter", "Courier New", "Courier", "Nimbus Mono PS"],
+  },
+  {
+    cle: "elegant",
+    familles: ["Baskerville", "Big Caslon", "Cochin", "Perpetua", "Libre Baskerville"],
+  },
+  {
+    cle: "mono",
+    familles: ["Menlo", "Consolas", "Monaco", "SF Mono", "Andale Mono", "DejaVu Sans Mono"],
+  },
+];
+
+/** La face droite d'une famille : celle que le fichier appelle du nom de
+ *  sa famille, ou celle-ci suivie de « Regular ». À défaut, le nom le plus
+ *  court qui ne s'annonce ni italique ni oblique — un album se compose dans
+ *  la droite, et personne ne va chercher l'italique d'Optima au moment de
+ *  choisir une voix. */
+function droite(famille: string, faces: PoliceOfferte[]): PoliceOfferte | null {
+  const bonnes = faces.filter((f) => !f.refus);
+  if (bonnes.length === 0) return null;
+  const exact = bonnes.find(
+    (f) => f.nom === famille || f.nom === `${famille} Regular`,
+  );
+  if (exact) return exact;
+  const droites = bonnes.filter((f) => !/(italic|oblique|italique)/i.test(f.nom));
+  return (droites.length > 0 ? droites : bonnes).reduce((a, b) =>
+    b.nom.length < a.nom.length ? b : a,
+  );
+}
+
+/** Les dix familles suggérées, dans l'ordre des voix. Moins de dix quand la
+ *  machine ne porte rien d'une voix : compléter avec une deuxième famille
+ *  d'une voix déjà servie rendrait le nombre et perdrait ce que la liste
+ *  promet, qui est d'être variée. */
+export function selection(polices: PoliceOfferte[]): PoliceOfferte[] {
+  const parNom = new Map<string, PoliceOfferte[]>();
+  for (const p of polices) {
+    const cle = (p.famille || p.nom).toLocaleLowerCase();
+    const liste = parNom.get(cle);
+    if (liste) liste.push(p);
+    else parNom.set(cle, [p]);
+  }
+  const prises = new Set<string>();
+  const out: PoliceOfferte[] = [];
+  for (const voix of VOIX) {
+    for (const famille of voix.familles) {
+      const cle = famille.toLocaleLowerCase();
+      if (prises.has(cle)) continue;
+      const face = droite(famille, parNom.get(cle) ?? []);
+      if (!face) continue;
+      prises.add(cle);
+      out.push(face);
+      break;
+    }
+  }
+  return out;
+}
+
+/** La voix d'une face suggérée, pour la note sous son nom. `selection`
+ *  rend les faces dans l'ordre des voix retenues, donc l'index suffirait —
+ *  mais un index qui veut dire une clé est exactement le genre de lien
+ *  qu'un tri futur casserait sans bruit. */
+export function voixDe(p: PoliceOfferte): string | null {
+  const cle = (p.famille || p.nom).toLocaleLowerCase();
+  const voix = VOIX.find((v) =>
+    v.familles.some((f) => f.toLocaleLowerCase() === cle),
+  );
+  return voix ? voix.cle : null;
+}

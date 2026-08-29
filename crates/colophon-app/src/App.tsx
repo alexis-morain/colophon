@@ -53,6 +53,7 @@ import {
   templateCapacity,
   TITRE_MAX,
 } from "./album";
+import { adopterGeometrie } from "./geometrie";
 import { ReglageBloc } from "./ReglageBloc";
 import { filtreDe, poserReglages, useReglages } from "./reglages";
 import {
@@ -87,7 +88,8 @@ import {
 } from "./edits";
 import { BilanView } from "./BilanView";
 import { SpreadView } from "./SpreadView";
-import { faceFor, familyOf, TemplatePicker, templateLabel } from "./TemplatePicker";
+import { TemplatePicker } from "./TemplatePicker";
+import { choixOfferts, faceFor, cleDeForme, formeDe } from "./gabarit";
 import { RevueView, TriView } from "./TriView";
 import { Drawer } from "./Drawer";
 import { PlanchesView, LockGlyph } from "./PlanchesView";
@@ -255,6 +257,17 @@ export default function App() {
   const album = hist?.album ?? null;
   const total = album?.spreads.length ?? 0;
   const dirty = album !== null && album !== savedAlbum;
+
+  // Le dump courant suit la page de l'album, pas seulement celle de son
+  // ouverture. Un ⌘Z sur une bascule ramène l'ancien format sous un dump
+  // qui décrit le nouveau : les rectangles se retrouvent quand même, la
+  // recherche retombant sur le cache par format, mais `geometrieCourante`
+  // rendrait l'autre page. Le dump est forcément déjà là — l'album affiché
+  // a été dessiné une fois —, donc rien ne se charge ici, on repointe.
+  useEffect(() => {
+    if (!album) return;
+    adopterGeometrie(album.trim_mm, album.bleed_mm);
+  }, [album]);
 
   // The adjustments store is a reading mirror, and App is its single truth:
   // after any album change — opening, an edit, ⌘Z, a bascule, a
@@ -749,14 +762,25 @@ export default function App() {
   }, [apply]);
 
 
-  /** Demander au moteur ce que ce format donnerait. Il n'écrit rien. */
+  /** Demander au moteur ce que ce format donnerait. Il n'écrit rien.
+   *
+   *  Et charger la géométrie de ce format-là, dans le fond perdu de
+   *  l'album : chaque rectangle de l'écran sort du dump du moteur, celui
+   *  de l'album ouvert décrit l'ancienne page, et une page dont personne
+   *  n'a chargé la géométrie ne se dessine pas — elle jette, et sans
+   *  frontière d'erreur au-dessus de l'arbre, une fenêtre blanche. Le
+   *  dump vient donc *avant* que le bilan s'affiche : « Appliquer » ne
+   *  s'offre que quand il y a de quoi dessiner ce qu'il applique. */
   const apercuBascule = useCallback(
     async (f: FormatPreset) => {
       setBasculeChoisi(f.name);
       setBasculeApercu(null);
       setBasculeEnCours(true);
       try {
-        setBasculeApercu(await basculeAlbum(f.w, f.h, profilRef.current));
+        const apercu = await basculeAlbum(f.w, f.h, profilRef.current);
+        const { trim_mm, bleed_mm } = apercu.album;
+        await chargeGeometrieFormat(trim_mm.w, trim_mm.h, bleed_mm);
+        setBasculeApercu(apercu);
       } catch (e) {
         setBascule(false);
         setError(fault(t("erreur.bascule"), e));
@@ -769,10 +793,21 @@ export default function App() {
 
   /** Appliquer l'aperçu. Par `apply`, donc annulable par ⌘Z comme une
    *  retouche : c'est pour ça que le moteur rend un album au lieu d'en
-   *  enregistrer un. */
+   *  enregistrer un.
+   *
+   *  La géométrie du nouveau format est adoptée d'abord, dans le même
+   *  souffle : l'album change de page à l'instruction suivante, et un
+   *  rendu entre les deux dessinerait l'ancienne. `adopterGeometrie`
+   *  rend faux quand le dump manque, et alors rien ne s'applique — un
+   *  album qu'on ne sait pas dessiner ne monte pas à l'écran. */
   const appliquerBascule = useCallback(() => {
     if (!basculeApercu) return;
     const { album } = basculeApercu;
+    if (!adopterGeometrie(album.trim_mm, album.bleed_mm)) {
+      setBascule(false);
+      setError(fault(t("erreur.bascule"), t("bascule.geometrie")));
+      return;
+    }
     apply(() => album);
     setBascule(false);
     setStatus(t("bascule.faite", { w: album.trim_mm.w, h: album.trim_mm.h }));
@@ -875,24 +910,24 @@ export default function App() {
     const spread = album.spreads[index];
     if (!spread || templateCapacity(spread.template) === 0) return;
     void (async () => {
-      const noms = await gabaritsCompatibles(spread.slots.map((s) => s.src));
+      const notes = await gabaritsCompatibles(spread.slots.map((s) => s.src));
       // Engine unreachable: cycle the count-compatible list, which is the
       // same honest fallback the picker shows.
-      const offerts = (
-        noms ?? templateChoices(spread).map(([nom]) => nom)
-      ).filter((nom) => templateCapacity(nom) === spread.slots.length);
-      const familles: string[] = [];
-      for (const nom of offerts) {
-        const f = familyOf(nom);
-        if (!familles.includes(f)) familles.push(f);
-      }
-      const courante = familyOf(spread.template);
-      const at = familles.indexOf(courante);
-      const suivante =
-        familles[(at + sens + familles.length) % familles.length];
-      if (!suivante || suivante === courante) return;
-      apply((a) => changeTemplate(a, index, faceFor(suivante, index)));
-      setStatus(t("gabarit.cycle", { nom: templateLabel(suivante) }));
+      const offerts: [string, number][] =
+        notes ?? templateChoices(spread).map(([nom]) => [nom, 1]);
+      // Same entries as the picker — one per arrangement — so G and the
+      // panel walk one list and not two: exact capacity only, the cycle
+      // never drops a photo, the smaller layouts stay in the picker.
+      const choix = choixOfferts(offerts, spread.template).filter(
+        (c) => c.capacite === spread.slots.length,
+      );
+      const f = formeDe(spread.template);
+      const courante = f ? cleDeForme(f) : "";
+      const at = choix.findIndex((c) => c.cle === courante);
+      const suivante = choix[(at + sens + choix.length) % choix.length];
+      if (!suivante || suivante.cle === courante) return;
+      apply((a) => changeTemplate(a, index, faceFor(suivante.template, index)));
+      setStatus(t("gabarit.cycle", { nom: suivante.libelle }));
     })();
   };
 

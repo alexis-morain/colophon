@@ -191,6 +191,15 @@ nommer la face **installée** avec le crénage du navigateur décale de 0,067 mm
 ligne de 74,8 mm. Le sélecteur vit dans le panneau *Format*, montre les faces refusées
 grisées avec leur raison (`police.ts`, sur le modèle de `reasons.ts`), et le
 « Regular » final s'élague **à l'écran** : le moteur rend ce que le fichier déclare.
+Il offre **dix familles, une par voix** (`police::selection`, une liste ordonnée de
+noms connus dont la première présente gagne), les 787 faces restant derrière
+« toutes les polices » — cacher une police installée serait le défaut que ce panneau
+existe pour éviter. **Chaque nom est écrit dans ses propres octets** (`specimen.ts`,
+commande `police_apercu`, même extraction que le choix mais sans rien poser à côté
+de l'album), crénage et ligatures coupés comme dans `font.ts` : un spécimen montre
+ce que le livre imprimera. Deux plafonds, et ils sont la raison du compteur — 4 Mo
+par face, 24 Mo en tout, au-delà de quoi le nom reste dans la police de l'interface :
+une face CJK sortie de sa collection pèse 28,6 Mo et la liste en demande des dizaines.
 
 **Les notes de l'utilisateur entrent dans le score** (`meta.rs`) : une photo rejetée sort
 avant comparaison, une étoilée vaut ×1,18 par étoile. `album.json.bak` à chaque sauvegarde.
@@ -270,6 +279,19 @@ ligne de statut est vivante** (`role="status"`, les quatre pieds) et **la table 
 se parcourt au clavier** (un arrêt de tabulation, flèches, verticales d'une rangée).
 **La légende proposée** : champ vide, fantôme gris (`legende::proposition`), Tab la pose
 et marque `edited`. Badges de case : « N ppi », « sombre », infobulle = remède.
+
+**Le sélecteur de gabarits montre des dispositions** (`gabarit.ts`) : verso, bande de
+légende et forme de cellule repliés, une entrée par disposition, groupées par nombre
+de photos — les 171 gabarits qu'une planche de quatre photos peut prendre deviennent
+au plus 23 entrées, et chacune porte un nom français au lieu du `g_1x2f_1x2f` que le
+catalogue généré affichait. La variante réellement posée est celle de plus faible
+trahison, **sans bande d'abord** (le Composer n'en pose aucune) : `gabarits_compatibles`
+remonte donc `[nom, trahison]`, l'aptitude gardant sa définition unique côté moteur.
+La grammaire des noms générés est relue côté app **pour le seul libellé**, et
+`gabarit.test.ts` exige qu'aucun nom du dump n'y échappe, que la disposition déclare
+autant de cases que le dump en pose, et qu'elle les répartisse du même côté du pli —
+c'est ce test qui tient la table des familles historiques, seul endroit de l'app qui
+redit une forme du moteur. G et ⇧G lisent la même liste.
 
 Menu natif (`menu.ts`), barre en trois zones, couverture = cellule zéro de Planches,
 export uniquement par Envoi. **Toute commande passe par la table `raw` d'App et
@@ -352,6 +374,16 @@ promesse de rendu de pdf.js ne se résout que sur une trame d'animation, qu'une 
 cachée ne reçoit pas. Tout ce qui lit le PDF à l'écran se vérifie sur l'instance Brave de
 la cure — `scripts/feuille-cdp.mjs` en est le second pilote, 31 épreuves sur la page qui
 tourne, et il se vérifie mordant en mutant le code, comme un test.
+
+**Une bascule charge la géométrie de sa cible avant de s'appliquer.** `geometrie()`
+jette pour un format que personne n'a chargé, et c'est le bon choix — mais aucune
+frontière d'erreur ne couvre l'arbre React : la levée démonte tout et il ne reste
+**qu'une fenêtre blanche**, sans message ni journal. Le dump du format visé se charge
+donc pendant l'aperçu (`chargeGeometrieFormat`, **dans le fond perdu de l'album**, pas
+celui de l'écran de création qui vaut zéro et n'a jamais la bonne clé), et
+`adopterGeometrie` refuse plutôt que de laisser appliquer un album que personne ne
+saurait dessiner. L'ancien dump reste en cache, et c'est ce qui fait tenir ⌘Z sur une
+bascule. `geometrie.test.ts` tient les quatre cas.
 
 **Une UX ne se valide jamais au seul harnais navigateur** (`.claude/launch.json`).
 **Installer le bundle après chaque push** (TCC pour le pilotage à l'écran), 19 Mo.

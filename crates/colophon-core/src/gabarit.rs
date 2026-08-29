@@ -701,7 +701,25 @@ pub fn slots(spec: &Spec, n: usize, g: &SpreadGeometry) -> Vec<Rect> {
 /// threshold the composer places with. One rule, engine side: the picker
 /// and the keyboard cycle both read this list, neither rewrites it.
 pub fn compatibles(aspects: &[f64], g: &SpreadGeometry) -> Vec<&'static str> {
-    offerts().iter().filter(|s| apte(s, aspects, g)).map(|s| s.nom).collect()
+    compatibles_notes(aspects, g).into_iter().map(|(nom, _)| nom).collect()
+}
+
+/// [`compatibles`] with each template's betrayal beside it, catalogue order
+/// kept.
+///
+/// The picker groups the offered list by arrangement — how many cells on
+/// each page, in how many rows — and shows one entry per arrangement
+/// instead of one per cell shape; the shape it then applies is the variant
+/// these photos fit best. Which one that is, is this number, and it is
+/// measured here rather than on the other side of the bridge: the fitness
+/// rule has one definition, and a second one drawn on rectangles the editor
+/// re-read would be a second definition however carefully it was written.
+pub fn compatibles_notes(aspects: &[f64], g: &SpreadGeometry) -> Vec<(&'static str, f64)> {
+    offerts()
+        .iter()
+        .filter(|s| apte(s, aspects, g))
+        .map(|s| (s.nom, trahison(s, aspects, g)))
+        .collect()
 }
 
 /// The worst orientation betrayal a template inflicts on these photos, taken
@@ -739,7 +757,7 @@ pub fn apte(spec: &Spec, aspects: &[f64], g: &SpreadGeometry) -> bool {
 /// the album's own. The live spread travels as the src list, so an
 /// unsaved edit still filters right. Feeds the Tauri command and
 /// `--gabarits`.
-pub fn compatibles_srcs(dir: &Path, srcs: &[String]) -> Result<Vec<&'static str>> {
+pub fn compatibles_srcs(dir: &Path, srcs: &[String]) -> Result<Vec<(&'static str, f64)>> {
     let album: crate::model::Album = serde_json::from_str(
         &std::fs::read_to_string(dir.join("album.json"))
             .with_context(|| format!("lecture de {}", dir.join("album.json").display()))?,
@@ -760,7 +778,7 @@ pub fn compatibles_srcs(dir: &Path, srcs: &[String]) -> Result<Vec<&'static str>
             Ok(f64::from(w) / f64::from(h))
         })
         .collect::<Result<Vec<f64>>>()?;
-    Ok(compatibles(&aspects, &crate::pdf::geometry(&album)))
+    Ok(compatibles_notes(&aspects, &crate::pdf::geometry(&album)))
 }
 
 #[cfg(test)]

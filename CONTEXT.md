@@ -97,6 +97,25 @@ is apt the spread keeps what it has and the bilan names it: a betrayed cell is
 visible and one click from being changed, a lost photograph is neither.
 _Avoid_: fallback, downgrade, substitution
 
+**Disposition**:
+What one entry of the template picker is: how many cells each page of a spread
+carries and in how many rows, the caption band and the cell shapes folded
+away. Several templates share one — 171 compatible templates on a four-photo
+spread are at most 23 dispositions — and the one actually applied is whichever
+of them these photographs fit best, by `gabarit::trahison`. The engine knows
+nothing of it: it is how the interface makes a catalogue of 209 families
+readable. It has no side, the picker flipping it onto the right page from the
+spread's parity.
+_Avoid_: layout, arrangement, shape, grid
+
+**Spécimen**:
+A face's own name, and a line of text, drawn in that face, so a typeface is
+seen before it is chosen. The bytes are the ones the emitter would embed —
+`police_apercu`, the same extraction as choosing it, writing nothing beside
+the album — registered under a family internal to the application: the screen
+never names an installed font.
+_Avoid_: preview, sample, specimen sheet
+
 **Face**:
 One named design inside a font file. `Helvetica.ttc` is a file and carries
 several faces; each has its own name, its own metrics, and its own right to

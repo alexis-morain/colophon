@@ -1,0 +1,160 @@
+{
+ "date": "2026-08-29",
+ "session": "6.1 session 4 sur 4 — la police voyage avec l'album",
+ "machine": "macOS de série, 756 faces acceptées et distinctes",
+ "la_face_posee_a_cote_de_lalbum": {
+  "quoi": "Ce qu'une face du système pèse une fois extraite dans le dossier de l'album. Le fichier système entier n'y entre jamais : une .ttc de quatorze faces n'a rien à faire à côté d'un album, et un FontFile2 ne porte qu'une face.",
+  "faces": [
+   {
+    "nom": "Helvetica Neue Regular",
+    "source": "/System/Library/Fonts/HelveticaNeue.ttc",
+    "octets_systeme": 4472716,
+    "octets_poses": 639096,
+    "part_pct": 14.3
+   },
+   {
+    "nom": "Heiti TC Light",
+    "source": "/System/Library/Fonts/STHeiti Light.ttc",
+    "octets_systeme": 55783456,
+    "octets_poses": 53964136,
+    "part_pct": 96.7
+   }
+  ]
+ },
+ "le_poids_dit_pas_subi": {
+  "quoi": "Le même album (corse-2013, carré 21, 101 pages) composé dans trois faces. C'est le chiffre que la porte de sortie de 2026-08-28-note-decision-6.1-s2.md attendait : la décision de sous-ensembler appartient à Alexis, pas à la session.",
+  "album_cover_pdf_octets": {
+   "source_sans_3_du_projet": 212038,
+   "helvetica_neue": 254201,
+   "heiti_tc_light": 28586172
+  },
+  "album_print_pdf_octets": {
+   "source_sans_3_du_projet": 95553972,
+   "helvetica_neue": 95596117
+  },
+  "lecture": "Une face latine coûte quelques dizaines de kilo-octets sur un fichier d'impression de 95 Mo : rien. Une face CJK fait passer une feuille de couverture de 212 Ko à 28,6 Mo, soit 135 fois. Le seuil du report n'est pas franchi par une face latine ; il l'est franchement par une face CJK."
+ },
+ "la_parite_ecran_papier": {
+  "quoi": "La même chaîne mesurée par font.ts dans le navigateur et par font::Embarquee::largeur_mm dans le moteur, sur les mêmes octets — la face extraite posée à côté de l'album. Pilote : scripts/police-cdp.mjs, référence : banc_parite_ecran_papier.",
+  "face": "HelveticaNeue",
+  "octets": 639096,
+  "tolerance": "l'arrondi que le format impose et rien d'autre : un demi-millième d'em par glyphe, l'em du PDF valant mille et celui d'Helvetica Neue 1000 aussi",
+  "epreuves": [
+   {
+    "texte": "« Corse, 2013 » à 8 pt",
+    "ecran_mm": 15.36982,
+    "moteur_mm": 15.369822,
+    "ecart_mm": 2e-06,
+    "borne_mm": 0.015523
+   },
+   {
+    "texte": "« Porto-Vecchio, Bonifacio » à 10.5 pt",
+    "ecran_mm": 41.36072,
+    "moteur_mm": 41.360725,
+    "ecart_mm": 5e-06,
+    "borne_mm": 0.044451
+   },
+   {
+    "texte": "« Zażółć gęślą jaźń » à 10.5 pt",
+    "ecran_mm": 28.455407,
+    "moteur_mm": 28.455408,
+    "ecart_mm": 2e-06,
+    "borne_mm": 0.031486
+   },
+   {
+    "texte": "« Un été à l'Île-Rousse — œuvres, «guillemets» » à 10.5 pt",
+    "ecran_mm": 74.787116,
+    "moteur_mm": 74.787125,
+    "ecart_mm": 9e-06,
+    "borne_mm": 0.081493
+   },
+   {
+    "texte": "« AVWA Ta To Yo fi fl ffi » à 24 pt",
+    "ecran_mm": 83.244252,
+    "moteur_mm": 83.244267,
+    "ecart_mm": 1.4e-05,
+    "borne_mm": 0.097368
+   },
+   {
+    "texte": "« 1234567890 » à 36 pt",
+    "ecran_mm": 70.611984,
+    "moteur_mm": 70.612,
+    "ecart_mm": 1.6e-05,
+    "borne_mm": 0.063501
+   }
+  ],
+  "verdict": "vert, six chaînes sur six ; le pire écart mesuré est 1,6·10⁻⁵ mm pour une borne de 6,4·10⁻² mm, soit 4000 fois moins que ce que le format autorise"
+ },
+ "le_mordant": {
+  "quoi": "Ce qui doit tomber si la mesure de l'écran cessait de porter sur les octets de l'album.",
+  "mesures": [
+   {
+    "pile": "\"Source Sans 3\", sans-serif",
+    "crenage": "none",
+    "large": 68.3233,
+    "ecart": 6.4638
+   },
+   {
+    "pile": "serif",
+    "crenage": "none",
+    "large": 68.0478,
+    "ecart": 6.7393
+   },
+   {
+    "pile": "\"Helvetica Neue\"",
+    "crenage": "none",
+    "large": 74.7871,
+    "ecart": 0
+   },
+   {
+    "pile": "\"Helvetica Neue\"",
+    "crenage": "normal",
+    "large": 74.7204,
+    "ecart": 0.0667
+   }
+  ],
+  "lecture": "Nommer une autre face (« Source Sans 3 », serif) décale de 6,5 à 6,7 mm sur une ligne de 74,8 mm : le test mord. Nommer la face installée dont l'album porte l'extraction ne décale de rien, crénage coupé — et c'est exactement ce qui rend le défaut invisible sur la machine qui a la police. Crénage laissé au navigateur, il décale de 0,067 mm : « un cheveu même ici » est désormais un chiffre."
+ },
+ "la_face_qui_ne_dessine_pas_ce_quil_faut": {
+  "quoi": "Le piège nommé par le prompt, mesuré. Sur un texte français et polonais de 127 caractères non blancs, combien de faces acceptées en remplacent plus de la moitié par « ? ».",
+  "faces_acceptees_distinctes": 756,
+  "faces_qui_en_perdent_plus_de_la_moitie": 322,
+  "dont_nommees_sans_point_initial": 256,
+  "exemples": [
+   "Apple Braille (127/127)",
+   "Hoefler Text Ornaments (127/127)",
+   "Damascus (124/127)",
+   "Apple Color Emoji (110/127)",
+   "Devanagari MT (98/127)",
+   "Arial Hebrew (98/127)"
+  ],
+  "ce_qui_ne_le_declenche_pas": "Heiti TC Light et Helvetica Neue dessinent 163 caractères sur 163 d'un texte français, polonais compris : une face CJK n'est pas le cas dangereux.",
+  "decision": "aucune. La session mesure et dit ; refuser ou avertir serait une heuristique de plus, et c'est un arbitrage d'Alexis."
+ },
+ "ce_qui_na_pas_bouge": {
+  "quoi": "Les trois PDF de corse-2013 composés par le binaire de main (0986f5a) et par celui de cette branche, SOURCE_DATE_EPOCH pinné.",
+  "album_pdf": "identique, 26 770 552 octets",
+  "album_print_pdf": "identique, 95 553 972 octets",
+  "album_cover_pdf": "identique, 212 038 octets",
+  "album_json": "identique",
+  "lecture": "Un album qui n'a pas changé de face ne change pas d'un octet."
+ },
+ "la_conformite": {
+  "quoi": "veraPDF, profil PDF/A-2b, sur un album composé dans une vraie face du Mac — ce que la session 3 avait fait avec Source Sans 3 extraite.",
+  "resultats": [
+   {
+    "fichier": "corse-2013 album-cover.pdf, Helvetica Neue",
+    "verdict": "PASS 2b"
+   },
+   {
+    "fichier": "corse-2013 album-cover.pdf, Heiti TC Light",
+    "verdict": "PASS 2b"
+   },
+   {
+    "fichier": "corse-2013 album-print.pdf, Helvetica Neue",
+    "verdict": "PASS 2b"
+   }
+  ],
+  "base_font": "/BaseFont/HelveticaNeue et /BaseFont/STHeitiTC-Light, sans préfixe de sous-ensemble : la face entre entière, comme la session 3 l'a écrit."
+ }
+}

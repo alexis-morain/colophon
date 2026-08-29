@@ -255,7 +255,11 @@ export const FR = {
   "planche.texte.inseree":
     "Planche de texte insérée : double-clic pour l’ouvrir et écrire",
   "planche.supprimee": "Planche {n} supprimée (⌘Z la ramène)",
-  "bascule.titre": "Changer de format",
+  // Le panneau porte les deux propriétés qui changent tout sans rien
+  // recomposer : le format et la police. Son intitulé les nomme toutes les
+  // deux plutôt que d'en cacher une derrière l'autre.
+  "bascule.titre": "Ce dont le livre est fait",
+
   "bascule.intro":
     "Le même album dans un autre format : mêmes planches, même ordre, mêmes photos, mêmes recadrages. Seules les mises en page dont les photos ne tiendraient plus sont remplacées, et tout ce qui bouge est dit ci-dessous.",
   "bascule.format.courant": "format actuel",
@@ -279,8 +283,9 @@ export const FR = {
   "bascule.annulable": "⌘Z annule, ⌘S enregistre.",
   "bascule.faite": "Album basculé en {w} × {h} mm (⌘Z annule)",
   "bascule.section.format": "Le format",
-  "bar.format": "Format",
+  "bar.format": "Format et police",
   "bar.format.titre": "Le format et la police de l’album",
+
   "erreur.bascule": "Changement de format impossible",
 
   // -- la police de l'album, dans le panneau Format
@@ -917,7 +922,8 @@ export const EN: Record<Cle, string> = {
   "planche.vide.inseree": "Empty spread inserted: a breath",
   "planche.texte.inseree": "Text spread inserted: double-click to open it and write",
   "planche.supprimee": "Spread {n} deleted (⌘Z brings it back)",
-  "bascule.titre": "Change format",
+  "bascule.titre": "What the book is made of",
+
   "bascule.intro":
     "The same album in another size: same spreads, same order, same photos, same crops. Only the layouts whose photos would no longer fit are replaced, and everything that moves is listed below.",
   "bascule.format.courant": "current format",
@@ -941,8 +947,9 @@ export const EN: Record<Cle, string> = {
   "bascule.annulable": "⌘Z undoes, ⌘S saves.",
   "bascule.faite": "Album switched to {w} × {h} mm (⌘Z undoes)",
   "bascule.section.format": "The format",
-  "bar.format": "Format",
+  "bar.format": "Format & type",
   "bar.format.titre": "The album’s format and typeface",
+
   "erreur.bascule": "Cannot change format",
 
   // -- the album's typeface, in the Format panel

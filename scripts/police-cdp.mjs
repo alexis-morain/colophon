@@ -133,20 +133,35 @@ for (const m of REF.mesures) {
   });
 }
 
-// 3. Le mordant. La même mesure en nommant une police installée doit tomber
-// à côté : si elle tombe juste, c'est que la face de l'album n'est pas celle
-// qu'on croit et que tout ce qui précède est un vert vide.
+// 3. Le mordant : nommer une autre face doit faire tomber la mesure. Sans
+// ça, le vert ci-dessus dirait seulement que deux façons de mesurer la même
+// chose donnent la même chose.
 const long = REF.mesures.reduce((a, b) => (a.texte.length > b.texte.length ? a : b));
 const mmLong = long.pt * PT_TO_MM;
-const morsures = [];
-for (const pile of ['"Source Sans 3", sans-serif', '"Helvetica Neue"', "serif"]) {
+const borne = (long.glyphes * 0.5 * mmLong) / 1000 + 1e-6;
+const mesureAvec = async (pile, crenage = "none") => {
   const large = await ev(
-    `window.__mesureMmAvec(${JSON.stringify(pile)}, ${JSON.stringify(long.texte)}, ${mmLong})`,
+    `window.__mesureMmAvec(${JSON.stringify(pile)}, ${JSON.stringify(long.texte)}, ${mmLong}, ${JSON.stringify(crenage)})`,
   );
-  const borne = (long.glyphes * 0.5 * mmLong) / 1000 + 1e-6;
-  morsures.push({ pile, large: +large.toFixed(4), ecart: +Math.abs(large - long.mm).toFixed(4) });
-  juge(`mordant : ${pile} ne mesure pas comme l'album`, Math.abs(large - long.mm) > borne);
+  return { pile, crenage, large: +large.toFixed(4), ecart: +Math.abs(large - long.mm).toFixed(4) };
+};
+const morsures = [];
+for (const pile of ['"Source Sans 3", sans-serif', "serif"]) {
+  const m = await mesureAvec(pile);
+  morsures.push(m);
+  juge(`mordant : ${pile} ne mesure pas comme l'album`, m.ecart > borne);
 }
+
+// 4. Et ce que coûterait le raccourci que ce module refuse : nommer la face
+// installée au lieu des octets de l'album. Mesuré plutôt que jugé — sur la
+// machine qui a la police, les chasses sont les mêmes par construction, et
+// c'est précisément ce qui rend le défaut invisible ici. Ce qui se voit,
+// c'est le crénage : la face extraite n'en a plus, l'installée en a.
+const installee = REF.postscript.replace(/([a-z])([A-Z])/g, "$1 $2");
+const sansCrenage = await mesureAvec(`"${installee}"`);
+const avecCrenage = await mesureAvec(`"${installee}"`, "normal");
+morsures.push(sansCrenage, avecCrenage);
+
 
 const rates = epreuves.filter((e) => !e.ok);
 console.log(

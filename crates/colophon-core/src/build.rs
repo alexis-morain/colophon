@@ -1338,8 +1338,24 @@ pub fn jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
 mod tests {
     use super::*;
 
+    /// The declared instant is a process-wide environment variable, so the
+    /// tests that pin it cannot run side by side: one of them clearing
+    /// `SOURCE_DATE_EPOCH` while the other renders turns a byte-identity
+    /// assertion into a coin toss. Found the hard way — the identity held
+    /// alone and fell in the full suite.
+    static HORLOGE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Take the clock. A test that panicked while holding it poisoned
+    /// nothing but the lock itself; the next one takes it anyway.
+    fn horloge_pinnee() -> std::sync::MutexGuard<'static, ()> {
+        let garde = HORLOGE.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
+        garde
+    }
+
     /// A throwaway photos folder and its (not yet created) output folder.
     fn dossier_test(name: &str) -> (PathBuf, PathBuf) {
+
         let base =
             std::env::temp_dir().join(format!("colophon-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
@@ -1646,7 +1662,7 @@ mod tests {
             jpeg_imprimable(&photos.join(format!("photo-{i}.jpg")), i);
         }
         build_album(&photos, &out, BuildOptions::default()).expect("un album");
-        std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
+        let _horloge = horloge_pinnee();
         let sans = {
             render_album_pdf(&out).unwrap();
             fs::read(out.join("album.pdf")).unwrap()
@@ -1719,7 +1735,7 @@ mod tests {
             .clone();
 
         // One clock for every render below: the diffs are about pixels.
-        std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
+        let _horloge = horloge_pinnee();
         let nu = {
             render_album_pdf(&out).unwrap();
             fs::read(out.join("album.pdf")).unwrap()
@@ -1758,6 +1774,7 @@ mod tests {
         write_album_json(&out, &album).unwrap();
         render_album_pdf(&out).unwrap();
         assert_eq!(nu, fs::read(out.join("album.pdf")).unwrap());
+        // Rendue sous le verrou : l'horloge est au processus, pas au test.
         std::env::remove_var("SOURCE_DATE_EPOCH");
     }
 

@@ -200,7 +200,8 @@ export function BasculeView({
         <p className="police-courante">
           {policeAlbum ? (
             <>
-              <strong>{nomLisible({ nom: policeAlbum.nom, famille: "" })}</strong>
+              <strong>{nomLisible(policeAlbum)}</strong>
+
               {policeInfo && !policeInfo.manquante && (
                 <span className="police-poids">
                   {" · "}
@@ -250,20 +251,25 @@ export function BasculeView({
                   <h4 className="police-famille-nom">{famille}</h4>
                   <ul>
                     {faces.map((p) => {
-                      const active =
-                        policeAlbum?.postscript === p.postscript && !!policeAlbum;
+                      const active = policeAlbum?.postscript === p.postscript;
                       return (
                         <li key={p.rang}>
+                          {/* `aria-disabled` et non `disabled` : un bouton
+                              désactivé sort de l'ordre de tabulation, et la
+                              raison du refus deviendrait invisible pour qui
+                              parcourt la liste au clavier — or c'est
+                              justement elle qu'on a tenu à afficher. */}
                           <button
                             className={
                               "police-face" +
                               (p.refus ? " refusee" : "") +
                               (active ? " choisie" : "")
                             }
-                            disabled={!!p.refus}
+                            aria-disabled={!!p.refus}
                             aria-pressed={active}
-                            onClick={() => onPolice(p)}
+                            onClick={() => !p.refus && onPolice(p)}
                           >
+
                             <span className="police-face-nom">{nomLisible(p)}</span>
                             {/* Une face refusée s'affiche, grisée, avec sa
                                 raison : la cacher enverrait quelqu'un

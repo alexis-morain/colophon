@@ -156,5 +156,25 @@
    }
   ],
   "base_font": "/BaseFont/HelveticaNeue et /BaseFont/STHeitiTC-Light, sans préfixe de sous-ensemble : la face entre entière, comme la session 3 l'a écrit."
+ },
+ "ce_qui_nest_pas_remesure_au_rendu": {
+  "quoi": "L'arbitrage 10 fait suivre les coupures de ligne à la face de l'album au rendu — cover.rs pour le dos et la quatrième, la page de garde qui rétrécit son titre. Deux lignes restent posées à la composition et mesurées par personne au rendu : la ligne de villes de la page de garde et les lignes du colophon. Mesuré plutôt que supposé.",
+  "colophon_dun_album_reel": {
+   "album": "corse-2013, carré 21, 8 lignes, 206,5 mm de place",
+   "faces_mesurees": 756,
+   "faces_qui_debordent": 0,
+   "pire_ligne": {
+    "Helvetica Neue": "×0,51",
+    "Optima": "×0,49",
+    "Heiti TC Light": "×0,54"
+   },
+   "lecture": "un facteur deux de marge sur un album réel : rien à corriger ici"
+  },
+  "colophon_du_pire_cas_synthetique": {
+   "fixture": "six des plus longs noms de communes françaises sur une ligne, les six formats",
+   "faces_qui_debordent": 159,
+   "pire": "×2,02, Bodoni Ornaments sur portrait-20x25, toujours la ligne de villes",
+   "lecture": "le cas existe et il est nommé ; il demande à la fois une liste de villes extrême et une face très large. Aucun code écrit : la page de garde, elle, est signalée à l'écran (`deborde.garde`), le colophon ne l'est pas."
+  }
  }
 }

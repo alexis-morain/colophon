@@ -12,8 +12,14 @@ sur la page des releases.
 ### Ajouté
 
 - **Choisir la police du livre.** Dans *Format*, à côté du format de page :
-  les polices installées sur votre machine, groupées par famille, avec un
-  champ pour filtrer. Une police pour tout le livre — légendes, titres de
+  dix familles, une par voix — une linéale neutre, une humaniste, une
+  géométrique, un romain classique, un romain de texte, une didone, une
+  égyptienne, une machine à écrire, un romain élégant, une chasse fixe —,
+  chacune **écrite dans sa propre police**, avec une ligne de spécimen : on
+  voit la police avant de la choisir, et ce qui est dessiné à l'écran est ce
+  que le PDF embarquera. Toutes les polices de la machine restent à un clic,
+  groupées par famille, avec un champ pour filtrer. Une police pour tout le
+  livre — légendes, titres de
   chapitre, page de garde, colophon, couverture et dos. Rien n'est
   recomposé : les planches, les photos et les recadrages ne bougent pas,
   seules les coupures de ligne suivent. ⌘Z annule le choix, ⌘S l'enregistre.
@@ -35,6 +41,20 @@ sur la page des releases.
   couverture quand vous lui en avez donné un, celui de l'album sinon. Un
   titre trop long pour la page rétrécit plutôt que de déborder, et rien n'est
   jamais coupé.
+
+### Modifié
+
+- **Le sélecteur de gabarits montre des dispositions, pas des gabarits.** Une
+  planche de quatre photos en proposait jusqu'à 171, et la moitié de ce
+  nombre était le même dessin deux fois : une bande de légende de huit
+  millimètres, invisible à la taille d'une vignette, ou une forme de cellule
+  que la vignette montre déjà. Il en montre au plus vingt-trois, une par
+  disposition, groupées par nombre de photos et **nommées** — « Deux en
+  colonne par page », « Une pleine page, trois côte à côte » — là où les
+  gabarits ajoutés au catalogue s'affichaient encore sous leur nom de
+  fichier, `g_1x2f_1x2f`. Le gabarit réellement posé est la variante que ces
+  photos-là cadrent le mieux, jugée par le moteur et non choisie à la main.
+  G et ⇧G parcourent la même liste.
 
 ### Corrigé
 

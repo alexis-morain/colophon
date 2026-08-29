@@ -126,3 +126,27 @@ export function geometrieFormatSync(
 ): Dump | null {
   return parFormat.get(cle(trim.w, trim.h, bleed)) ?? null;
 }
+
+/**
+ * Point the current dump at a format already cached, and say whether it was.
+ *
+ * A format switch changes the album's trim under a fully rendered editor:
+ * the dump loaded when the album opened describes the *old* page, and the
+ * lookup above throws for the new one — which, with no error boundary over
+ * the tree, is a white window and nothing else. So the switch loads the
+ * target's dump before it applies (`chargeGeometrieFormat`), then hands it
+ * over here. `false` means nobody loaded it, and the caller must not apply.
+ *
+ * The old dump stays in the cache, which is what makes ⌘Z on a format
+ * switch draw the old page rather than throw for it in turn.
+ */
+export function adopterGeometrie(
+  trim: { w: number; h: number },
+  bleed: number,
+): boolean {
+  const d = parFormat.get(cle(trim.w, trim.h, bleed));
+  if (!d) return false;
+  courant = d;
+  hooks.forEach((h) => h(d));
+  return true;
+}

@@ -160,8 +160,10 @@ struct Cli {
 
     /// Print the templates a spread holding SRCS (a JSON array of photo
     /// sources, in slot order) can switch to, count and orientation both
-    /// fitting, as a JSON array of names. Feeds the dev album server, like
-    /// --proposition; the srcs travel so an unsaved edit filters right.
+    /// fitting, as a JSON array of `[name, betrayal]` pairs. Feeds the dev
+    /// album server, like --proposition; the srcs travel so an unsaved edit
+    /// filters right, and the betrayal is what lets the picker offer one
+    /// entry per arrangement and apply the best-fitting cell shape in it.
     #[arg(long, value_name = "SRCS", hide = true)]
     gabarits: Option<String>,
 

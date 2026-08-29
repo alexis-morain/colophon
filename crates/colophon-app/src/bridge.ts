@@ -319,6 +319,19 @@ export async function policeOctets(fichier?: string): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
+/** The bytes of a face the picker is *offering*, so its name can be drawn
+ *  in it. Same extraction as choosing it, nothing written beside the album:
+ *  a specimen is what the PDF would embed, not what the disk holds.
+ *
+ *  `max` is a ceiling in bytes; the engine refuses a heavier face rather
+ *  than shipping it over the bridge, and the caller then simply leaves that
+ *  name in the interface's own face. Outside the shell there is no list of
+ *  installed faces at all, so there is nothing to draw. */
+export async function policeApercu(rang: number, max: number): Promise<ArrayBuffer> {
+  if (!inTauri) throw new Error("aperçu de police indisponible hors de l’application");
+  return invoke<ArrayBuffer>("police_apercu", { rang, max });
+}
+
 export async function fetchThumb(src: string): Promise<ArrayBuffer> {
 
   if (inTauri) return invoke<ArrayBuffer>("thumb", { src });
@@ -403,15 +416,18 @@ export async function legendeProposee(planche: number): Promise<string | null> {
 
 /** Templates the spread can switch to right now, count and orientation
  *  both fitting: the engine's one rule (`gabarit::compatibles`), photos
- *  passed live so an unsaved edit filters right. Null when the engine
- *  cannot answer (no server, unreadable thumbs): the caller then filters
- *  nothing rather than guessing. */
+ *  passed live so an unsaved edit filters right. Each name comes with its
+ *  betrayal — how far the worst photo is from its cell — which is what
+ *  lets `gabarit.ts` offer one entry per arrangement and apply, inside it,
+ *  the cell shape these photos fit best. Null when the engine cannot answer
+ *  (no server, unreadable thumbs): the caller then filters nothing rather
+ *  than guessing. */
 export async function gabaritsCompatibles(
   srcs: string[],
-): Promise<string[] | null> {
+): Promise<[string, number][] | null> {
   try {
     if (inTauri) {
-      return await invoke<string[]>("gabarits_compatibles", { srcs });
+      return await invoke<[string, number][]>("gabarits_compatibles", { srcs });
     }
     const res = await fetch(
       `/__dev/gabarits?srcs=${encodeURIComponent(JSON.stringify(srcs))}`,

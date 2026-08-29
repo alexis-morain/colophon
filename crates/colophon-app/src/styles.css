@@ -329,30 +329,62 @@ input[type="radio"] {
 }
 
 /* Anchored to the context line near the bottom of the window: the panel
-   opens upward, one wrapping row of named families. */
+   opens upward, one group per photo count, each a wrapping row. Il défile :
+   une planche de quatre photos offre une trentaine de dispositions, et une
+   liste qui déborde de l'écran est une liste qu'on ne parcourt pas. */
 .tpl-panel {
   position: absolute;
   z-index: 30;
   bottom: calc(100% + 8px);
   left: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 12px;
   /* Shrink-to-fit would stop at the anchor button's width: say the real
-     intent, one row that wraps past ~640 px. */
+     intent, rows that wrap past ~640 px. */
   width: max-content;
   max-width: min(640px, 84vw);
-  gap: 2px;
+  max-height: min(62vh, 520px);
+  overflow-y: auto;
   padding: 10px;
   background: var(--surface);
   border: 1px solid var(--rule);
   box-shadow: var(--shadow-pop);
 }
 
+/* Le nombre de photos est dit une fois par groupe, jamais sur chaque case :
+   sous le compte de la planche, un groupe est un choix qui laisse des
+   photos dehors, et le titre est ce qui le rend visible. */
+.tpl-groupe-nom {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 4px;
+  padding: 2px 0;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.tpl-groupe-cases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
 .tpl-option {
   display: grid;
   gap: 4px;
   justify-items: center;
-  padding: 10px 12px 8px;
+  align-content: start;
+  /* Une largeur fixe : les libellés vont de « Pleine page » à « une pleine
+     page, trois en colonne », et des cases qui se redimensionnent au texte
+     donnent une grille en dents de scie où plus rien ne s'aligne. */
+  width: 108px;
+  padding: 10px 8px 8px;
   border: 1px solid transparent;
   transition: border-color var(--turn), background var(--turn);
 }
@@ -366,14 +398,11 @@ input[type="radio"] {
 }
 
 .tpl-option-name {
-  font-size: var(--fs-12);
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.tpl-option-cap {
   font-size: var(--fs-11);
-  color: var(--muted);
+  line-height: 1.25;
+  color: var(--text);
+  text-align: center;
+  text-wrap: balance;
 }
 
 .tpl-diagram {
@@ -1525,8 +1554,79 @@ input[type="radio"] {
 
 
 .police-poids,
-.police-face-note {
+.police-carte-note {
   color: var(--muted);
+  font-size: var(--fs-12);
+}
+
+.police-titre {
+  margin: 14px 0 2px;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.police-note {
+  margin: 0 0 10px;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+/* Les dix voix. Une case par famille, son nom écrit dans ses propres
+   octets : c'est le seul endroit du panneau où l'on voit ce qu'on choisit
+   avant de l'avoir choisi. */
+.police-suggerees {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.police-carte {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 11px;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  background: none;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition: border-color var(--turn), background var(--turn);
+}
+
+.police-carte:hover {
+  border-color: var(--accent);
+}
+
+.police-carte.choisie {
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.08);
+}
+
+.police-carte-nom {
+  font-size: var(--fs-16);
+  line-height: 1.2;
+}
+
+/* La ligne de spécimen : assez grande pour qu'une didone se distingue d'une
+   égyptienne, coupée plutôt que repliée — deux lignes de longueurs
+   différentes d'une case à l'autre rendraient la grille illisible. */
+.police-carte-specimen {
+  font-size: var(--fs-13);
+  line-height: 1.3;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.police-toutes {
+  display: block;
+  margin: 0 0 10px;
   font-size: var(--fs-12);
 }
 

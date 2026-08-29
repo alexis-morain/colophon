@@ -173,17 +173,22 @@ fn caption_suggestion(src: String, state: State<'_, AppState>) -> Result<Option<
 /// Templates the spread can switch to, count and orientation both fitting:
 /// the engine's one rule (`gabarit::compatibles`). The photos travel as
 /// their srcs, live from the editor, so an unsaved edit filters right.
+///
+/// Each name comes back with its betrayal, because the picker offers one
+/// entry per arrangement and applies, inside it, the cell shape these
+/// photos fit best. That comparison is a fitness judgement, and the project
+/// keeps exactly one of those.
 #[tauri::command]
 fn gabarits_compatibles(
     srcs: Vec<String>,
     state: State<'_, AppState>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<(String, f64)>, String> {
     let dir = {
         let guard = state.open.lock().unwrap();
         guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
     };
     colophon_core::gabarit::compatibles_srcs(&dir, &srcs)
-        .map(|noms| noms.into_iter().map(String::from).collect())
+        .map(|noms| noms.into_iter().map(|(n, t)| (n.to_string(), t)).collect())
         .map_err(|e| format!("{e:#}"))
 }
 
@@ -402,6 +407,39 @@ fn police_octets(
     };
     let choix = colophon_core::font::face_album(&dir, fichier.as_deref());
     Ok(tauri::ipc::Response::new(choix.face.octets().to_vec()))
+}
+
+/// The bytes of a face the picker is *offering*, so the screen can set its
+/// name in it before anybody chooses it.
+///
+/// Same extraction as choosing it, and deliberately not the file on disk:
+/// what the specimen draws is what the PDF would embed. Nothing is written
+/// beside the album — that is what separates looking from choosing.
+///
+/// `max` is a ceiling in bytes, and a face over it comes back refused
+/// rather than shipped: a CJK face pulled out of its collection is tens of
+/// megabytes, the picker asks for dozens of specimens, and a list that eats
+/// a gigabyte to show its names would be a worse answer than a name drawn
+/// in the interface's own face. The screen simply leaves those unset.
+#[tauri::command]
+fn police_apercu(
+    rang: usize,
+    max: u64,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, String> {
+    let (chemin, index) = {
+        let polices = state.polices.lock().unwrap();
+        let face = polices
+            .get(rang)
+            .ok_or("cette police n'est plus dans la liste : rouvrez le panneau")?;
+        (face.chemin.clone(), face.face.index)
+    };
+    let data = std::fs::read(&chemin).map_err(|e| e.to_string())?;
+    let (_, octets) = colophon_core::font::extraire_pour_album(&data, index)?;
+    if octets.len() as u64 > max {
+        return Err("face trop lourde pour un aperçu".into());
+    }
+    Ok(tauri::ipc::Response::new(octets))
 }
 
 #[derive(Serialize)]
@@ -1330,6 +1368,7 @@ pub fn run() {
             choisir_police,
             police_etat,
             police_octets,
+            police_apercu,
             reveal_data_dir
 
         ])

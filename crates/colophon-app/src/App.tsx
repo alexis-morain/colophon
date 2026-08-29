@@ -30,6 +30,13 @@ import {
   recomposeAlbum,
   basculeAlbum,
   BasculeBilan,
+  choisirPolice,
+  policeEtat,
+  PoliceEtat,
+  policeOctets,
+  polices_installees,
+  PoliceOfferte,
+
   renderCoverPreview,
   renderPdf,
   saveAlbum,
@@ -90,6 +97,10 @@ import { Cle, FR, langue, t, useLangue } from "./i18n";
 import { jusquAuRendu } from "./mesure";
 import { RaccourcisView } from "./Raccourcis";
 import { BasculeView } from "./BasculeView";
+import { chargerFace } from "./font";
+import { nomLisible } from "./police";
+
+
 import { SignalerView } from "./SignalerView";
 import { SignalKind } from "./signaler";
 import { Chevron, CoverGlyph } from "./icons";
@@ -198,6 +209,14 @@ export default function App() {
     bilan: BasculeBilan;
   } | null>(null);
   const [basculeEnCours, setBasculeEnCours] = useState(false);
+  // La police de l'album, dans le même panneau : le format et la police sont
+  // les deux propriétés qui changent tout sans rien recomposer. La liste est
+  // chargée une seule fois, comme celle des formats — 787 faces sur un Mac
+  // de série, et le filtre est ce qui rend ça praticable.
+  const [polices, setPolices] = useState<PoliceOfferte[]>([]);
+  const [policeFiltre, setPoliceFiltre] = useState("");
+  const [policeInfo, setPoliceInfo] = useState<PoliceEtat | null>(null);
+
   // The report panel (Aide → Signaler), one of the three issue variants.
   const [signaler, setSignaler] = useState<SignalKind | null>(null);
   // The storage panel (Fichier → Stockage…): what the app wrote on the disk.
@@ -246,6 +265,41 @@ export default function App() {
   useEffect(() => {
     poserReglages(album?.reglages);
   }, [album]);
+
+  // La face de l'album atteint le navigateur, et c'est la même que celle du
+  // PDF : des octets rendus par une commande, jamais un nom de police
+  // installée. Elle se recharge à l'ouverture et à chaque changement de
+  // choix — y compris un ⌘Z, qui remet le champ à ce qu'il était.
+  //
+  // Le fichier manquant ne casse rien et ne se tait pas : le moteur retombe
+  // sur la face du projet, l'export réussira, et l'écran le dit ici. Un livre
+  // imprimé dans une police que personne n'a choisie sans le savoir est
+  // exactement ce que ce projet refuse.
+  const policeFichier = album?.police?.fichier;
+  useEffect(() => {
+    if (!opened) return;
+    let vivant = true;
+    void (async () => {
+      try {
+        const [octets, etat] = await Promise.all([
+          policeOctets(policeFichier),
+          policeEtat(policeFichier),
+        ]);
+        if (!vivant) return;
+        await chargerFace(octets);
+        if (!vivant) return;
+        setPoliceInfo(etat);
+        if (etat.manquante) setStatus(t("police.manquante"));
+      } catch {
+        // Une face illisible n'empêche pas d'ouvrir l'album : la pile de
+        // `font.ts` retombe sur celle du moteur, qui est celle du PDF.
+      }
+    })();
+    return () => {
+      vivant = false;
+    };
+  }, [opened, policeFichier]);
+
 
   // Deux chronos de rendu, dev seulement (`mesure.ts`), pris avant le port en
   // Canvas pour qu'après il y ait quelque chose à comparer. Ils se ferment
@@ -644,7 +698,41 @@ export default function App() {
     setBasculeApercu(null);
     setBascule(true);
     if (basculeFormats.length === 0) listFormats().then(setBasculeFormats, () => {});
+    // Les faces de la machine, une fois par ouverture du panneau plutôt
+    // qu'une fois par session : une police installée entre-temps doit
+    // apparaître, et la marche des dossiers coûte quelques dizaines de
+    // millisecondes.
+    if (inTauri) polices_installees().then(setPolices, () => {});
   }, [basculeFormats.length, dirty, save]);
+
+  /** Choisir une face : le moteur la copie dans le dossier de l'album, et
+   *  l'album la nomme. Par `apply`, donc annulable par ⌘Z comme la bascule
+   *  de format — le fichier reste à côté, l'album ne le nomme plus. */
+  const choisirLaPolice = useCallback(
+    async (offerte: PoliceOfferte) => {
+      try {
+        const police = await choisirPolice(offerte.rang);
+        apply((a) => ({ ...a, police }));
+        setStatus(t("police.choisie", { nom: nomLisible(offerte) }));
+      } catch (e) {
+        setError(fault(t("erreur.police"), e));
+      }
+    },
+    [apply],
+  );
+
+  /** Revenir à la face du moteur. Le fichier posé reste sur le disque : il
+   *  ne pèse rien, un autre choix l'écrase, et l'effacer derrière un ⌘Z qui
+   *  peut se ⇧⌘Z serait le seul geste destructeur du panneau. */
+  const rendreLaPolice = useCallback(() => {
+    apply((a) => {
+      if (!a.police) return a;
+      const { police: _, ...reste } = a;
+      return reste as Album;
+    });
+    setStatus(t("police.rendue"));
+  }, [apply]);
+
 
   /** Demander au moteur ce que ce format donnerait. Il n'écrit rien. */
   const apercuBascule = useCallback(
@@ -1673,7 +1761,9 @@ export default function App() {
           onColophon={(on) => void toggleColophon(on)}
           gardeActif={hasGarde(album)}
           onGarde={(on) => void toggleGarde(on)}
+          policeManquante={policeInfo?.manquante ?? false}
         />
+
       ) : view === "planches" ? (
         <PlanchesView
           album={album}
@@ -1870,8 +1960,16 @@ export default function App() {
           enCours={basculeEnCours}
           onChoisir={(f) => void apercuBascule(f)}
           onAppliquer={appliquerBascule}
+          polices={polices}
+          policeAlbum={hist.album.police ?? null}
+          policeInfo={policeInfo}
+          filtre={policeFiltre}
+          onFiltre={setPoliceFiltre}
+          onPolice={(p) => void choisirLaPolice(p)}
+          onRendrePolice={rendreLaPolice}
           onClose={() => setBascule(false)}
         />
+
       )}
       {signaler && (
         <SignalerView

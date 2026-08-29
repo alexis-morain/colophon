@@ -278,9 +278,35 @@ export const FR = {
   "bascule.appliquer": "Appliquer ce format",
   "bascule.annulable": "⌘Z annule, ⌘S enregistre.",
   "bascule.faite": "Album basculé en {w} × {h} mm (⌘Z annule)",
+  "bascule.section.format": "Le format",
   "bar.format": "Format",
-  "bar.format.titre": "Changer le format de l’album",
+  "bar.format.titre": "Le format et la police de l’album",
   "erreur.bascule": "Changement de format impossible",
+
+  // -- la police de l'album, dans le panneau Format
+  "police.section": "La police",
+  "police.intro":
+    "Une police pour tout le livre : légendes, titres de chapitre, page de garde, colophon, couverture et dos. La police choisie est copiée dans le dossier de l’album, donc l’album s’ouvre et s’imprime pareil sur une machine qui ne l’a pas. Rien n’est recomposé : seules les coupures de ligne suivent.",
+  "police.projet": "La police de Colophon",
+  "police.projet.note": "Source Sans 3, celle des albums qui n’ont rien choisi",
+  "police.filtre": "Filtrer",
+  "police.filtre.exemple": "Helvetica, Optima, Times…",
+  "police.poids": "{ko} Ko dans l’album",
+  "police.rendre": "Revenir à celle de Colophon",
+  "police.rendue": "Retour à la police de Colophon (⌘Z annule)",
+  "police.choisie": "Album composé en {nom} (⌘Z annule, ⌘S enregistre)",
+  "police.reste": "{n} familles de plus : filtrez pour les voir.",
+  "police.aucune": "Aucune police ne correspond.",
+  "police.manquante":
+    "La police de cet album est introuvable dans son dossier. L’album s’affiche et s’exporte dans celle de Colophon : rechoisissez-en une, ou remettez le fichier en place.",
+  "erreur.police": "Police impossible à choisir",
+  "police.refus.illisible": "illisible",
+  "police.refus.embarquement_interdit": "sa licence interdit de l’incorporer",
+  "police.refus.bitmap_seulement": "pas de contours, seulement des images",
+  "police.refus.cmap_illisible": "table de caractères illisible",
+  "police.refus.format_non_embarquable": "format qu’un PDF ne peut pas porter",
+  "police.refus.fichier_absent": "fichier absent du dossier de l’album",
+
   "planche.deplacee": "Planche déplacée en position {n}",
   "signal.planche.dabord":
     "Ouvrez d’abord la planche à signaler (vue Livre ou Planches)",
@@ -914,9 +940,35 @@ export const EN: Record<Cle, string> = {
   "bascule.appliquer": "Apply this format",
   "bascule.annulable": "⌘Z undoes, ⌘S saves.",
   "bascule.faite": "Album switched to {w} × {h} mm (⌘Z undoes)",
+  "bascule.section.format": "The format",
   "bar.format": "Format",
-  "bar.format.titre": "Change the album format",
+  "bar.format.titre": "The album’s format and typeface",
   "erreur.bascule": "Cannot change format",
+
+  // -- the album's typeface, in the Format panel
+  "police.section": "The typeface",
+  "police.intro":
+    "One typeface for the whole book: captions, chapter titles, half-title, colophon, cover and spine. The face you pick is copied into the album’s folder, so the album opens and prints the same on a machine that does not have it. Nothing is recomposed: only the line breaks follow.",
+  "police.projet": "Colophon’s own typeface",
+  "police.projet.note": "Source Sans 3, the one albums use when they pick none",
+  "police.filtre": "Filter",
+  "police.filtre.exemple": "Helvetica, Optima, Times…",
+  "police.poids": "{ko} kB in the album",
+  "police.rendre": "Back to Colophon’s",
+  "police.rendue": "Back to Colophon’s typeface (⌘Z undoes)",
+  "police.choisie": "Album set in {nom} (⌘Z undoes, ⌘S saves)",
+  "police.reste": "{n} more families: filter to see them.",
+  "police.aucune": "No typeface matches.",
+  "police.manquante":
+    "This album’s typeface is missing from its folder. The album shows and exports in Colophon’s own: pick one again, or put the file back.",
+  "erreur.police": "Cannot use that typeface",
+  "police.refus.illisible": "unreadable",
+  "police.refus.embarquement_interdit": "its licence forbids embedding",
+  "police.refus.bitmap_seulement": "no outlines, images only",
+  "police.refus.cmap_illisible": "unreadable character map",
+  "police.refus.format_non_embarquable": "a shape no PDF can carry",
+  "police.refus.fichier_absent": "file missing from the album’s folder",
+
   "planche.deplacee": "Spread moved to position {n}",
   "signal.planche.dabord":
     "Open the spread to report first (Book or Spreads view)",

@@ -63,18 +63,34 @@ pub(crate) struct Ecrivain {
 }
 
 impl Ecrivain {
-    /// The album's face, which is the one this crate ships.
-    ///
-    /// Panics if it is unreadable or its licence forbids embedding — that is
-    /// a broken build artifact, not a user error, and `font::tests` catches it
-    /// before it ships. Falling back to a non-embedded base-14 would be the
-    /// silent export failure this project refuses.
+    /// The face this crate ships. Test-only since the album's folder reaches
+    /// every writer: in production the face is always resolved from the
+    /// album, and « no face chosen » is one of that resolution's answers.
+    #[cfg(test)]
     pub(crate) fn incorporee() -> Self {
-        let face = font::Embarquee::incorporee()
-            .expect("police incorporée illisible ou refusée : asset corrompu");
-        Self { face: std::borrow::Cow::Borrowed(face), utilises: font::Utilises::default() }
+        Self::depuis(font::face_projet())
+    }
+
+
+    /// A writer over the face an album chose. The `Cow` is the whole point:
+    /// the project's face is opened once for the process and borrowed, an
+    /// album's own is read once per document and owned.
+    pub(crate) fn depuis(face: std::borrow::Cow<'static, font::Embarquee>) -> Self {
+        Self { face, utilises: font::Utilises::default() }
+    }
+
+    /// How wide a string sets in **this document's** face.
+    ///
+    /// Every line break the renderers decide goes through here rather than
+    /// through [`font::text_width_mm`], which knows only the face this crate
+    /// ships. Measuring in one face and drawing in another is the two-
+    /// geometries trap with a font in it, and it shows up as a title running
+    /// past the guillotine.
+    pub(crate) fn largeur_mm(&self, s: &str, size_pt: f64) -> f64 {
+        self.face.largeur_mm(s, size_pt)
     }
 }
+
 
 /// One run of text at a baseline, in millimetres, in the album's only face.
 ///
@@ -654,8 +670,9 @@ pub fn render_template_sheets(album: &Album, dir: &Path) -> Result<Vec<std::path
         let assets: Vec<JpegAsset> = (0..*n)
             .map(|i| solid_jpeg(SHEET_PALETTE[i], 160, 120))
             .collect::<Result<_>>()?;
-        let mut writer = PdfWriter::new(album);
+        let mut writer = PdfWriter::new(album, dir);
         writer.add_spread(&spread, &assets)?;
+
         let path = dir.join(format!("{name}.pdf"));
         writer.save(&path)?;
         out.push(path);
@@ -681,7 +698,11 @@ pub struct PdfWriter {
     /// glyphs is closed.
     font_id: lopdf::ObjectId,
     pub(crate) ecrivain: Ecrivain,
+    /// The refusal code of a face named by the album and not found, or
+    /// `None`. Carried rather than logged: the screen has to say it.
+    police_defaut: Option<&'static str>,
     geom: SpreadGeometry,
+
     bleed_mm: f64,
     /// Goes into `/Info`, into `dc:title`, and nowhere else.
     title: String,
@@ -841,30 +862,50 @@ fn tounicode(utilises: &font::Utilises) -> String {
 }
 
 impl PdfWriter {
-    pub fn new(album: &Album) -> Self {
-        Self::with_stamp(album, pdfx::stamp())
+    /// `dir` is the album's own folder — the one holding `album.json`, never
+    /// the folder of photographs. That is where a chosen face was copied,
+    /// and an album whose two folders happen to coincide is the only place
+    /// the confusion would not show.
+    pub fn new(album: &Album, dir: &Path) -> Self {
+        Self::with_stamp(album, dir, pdfx::stamp())
     }
 
     /// The writer with its declared instant pinned. Everything else in a PDF
     /// this crate emits is a pure function of the album and its assets, so
     /// two writers given the same stamp produce the same bytes — which is how
     /// a change to the emitter proves it changed nothing.
-    pub fn with_stamp(album: &Album, stamp: chrono::DateTime<chrono::Local>) -> Self {
+    pub fn with_stamp(
+        album: &Album,
+        dir: &Path,
+        stamp: chrono::DateTime<chrono::Local>,
+    ) -> Self {
         let mut doc = Document::with_version(pdfx::PDF_VERSION);
         let pages_id = doc.new_object_id();
         let font_id = doc.new_object_id();
+        // An album that chose no face touches no disk here: `police` absent
+        // means the face this crate ships, and it is read once per process.
+        let choix = font::face_album(dir, album.police.as_ref().map(|p| p.fichier.as_str()));
         Self {
             doc,
             page_ids: Vec::new(),
             pages_id,
             font_id,
-            ecrivain: Ecrivain::incorporee(),
+            ecrivain: Ecrivain::depuis(choix.face),
+            police_defaut: choix.defaut,
             geom: geometry(album),
             bleed_mm: album.bleed_mm,
             title: album.title.clone(),
             stamp,
         }
     }
+
+    /// `Some(code)` when the album named a face this document could not use
+    /// and fell back to the project's. Never a silent export: the caller
+    /// says it, in words, on the screen that asked for the file.
+    pub fn police_defaut(&self) -> Option<&'static str> {
+        self.police_defaut
+    }
+
 
     /// One spread, drawn from its scene.
     ///
@@ -879,7 +920,14 @@ impl PdfWriter {
     /// silent about it.
     pub fn add_spread(&mut self, spread: &Spread, assets: &[JpegAsset]) -> Result<()> {
         use crate::scene::{Role, Scene};
-        let scene = Scene::of(spread, &self.geom);
+        // Measured in this document's face: the half-title fits its title by
+        // shrinking it, so the scene the emitter draws from is the one laid
+        // out in the face the emitter is about to set the page in.
+        let scene = {
+            let face = &self.ecrivain;
+            Scene::of_avec(spread, &self.geom, &|s, pt| face.largeur_mm(s, pt))
+        };
+
         let mut content = String::new();
         let mut xobjects = dictionary! {};
 
@@ -1149,7 +1197,9 @@ mod tests {
             solid_jpeg([200, 30, 40], 160, 120).unwrap(),
             solid_jpeg([30, 120, 200], 160, 120).unwrap(),
         ];
-        let mut w = PdfWriter::with_stamp(&album, stamp);
+        // Un album de test ne choisit aucune face : le dossier n'est
+        // jamais lu, et le writer prend celle du projet.
+        let mut w = PdfWriter::with_stamp(&album, std::path::Path::new("."), stamp);
         w.add_spread(&album.spreads[0], &assets).unwrap();
         let path = std::env::temp_dir().join(format!(
             "colophon-pdfx-{}-{:?}-{}.pdf",
@@ -1442,8 +1492,120 @@ mod tests {
         assert_eq!(sans_flux(&a, ia), sans_flux(&b, ib));
     }
 
+    /// The same one-spread album, in a folder of its own, set in whatever
+    /// face that folder carries. `police` is what `album.json` would say.
+    fn ecrit_dans(
+        dir: &std::path::Path,
+        police: Option<crate::model::Police>,
+    ) -> (Document, Option<&'static str>) {
+        let mut album =
+            Album::new("Été & cie", std::path::Path::new("."), Size { w: 210.0, h: 210.0 });
+        album.police = police;
+        album.spreads.push(Spread {
+            template: "duo".into(),
+            slots: vec![
+                Slot { src: "a.jpg".into(), focal: [0.5, 0.5], zoom: 1.0, caption: Some("la plage".into()) },
+                Slot::new("b.jpg".into(), [0.5, 0.5]),
+            ],
+            caption: Some("Corse, 2013".into()),
+            text: None,
+            edited: false,
+            locked: false,
+        });
+        let assets = vec![
+            solid_jpeg([200, 30, 40], 160, 120).unwrap(),
+            solid_jpeg([30, 120, 200], 160, 120).unwrap(),
+        ];
+        let mut w = PdfWriter::new(&album, dir);
+        let defaut = w.police_defaut();
+        w.add_spread(&album.spreads[0], &assets).unwrap();
+        let path = dir.join("album.pdf");
+        w.save(&path).expect("écriture");
+        (Document::load(&path).expect("relecture"), defaut)
+    }
+
+    /// **The file copied beside the album is the file inside the PDF.**
+    ///
+    /// Not « the same face », not « the same metrics »: the same bytes. The
+    /// album's folder holds one face, the emitter embeds one face, and if
+    /// those two ever diverge the book prints in something nobody chose. The
+    /// name follows the same rule — the face names itself, and Source Sans 3
+    /// is nowhere in the file.
+    #[test]
+    fn les_octets_poses_a_cote_de_lalbum_sont_ceux_du_fichier() {
+        let dir = std::env::temp_dir()
+            .join(format!("colophon-police-pdf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Une vraie face du fichier de test, extraite comme le fait l'app.
+        let (nom, octets) =
+            font::extraire_pour_album(font::FONT_DATA, 0).expect("extraction");
+        std::fs::write(dir.join(nom), &octets).unwrap();
+        let choix = crate::model::Police {
+            fichier: nom.to_string(),
+            postscript: "SourceSans3-Regular".into(),
+            nom: "Source Sans 3 Regular".into(),
+        };
+
+        let (doc, defaut) = ecrit_dans(&dir, Some(choix));
+        assert!(defaut.is_none(), "la face est là, rien à signaler");
+        let f = police(&doc);
+        let descendant = match &f.get(b"DescendantFonts").unwrap().as_array().unwrap()[0] {
+            Object::Reference(r) => doc.get_object(*r).unwrap().as_dict().unwrap().clone(),
+            other => panic!("{other:?}"),
+        };
+        let descr = match descendant.get(b"FontDescriptor").unwrap() {
+            Object::Reference(r) => doc.get_object(*r).unwrap().as_dict().unwrap().clone(),
+            other => panic!("{other:?}"),
+        };
+        let file_id = match descr.get(b"FontFile2").unwrap() {
+            Object::Reference(r) => *r,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            flux(&doc, file_id),
+            octets,
+            "le FontFile2 n'est pas le fichier posé à côté de l'album"
+        );
+        // Et l'extraction a bien retiré quelque chose : sans ça l'égalité
+        // ci-dessus serait vraie pour la mauvaise raison.
+        assert_ne!(octets.len(), font::FONT_DATA.len());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A face named and gone does not fail, and does not lie.** The album
+    /// comes out in the face this crate ships, and the writer carries the
+    /// reason so the screen can say it. Never a silent export failure, and
+    /// never a book printed in a face nobody chose without knowing.
+    #[test]
+    fn une_police_effacee_a_la_main_sort_quand_meme_et_se_dit() {
+        let dir = std::env::temp_dir()
+            .join(format!("colophon-police-absente-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let (doc, defaut) = ecrit_dans(
+            &dir,
+            Some(crate::model::Police {
+                fichier: font::POLICE_TTF.into(),
+                postscript: "HelveticaNeue".into(),
+                nom: "Helvetica Neue".into(),
+            }),
+        );
+        assert_eq!(defaut, Some(font::REFUS_FICHIER_ABSENT));
+        let f = police(&doc);
+        assert_eq!(
+            f.get(b"BaseFont").unwrap().as_name_str().unwrap(),
+            font::FONT_NAME,
+            "la face du projet, nommée d'après elle-même"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// `/Info` answers the trapping question and dates the file, and the
     /// trailer identifies it. PDF/X refuses a file missing any of the three.
+
     #[test]
     fn the_information_dictionary_is_complete() {
         let (_, doc) = written();

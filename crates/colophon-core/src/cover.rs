@@ -16,7 +16,9 @@
 //! title placed 9 mm from the card is not 9 mm from the finished book, and
 //! that difference is exactly what the preflight caught on the captions.
 
+#[cfg(test)]
 use crate::font;
+
 use crate::model::{Album, Cover};
 use crate::pdf::{self, Boxes, PdfWriter, Rect};
 use crate::printer::{PrinterProfile, GRAMMAGE_DEFAUT};
@@ -146,7 +148,7 @@ pub fn render_cover_pdf(
         back_text: String::new(),
     });
 
-    let mut writer = PdfWriter::new(&album);
+    let mut writer = PdfWriter::new(&album, dir);
     let mut content = String::new();
     let mut xobjects = lopdf::dictionary! {};
 
@@ -387,7 +389,8 @@ fn draw_spine(
         if spine.w >= SPINE_TEXT_MIN_MM {
             let title = cover_title(album, cover);
             let size = SPINE_PT_AT_210 * scale;
-            let width = font::text_width_mm(title, size);
+            let width = ecrivain.largeur_mm(title, size);
+
             let cx = spine.x + spine.w / 2.0 - size * PT_TO_MM * 0.35;
             let cy = spine.y + (spine.h - width) / 2.0;
             rotated(content, ecrivain, cx, cy, size, pdf::TEXT_INK, title);
@@ -410,12 +413,14 @@ fn draw_back(
         let size = BACK_TEXT_PT_AT_210 * scale;
         let box_w = g.back.w - 2.0 * (g.back.w * TITLE_INSET);
         let leading = size * PT_TO_MM * BACK_LEADING;
-        let lines = wrap(&cover.back_text, box_w, size);
+        let lines = wrap(ecrivain, &cover.back_text, box_w, size);
+
         let block = lines.len() as f64 * leading;
         let mut y = g.back.y + (g.back.h + block) / 2.0 - leading;
         for line in &lines {
             // Centred on the panel, measured on the real advance widths.
-            let x = g.back.x + (g.back.w - font::text_width_mm(line, size)) / 2.0;
+            let x = g.back.x + (g.back.w - ecrivain.largeur_mm(line, size)) / 2.0;
+
             pdf::text_op(content, ecrivain, x, y, size, pdf::TEXT_INK, line);
             y -= leading;
             if y < g.back.y + g.safe {
@@ -473,10 +478,17 @@ fn rotated(
     ));
 }
 
-/// Greedy wrap on the real advance widths of the embedded face. Words longer
-/// than the measure are left whole and overflow visibly rather than being cut
-/// in a place no reader would cut them.
-fn wrap(text: &str, width_mm: f64, size_pt: f64) -> Vec<String> {
+/// Greedy wrap on the real advance widths of the face this document is set
+/// in — the album's own when it chose one. Words longer than the measure are
+/// left whole and overflow visibly rather than being cut in a place no
+/// reader would cut them.
+fn wrap(
+    ecrivain: &pdf::Ecrivain,
+    text: &str,
+    width_mm: f64,
+    size_pt: f64,
+) -> Vec<String> {
+
     let mut out = Vec::new();
     for para in text.lines() {
         if para.trim().is_empty() {
@@ -487,7 +499,8 @@ fn wrap(text: &str, width_mm: f64, size_pt: f64) -> Vec<String> {
         for word in para.split_whitespace() {
             let candidate =
                 if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
-            if font::text_width_mm(&candidate, size_pt) <= width_mm || line.is_empty() {
+            if ecrivain.largeur_mm(&candidate, size_pt) <= width_mm || line.is_empty() {
+
                 line = candidate;
             } else {
                 out.push(std::mem::take(&mut line));
@@ -634,7 +647,7 @@ mod tests {
     fn the_back_text_wraps_to_the_panel() {
         let long = "Trois semaines de septembre sur la côte est, entre les calanques et \
                     les villages de l'intérieur, avec un appareil et pas de programme.";
-        let lines = wrap(long, 100.0, 10.5);
+        let lines = wrap(&pdf::Ecrivain::incorporee(), long, 100.0, 10.5);
         assert!(lines.len() > 1, "rien n'a été coupé : {lines:?}");
         for l in &lines {
             assert!(font::text_width_mm(l, 10.5) <= 100.0, "ligne trop large : {l}");
@@ -646,7 +659,8 @@ mod tests {
     /// Blank lines in the quatrième are kept: a dedication has paragraphs.
     #[test]
     fn the_back_text_keeps_its_paragraphs() {
-        let lines = wrap("Pour Marie.\n\nEt pour la suite.", 100.0, 10.5);
+        let lines =
+            wrap(&pdf::Ecrivain::incorporee(), "Pour Marie.\n\nEt pour la suite.", 100.0, 10.5);
         assert_eq!(lines, vec!["Pour Marie.", "", "Et pour la suite."]);
     }
 

@@ -87,15 +87,22 @@ pub struct Line {
 
 /// Ink of one set line: the measured width, and the vertical box the engine
 /// has always used around a baseline.
-fn ink_box(x: f64, baseline: f64, text: &str, size_pt: f64) -> Rect {
+fn ink_box(
+    x: f64,
+    baseline: f64,
+    text: &str,
+    size_pt: f64,
+    mesure: &dyn Fn(&str, f64) -> f64,
+) -> Rect {
     let size_mm = size_pt / (72.0 / 25.4);
     Rect {
         x,
         y: baseline - size_mm * 0.3,
-        w: crate::font::text_width_mm(text, size_pt),
+        w: mesure(text, size_pt),
         h: size_mm * 1.35,
     }
 }
+
 
 /// The union of two boxes.
 fn union(a: Rect, b: Rect) -> Rect {
@@ -122,7 +129,26 @@ impl Scene {
     /// A template the catalogue does not know still renders: `slots_for`
     /// falls back to one margined box, and so does this.
     pub fn of(spread: &Spread, g: &SpreadGeometry) -> Self {
+        Self::of_avec(spread, g, &crate::font::text_width_mm)
+    }
+
+    /// The same scene under a caller-supplied measure, which is how the
+    /// album's own face reaches the one place a set line is laid out.
+    ///
+    /// The sibling exists for the reason [`crate::garde::mise_en_page_avec`]
+    /// exists, and the TypeScript port has taken its measure as an argument
+    /// since it was written: what a line is worth depends on the face, and
+    /// the face is a property of the album, not of this module. Everything
+    /// that reasons about a spread without rendering it — the linter, the
+    /// preflight, the geometry dump — keeps [`Scene::of`] and the face this
+    /// crate ships.
+    pub fn of_avec(
+        spread: &Spread,
+        g: &SpreadGeometry,
+        mesure: &dyn Fn(&str, f64) -> f64,
+    ) -> Self {
         let rects = pdf::slots_for(&spread.template, spread.slots.len(), g);
+
         let mut objects = Vec::with_capacity(spread.slots.len() + 2);
 
         for (cell, (slot, rect)) in spread.slots.iter().zip(rects.iter()).enumerate() {
@@ -150,7 +176,8 @@ impl Scene {
             let baseline = rect.y - pdf::PHOTO_CAPTION_DROP_MM;
             let at = Point { x: rect.x, y: baseline };
             objects.push(Object {
-                rect: ink_box(at.x, at.y, text, pdf::PHOTO_CAPTION_SIZE_PT),
+                rect: ink_box(at.x, at.y, text, pdf::PHOTO_CAPTION_SIZE_PT, mesure),
+
                 reading,
                 role: Role::PhotoCaption { cell, text: text.clone(), at },
             });
@@ -158,7 +185,8 @@ impl Scene {
         }
 
         if let Some(text) = &spread.text {
-            if let Some(block) = text_block(spread, text, g) {
+            if let Some(block) = text_block(spread, text, g, mesure) {
+
                 objects.push(Object { reading, ..block });
                 reading += 1;
             }
@@ -167,7 +195,8 @@ impl Scene {
         if let Some(text) = &spread.caption {
             let at = pdf::caption_anchor(&spread.template, &rects, g);
             objects.push(Object {
-                rect: ink_box(at.x, at.y, text, pdf::SPREAD_CAPTION_SIZE_PT),
+                rect: ink_box(at.x, at.y, text, pdf::SPREAD_CAPTION_SIZE_PT, mesure),
+
                 reading,
                 role: Role::ChapterCaption { text: text.clone(), at },
             });
@@ -203,11 +232,19 @@ pub fn distance_to_trim(r: &Rect, g: &SpreadGeometry) -> f64 {
 }
 
 /// The one text block a spread may carry, whichever of the three pages it is.
-fn text_block(spread: &Spread, text: &str, g: &SpreadGeometry) -> Option<Object> {
+fn text_block(
+    spread: &Spread,
+    text: &str,
+    g: &SpreadGeometry,
+    mesure: &dyn Fn(&str, f64) -> f64,
+) -> Option<Object> {
     let (at, lines) = if spread.template == crate::garde::TEMPLATE {
         let at = crate::garde::anchor(g);
         let place = crate::garde::place(g);
-        let lines = crate::garde::mise_en_page(text, place)
+        // The half-title shrinks its title until it fits, so the size it
+        // prints at is a function of the face: laid out here, in the face
+        // the document will actually be set in.
+        let lines = crate::garde::mise_en_page_avec(text, place, mesure)
             .into_iter()
             .map(|l| Line { text: l.texte, size_pt: l.taille_pt, dy_mm: l.dy_mm })
             .collect::<Vec<_>>();
@@ -237,7 +274,8 @@ fn text_block(spread: &Spread, text: &str, g: &SpreadGeometry) -> Option<Object>
 
     let rect = lines
         .iter()
-        .map(|l| ink_box(at.x, at.y - l.dy_mm, &l.text, l.size_pt))
+        .map(|l| ink_box(at.x, at.y - l.dy_mm, &l.text, l.size_pt, mesure))
+
         .reduce(union)?;
     Some(Object { rect, reading: 0, role: Role::Text { at, lines } })
 }

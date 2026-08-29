@@ -47,7 +47,13 @@ pub struct BuildOptions {
     /// field it destroys in silence — same rule as `densite` and `cover`.
     /// A fresh build has none.
     pub reglages: std::collections::BTreeMap<String, model::Reglage>,
+    /// The face the album is set in, carried over on recomposition. Same
+    /// rule again, and the file itself needs no carrying: it lives beside
+    /// `album.json`, which is where the rebuild writes. A fresh build has
+    /// none, and « none » means the face this crate ships.
+    pub police: Option<model::Police>,
 }
+
 
 impl Default for BuildOptions {
     fn default() -> Self {
@@ -64,9 +70,11 @@ impl Default for BuildOptions {
             garde: true,
             variantes: Vec::new(),
             reglages: std::collections::BTreeMap::new(),
+            police: None,
         }
     }
 }
+
 
 /// One alternative proposal to compose beside the one the caller asked for.
 ///
@@ -590,6 +598,8 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
         album.cover = opts.cover.clone();
         album.densite = densite;
         album.reglages = opts.reglages.clone();
+        album.police = opts.police.clone();
+
         let total_kept: usize = base.iter().map(|c| c.photos.len()).sum();
         let mut budget = if petit {
             total_kept
@@ -859,7 +869,7 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
     // 6. render PDF from thumbnails (preview quality in P0)
     anyhow::ensure!(!cancelled(), "composition annulée");
     say("pdf: rendu des planches");
-    let mut writer = pdf::PdfWriter::new(&album);
+    let mut writer = pdf::PdfWriter::new(&album, out);
     for (i, spread) in album.spreads.iter().enumerate() {
         let assets: Vec<pdf::JpegAsset> = spread
             .slots
@@ -987,7 +997,53 @@ pub fn write_album_json(dir: &Path, album: &model::Album) -> Result<PathBuf> {
     Ok(target)
 }
 
+/// Copy one face of one font file into the album's folder, and describe it.
+///
+/// The bytes written are [`crate::font::Face::extraire`]'s, never the system
+/// file copied across: a `.ttc` of fourteen faces has no business beside an
+/// album, a PDF's `FontFile2` carries one face anyway, and the extracted
+/// face is what the emitter embeds and what the screen measures — the same
+/// bytes on both sides, which is what makes the parity true rather than
+/// checked.
+///
+/// The name is not the original file's, and that is the point: one of the
+/// two [`crate::font::POLICE_TTF`] / [`crate::font::POLICE_OTF`], recorded
+/// in `album.json`, so nothing ever has to guess and nothing ever has to
+/// look a font up by name on the machine that opens the album.
+///
+/// Written the way `album.json` is: temp file then rename, so a crash
+/// halfway never leaves a truncated face beside a book that names it.
+pub fn poser_police(dir: &Path, source: &Path, index: u32) -> Result<model::Police> {
+    let data = fs::read(source)
+        .with_context(|| format!("lecture de {}", source.display()))?;
+    let face = crate::font::Face::parse(&data, index)
+        .map_err(|c| anyhow::anyhow!("police illisible : {c}"))?;
+    let (nom_fichier, octets) = crate::font::extraire_pour_album(&data, index)
+        .map_err(|c| anyhow::anyhow!("police refusée : {c}"))?;
+
+    let target = dir.join(nom_fichier);
+    let tmp = dir.join(format!("{nom_fichier}.tmp"));
+    fs::write(&tmp, &octets).with_context(|| format!("write {}", tmp.display()))?;
+    fs::rename(&tmp, &target).with_context(|| format!("rename onto {}", target.display()))?;
+    // The other of the two names, left behind by an earlier choice of the
+    // other kind: `album.json` names one file, so the other is dead weight
+    // and a second face beside an album is a question nobody should have.
+    let autre = if nom_fichier == crate::font::POLICE_TTF {
+        crate::font::POLICE_OTF
+    } else {
+        crate::font::POLICE_TTF
+    };
+    let _ = fs::remove_file(dir.join(autre));
+
+    Ok(model::Police {
+        fichier: nom_fichier.to_string(),
+        postscript: face.postscript,
+        nom: face.nom,
+    })
+}
+
 /// What a migration did, so a bilan can say it instead of staying quiet.
+
 #[derive(Debug, Clone, Copy)]
 pub struct Migration {
     /// The schema the folder was written under.
@@ -1119,7 +1175,7 @@ pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
         "l'album n'a aucune planche : rien à rendre"
     );
 
-    let mut writer = pdf::PdfWriter::new(&album);
+    let mut writer = pdf::PdfWriter::new(&album, dir);
     for (i, spread) in album.spreads.iter().enumerate() {
         let assets: Vec<pdf::JpegAsset> = spread
             .slots
@@ -1517,6 +1573,70 @@ mod tests {
     /// colophon mis à part.
     fn planches_photo(album: &model::Album) -> usize {
         album.spreads.iter().filter(|s| !s.slots.is_empty()).count()
+    }
+
+    /// **The face travels with the album, and only when it was chosen.**
+    ///
+    /// Three things at once, and each one is a defect this session could
+    /// have shipped: a recomposition destroys any field `BuildOptions` does
+    /// not carry, so the choice has to survive one; the chosen face has to
+    /// reach the rendered PDF, or the picker would be decoration; and an
+    /// album that chose nothing must come out **byte for byte** what it came
+    /// out before this session existed, or every album on every disk changed
+    /// the day the picker landed.
+    #[test]
+    fn la_police_survit_a_la_recomposition_et_change_le_pdf() {
+        let (photos, out) = dossier_test("police");
+        for i in 0..3 {
+            jpeg_imprimable(&photos.join(format!("photo-{i}.jpg")), i);
+        }
+        build_album(&photos, &out, BuildOptions::default()).expect("un album");
+        std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
+        let sans = {
+            render_album_pdf(&out).unwrap();
+            fs::read(out.join("album.pdf")).unwrap()
+        };
+
+        // Une vraie face, posée comme l'app la pose : extraite, jamais le
+        // fichier système recopié. La face du projet fait l'affaire — ce que
+        // le test regarde n'est pas laquelle, c'est que ce soit elle.
+        let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/SourceSans3-Regular.ttf");
+        let police = poser_police(&out, &source, 0).expect("la face se pose");
+        assert_eq!(police.fichier, crate::font::POLICE_TTF);
+        assert_eq!(police.postscript, crate::font::FONT_NAME);
+        assert!(
+            out.join(crate::font::POLICE_TTF).is_file(),
+            "le fichier vit à côté d'album.json, pas ailleurs"
+        );
+
+        // La recomposition la garde : c'est le champ que rien d'autre ne
+        // rattraperait, le fichier restant sur le disque sans que l'album le
+        // nomme plus.
+        let opts = BuildOptions { police: Some(police.clone()), ..Default::default() };
+        let repris = build_album(&photos, &out, opts).expect("recomposition");
+        assert_eq!(repris.album.police.as_ref(), Some(&police));
+
+        // Et elle atteint le rendu. Les octets diffèrent : la face extraite
+        // n'est pas le fichier entier, donc `FontFile2` change — et c'est
+        // bien le seul chemin par lequel un choix de police peut compter.
+        let avec = {
+            render_album_pdf(&out).unwrap();
+            fs::read(out.join("album.pdf")).unwrap()
+        };
+        assert_ne!(sans, avec, "la face choisie n'atteint pas le PDF");
+
+        // Le retour en arrière est exact, pas approché : un album qui n'a
+        // pas changé de face ne doit pas changer d'un octet.
+        let mut album = repris.album.clone();
+        album.police = None;
+        write_album_json(&out, &album).unwrap();
+        render_album_pdf(&out).unwrap();
+        assert_eq!(
+            sans,
+            fs::read(out.join("album.pdf")).unwrap(),
+            "sans police choisie, le PDF d'avant cette session, à l'octet"
+        );
     }
 
     /// The three promises of the adjustments' storage, on a real build.

@@ -47,7 +47,8 @@ import {
 } from "./album";
 import { captionSuggestion, detectedFocal } from "./bridge";
 import { SceneProxies } from "./SceneProxies";
-import { fontLoaded, measureMm } from "./font";
+import { fontLoaded, measureMm, surLaFace, tourDeFace } from "./font";
+
 import { badgesDe, imageDe, ROOM_EPSILON, surImage } from "./photos";
 import { filtreDe, reglagePose, useReglages } from "./reglages";
 import { useRendu } from "./rendu";
@@ -141,17 +142,26 @@ export function SpreadView({
   useEffect(() => setEditingCaption(false), [spread]);
   useEffect(() => setEditingText(false), [spread]);
 
-  // Text is only measured in the embedded face: once it lands (local file,
-  // milliseconds), render again so every ink rectangle is remeasured. The
-  // flag itself is never read — the re-render is the whole point.
-  const [, setFontReady] = useState(false);
+  // Text is only measured in the album's own face: once it lands (a handful
+  // of bytes over the IPC, milliseconds), render again so every ink
+  // rectangle is remeasured. The value itself is never read — the re-render
+  // is the whole point — and it moves again every time the album changes
+  // face, which is what makes a new typeface show up without a reopen.
+  const [, setFontReady] = useState(0);
   useEffect(() => {
     let alive = true;
-    fontLoaded().then(() => alive && setFontReady(true));
+    const remesure = () => {
+      if (alive) setFontReady(tourDeFace() + 1);
+    };
+    void fontLoaded().then(remesure);
+    const off = surLaFace(remesure);
     return () => {
       alive = false;
+      off();
     };
   }, []);
+
+
 
   // What this spread holds, derived exactly as the engine derives it before
   // writing the PDF. Rebuilt on every render rather than memoised: it is a

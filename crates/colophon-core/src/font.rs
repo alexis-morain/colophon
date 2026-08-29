@@ -67,6 +67,22 @@ pub const REFUS_CMAP_ILLISIBLE: &str = "cmap_illisible";
 /// defines no embedding for it, so a face that has nothing else can be read,
 /// named and measured, and still never enter a file.
 pub const REFUS_FORMAT_NON_EMBARQUABLE: &str = "format_non_embarquable";
+/// The album names a face, and the copy that should sit beside `album.json`
+/// is gone, unreadable, or named something we never write. Not a verdict on
+/// a face — nobody read one — but the one thing the screen must say out
+/// loud, because the book then prints in a face nobody chose.
+pub const REFUS_FICHIER_ABSENT: &str = "fichier_absent";
+
+/// The two names a face copied beside `album.json` goes by, and the whole
+/// vocabulary of [`crate::model::Police::fichier`]: quadratic outlines in a
+/// `.ttf`, CFF ones in an `.otf`, which is what a reader expects of each.
+/// Fixed rather than derived from the original file name — a face pulled out
+/// of `HelveticaNeue.ttc` is not `HelveticaNeue.ttc`, and a name coming back
+/// out of a hand-repaired `album.json` must never be able to be a path.
+pub const POLICE_TTF: &str = "police.ttf";
+/// The CFF half of [`POLICE_TTF`].
+pub const POLICE_OTF: &str = "police.otf";
+
 
 /// What the PDF needs to know about the face, all in the 1000-unit em space
 /// PDF works in.
@@ -131,6 +147,13 @@ pub struct Face {
     /// Readable name: family (ID 1) and style (ID 2), joined. Trimming a
     /// trailing "Regular" out of it is a screen's decision, not the engine's.
     pub nom: String,
+    /// Family alone (name ID 1), empty when the file declares none. Carried
+    /// beside [`Face::nom`] rather than cut back out of it: a picker groups
+    /// eight hundred faces by family, and splitting « MuktaMahee Medium
+    /// Regular » back into its two halves from the outside is guesswork on
+    /// exactly the names that need it least.
+    pub famille: String,
+
     /// What the outlines are made of; `None` when there are none, which is a
     /// refusal rather than a kind.
     pub genre: Option<Genre>,
@@ -165,13 +188,14 @@ impl Face {
         if postscript.is_none() && famille.is_none() {
             return Err(REFUS_ILLISIBLE);
         }
-        let nom = match (famille, name_string(name, 2)) {
+        let nom = match (&famille, name_string(name, 2)) {
             (Some(f), Some(s)) if !s.is_empty() => format!("{f} {s}"),
-            (Some(f), _) => f,
+            (Some(f), _) => f.clone(),
             // Nothing readable but the PostScript name. Better than a blank
             // line; pulling a style back out of it would be guesswork.
             (None, _) => postscript.clone().unwrap_or_default(),
         };
+
         let postscript = postscript.unwrap_or_else(|| nom.replace(' ', ""));
 
         // Presence comes from the directory, not from the bytes: the walk
@@ -227,8 +251,10 @@ impl Face {
         Ok(Face {
             index,
             postscript,
+            famille: famille.unwrap_or_default(),
             nom,
             genre,
+
             variable: table_range(data, dir, b"fvar").is_some(),
             sous_ensemblage_interdit: fs_type & 0x0100 != 0,
             metrics,
@@ -364,7 +390,9 @@ impl Face {
             index,
             postscript: String::new(),
             nom: String::new(),
+            famille: String::new(),
             genre: None,
+
             variable: false,
             sous_ensemblage_interdit: false,
             metrics: None,
@@ -574,6 +602,90 @@ impl Utilises {
 pub fn text_width_mm(s: &str, size_pt: f64) -> f64 {
     Embarquee::incorporee().map_or(0.0, |face| face.largeur_mm(s, size_pt))
 }
+
+// --- La face de l'album -----------------------------------------------------
+
+/// Which of the two names an extracted face is written under. Read off the
+/// outlines, never off the file it came from: a `.ttc` holds both kinds.
+pub fn fichier_pour(genre: Genre) -> &'static str {
+    match genre {
+        Genre::Cff => POLICE_OTF,
+        // `Cff2` never gets here — it is refused at reading — and calling it
+        // a `.ttf` would be the least of that file's problems.
+        _ => POLICE_TTF,
+    }
+}
+
+/// Pull face `index` out of `data` and say what to call it: the bytes to
+/// write beside `album.json`, and the one of the two names they go under.
+///
+/// `Err` is the face's refusal code, [`Face::extraire`]'s exactly.
+pub fn extraire_pour_album(
+    data: &[u8],
+    index: u32,
+) -> std::result::Result<(&'static str, Vec<u8>), &'static str> {
+    let genre = Face::parse(data, index)?.genre.ok_or(REFUS_BITMAP_SEULEMENT)?;
+    Ok((fichier_pour(genre), Face::extraire(data, index)?))
+}
+
+/// The face an album is set in, resolved from its own folder.
+///
+/// The one place the question is asked, because it has two answers and only
+/// one of them is the happy one: the album named a face and its copy is
+/// there, or it did not name one — and then, third, it named one whose copy
+/// is gone. That last case does not fail. The book comes out in the face
+/// this crate ships and `defaut` carries the reason, because an export that
+/// dies on a missing file would cost somebody their evening, and one that
+/// silently prints in another face would cost them a print run.
+pub struct FaceAlbum {
+    /// Borrowed for the project's face, owned for the album's own: exactly
+    /// the two arms [`crate::pdf::Ecrivain`] was written around.
+    pub face: std::borrow::Cow<'static, Embarquee>,
+    /// `Some(code)` when a face was named and could not be used. The code is
+    /// a refusal code like any other, and the screen words it.
+    pub defaut: Option<&'static str>,
+}
+
+/// Read the album's face out of `dir`, beside its `album.json`.
+///
+/// `fichier` is what `album.json` says, and it is checked against the two
+/// names this crate writes rather than joined to `dir` on trust: the file is
+/// hand-editable, and `dir.join(n'importe quoi)` is how a project acquires a
+/// path traversal. A name we never write is a missing file.
+///
+/// The bytes read are the whole file, which is what [`Embarquee::depuis`]
+/// requires — and here it costs nothing, an extracted face being one face.
+pub fn face_album(dir: &Path, fichier: Option<&str>) -> FaceAlbum {
+    let Some(nom) = fichier else {
+        return FaceAlbum { face: face_projet(), defaut: None };
+    };
+    if nom != POLICE_TTF && nom != POLICE_OTF {
+        return FaceAlbum { face: face_projet(), defaut: Some(REFUS_FICHIER_ABSENT) };
+    }
+    let Ok(data) = std::fs::read(dir.join(nom)) else {
+        return FaceAlbum { face: face_projet(), defaut: Some(REFUS_FICHIER_ABSENT) };
+    };
+
+    // An extracted face is one face, so index zero — and if these bytes are
+    // not one, the face carries its own reason for it.
+    match Embarquee::depuis(data, 0) {
+        Ok(face) => FaceAlbum { face: std::borrow::Cow::Owned(face), defaut: None },
+        Err(code) => FaceAlbum { face: face_projet(), defaut: Some(code) },
+    }
+}
+
+/// The face this crate ships, ready to write with, and the one place that
+/// panics when it is not readable. That is a broken build artifact, not a
+/// user error: falling back to a non-embedded base-14 would be the silent
+/// export failure this project refuses.
+pub fn face_projet() -> std::borrow::Cow<'static, Embarquee> {
+    std::borrow::Cow::Borrowed(
+        Embarquee::incorporee()
+            .expect("police incorporée illisible ou refusée : asset corrompu"),
+    )
+}
+
+
 
 // --- Les faces installées ---------------------------------------------------
 
@@ -1676,6 +1788,8 @@ mod tests {
         let f = Face::parse(&data, 0).expect("face lisible");
         assert_eq!(f.postscript, "ColophonTest-Regular");
         assert_eq!(f.nom, "Colophon Test Regular");
+        assert_eq!(f.famille, "Colophon Test", "la famille seule, pour le sélecteur");
+
         assert_eq!(f.genre, Some(Genre::Glyf));
         assert!(!f.variable);
         assert!(f.embeddable());
@@ -1967,6 +2081,95 @@ mod tests {
         // Une face déjà seule dans son fichier rétrécit quand même : ce qui
         // part, c'est la composition, pas un glyphe.
         assert!(sortie.len() < FONT_DATA.len(), "{} contre {}", sortie.len(), FONT_DATA.len());
+    }
+
+    // --- La face de l'album ----------------------------------------------
+
+    /// The three answers of the resolution, on a real album folder.
+    ///
+    /// The face beside `album.json` is read and measured; an album that
+    /// named none gets the project's without touching the disk; and an album
+    /// whose file has been deleted by hand still opens, in the project's
+    /// face, **saying so**. The last one is the whole point: an export that
+    /// died there would cost somebody their evening, and one that printed
+    /// quietly in another face would cost them a print run.
+    #[test]
+    fn la_face_de_lalbum_se_lit_a_cote_de_lui_ou_se_dit_absente() {
+        let dir = dossier("album");
+        let (nom, octets) =
+            extraire_pour_album(&fichier(&[Fonte::neuve()]), 0).expect("extraction");
+        assert_eq!(nom, POLICE_TTF, "des contours quadratiques vont en .ttf");
+        fs::write(dir.join(nom), &octets).unwrap();
+
+        // 1. La face choisie, lue depuis le dossier de l'album.
+        let choisie = face_album(&dir, Some(nom));
+        assert!(choisie.defaut.is_none());
+        assert_eq!(choisie.face.postscript(), "ColophonTest-Regular");
+        // La fixture donne 500 à chaque glyphe sur un em de mille : deux
+        // caractères font un em, soit la taille en points, en millimètres.
+        assert!((choisie.face.largeur_mm("AA", 72.0) - 25.4).abs() < 1e-9);
+
+        // 2. Aucune police choisie : celle du projet, et rien n'est lu.
+        let sans = face_album(&dir, None);
+        assert!(sans.defaut.is_none());
+        assert_eq!(sans.face.postscript(), FONT_NAME);
+
+        // 3. Le fichier a disparu : l'album sort quand même, et le dit.
+        fs::remove_file(dir.join(nom)).unwrap();
+        let perdue = face_album(&dir, Some(nom));
+        assert_eq!(perdue.defaut, Some(REFUS_FICHIER_ABSENT));
+        assert_eq!(perdue.face.postscript(), FONT_NAME);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// `album.json` is hand-repairable, so its file name is data like any
+    /// other: only the two names this crate writes are ever joined to the
+    /// album's folder. Anything else is a missing file, never a path.
+    #[test]
+    fn le_nom_de_fichier_ne_peut_jamais_etre_un_chemin() {
+        let dir = dossier("chemin");
+        let (_, octets) = extraire_pour_album(FONT_DATA, 0).expect("extraction");
+        fs::write(dir.join(POLICE_TTF), &octets).unwrap();
+        // Le fichier existe, sous son vrai nom : seul le nom écrit dans
+        // album.json change, et c'est lui qu'on refuse.
+        for menteur in [
+            "../police.ttf",
+            "/etc/passwd",
+            "..\\police.ttf",
+            "police.ttf.tmp",
+            "SourceSans3-Regular.ttf",
+            "",
+        ] {
+            let r = face_album(&dir, Some(menteur));
+            assert_eq!(r.defaut, Some(REFUS_FICHIER_ABSENT), "{menteur:?}");
+            assert_eq!(r.face.postscript(), FONT_NAME, "{menteur:?}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A face refused at reading is refused at extraction too, so nothing
+    /// unusable is ever copied beside an album. The screen names the same
+    /// reason whichever side it asked from.
+    #[test]
+    fn une_face_refusee_ne_se_pose_pas_a_cote_dun_album() {
+        let mut interdite = Fonte::neuve();
+        interdite.fs_type = 0x0002;
+        assert_eq!(
+            extraire_pour_album(&fichier(&[interdite]), 0).err(),
+            Some(REFUS_EMBARQUEMENT_INTERDIT)
+        );
+    }
+
+    /// CFF outlines go in under the other of the two names, because that is
+    /// what a reader expects of each, and the album records which.
+    #[test]
+    fn une_face_cff_sappelle_autrement() {
+        let mut cff = Fonte::neuve();
+        cff.tag = *b"OTTO";
+        cff.contours = Some(*b"CFF ");
+        let data = fichier(&[cff]);
+        assert_eq!(Face::parse(&data, 0).unwrap().genre, Some(Genre::Cff));
+        assert_eq!(extraire_pour_album(&data, 0).expect("extraction").0, POLICE_OTF);
     }
 
     /// The closed list, from the other side: layout, strikes, signature and
@@ -2363,8 +2566,67 @@ mod tests {
         );
     }
 
+    /// La moitié moteur de la parité écran/papier : les largeurs de
+    /// référence, dans la face qu'un album porte à côté de lui.
+    ///
+    /// L'autre moitié est `scripts/police-cdp.mjs`, qui mesure les mêmes
+    /// chaînes dans le navigateur, sur les mêmes octets, et compare. La
+    /// tolérance n'est pas un facteur de confort : c'est l'arrondi que le
+    /// format impose, un demi-millième d'em par glyphe, l'em du PDF valant
+    /// mille et celui d'une face du Mac valant souvent 2048.
+    ///
+    /// `COLOPHON_POLICE=<dossier d'album> cargo test -p colophon-core --release
+    /// banc_parite_ecran_papier -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn banc_parite_ecran_papier() {
+        let Some(dir) = std::env::var_os("COLOPHON_POLICE") else {
+            println!("COLOPHON_POLICE=<dossier d'album> attendu");
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        // Le nom que porte le fichier posé, décidé par le moteur : on
+        // regarde les deux, l'album n'en a jamais qu'un.
+        let fichier = [POLICE_TTF, POLICE_OTF]
+            .into_iter()
+            .find(|n| dir.join(n).is_file());
+        let choix = face_album(&dir, fichier);
+        assert!(choix.defaut.is_none(), "face illisible : {:?}", choix.defaut);
+
+        // Ce qu'un album met vraiment sur une page : une légende, un titre,
+        // des accents, des guillemets, et le polonais du 29/08 — celui qui
+        // s'imprimait « Za?ó?? » avant le composite.
+        let epreuves: Vec<(&str, f64)> = vec![
+            ("Corse, 2013", 8.0),
+            ("Porto-Vecchio, Bonifacio", 10.5),
+            ("Zażółć gęślą jaźń", 10.5),
+            ("Un été à l'Île-Rousse — œuvres, «guillemets»", 10.5),
+            ("AVWA Ta To Yo fi fl ffi", 24.0),
+            ("1234567890", 36.0),
+        ];
+        let mesures: Vec<String> = epreuves
+            .iter()
+            .map(|(texte, pt)| {
+                let n = choix.face.glyphes(texte).len();
+                format!(
+                    "  {{ \"texte\": {}, \"pt\": {pt}, \"mm\": {}, \"glyphes\": {n} }}",
+                    serde_json::to_string(texte).unwrap(),
+                    choix.face.largeur_mm(texte, *pt)
+                )
+            })
+            .collect();
+        println!(
+            "{{\n \"fichier\": {:?},\n \"postscript\": {:?},\n \"octets\": {},\n \"mesures\": [\n{}\n ]\n}}",
+            fichier.unwrap_or("(aucune)"),
+            choix.face.postscript(),
+            choix.face.octets().len(),
+            mesures.join(",\n")
+        );
+    }
+
     /// Le coup d'œil humain de cette session : de combien chaque face
     /// rétrécit en sortant de son fichier, et l'aller-retour tenu sur
+
     /// chacune. C'est le chiffre sur lequel repose le report du
     /// sous-ensemblage — et il doit être honnête sur le `glyf` partagé, que
     /// deux faces d'une même collection se repassent : sortir l'une copie

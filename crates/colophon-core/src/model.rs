@@ -41,7 +41,39 @@ pub struct Album {
     /// the edit that produced it, so absence means « no adjustment ».
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub reglages: std::collections::BTreeMap<String, Reglage>,
+    /// The face the whole book is set in — captions, chapter titles,
+    /// half-title, colophon, cover and spine. Absent means the face this
+    /// crate ships, which is what every album composed before the picker
+    /// existed says, and it needs no migration to say it: like `reglages`
+    /// and `colophon` before it, the field is additive and absence is a
+    /// meaning rather than a gap. The schema stays at 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub police: Option<Police>,
 }
+
+/// The face copied beside `album.json`, and who it was when it was chosen.
+///
+/// Three strings and no path: the file lives in the album's own folder under
+/// one of two names, so a moved album carries its face with it and nothing
+/// ever has to look for a font on the machine that opens it. The two names
+/// are the whole vocabulary — [`crate::font::POLICE_TTF`] and
+/// [`crate::font::POLICE_OTF`] — which is also what keeps a hand-repaired
+/// `album.json` from naming a file outside the folder.
+///
+/// The names are kept because they are what a screen says and what a
+/// colophon page could print one day. They are never used to *find* a face:
+/// looking a font up by name on the opening machine is exactly the bug this
+/// whole session exists to prevent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Police {
+    /// File name beside `album.json`, never a path.
+    pub fichier: String,
+    /// PostScript name of the face, as it goes in `/BaseFont`.
+    pub postscript: String,
+    /// Readable name at the time of the choice, family and style joined.
+    pub nom: String,
+}
+
 
 /// One photograph's adjustments: exposure, contrast, black and white.
 /// The transform these numbers name is defined once, in [`crate::reglage`],
@@ -226,7 +258,43 @@ mod tests {
         assert!(!out.contains("locked"));
         assert!(!out.contains("cover"));
         assert!(!out.contains("reglages"));
+        assert!(!out.contains("police"));
     }
+
+    /// The chosen face survives the round trip, an album that chose none
+    /// writes no field, and the schema does not move for either. The
+    /// precedent is `reglages`: additive, absent by default, read as
+    /// « the face of the project ». A migration here would migrate nothing
+    /// and age every album ever composed.
+    #[test]
+    fn la_police_est_additive_et_le_schema_ne_bouge_pas() {
+        let mut album = Album::new("t", std::path::Path::new("/p"), Size { w: 210.0, h: 210.0 });
+        assert!(album.police.is_none());
+        assert_eq!(album.version, 2, "le schéma reste à 2");
+
+        album.police = Some(Police {
+            fichier: crate::font::POLICE_TTF.into(),
+            postscript: "HelveticaNeue".into(),
+            nom: "Helvetica Neue Regular".into(),
+        });
+        let back: Album =
+            serde_json::from_str(&serde_json::to_string(&album).unwrap()).unwrap();
+        let p = back.police.expect("la police survit");
+        assert_eq!(p.fichier, "police.ttf");
+        assert_eq!(p.postscript, "HelveticaNeue");
+        assert_eq!(back.version, 2);
+
+        // And an album written before the picker reads as « the project's
+        // face », with nothing to repair.
+        let ancien: Album = serde_json::from_str(
+            r#"{ "version": 2, "title": "t", "root": "/p",
+                 "trim_mm": { "w": 210.0, "h": 210.0 }, "bleed_mm": 3.0,
+                 "spreads": [] }"#,
+        )
+        .expect("un album d'avant le sélecteur s'ouvre tel quel");
+        assert!(ancien.police.is_none());
+    }
+
 
     /// The adjustments table survives the round trip, and an album without
     /// one writes no field at all: `reglages` is additive, absence means
@@ -379,7 +447,9 @@ impl Album {
             densite: crate::layout::Densite::default(),
             colophon: None,
             reglages: std::collections::BTreeMap::new(),
+            police: None,
         }
+
     }
 
     /// Portrait, landscape or square page. Drives the template choice.

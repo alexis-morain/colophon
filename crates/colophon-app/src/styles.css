@@ -83,8 +83,14 @@
      display token stays so a future identity can swap one line. */
   --font-display: "Source Sans 3", "Avenir Next", Avenir, system-ui, sans-serif;
   --font-ui: "Source Sans 3", "Avenir Next", Avenir, system-ui, sans-serif;
-  /* The face of the printed page, exactly what pdf.rs embeds. */
-  --font-book: "Source Sans 3", sans-serif;
+  /* The face of the printed page, exactly what the emitter embeds — the
+     album's own when it chose one. The bytes are registered by `font.ts`
+     under this internal name, so the stack cannot resolve to a font
+     somebody happens to have installed. The second entry only covers the
+     milliseconds before they land, and it is the engine's face rather than
+     a system serif. Kept in step with `font.ts::PILE`. */
+  --font-book: "colophon-album", "Source Sans 3", sans-serif;
+
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
   /* One sheet, one shadow: contact plus ambient, a page on a light table.
@@ -1499,7 +1505,122 @@ input[type="radio"] {
   color: var(--muted);
 }
 
+/* ---- la police de l'album, dans le même panneau ------------------------- */
+
+.bascule-section {
+  margin: 22px 0 8px;
+  font-family: var(--font-display);
+  font-size: var(--fs-15);
+  font-weight: 600;
+}
+
+.bascule-section:first-of-type {
+  margin-top: 0;
+}
+
+.police-courante {
+  margin: 0 0 10px;
+  font-size: var(--fs-13);
+}
+
+
+.police-poids,
+.police-face-note {
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+
+.police-rendre {
+  margin-left: 10px;
+  font-size: var(--fs-12);
+}
+
+.police-filtre {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.police-filtre-label {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.police-filtre input {
+  flex: 1;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+}
+
+.police-familles {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 4px 0 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.police-famille ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.police-famille-nom {
+  margin: 10px 0 2px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: none;
+}
+
+.police-face {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--text);
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.police-face:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.police-face.choisie {
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.08);
+}
+
+
+/* Une face refusée reste dans la liste, grisée, avec sa raison à droite :
+   la cacher enverrait quelqu'un chercher une police qui est bien là. */
+.police-face.refusee {
+  color: var(--muted);
+  cursor: default;
+}
+
+.police-face-refus {
+  flex: none;
+  font-size: var(--fs-12);
+  font-style: italic;
+}
+
 /* ---- the report panel (Aide → Signaler) --------------------------------- */
+
 
 .signaler-panel {
   width: min(680px, 90vw);

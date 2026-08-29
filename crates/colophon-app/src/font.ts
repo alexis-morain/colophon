@@ -81,20 +81,23 @@ export async function chargerFace(octets: ArrayBuffer): Promise<void> {
   const face = new FontFace(FAMILLE, octets, {
     featureSettings: '"liga" 0, "clig" 0, "kern" 0',
   });
-  pret = face
-    .load()
-    .then((f) => {
-      if (posee) document.fonts.delete(posee);
+  const retirer = () => {
+    if (posee) document.fonts.delete(posee);
+    posee = null;
+  };
+  pret = face.load().then(
+    (f) => {
+      retirer();
       posee = f;
       document.fonts.add(f);
-    })
-    .then(
-      () => undefined,
-      // A face the browser refuses is not a reason to show nothing: the
-      // stack falls back to the engine's own face, which is what the PDF
-      // would embed if this one were unusable too.
-      () => undefined,
-    );
+    },
+    // A face the browser refuses is not a reason to show nothing. What is
+    // dropped is the *previous* album's face: measuring against it would be
+    // a lie with no expiry, where falling back to the engine's own is at
+    // least a face this application ships and can name.
+    () => retirer(),
+  );
+
   await pret;
   tour += 1;
   abonnes.forEach((cb) => cb());

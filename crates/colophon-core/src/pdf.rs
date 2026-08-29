@@ -55,7 +55,10 @@ pub(crate) struct Boxes {
 /// every emitter is also what lets the cover — which writes its own content
 /// stream, outside the writer — be counted like everything else.
 pub(crate) struct Ecrivain {
-    face: font::Embarquee,
+    /// Borrowed for the album's own face, which is opened once for the whole
+    /// process; owned the day a face comes from somewhere else. A copy per
+    /// document would be 430 kB of memcpy for every sheet rendered.
+    face: std::borrow::Cow<'static, font::Embarquee>,
     utilises: font::Utilises,
 }
 
@@ -68,9 +71,8 @@ impl Ecrivain {
     /// silent export failure this project refuses.
     pub(crate) fn incorporee() -> Self {
         let face = font::Embarquee::incorporee()
-            .expect("police incorporée illisible ou refusée : asset corrompu")
-            .clone();
-        Self { face, utilises: font::Utilises::default() }
+            .expect("police incorporée illisible ou refusée : asset corrompu");
+        Self { face: std::borrow::Cow::Borrowed(face), utilises: font::Utilises::default() }
     }
 }
 
@@ -1349,6 +1351,17 @@ mod tests {
 
         // Et `/W` ne porte que ce qui a été dessiné : la face en a deux mille.
         assert!(declarees.len() < 100, "{} glyphes déclarés", declarees.len());
+
+        // Les tranches sortent dans l'ordre des glyphes. Ce n'est pas de
+        // l'esthétique : un ensemble non ordonné rendrait un `/W` différent
+        // d'un export à l'autre, et deux exports du même album doivent être
+        // le même fichier. La reproductibilité l'attrape aussi — mesuré le
+        // 29/08 en remplaçant la carte ordonnée par une carte de hachage,
+        // les deux tests tombent — mais elle le dit par un fichier qui
+        // diffère, là où ceci nomme la règle.
+        let w = d.get(b"W").unwrap().as_array().unwrap();
+        let debuts: Vec<i64> = w.iter().step_by(2).map(|v| v.as_i64().unwrap()).collect();
+        assert!(debuts.windows(2).all(|p| p[0] < p[1]), "/W dans le désordre : {debuts:?}");
     }
 
     /// Every glyph the file draws can say which character it is, so the page
@@ -1403,7 +1416,8 @@ mod tests {
             let mut doc = Document::with_version(pdfx::PDF_VERSION);
             let id = doc.new_object_id();
             let face = font::Embarquee::depuis(octets, 0).expect("face ouverte");
-            let mut ecrivain = Ecrivain { face, utilises: font::Utilises::default() };
+            let mut ecrivain =
+                Ecrivain { face: std::borrow::Cow::Owned(face), utilises: font::Utilises::default() };
             let mut content = String::new();
             text_op(&mut content, &mut ecrivain, 0.0, 0.0, 10.0, INK, "Corse, 2013");
             embed_font(&mut doc, id, &ecrivain);

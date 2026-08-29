@@ -65,7 +65,22 @@ export type Album = {
    *  octet on the original. Absent = none; an identity entry leaves the
    *  table at the edit that produced it (`edits.ts::setReglage`). */
   reglages?: Record<string, Reglage>;
+  /** The face the whole book is set in, copied into the album's folder.
+   *  Absent = the face the engine ships, which is what every album composed
+   *  before the picker says, and it needs nothing to say it. The file name
+   *  is one of two the engine writes; nothing here ever looks a font up by
+   *  name on the machine that opens the album. */
+  police?: Police;
 };
+
+/** The chosen face, as `album.json` records it: the file beside it, and who
+ *  that face was when it was picked. */
+export type Police = {
+  fichier: string;
+  postscript: string;
+  nom: string;
+};
+
 
 export type OpenedAlbum = {
   album: Album;

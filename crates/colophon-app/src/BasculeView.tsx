@@ -1,14 +1,27 @@
-// Changer le format d'un album déjà composé. Le même album : mêmes planches,
-// même ordre, mêmes photos, mêmes recadrages. Seul le gabarit d'une planche
-// dont les photos trahiraient leurs nouvelles cellules est replié.
+// Ce dont le livre est fait : son format, et sa police.
 //
-// Rien n'est écrit ici. Le format choisi rend un aperçu, l'aperçu se lit, et
-// l'appliquer passe par l'historique d'édition : ⌘Z l'annule comme n'importe
-// quelle retouche, ⌘S la grave. C'est la raison pour laquelle le moteur rend
-// un album au lieu d'en enregistrer un.
+// Les deux propriétés qui changent tout sans rien recomposer, et le panneau
+// est le même pour cette raison — pas de sixième panneau, la règle est
+// écrite dans `App.tsx`. Changer de format replie les gabarits qu'une photo
+// trahirait ; changer de police ne bouge pas une planche, pas une photo, pas
+// un recadrage : seules les chasses changent, donc les coupures de ligne, et
+// au rendu seulement.
+//
+// Rien n'est écrit ici sauf le fichier de la police, qui est le seul octet
+// que le moteur doit poser à côté de l'album pour qu'il voyage. Le reste
+// passe par l'historique d'édition : ⌘Z l'annule comme n'importe quelle
+// retouche, ⌘S la grave. C'est la raison pour laquelle le moteur rend un
+// album au lieu d'en enregistrer un.
 
-import { BasculeBilan, FormatPreset } from "./bridge";
+import { useMemo } from "react";
+import { Police } from "./album";
+import { BasculeBilan, FormatPreset, PoliceEtat, PoliceOfferte } from "./bridge";
 import { t } from "./i18n";
+import { nomLisible, parFamille, refusLibelle } from "./police";
+
+/** Au-delà, la liste devient un mur : le filtre est ce qui la rend
+ *  praticable, et le nombre qui manque se dit au lieu de disparaître. */
+const FAMILLES_MONTREES = 40;
 
 export function BasculeView({
   formats,
@@ -18,6 +31,13 @@ export function BasculeView({
   enCours,
   onChoisir,
   onAppliquer,
+  polices,
+  policeAlbum,
+  policeInfo,
+  filtre,
+  onFiltre,
+  onPolice,
+  onRendrePolice,
   onClose,
 }: {
   formats: FormatPreset[];
@@ -27,9 +47,31 @@ export function BasculeView({
   enCours: boolean;
   onChoisir: (f: FormatPreset) => void;
   onAppliquer: () => void;
+  polices: PoliceOfferte[];
+  policeAlbum: Police | null;
+  policeInfo: PoliceEtat | null;
+  filtre: string;
+  onFiltre: (v: string) => void;
+  onPolice: (p: PoliceOfferte) => void;
+  onRendrePolice: () => void;
   onClose: () => void;
 }) {
   const memeFormat = (f: FormatPreset) => f.w === courant.w && f.h === courant.h;
+
+  // Le filtre porte sur ce que l'écran montre — famille, nom élagué — et
+  // pas sur le nom PostScript, que personne ne tape.
+  const familles = useMemo(() => {
+    const q = filtre.trim().toLocaleLowerCase();
+    const vues = q
+      ? polices.filter((p) =>
+          `${p.famille} ${p.nom}`.toLocaleLowerCase().includes(q),
+        )
+      : polices;
+    return parFamille(vues);
+  }, [polices, filtre]);
+  const montrees = familles.slice(0, FAMILLES_MONTREES);
+  const cachees = familles.length - montrees.length;
+
 
   return (
     <div className="bascule" onClick={onClose}>
@@ -41,9 +83,11 @@ export function BasculeView({
           </button>
         </header>
 
+        <h3 className="bascule-section">{t("bascule.section.format")}</h3>
         <p className="bascule-intro">{t("bascule.intro")}</p>
 
         <ul className="bascule-formats">
+
           {formats.map((f) => (
             <li key={f.name}>
               <button
@@ -145,6 +189,105 @@ export function BasculeView({
               <span className="bascule-annulable">{t("bascule.annulable")}</span>
             </p>
           </section>
+        )}
+
+        <h3 className="bascule-section">{t("police.section")}</h3>
+        <p className="bascule-intro">{t("police.intro")}</p>
+
+        {/* Ce dans quoi le livre sort, et ce qu'il pèse. Le poids est dit
+            plutôt que subi : une face du système sortie de sa collection peut
+            faire des mégaoctets, et l'album les porte. */}
+        <p className="police-courante">
+          {policeAlbum ? (
+            <>
+              <strong>{nomLisible({ nom: policeAlbum.nom, famille: "" })}</strong>
+              {policeInfo && !policeInfo.manquante && (
+                <span className="police-poids">
+                  {" · "}
+                  {t("police.poids", { ko: Math.round(policeInfo.octets / 1024) })}
+                </span>
+              )}
+              <button className="link police-rendre" onClick={onRendrePolice}>
+                {t("police.rendre")}
+              </button>
+            </>
+          ) : (
+            <strong>{t("police.projet")}</strong>
+          )}
+        </p>
+        {policeInfo?.manquante && (
+          <p className="bascule-alerte">{t("police.manquante")}</p>
+        )}
+
+        {polices.length > 0 && (
+          <>
+            <label className="police-filtre">
+              <span className="police-filtre-label">{t("police.filtre")}</span>
+              <input
+                type="search"
+                value={filtre}
+                placeholder={t("police.filtre.exemple")}
+                onChange={(e) => onFiltre(e.target.value)}
+              />
+            </label>
+
+            <ul className="police-familles">
+              {/* La face du moteur en tête, toujours re-sélectionnable :
+                  revenir en arrière ne doit jamais demander de retrouver
+                  laquelle c'était. */}
+              <li className="police-famille">
+                <button
+                  className={"police-face" + (policeAlbum ? "" : " choisie")}
+                  onClick={onRendrePolice}
+                  aria-pressed={!policeAlbum}
+                >
+                  <span className="police-face-nom">{t("police.projet")}</span>
+                  <span className="police-face-note">{t("police.projet.note")}</span>
+                </button>
+              </li>
+              {montrees.map(({ famille, faces }) => (
+                <li key={famille} className="police-famille">
+                  <h4 className="police-famille-nom">{famille}</h4>
+                  <ul>
+                    {faces.map((p) => {
+                      const active =
+                        policeAlbum?.postscript === p.postscript && !!policeAlbum;
+                      return (
+                        <li key={p.rang}>
+                          <button
+                            className={
+                              "police-face" +
+                              (p.refus ? " refusee" : "") +
+                              (active ? " choisie" : "")
+                            }
+                            disabled={!!p.refus}
+                            aria-pressed={active}
+                            onClick={() => onPolice(p)}
+                          >
+                            <span className="police-face-nom">{nomLisible(p)}</span>
+                            {/* Une face refusée s'affiche, grisée, avec sa
+                                raison : la cacher enverrait quelqu'un
+                                chercher une police qui est bien là. */}
+                            {p.refus && (
+                              <span className="police-face-refus">
+                                {refusLibelle(p.refus)}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+            {cachees > 0 && (
+              <p className="bascule-reste">{t("police.reste", { n: cachees })}</p>
+            )}
+            {familles.length === 0 && (
+              <p className="bascule-reste">{t("police.aucune")}</p>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -4,7 +4,8 @@
 // the book view gets checked without rebuilding the Rust side.
 
 import { invoke } from "@tauri-apps/api/core";
-import { Album, Discard, OpenedAlbum, Spread } from "./album";
+import { Album, Discard, OpenedAlbum, Police, Spread } from "./album";
+
 import { Dump, setGeometrie, setGeometrieFormat } from "./geometrie";
 
 export const inTauri =
@@ -269,7 +270,57 @@ export async function chargeGeometrieFormat(
   setGeometrieFormat(await res.json());
 }
 
+/** One face this machine carries, as the picker shows it. `rang` is a rank
+ *  in the list that was just returned and means nothing outside it: the
+ *  front end never holds a font's path, the way it never holds a
+ *  thumbnail's. */
+export type PoliceOfferte = {
+  rang: number;
+  famille: string;
+  nom: string;
+  postscript: string;
+  /** Engine code (`illisible`, `embarquement_interdit`, `bitmap_seulement`,
+   *  `cmap_illisible`, `format_non_embarquable`), worded by `i18n.ts`. */
+  refus: string | null;
+};
+
+/** Every face installed on this machine, refused ones included: a picker
+ *  that hides what it refuses sends people hunting for a missing font. */
+export async function polices_installees(): Promise<PoliceOfferte[]> {
+  if (!inTauri) return [];
+  return invoke<PoliceOfferte[]>("polices_installees");
+}
+
+/** Copy the chosen face into the album's folder. The record comes back and
+ *  goes into the album through the edit history, so ⌘Z undoes the choice. */
+export async function choisirPolice(rang: number): Promise<Police> {
+  return invoke<Police>("choisir_police", { rang });
+}
+
+/** What the album will actually be set in, resolved exactly as the emitter
+ *  resolves it. `manquante` is the one thing the screen must not swallow. */
+export type PoliceEtat = { manquante: boolean; postscript: string; octets: number };
+
+export async function policeEtat(fichier?: string): Promise<PoliceEtat> {
+  if (!inTauri) {
+    return { manquante: false, postscript: "SourceSans3-Regular", octets: 431196 };
+  }
+  return invoke<PoliceEtat>("police_etat", { fichier: fichier ?? null });
+}
+
+/** The bytes of the face the emitter will embed. Measured and drawn with on
+ *  this side, so screen and paper cannot answer differently. */
+export async function policeOctets(fichier?: string): Promise<ArrayBuffer> {
+  if (inTauri) return invoke<ArrayBuffer>("police_octets", { fichier: fichier ?? null });
+  const res = await fetch(
+    `/__dev/police${fichier ? `?fichier=${encodeURIComponent(fichier)}` : ""}`,
+  );
+  if (!res.ok) throw new Error(await res.text());
+  return res.arrayBuffer();
+}
+
 export async function fetchThumb(src: string): Promise<ArrayBuffer> {
+
   if (inTauri) return invoke<ArrayBuffer>("thumb", { src });
   const res = await fetch(`/__dev/thumb?src=${encodeURIComponent(src)}`);
   if (!res.ok) throw new Error(await res.text());

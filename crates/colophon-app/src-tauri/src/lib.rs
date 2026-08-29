@@ -26,7 +26,11 @@ struct AppState {
     /// Raised by the Annuler buttons; the running build or export polls it.
     cancel_build: Arc<AtomicBool>,
     cancel_export: Arc<AtomicBool>,
+    /// The faces of this machine as the picker last listed them. Held so the
+    /// rank the front end sends back names the same face it was shown.
+    polices: Mutex<Vec<colophon_core::font::Installee>>,
 }
+
 
 #[derive(Serialize)]
 struct OpenedAlbum {
@@ -274,8 +278,135 @@ fn save_album(album: Album, state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// One face this machine carries, as the picker shows it.
+///
+/// No path, and that is deliberate: the front end names a face by its rank
+/// in the list it was just handed, exactly as it names a thumbnail by its
+/// slot rather than by a file name it could guess. A rank is meaningless to
+/// anything but the listing that produced it, and it cannot be a path.
+#[derive(Serialize)]
+struct PoliceOfferte {
+    /// Rank in the list the engine just returned, and the only handle the
+    /// front end ever holds on a face.
+    rang: usize,
+    /// Family alone, for grouping. Empty when the file declares none.
+    famille: String,
+    /// Family and style joined, as the file declares them.
+    nom: String,
+    postscript: String,
+    /// `None` when the face may be embedded; the engine's refusal code
+    /// otherwise, worded by the screen like every other code in this app.
+    refus: Option<String>,
+}
+
+/// Every face installed on this machine, refused ones included.
+///
+/// The list is kept, because the rank the front end sends back has to mean
+/// something: the walk is deterministic (path then index) but it reads the
+/// disk, and a face added between the listing and the choice would shift
+/// every rank after it.
+#[tauri::command]
+fn polices_installees(state: State<'_, AppState>) -> Vec<PoliceOfferte> {
+    let faces = colophon_core::font::installed();
+    let offertes = faces
+        .iter()
+        .enumerate()
+        .map(|(rang, i)| PoliceOfferte {
+            rang,
+            famille: i.face.famille.clone(),
+            nom: i.face.nom.clone(),
+            postscript: i.face.postscript.clone(),
+            refus: i.face.refus.map(str::to_string),
+        })
+        .collect();
+    *state.polices.lock().unwrap() = faces;
+    offertes
+}
+
+/// Copy the chosen face into the album's folder and describe it.
+///
+/// The engine writes the bytes; the front end puts the record in the album
+/// through its own edit history, so ⌘Z undoes the choice like a format
+/// switch and ⌘S is what commits it. Writing `album.json` here instead
+/// would put a change on disk the undo stack knows nothing about.
+#[tauri::command]
+fn choisir_police(
+    rang: usize,
+    state: State<'_, AppState>,
+) -> Result<colophon_core::model::Police, String> {
+    let source = {
+        let polices = state.polices.lock().unwrap();
+        let face = polices
+            .get(rang)
+            .ok_or("cette police n'est plus dans la liste : rouvrez le panneau")?;
+        (face.chemin.clone(), face.face.index)
+    };
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    colophon_core::build::poser_police(&dir, &source.0, source.1)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// What the album is set in, as the screen has to say it.
+#[derive(Serialize)]
+struct PoliceEtat {
+    /// The face named by the album is gone, unreadable, or refused: the book
+    /// comes out in the face the engine ships, and this is the one thing the
+    /// screen must not keep to itself.
+    manquante: bool,
+    /// PostScript name of the face that will actually be embedded.
+    postscript: String,
+    /// Weight of that face, in bytes. Said rather than suffered: a CJK face
+    /// pulled out of its collection weighs tens of megabytes, and the album
+    /// carries it.
+    octets: u64,
+}
+
+/// Resolve the album's face the way the emitter will, and say what came out.
+///
+/// `fichier` is what the album says **in the editor**, not what `album.json`
+/// says on disk: a face chosen and not yet saved is the face the screen has
+/// to measure with, or the preview would show the old one until ⌘S.
+#[tauri::command]
+fn police_etat(fichier: Option<String>, state: State<'_, AppState>) -> Result<PoliceEtat, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let choix = colophon_core::font::face_album(&dir, fichier.as_deref());
+    Ok(PoliceEtat {
+        manquante: choix.defaut.is_some(),
+        postscript: choix.face.postscript().to_string(),
+        octets: choix.face.octets().len() as u64,
+    })
+}
+
+/// The bytes of the face the emitter will embed, for the browser to measure
+/// and draw with.
+///
+/// Raw bytes over the IPC, like a thumbnail and for the same reason: nothing
+/// on the front end ever holds a path it could guess. And the same bytes on
+/// both sides is the whole point — the screen must never name an installed
+/// font, which would measure a face carrying kerning the PDF does not draw,
+/// and would measure nothing at all on a machine that does not have it.
+#[tauri::command]
+fn police_octets(
+    fichier: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let choix = colophon_core::font::face_album(&dir, fichier.as_deref());
+    Ok(tauri::ipc::Response::new(choix.face.octets().to_vec()))
+}
+
 #[derive(Serialize)]
 struct FormatPreset {
+
     name: String,
     w: f64,
     h: f64,
@@ -499,6 +630,11 @@ async fn recompose_album(
         // The adjustments follow the photographs, not the spreads: a field
         // BuildOptions did not carry would be destroyed by the rebuild.
         reglages: album.reglages.clone(),
+        // And the face, on the same rule: the file stays beside album.json,
+        // which the rebuild writes into, so only the album's record of it
+        // could be lost — silently, and in the one place nobody would look.
+        police: album.police.clone(),
+
     };
     tauri::async_runtime::spawn_blocking(move || {
         colophon_core::build_album(&root, &build_out, opts)
@@ -1190,7 +1326,12 @@ pub fn run() {
             list_albums,
             delete_album,
             purge_thumb_caches,
+            polices_installees,
+            choisir_police,
+            police_etat,
+            police_octets,
             reveal_data_dir
+
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

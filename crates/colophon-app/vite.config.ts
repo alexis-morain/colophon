@@ -190,9 +190,29 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // The bytes the emitter would embed, so the harness measures what the
+      // application measures. Same closed set of two names as the engine —
+      // `album.json` is hand-editable, and a harness that joined whatever it
+      // says to the album folder would be a file reader.
+      server.middlewares.use("/__dev/police", (req, res) => {
+        try {
+          const fichier = new URL(req.url ?? "", "http://x").searchParams.get("fichier");
+          res.setHeader("Content-Type", "font/ttf");
+          if (fichier === "police.ttf" || fichier === "police.otf") {
+            res.end(read(fichier));
+            return;
+          }
+          // No face chosen, or a name we never write: the engine's own.
+          res.end(readFileSync(join(__dirname, "public/fonts/SourceSans3-Regular.ttf")));
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
       // The faithful preview reads the album's own PDF. Same closed set of
       // two names as the Tauri command: the harness must not become a file
       // reader either.
+
       server.middlewares.use("/__dev/pdf", (req, res) => {
         try {
           const quoi = new URL(req.url ?? "", "http://x").searchParams.get("quoi");

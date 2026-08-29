@@ -163,7 +163,7 @@ pub fn render_print_pdf(
     let g = pdf::geometry(&album);
     let total: usize = album.spreads.iter().map(|s| s.slots.len()).sum();
     let mut done = 0usize;
-    let mut writer = pdf::PdfWriter::new(&album);
+    let mut writer = pdf::PdfWriter::new(&album, dir);
 
     // A supplier that binds a single file reads the first page of it as the
     // front cover and the last as the back. Sending them the interior alone

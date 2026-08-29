@@ -32,8 +32,10 @@ export function EnvoiView({
   onColophon,
   gardeActif,
   onGarde,
+  policeManquante,
 }: {
   album: Album;
+
   /** Loaded once by the window, shared with the cover editor. */
   printers: Printer[] | null;
   profil: string;
@@ -55,7 +57,13 @@ export function EnvoiView({
    *  composition measured, so `colophonPossible` answers for the two. */
   gardeActif: boolean;
   onGarde: (on: boolean) => void;
+  /** La police que l'album nomme n'est plus dans son dossier. L'export ne
+   *  échoue pas — il sort dans celle du moteur —, et c'est bien pour ça que
+   *  ça se dit ici : c'est le dernier écran avant l'imprimeur, et un livre
+   *  composé dans une police que personne n'a choisie se découvre au colis. */
+  policeManquante: boolean;
 }) {
+
   const [report, setReport] = useState<PrevolReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -84,8 +92,12 @@ export function EnvoiView({
   return (
     <div className="envoi">
       <section className="envoi-verdict">
+        {policeManquante && (
+          <p className="envoi-dirty">{t("police.manquante")}</p>
+        )}
         {dirty && (
           <p className="envoi-dirty">{t("envoi.dirty")}</p>
+
         )}
         {error ? (
           <h2 className="envoi-ko">{error}</h2>

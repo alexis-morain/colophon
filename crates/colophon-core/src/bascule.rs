@@ -481,6 +481,24 @@ mod tests {
         assert_eq!(apres.reglages, album.reglages);
     }
 
+    /// And the face, for the same reason and by the same nothing. A format
+    /// change re-cuts the lines because the page is another width, never
+    /// because the album changed voice: the two properties of the panel are
+    /// independent, and this is where that stays true.
+    #[test]
+    fn la_police_traverse_la_bascule() {
+        let mut album = album_de(vec![planche("duo", &["a.jpg", "b.jpg"])], carre());
+        album.police = Some(crate::model::Police {
+            fichier: crate::font::POLICE_TTF.into(),
+            postscript: "HelveticaNeue".into(),
+            nom: "Helvetica Neue".into(),
+        });
+        let t = tailles(&[("a.jpg", 4000, 3000), ("b.jpg", 4000, 3000)]);
+        let (apres, _) = bascule(&album, paysage(), &t, profil());
+        assert_eq!(apres.police, album.police);
+    }
+
+
     /// Every focal is untouched. This is 3.1's promise, and the bascule is
     /// its first real user: the crop means the same thing on any page shape,
     /// so there is nothing to convert and nothing to lose.

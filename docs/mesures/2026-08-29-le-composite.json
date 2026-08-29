@@ -1,0 +1,56 @@
+{
+  "quoi": "6.1 session 3 sur 4 — le texte du PDF passe en police composite Identity-H, avec son ToUnicode. C'est l'inverse des deux sessions precedentes : chaque octet de chaque PDF change, et pas un pixel de l'image ne bouge. Le repertoire cesse d'etre limite aux 224 codes d'un encodage a un octet.",
+  "comment": "Binaire de main (9103d36) puis binaire de la branche, SOURCE_DATE_EPOCH fixe a 1600000000, meme jeu corse-2013 (577 photos, carre-21). album.json identique a l'octet des deux cotes, donc tout ecart vient de l'emetteur. Comparaison des images par pypdfium2 a 120 ppp, pixel a pixel, sans seuil de tolerance. Conformite remesuree par veraPDF (1.30.2).",
+  "le_fichier_change": {
+    "album.pdf": "26 770 255 → 26 770 552 octets (+297)",
+    "album-print.pdf": "95 553 674 → 95 553 972 octets (+298)",
+    "album-cover.pdf": "212 322 → 212 038 octets (-284)",
+    "pourquoi_si_peu": "Le tableau /Widths de 224 entrees s'en va, un /W restreint aux glyphes dessines et un ToUnicode arrivent. La face embarquee ne bouge pas : elle entre entiere, comme avant."
+  },
+  "l_image_ne_change_pas": {
+    "pages_comparees": 101,
+    "pixels_differents": 0,
+    "detail": "50 pages d'album.pdf, 50 d'album-print.pdf, 1 de la couverture. Identiques au pixel, sans tolerance : la comparaison echoue au premier pixel qui bouge."
+  },
+  "la_sonde_est_mordante": {
+    "quoi": "Une comparaison d'images qui dirait toujours identique ne prouverait rien. Le mordant est le gain lui-meme.",
+    "epreuve": "Album titre « Zazolc geslaj jazn » (14 photos), meme rendu des deux cotes.",
+    "avant": "la couverture imprime « Za?o?? g??l? ja?? »",
+    "apres": "la couverture imprime le titre",
+    "mesure": "4 370 pixels differents, delta max 214, dans une seule boite : le bloc de titre. Le reste de la page est identique."
+  },
+  "le_texte_se_relit": {
+    "quoi": "Sans ToUnicode un lecteur affiche la page et n'en copie rien, et PDF/A serait une affirmation.",
+    "couverture_polonaise": "copie « Zazolc geslaj jazn » la ou main copiait « Za?o?? g??l? ja?? »",
+    "corse_2013": "copie exactement la meme chose qu'avant, accents compris — aucune regression sur le francais"
+  },
+  "conformite": {
+    "verapdf_2b": "PASS sur les trois fichiers de corse-2013, avec le binaire de main comme avec celui de la branche, plus la couverture polonaise",
+    "tests_rust_pdfx": "verts",
+    "ce_qui_n_a_pas_ete_ajoute": "Pas de prefixe de sous-ensemble sur le nom de base, pas de /CIDSet : la face entre entiere, et les deux annonceraient un sous-ensemble qui n'existe pas.",
+    "pdfx_sh_full": "60 controles verts, zero refus : les 383 gabarits sur les six formats, plus les trois jeux x six formats x (apercu, impression, couverture)"
+  },
+  "reproductibilite": {
+    "meme_processus": "deux_exports_au_meme_instant_sont_le_meme_fichier, vert",
+    "processus_separes": "album.pdf et album-cover.pdf identiques a l'octet entre deux lancements du binaire",
+    "pourquoi_ca_comptait": "Le /W et le ToUnicode sortent d'un ensemble de glyphes accumule pendant le dessin. Une carte de hachage a la place de la carte ordonnee, et le fichier change d'un export a l'autre."
+  },
+  "les_trois_mordants": {
+    "chasse_declaree_en_mauvaise_unite": "les_chasses_declarees_sont_celles_qui_ont_mesure tombe (16,16 mm contre 8,08)",
+    "accumulateur_non_ordonne": "le meme test tombe sur l'ordre du /W, et deux_exports_au_meme_instant_sont_le_meme_fichier tombe aussi",
+    "tounicode_ampute": "chaque_glyphe_dessine_sait_dire_son_caractere tombe en nommant le caractere perdu"
+  },
+  "ce_qui_ne_bouge_pas": {
+    "app": "pas une ligne. font.ts mesure deja la vraie face par le navigateur : la parite ecran/papier s'ameliore sans une ligne de TypeScript.",
+    "schema": "album.json intact, aucune migration",
+    "dependances": "aucune ajoutee, donc toujours aucun audit de licence du",
+    "diff": "font.rs, pdf.rs, cover.rs, plus CONTEXT.md et le CHANGELOG"
+  },
+  "la_face_extraite_ne_laisse_aucune_inconnue_a_la_session_4": {
+    "quoi": "Sonde jetable, hors depot : l'emetteur embarque les octets rendus par Face::extraire au lieu de l'asset entier. Reverti avant le commit ; seul le chiffre entre.",
+    "verapdf_2b": "PASS sur l'apercu et sur la couverture",
+    "l_image": "identique au pixel a celle de la face entiere",
+    "le_poids": "couverture 212 133 → 154 640 octets (-27 %), interieur 2 793 503 → 2 736 010",
+    "ce_que_ca_dit": "La session 4 peut brancher l'extraction sans rouvrir la conformite, et elle y gagnera du poids au passage."
+  }
+}

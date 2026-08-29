@@ -276,6 +276,13 @@ export default function App() {
   // imprimé dans une police que personne n'a choisie sans le savoir est
   // exactement ce que ce projet refuse.
   const policeFichier = album?.police?.fichier;
+  // La clé du rechargement n'est pas le nom du fichier : deux faces
+  // différentes s'écrivent sous le même `police.ttf`, et s'arrêter au nom
+  // laisserait l'écran mesurer la face d'avant pendant que l'album nomme
+  // la suivante.
+  const policeCle = album?.police
+    ? `${album.police.fichier}|${album.police.postscript}|${album.police.nom}`
+    : "";
   useEffect(() => {
     if (!opened) return;
     let vivant = true;
@@ -285,6 +292,7 @@ export default function App() {
           policeOctets(policeFichier),
           policeEtat(policeFichier),
         ]);
+
         if (!vivant) return;
         await chargerFace(octets);
         if (!vivant) return;
@@ -298,7 +306,10 @@ export default function App() {
     return () => {
       vivant = false;
     };
-  }, [opened, policeFichier]);
+    // policeFichier est lu dans l'effet, policeCle est ce qui le déclenche.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened, policeCle]);
+
 
 
   // Deux chronos de rendu, dev seulement (`mesure.ts`), pris avant le port en

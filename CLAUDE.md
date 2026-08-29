@@ -99,12 +99,16 @@ compter les replis machine comme des mains. **La vague 4 est close sauf 4.2**, d
 (les sidecars Takeout, voir « Le moteur ») ; 5.2 (PhotoKit) et 5.3 (RAW, audit de
 licence d'abord) restent.
 
-**6.1 session 1 sur 4 est faite** : le moteur *lit* les polices du système, il n'en
-*utilise* aucune. Session de capacité — le PDF ne bouge pas d'un octet (vérifié sur les
-trois fichiers de corse-2013, binaire de `main` puis de la branche), l'app pas d'un
-pixel. Restent les sessions 2 à 4 : sous-ensemblage, composite Identity-H + ToUnicode,
-copie dans l'album, portabilité, sélecteur, refus à l'écran. Les deux notes de décision
-de la vague ne bloquent que 6.2.
+**6.1 sessions 1 à 3 sur 4 sont faites.** s1 : le moteur *lit* les polices du système.
+s2 : il sait **sortir une face de son fichier** (`Face::extraire`, chirurgie de table,
+jamais de glyphe) — les deux étaient de capacité, le PDF ne bougeait pas d'un octet.
+**s3 est l'inverse : chaque octet de chaque PDF change, et pas un pixel de l'image.**
+Le sous-ensemblage a été reporté avec sa mesure, et il n'entre pas ici non plus.
+**Reste la session 4** : copie de la police dans l'album, portabilité, sélecteur, refus
+à l'écran, parité mesurée — plus la dette du nom lisible qui colle ID 1 + ID 2
+(« MuktaMahee Medium Regular »). Aucune police du système n'est encore branchée sur
+l'export : `Face::extraire` reste sans emploi en production jusque-là. Les deux notes
+de décision de la vague ne bloquent que 6.2.
 
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
 et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une bascule future resterait
@@ -145,6 +149,16 @@ décide sur les contours **avant** les tables communes (une police `bdat` n'a pa
 `head`), et le nom se choisit **en anglais d'abord** (sinon Times s'appelle
 « Times 標準體 »). La règle bitmap est « aucune table de contour », jamais « une strike
 présente » : cette dernière refuserait Courier New, Monaco, Geneva et Cochin.
+
+**Une face s'ouvre pour écrire, et alors elle garde ses octets** (`font::Embarquee`).
+`Face` lit un fichier et le lâche, ce que veut la découverte ; composer une ligne est le
+besoin inverse — chaque caractère demande un glyphe au `cmap` et sa chasse à `hmtx`, et
+le PDF réclame le fichier lui-même. **C'est le seul endroit où une chaîne devient des
+glyphes** : `text_width_mm` et l'émetteur y passent tous les deux, sinon l'album serait
+mesuré sur un jeu de chasses et dessiné sur un autre. La règle de substitution y vit
+aussi : un caractère que la face ne dessine pas devient `?`, jamais la case vide du
+`.notdef` ; une face qui ne dessine pas `?` le laisse tomber. **WinAnsi a quitté le
+projet** avec `/Widths` : plus de table de chasses par code, plus d'échappement octal.
 
 **Les notes de l'utilisateur entrent dans le score** (`meta.rs`) : une photo rejetée sort
 avant comparaison, une étoilée vaut ×1,18 par étoile. `album.json.bak` à chaque sauvegarde.
@@ -241,6 +255,20 @@ salle sombre.
 PDF/A-2b (veraPDF) plus cinq tests Rust, le verdict X-4 revient au prévol imprimeur.
 **Le PDF est reproductible** : `SOURCE_DATE_EPOCH` honoré, deux exports du même album
 sont identiques à l'octet.
+
+**Le texte est écrit en composite** (`/Type0` sous Identity-H, descendant
+`/CIDFontType2`, `/CIDToGIDMap /Identity`, plus `/ToUnicode`) : le code du flux **est**
+le glyphe, écrit en chaîne hexadécimale, et rien ne dépend plus d'une table d'encodage.
+Une légende porte donc **tout ce que la face sait dessiner**, et plus les 224 codes d'un
+encodage à un octet. La face entre **entière** : aucun préfixe de sous-ensemble sur son
+nom, aucun `/CIDSet` — les deux annonceraient un sous-ensemble qui n'existe pas. Seuls
+`/W` et `/ToUnicode` sont restreints aux glyphes **dessinés**, accumulés pendant le
+dessin dans `font::Utilises`. Trois conséquences à ne pas défaire : l'accumulateur est
+**ordonné** (une carte de hachage rendrait un fichier différent d'un export à l'autre) ;
+les objets de police sont **réservés à la construction et écrits à `save()`**, les
+glyphes n'étant connus qu'à la dernière planche ; et l'écrivain **descend jusqu'aux
+appelants**, `cover.rs` écrivant son flux hors du writer — un accumulateur logé dans le
+writer perdrait tout le texte du dos sans que rien le voie.
 
 **Trois PDF** : `album.pdf` = aperçu vignettes, jamais imprimé, mais c'est lui que lit
 l'aperçu fidèle ; `--print` = 300 dpi, rien ne court-circuite `print_scale` ; `--cover` =

@@ -47,11 +47,42 @@ pub(crate) struct Boxes {
     pub trim: [f64; 4],
 }
 
+/// The face a document sets its type in, and the glyphs it has drawn so far.
+///
+/// The two travel together because they answer each other: `/W` and
+/// `/ToUnicode` describe exactly the glyphs that were drawn, and only the
+/// face that drew them can say how wide they are. Passing the pair down to
+/// every emitter is also what lets the cover — which writes its own content
+/// stream, outside the writer — be counted like everything else.
+pub(crate) struct Ecrivain {
+    face: font::Embarquee,
+    utilises: font::Utilises,
+}
+
+impl Ecrivain {
+    /// The album's face, which is the one this crate ships.
+    ///
+    /// Panics if it is unreadable or its licence forbids embedding — that is
+    /// a broken build artifact, not a user error, and `font::tests` catches it
+    /// before it ships. Falling back to a non-embedded base-14 would be the
+    /// silent export failure this project refuses.
+    pub(crate) fn incorporee() -> Self {
+        let face = font::Embarquee::incorporee()
+            .expect("police incorporée illisible ou refusée : asset corrompu")
+            .clone();
+        Self { face, utilises: font::Utilises::default() }
+    }
+}
+
 /// One run of text at a baseline, in millimetres, in the album's only face.
-/// The single place a string turns into content operators: escaping and
-/// emission stay together, so a caller cannot emit one without the other.
+///
+/// The single place a string turns into content operators. Under Identity-H a
+/// string is glyph ids, two bytes each, so it is written as a hex string:
+/// there is no encoding left between the byte in the stream and the glyph the
+/// reader draws, and nothing to escape.
 pub(crate) fn text_op(
     content: &mut String,
+    ecrivain: &mut Ecrivain,
     x_mm: f64,
     y_mm: f64,
     size_pt: f64,
@@ -61,11 +92,21 @@ pub(crate) fn text_op(
     if s.is_empty() {
         return;
     }
+    let glyphes = ecrivain.face.glyphes(s);
+    if glyphes.is_empty() {
+        return;
+    }
+    let mut hex = String::with_capacity(glyphes.len() * 4);
+    for (gid, c) in glyphes {
+        // Noted as it is drawn, so the file describes what it shows and
+        // nothing else.
+        ecrivain.utilises.noter(gid, c);
+        hex.push_str(&format!("{gid:04X}"));
+    }
     let (x, y) = (x_mm * MM_TO_PT, y_mm * MM_TO_PT);
     let (r, g, b) = (rgb[0], rgb[1], rgb[2]);
-    let esc = winansi_escape(s);
     content.push_str(&format!(
-        "BT /F1 {size_pt} Tf {r} {g} {b} rg {x:.2} {y:.2} Td ({esc}) Tj ET\n"
+        "BT /F1 {size_pt} Tf {r} {g} {b} rg {x:.2} {y:.2} Td <{hex}> Tj ET\n"
     ));
 }
 
@@ -633,7 +674,11 @@ pub struct PdfWriter {
     doc: Document,
     page_ids: Vec<Object>,
     pages_id: lopdf::ObjectId,
+    /// Reserved at construction, written at `save`: the composite font can
+    /// only be described once the last spread has been drawn and the set of
+    /// glyphs is closed.
     font_id: lopdf::ObjectId,
+    pub(crate) ecrivain: Ecrivain,
     geom: SpreadGeometry,
     bleed_mm: f64,
     /// Goes into `/Info`, into `dc:title`, and nowhere else.
@@ -643,37 +688,36 @@ pub struct PdfWriter {
     stamp: chrono::DateTime<chrono::Local>,
 }
 
-/// Put the text face in the document and return its resource id.
+/// Fill in the text face, once the document knows every glyph it drew.
 ///
-/// A simple TrueType font under WinAnsi encoding, not a CID one: the renderer
-/// already escapes every string into WinAnsi, so the byte in the content
-/// stream, the slot in `/Widths` and the glyph the reader draws are the same
-/// index all the way down.
+/// A composite font: `/Type0` under Identity-H, whose descendant is a
+/// `/CIDFontType2`. The code in the content stream **is** the glyph id, so
+/// nothing on the way to the reader depends on an encoding table, and a
+/// caption can carry any character the face can draw rather than the 224 a
+/// single-byte encoding allowed.
 ///
-/// Panics if the compiled-in face is unreadable. That is a broken build
-/// artifact, not a user error, and `font::tests` catches it before it ships;
-/// falling back to a non-embedded base-14 would be the silent export failure
-/// this project refuses.
-fn embed_font(doc: &mut Document) -> lopdf::ObjectId {
-    let m = font::metrics().expect("police incorporée illisible : asset corrompu");
-    assert!(
-        m.embeddable(),
-        "la licence de la police interdit l'incorporation (fsType {})",
-        m.fs_type
-    );
+/// The face goes in whole, so its name takes no subset prefix and the
+/// descriptor carries no `/CIDSet`: both would announce a subset that does
+/// not exist. Only `/W` and `/ToUnicode` are restricted to the glyphs drawn —
+/// they describe the document, not the face.
+fn embed_font(doc: &mut Document, font_id: lopdf::ObjectId, ecrivain: &Ecrivain) {
+    let face = &ecrivain.face;
+    let m = face.metrics();
+    let nom = face.postscript().to_string();
 
     // Length1 is the size of the face before compression; a reader needs it to
     // unpack the stream back into a font file.
     let file_id = doc.add_object(Stream::new(
-        dictionary! { "Length1" => font::FONT_DATA.len() as i64 },
-        font::FONT_DATA.to_vec(),
+        dictionary! { "Length1" => face.octets().len() as i64 },
+        face.octets().to_vec(),
     ));
 
     let descriptor_id = doc.add_object(dictionary! {
         "Type" => "FontDescriptor",
-        "FontName" => font::FONT_NAME,
-        // Nonsymbolic: the face draws the standard Latin set, so the reader
-        // may lean on the encoding rather than on the font's own cmap.
+        "FontName" => nom.as_str(),
+        // Nonsymbolic: the face draws the standard Latin set. Under
+        // Identity-H the flag steers no glyph lookup — the code is the glyph
+        // — but a descriptor still has to declare one.
         "Flags" => 32,
         "FontBBox" => m.bbox.iter().map(|v| Object::Integer(i64::from(*v))).collect::<Vec<_>>(),
         "ItalicAngle" => m.italic_angle,
@@ -686,16 +730,112 @@ fn embed_font(doc: &mut Document) -> lopdf::ObjectId {
         "FontFile2" => Object::Reference(file_id),
     });
 
-    doc.add_object(dictionary! {
+    let descendant_id = doc.add_object(dictionary! {
         "Type" => "Font",
-        "Subtype" => "TrueType",
-        "BaseFont" => font::FONT_NAME,
-        "FirstChar" => i64::from(font::FIRST_CHAR),
-        "LastChar" => i64::from(font::LAST_CHAR),
-        "Widths" => m.widths.iter().map(|w| Object::Integer(i64::from(*w))).collect::<Vec<_>>(),
-        "Encoding" => "WinAnsiEncoding",
+        "Subtype" => "CIDFontType2",
+        "BaseFont" => nom.as_str(),
+        // Identity ordering: the CID is the glyph id, which is the whole
+        // point of Identity-H and what makes `/CIDToGIDMap /Identity` true.
+        "CIDSystemInfo" => dictionary! {
+            "Registry" => Object::string_literal("Adobe"),
+            "Ordering" => Object::string_literal("Identity"),
+            "Supplement" => 0,
+        },
         "FontDescriptor" => Object::Reference(descriptor_id),
-    })
+        "DW" => 1000,
+        "W" => largeurs(ecrivain),
+        "CIDToGIDMap" => "Identity",
+    });
+
+    let tounicode_id = doc.add_object(Stream::new(
+        dictionary! {},
+        tounicode(&ecrivain.utilises).into_bytes(),
+    ));
+
+    doc.objects.insert(
+        font_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type0",
+            "BaseFont" => nom.as_str(),
+            "Encoding" => "Identity-H",
+            "DescendantFonts" => vec![Object::Reference(descendant_id)],
+            "ToUnicode" => Object::Reference(tounicode_id),
+        }),
+    );
+}
+
+/// `/W`, the advance of every glyph the document drew, in the 1000-unit em.
+///
+/// Consecutive glyphs share one run — `first [w w w]` — which is the compact
+/// form and, more usefully, the stable one: the same album always yields the
+/// same array, because the glyphs come out of an ordered set.
+fn largeurs(ecrivain: &Ecrivain) -> Vec<Object> {
+    let mut out: Vec<Object> = Vec::new();
+    let mut run: Vec<Object> = Vec::new();
+    let mut debut = 0u16;
+    let mut precedent: Option<u16> = None;
+    for (gid, _) in ecrivain.utilises.iter() {
+        if precedent.is_some_and(|p| gid == p + 1) {
+            run.push(Object::Integer(i64::from(ecrivain.face.avance(gid))));
+        } else {
+            if !run.is_empty() {
+                out.push(Object::Integer(i64::from(debut)));
+                out.push(Object::Array(std::mem::take(&mut run)));
+            }
+            debut = gid;
+            run.push(Object::Integer(i64::from(ecrivain.face.avance(gid))));
+        }
+        precedent = Some(gid);
+    }
+    if !run.is_empty() {
+        out.push(Object::Integer(i64::from(debut)));
+        out.push(Object::Array(run));
+    }
+    out
+}
+
+/// The `ToUnicode` CMap: what each glyph the document drew means.
+///
+/// Without it a reader can show the page and copy nothing out of it, and
+/// PDF/A would be a claim rather than a fact. The mapping is exact because it
+/// was recorded as the text was drawn, never guessed by walking the face's
+/// character map backwards.
+fn tounicode(utilises: &font::Utilises) -> String {
+    let mut out = String::from(
+        "/CIDInit /ProcSet findresource begin\n\
+         12 dict begin\n\
+         begincmap\n\
+         /CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n\
+         /CMapName /Adobe-Identity-UCS def\n\
+         /CMapType 2 def\n\
+         1 begincodespacerange\n\
+         <0000> <FFFF>\n\
+         endcodespacerange\n",
+    );
+    // A bfchar block holds at most 100 entries; past that the file is not a
+    // CMap any more, whatever it looks like.
+    let entrees: Vec<(u16, char)> = utilises.iter().collect();
+    for bloc in entrees.chunks(100) {
+        out.push_str(&format!("{} beginbfchar\n", bloc.len()));
+        for (gid, c) in bloc {
+            let mut cible = String::new();
+            // UTF-16BE, so a character outside the basic plane comes out as
+            // its surrogate pair rather than as a truncated code point.
+            for unite in c.encode_utf16(&mut [0u16; 2]) {
+                cible.push_str(&format!("{unite:04X}"));
+            }
+            out.push_str(&format!("<{gid:04X}> <{cible}>\n"));
+        }
+        out.push_str("endbfchar\n");
+    }
+    out.push_str(
+        "endcmap\n\
+         CMapName currentdict /CMap defineresource pop\n\
+         end\n\
+         end\n",
+    );
+    out
 }
 
 impl PdfWriter {
@@ -710,12 +850,13 @@ impl PdfWriter {
     pub fn with_stamp(album: &Album, stamp: chrono::DateTime<chrono::Local>) -> Self {
         let mut doc = Document::with_version(pdfx::PDF_VERSION);
         let pages_id = doc.new_object_id();
-        let font_id = embed_font(&mut doc);
+        let font_id = doc.new_object_id();
         Self {
             doc,
             page_ids: Vec::new(),
             pages_id,
             font_id,
+            ecrivain: Ecrivain::incorporee(),
             geom: geometry(album),
             bleed_mm: album.bleed_mm,
             title: album.title.clone(),
@@ -752,18 +893,26 @@ impl PdfWriter {
                 // left-aligned on the slot. Printed as typed, never
                 // truncated: the editor is the place that signals overflow.
                 Role::PhotoCaption { text, at, .. } => {
-                    text_op(&mut content, at.x, at.y, PHOTO_CAPTION_SIZE_PT, INK, text);
+                    text_op(&mut content, &mut self.ecrivain, at.x, at.y, PHOTO_CAPTION_SIZE_PT, INK, text);
                 }
                 // The three pages of text, now one role: the half-title's two
                 // sizes, the text page's regular leading and the colophon's
                 // quieter one all reach here as lines already placed.
                 Role::Text { at, lines } => {
                     for l in lines {
-                        text_op(&mut content, at.x, at.y - l.dy_mm, l.size_pt, TEXT_INK, &l.text);
+                        text_op(
+                            &mut content,
+                            &mut self.ecrivain,
+                            at.x,
+                            at.y - l.dy_mm,
+                            l.size_pt,
+                            TEXT_INK,
+                            &l.text,
+                        );
                     }
                 }
                 Role::ChapterCaption { text, at } => {
-                    text_op(&mut content, at.x, at.y, SPREAD_CAPTION_SIZE_PT, INK, text);
+                    text_op(&mut content, &mut self.ecrivain, at.x, at.y, SPREAD_CAPTION_SIZE_PT, INK, text);
                 }
             }
         }
@@ -862,6 +1011,9 @@ impl PdfWriter {
                 "Count" => count,
             }),
         );
+        // The glyph set is closed now, so the face can finally describe
+        // itself: `/W` and `/ToUnicode` name what this document draws.
+        embed_font(&mut self.doc, self.font_id, &self.ecrivain);
         // Colour, standard, dates and identity, all at once: a file that
         // carries some of them and not the others fails a supplier's
         // preflight exactly as loudly as one that carries none.
@@ -1094,6 +1246,188 @@ mod tests {
         assert!(xmp.contains("Été &amp; cie"), "{xmp}");
     }
 
+    /// The `/F1` of the first page, whatever it turns out to be.
+    fn police(doc: &Document) -> lopdf::Dictionary {
+        let pages = doc.get_pages();
+        let (_, page_id) = pages.iter().next().expect("une page");
+        let page_id = *page_id;
+        let resources = doc.get_page_resources(page_id).unwrap().0.expect("des ressources");
+        let fonts = resources.get(b"Font").unwrap().as_dict().unwrap();
+        let id = match fonts.get(b"F1").unwrap() {
+            Object::Reference(id) => *id,
+            other => panic!("police non référencée : {other:?}"),
+        };
+        doc.get_object(id).unwrap().as_dict().unwrap().clone()
+    }
+
+    /// The bytes of a stream, whether or not the writer compressed it.
+    fn flux(doc: &Document, id: lopdf::ObjectId) -> Vec<u8> {
+        let stream = doc.get_object(id).unwrap().as_stream().unwrap();
+        stream.decompressed_content().unwrap_or_else(|_| stream.content.clone())
+    }
+
+    /// `/W`, flattened back into the advance of each glyph it names.
+    fn chasses_declarees(descendant: &lopdf::Dictionary) -> std::collections::BTreeMap<u16, i64> {
+        let mut out = std::collections::BTreeMap::new();
+        let w = descendant.get(b"W").unwrap().as_array().unwrap();
+        let mut i = 0;
+        while i < w.len() {
+            let debut = w[i].as_i64().unwrap() as u16;
+            let run = w[i + 1].as_array().unwrap();
+            for (n, v) in run.iter().enumerate() {
+                out.insert(debut + n as u16, v.as_i64().unwrap());
+            }
+            i += 2;
+        }
+        out
+    }
+
+    /// The face goes in as a composite: `/Type0` under Identity-H over a
+    /// `/CIDFontType2`. The code in the content stream is the glyph id, so
+    /// nothing between us and the reader depends on an encoding table — which
+    /// is what lets a caption carry any character the face can draw.
+    ///
+    /// It also goes in whole, so it wears no subset prefix and declares no
+    /// `/CIDSet`: both would announce a subset that does not exist.
+    #[test]
+    fn la_police_du_fichier_est_un_composite_identity_h() {
+        let (_, doc) = written();
+        let f = police(&doc);
+        assert_eq!(f.get(b"Subtype").unwrap().as_name_str().unwrap(), "Type0");
+        assert_eq!(f.get(b"Encoding").unwrap().as_name_str().unwrap(), "Identity-H");
+        assert!(f.get(b"ToUnicode").is_ok(), "sans ToUnicode, la page ne se copie pas");
+
+        let base = f.get(b"BaseFont").unwrap().as_name_str().unwrap().to_string();
+        assert_eq!(base, font::FONT_NAME, "la face se nomme elle-même");
+        assert!(!base.contains('+'), "préfixe de sous-ensemble sur une face entière : {base}");
+
+        let d = match &f.get(b"DescendantFonts").unwrap().as_array().unwrap()[0] {
+            Object::Reference(id) => doc.get_object(*id).unwrap().as_dict().unwrap().clone(),
+            other => panic!("descendant non référencé : {other:?}"),
+        };
+        assert_eq!(d.get(b"Subtype").unwrap().as_name_str().unwrap(), "CIDFontType2");
+        assert_eq!(d.get(b"CIDToGIDMap").unwrap().as_name_str().unwrap(), "Identity");
+        let cid = d.get(b"CIDSystemInfo").unwrap().as_dict().unwrap();
+        assert_eq!(cid.get(b"Ordering").unwrap().as_str().unwrap(), b"Identity");
+
+        let descr = match d.get(b"FontDescriptor").unwrap() {
+            Object::Reference(id) => doc.get_object(*id).unwrap().as_dict().unwrap().clone(),
+            other => panic!("descripteur non référencé : {other:?}"),
+        };
+        assert!(descr.get(b"FontFile2").is_ok(), "la face n'est pas dans le fichier");
+        assert!(descr.get(b"CIDSet").is_err(), "un CIDSet annonce un sous-ensemble");
+    }
+
+    /// What was measured is what is declared. The engine set the album's type
+    /// on these advances, and `/W` carries the same numbers: a reader that
+    /// trusts the table and an engine that trusted `hmtx` place the same
+    /// glyphs in the same spots.
+    #[test]
+    fn les_chasses_declarees_sont_celles_qui_ont_mesure() {
+        let (_, doc) = written();
+        let f = police(&doc);
+        let d = match &f.get(b"DescendantFonts").unwrap().as_array().unwrap()[0] {
+            Object::Reference(id) => doc.get_object(*id).unwrap().as_dict().unwrap().clone(),
+            other => panic!("{other:?}"),
+        };
+        let declarees = chasses_declarees(&d);
+        let face = font::Embarquee::incorporee().expect("face ouverte");
+
+        // La légende de la planche, mesurée d'un côté, déclarée de l'autre.
+        let ligne = "la plage";
+        let em: i64 = face
+            .glyphes(ligne)
+            .iter()
+            .map(|(gid, _)| *declarees.get(gid).unwrap_or_else(|| panic!("glyphe {gid} hors /W")))
+            .sum();
+        let large = em as f64 / 1000.0 * PHOTO_CAPTION_SIZE_PT * 25.4 / 72.0;
+        assert!(
+            (large - font::text_width_mm(ligne, PHOTO_CAPTION_SIZE_PT)).abs() < 1e-9,
+            "{large} contre {}",
+            font::text_width_mm(ligne, PHOTO_CAPTION_SIZE_PT)
+        );
+
+        // Et `/W` ne porte que ce qui a été dessiné : la face en a deux mille.
+        assert!(declarees.len() < 100, "{} glyphes déclarés", declarees.len());
+    }
+
+    /// Every glyph the file draws can say which character it is, so the page
+    /// can be read back out of the print. Without that, PDF/A would be a
+    /// claim rather than a fact.
+    #[test]
+    fn chaque_glyphe_dessine_sait_dire_son_caractere() {
+        let (_, doc) = written();
+        let f = police(&doc);
+        let id = match f.get(b"ToUnicode").unwrap() {
+            Object::Reference(id) => *id,
+            other => panic!("{other:?}"),
+        };
+        let cmap = String::from_utf8(flux(&doc, id)).expect("un CMap est du texte");
+        assert!(cmap.contains("begincmap") && cmap.contains("endcmap"));
+        assert!(cmap.contains("<0000> <FFFF>"), "l'espace de codes des deux octets");
+
+        let face = font::Embarquee::incorporee().expect("face ouverte");
+        // La légende de planche porte une accentuée : elle doit se relire.
+        for (gid, c) in face.glyphes("Corse, 2013") {
+            let attendu = format!("<{gid:04X}> <{:04X}>", c as u32);
+            assert!(cmap.contains(&attendu), "{c} manque au ToUnicode : {attendu}");
+        }
+    }
+
+    /// The wave's first visible gain: a caption the old single-byte encoding
+    /// could only print as `?` now draws its own glyphs. The engine measured
+    /// them, the file carries them, and the reader can copy them back.
+    #[test]
+    fn une_legende_hors_winansi_se_dessine_au_lieu_de_se_perdre() {
+        let face = font::Embarquee::incorporee().expect("face ouverte");
+        let mot = "Zażółć";
+        let poses = face.glyphes(mot);
+        assert_eq!(poses.len(), mot.chars().count());
+        let interro = face.glyphes("?")[0].0;
+        for (gid, c) in &poses {
+            assert_ne!(*gid, interro, "{c} tombe encore sur le point d'interrogation");
+        }
+        // Et la mesure suit le dessin, sinon la coupure de ligne mentirait.
+        assert!(font::text_width_mm(mot, 10.0) > font::text_width_mm("Za", 10.0));
+    }
+
+    /// The face pulled out of its file describes itself exactly like the one
+    /// read from it. Session 4 will embed extracted faces; it inherits no
+    /// unknown about how they enter a PDF.
+    #[test]
+    fn la_face_extraite_donne_le_meme_composite() {
+        let sortie = font::Face::extraire(font::FONT_DATA, 0).expect("extraction");
+        assert_ne!(sortie.len(), font::FONT_DATA.len(), "l'extraction n'a rien retiré");
+
+        let depuis = |octets: Vec<u8>| {
+            let mut doc = Document::with_version(pdfx::PDF_VERSION);
+            let id = doc.new_object_id();
+            let face = font::Embarquee::depuis(octets, 0).expect("face ouverte");
+            let mut ecrivain = Ecrivain { face, utilises: font::Utilises::default() };
+            let mut content = String::new();
+            text_op(&mut content, &mut ecrivain, 0.0, 0.0, 10.0, INK, "Corse, 2013");
+            embed_font(&mut doc, id, &ecrivain);
+            (doc, id, content)
+        };
+        let (a, ia, ca) = depuis(font::FONT_DATA.to_vec());
+        let (b, ib, cb) = depuis(sortie);
+
+        assert_eq!(ca, cb, "les mêmes glyphes, aux mêmes places");
+        let sans_flux = |doc: &Document, id: lopdf::ObjectId| {
+            let f = doc.get_object(id).unwrap().as_dict().unwrap().clone();
+            let d = match &f.get(b"DescendantFonts").unwrap().as_array().unwrap()[0] {
+                Object::Reference(r) => doc.get_object(*r).unwrap().as_dict().unwrap().clone(),
+                other => panic!("{other:?}"),
+            };
+            (
+                f.get(b"Encoding").unwrap().as_name_str().unwrap().to_string(),
+                f.get(b"BaseFont").unwrap().as_name_str().unwrap().to_string(),
+                chasses_declarees(&d),
+            )
+        };
+        assert_eq!(sans_flux(&a, ia), sans_flux(&b, ib));
+    }
+
     /// `/Info` answers the trapping question and dates the file, and the
     /// trailer identifies it. PDF/X refuses a file missing any of the three.
     #[test]
@@ -1168,43 +1502,3 @@ mod tests {
     }
 }
 
-/// Encode a string for a PDF literal string in WinAnsi: ASCII stays as-is,
-/// everything else becomes an octal escape so the content stream remains
-/// pure bytes (never UTF-8 re-encoded).
-fn winansi_escape(s: &str) -> String {
-    let mut out = String::new();
-    for c in s.chars() {
-        let b: u8 = match c {
-            '(' => {
-                out.push_str("\\(");
-                continue;
-            }
-            ')' => {
-                out.push_str("\\)");
-                continue;
-            }
-            '\\' => {
-                out.push_str("\\\\");
-                continue;
-            }
-            c if c.is_ascii() => {
-                out.push(c);
-                continue;
-            }
-            'œ' => 0x9C,
-            'Œ' => 0x8C,
-            '€' => 0x80,
-            '\u{2013}' => 0x96, // en dash
-            '\u{2014}' => 0x97,
-            '\u{2018}' => 0x91,
-            '\u{2019}' => 0x92,
-            '\u{201C}' => 0x93,
-            '\u{201D}' => 0x94,
-            '\u{2026}' => 0x85,
-            c if (c as u32) < 256 => c as u8, // Latin-1 subset of WinAnsi
-            _ => b'?',
-        };
-        out.push_str(&format!("\\{:03o}", b));
-    }
-    out
-}

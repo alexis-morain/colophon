@@ -23,6 +23,14 @@ sur la page des releases.
 
 ### Corrigé
 
+- **Un titre imprime les caractères qu'il porte, et plus des points
+  d'interrogation.** L'éditeur affichait « Zażółć », le PDF imprimait
+  « Za?ó??? » : le texte du fichier était limité à 224 caractères, un jeu
+  latin occidental. Il ne l'est plus, et l'écran et le papier disent
+  maintenant la même chose. Le texte d'un PDF exporté se copie aussi
+  proprement dans un lecteur, accents compris. Les albums déjà composés
+  s'exportent à l'identique : rien ne bouge tant que rien ne sortait du jeu
+  d'avant.
 - **Une photo ne peut plus effacer une page de texte.** Envoyer une photo sur
   la planche voisine (⌘⇧flèche) quand celle-ci était une page de texte, la
   page de garde ou le colophon transformait la page en planche photo et son

@@ -44,7 +44,27 @@ describe("les faces groupées par famille", () => {
     expect(g[1].faces[1].refus).toBe("embarquement_interdit");
   });
 
+  it("range les faces internes de la plate-forme après les autres", () => {
+    // macOS en porte des centaines, toutes nommées par un point initial, et
+    // un point trie avant une lettre : sans la règle, les quarante premières
+    // familles de la liste sont toutes internes et les vraies n'apparaissent
+    // qu'au filtre. Elles restent montrées, elles passent après.
+    const g = parFamille([
+      face(0, ".SF NS", ".SF NS Regular"),
+      face(1, "Optima", "Optima Regular"),
+      face(2, ".ADT Slab Numeric", ".ADT Slab Numeric Light"),
+      face(3, "Avenir", "Avenir Book"),
+    ]);
+    expect(g.map((f) => f.famille)).toEqual([
+      "Avenir",
+      "Optima",
+      ".ADT Slab Numeric",
+      ".SF NS",
+    ]);
+  });
+
   it("laisse tomber la face que rien ne nomme", () => {
+
     // Le seul refus qui coûte son nom à une face est `illisible` : elle n'a
     // ni famille ni nom ni PostScript, donc aucune ligne où se ranger.
     expect(parFamille([{ rang: 0, famille: "", nom: "", postscript: "", refus: "illisible" }]))

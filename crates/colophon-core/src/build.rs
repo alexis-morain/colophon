@@ -1348,8 +1348,63 @@ mod tests {
         (photos, base.join("out"))
     }
 
+    /// Compose an existing album in a real face of this machine, without a
+    /// window: the only way to reproduce by hand what the picker does, and
+    /// therefore the harness behind every hand-run proof of this session —
+    /// veraPDF on an album set in a system face, the screen/paper parity of
+    /// `scripts/police-cdp.mjs`, and the weight the album ends up carrying.
+    ///
+    /// `COLOPHON_ALBUM=<dossier> COLOPHON_FACE="Helvetica Neue Regular"
+    /// cargo test -p colophon-core --release banc_poser_une_face_du_mac --
+    /// --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn banc_poser_une_face_du_mac() {
+        let (Some(dir), Some(voulue)) = (
+            std::env::var_os("COLOPHON_ALBUM"),
+            std::env::var("COLOPHON_FACE").ok(),
+        ) else {
+            println!("COLOPHON_ALBUM=<dossier> COLOPHON_FACE=<nom> attendus");
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        let faces = crate::font::installed();
+        let Some(trouvee) = faces
+            .iter()
+            .find(|i| i.face.embeddable() && i.face.nom == voulue)
+            .or_else(|| {
+                faces.iter().find(|i| i.face.embeddable() && i.face.nom.contains(&voulue))
+            })
+        else {
+            println!("aucune face acceptée ne s'appelle « {voulue} »");
+            return;
+        };
+        let sur_disque = fs::metadata(&trouvee.chemin).map(|m| m.len()).unwrap_or(0);
+        let police = poser_police(&dir, &trouvee.chemin, trouvee.face.index)
+            .expect("la face se pose à côté de l'album");
+        let posee = fs::metadata(dir.join(&police.fichier)).unwrap().len();
+
+        let json = dir.join("album.json");
+        let mut album: model::Album =
+            serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
+        album.police = Some(police.clone());
+        write_album_json(&dir, &album).unwrap();
+
+        println!(
+            "{{\n \"face\": {:?},\n \"postscript\": {:?},\n \"source\": {:?},\n \
+             \"octets_du_fichier_systeme\": {sur_disque},\n \
+             \"octets_poses_dans_l_album\": {posee},\n \
+             \"part\": {:.1}\n}}",
+            police.nom,
+            police.postscript,
+            trouvee.chemin.display().to_string(),
+            100.0 * posee as f64 / sur_disque.max(1) as f64
+        );
+    }
+
     /// A refused build writes no album file at all. The thumbnail cache may
     /// exist (it is a cache), the album must not.
+
     fn rien_d_ecrit(out: &Path) {
         for f in [
             "album.json",

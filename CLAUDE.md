@@ -99,16 +99,14 @@ compter les replis machine comme des mains. **La vague 4 est close sauf 4.2**, d
 (les sidecars Takeout, voir « Le moteur ») ; 5.2 (PhotoKit) et 5.3 (RAW, audit de
 licence d'abord) restent.
 
-**6.1 sessions 1 à 3 sur 4 sont faites.** s1 : le moteur *lit* les polices du système.
-s2 : il sait **sortir une face de son fichier** (`Face::extraire`, chirurgie de table,
-jamais de glyphe) — les deux étaient de capacité, le PDF ne bougeait pas d'un octet.
-**s3 est l'inverse : chaque octet de chaque PDF change, et pas un pixel de l'image.**
-Le sous-ensemblage a été reporté avec sa mesure, et il n'entre pas ici non plus.
-**Reste la session 4** : copie de la police dans l'album, portabilité, sélecteur, refus
-à l'écran, parité mesurée — plus la dette du nom lisible qui colle ID 1 + ID 2
-(« MuktaMahee Medium Regular »). Aucune police du système n'est encore branchée sur
-l'export : `Face::extraire` reste sans emploi en production jusque-là. Les deux notes
-de décision de la vague ne bloquent que 6.2.
+**6.1 est close, ses quatre sessions faites.** s1 : le moteur *lit* les polices du
+système. s2 : il sait **sortir une face de son fichier** (`Face::extraire`, chirurgie
+de table, jamais de glyphe) — les deux étaient de capacité, le PDF ne bougeait pas d'un
+octet. s3 : **le composite**, où chaque octet de chaque PDF change et pas un pixel de
+l'image. s4 : **la police voyage avec l'album** (voir « La police de l'album »).
+Le sous-ensemblage a été reporté avec sa mesure, et il n'est entré dans aucune des
+quatre. Les deux notes de décision de la vague ne bloquent que 6.2.
+
 
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
 et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une bascule future resterait
@@ -160,8 +158,43 @@ aussi : un caractère que la face ne dessine pas devient `?`, jamais la case vid
 `.notdef` ; une face qui ne dessine pas `?` le laisse tomber. **WinAnsi a quitté le
 projet** avec `/Widths` : plus de table de chasses par code, plus d'échappement octal.
 
+**La police de l'album voyage avec lui, et rien ne cherche jamais une police par son
+nom** (6.1 s4). `album.police` est **additif, le schéma reste à 2** — le précédent est
+`reglages` : absent veut dire « la face du projet », donc aucune migration et un vieil
+album s'ouvre tel quel. Il porte le **nom du fichier** posé à côté d'`album.json`, et ce
+nom n'a que deux valeurs (`police.ttf` pour du `glyf`, `police.otf` pour du CFF) : un
+`album.json` est réparable à la main, donc `dir.join(ce qu'il dit)` serait une traversée
+de chemin. Les octets posés sont ceux de `Face::extraire`, **jamais le fichier système
+recopié** — Helvetica Neue sort à 14 % de sa `.ttc`. `font::face_album(dir, fichier)`
+est la seule porte : elle rend la face **et** `defaut`, le code d'un fichier nommé et
+introuvable. **Ce cas ne fait jamais échouer un export** : l'album sort dans la face du
+projet et l'écran le dit, en haut d'Envoi comme dans le panneau *Format*.
+
+**Le dossier qui compte est celui d'`album.json`, jamais `album.root`** (les photos).
+`PdfWriter::new(album, dir)` le prend, `print`, `cover` et `build` l'ont tous en main.
+`Ecrivain` passe alors en `Cow::Owned`, et **toute coupure de ligne se mesure sur la
+face du document** (`Ecrivain::largeur_mm`) : `cover.rs` pour le dos et la quatrième,
+`Scene::of_avec` pour la page de garde, dont le titre rétrécit jusqu'à tenir — mesuré
+dans une face et dessiné dans une autre, il sortirait du massicot. `Scene::of` garde la
+face du projet : le linter, le prévol et le dump raisonnent sur une planche, pas sur un
+rendu. **Une recomposition détruit tout champ que `BuildOptions` ne porte pas** :
+`police` y est, comme `reglages` et `densite`.
+
+**L'app mesure les octets de l'album, jamais une police installée** (`font.ts`). La
+commande `police_octets` rend les octets que l'émetteur embarquera, `chargerFace` les
+enregistre en `FontFace` sous la famille interne **`colophon-album`**, et `--font-book`
+comme le canvas lisent cette pile. La parité est vraie **par construction** : mêmes
+octets des deux côtés. Le crénage et les ligatures sont coupés des deux côtés
+(`featureSettings`, `ctx.fontKerning`), le moteur n'en dessinant aucun. Mesuré le
+29/08 : l'écart écran/moteur est de 1,6·10⁻⁵ mm pour une borne de 6,4·10⁻² mm — et
+nommer la face **installée** avec le crénage du navigateur décale de 0,067 mm sur une
+ligne de 74,8 mm. Le sélecteur vit dans le panneau *Format*, montre les faces refusées
+grisées avec leur raison (`police.ts`, sur le modèle de `reasons.ts`), et le
+« Regular » final s'élague **à l'écran** : le moteur rend ce que le fichier déclare.
+
 **Les notes de l'utilisateur entrent dans le score** (`meta.rs`) : une photo rejetée sort
 avant comparaison, une étoilée vaut ×1,18 par étoile. `album.json.bak` à chaque sauvegarde.
+
 
 **Le Composer garantit** : jamais un portrait dans une case paysage (écart ≤ 1,4), les
 visages à 4 % des bords au moins, jamais deux quasi-doublons sur une planche, une
@@ -328,8 +361,15 @@ tourne, et il se vérifie mordant en mutant le code, comme un test.
 `SceneProxies` doit rester une fonction de la scène. Le jour où il lit le gabarit ou une
 chaîne du moteur, il cesse de servir les deux rendus.
 
+**`album.root` est le dossier des photos, la police est à côté d'`album.json`.** Les
+confondre donne un album qui marche tant que les deux coïncident et casse au premier
+album rangé ailleurs. Et **l'écran ne nomme jamais une police installée** : ça marche
+sur la machine qui l'a, donc le défaut ne se voit qu'ailleurs. Le test qui mord est
+`font.test.ts`, qui lit la chaîne posée sur le contexte, pas une constante à côté.
+
 **Jamais un octet écrit sur un original**, la retouche vit dans `album.json`. **Jamais
-d'échec silencieux à l'export.** **Tout ce qui touche le PDF remesure la conformité**
+d'échec silencieux à l'export.**
+ **Tout ce qui touche le PDF remesure la conformité**
 (cinq tests Rust plus veraPDF) dans la vague où c'est écrit.
 
 **Trois manières de mesurer une photo, et deux qui mentent.** `image::image_dimensions`
@@ -360,7 +400,23 @@ résolution sous 250 ppi. Jamais `imazen/heic` (AGPL).
 Autres drapeaux : `--print`, `--cover`, `--prevol --profil <id>`, `--densite`,
 `--variantes`, `--reprise`, `--bascule <FORMAT> [--essai]`, `--dump-scene`, `--dump-geometry`, `--profils`. Scripts :
 `pdfx.sh full`, `install-app.sh`, `fixture-scene.sh`, `notices.sh`, `apercu-fidele.py`,
-`banc-gabarits.sh`, `mesure-cdp.mjs`, `feuille-cdp.mjs`. App : `npm run tauri dev`.
+`banc-gabarits.sh`, `mesure-cdp.mjs`, `feuille-cdp.mjs`, `police-cdp.mjs`. App :
+`npm run tauri dev`.
+
+Les deux bancs à la main de la police, sur l'instance Brave de la cure : poser une vraie
+face du Mac dans un album sans passer par la fenêtre, puis mesurer la parité écran/papier
+contre la référence du moteur.
+
+```bash
+COLOPHON_ALBUM=.albums/corse-2013 COLOPHON_FACE="Helvetica Neue Regular" \
+  cargo test -p colophon-core --release banc_poser_une_face_du_mac -- --ignored --nocapture
+```
+
+```bash
+COLOPHON_POLICE=.albums/corse-2013 cargo test -p colophon-core --release \
+  banc_parite_ecran_papier -- --ignored --nocapture > /tmp/ref.json
+```
+
 
 ## Architecture
 
@@ -372,9 +428,11 @@ trois actifs), `pdfx`, `reprise`, `log`, `printer`, `prevol`, `colophon` (la pag
 `album.ts` géométries, `scene.ts` la scène et `hitTest`, `SceneCanvas.tsx` le peintre,
 `SceneProxies.tsx` le clavier, `rendu.ts` l'interrupteur, `feuille.ts` le modèle de la
 feuille qui tourne, `raster.ts` le PDF en bitmaps, `Feuilletage.tsx` la scène du
-feuilletage, `photos.ts` vignettes décodées et badges, `font.ts` la mesure de texte,
+feuilletage, `photos.ts` vignettes décodées et badges, `font.ts` la mesure de texte sur
+les octets de l'album, `police.ts` les noms et les refus d'une face,
 `menu.ts`, `signaler.ts`, `pdfview.tsx`, `reasons.ts`, `icons.tsx`, `recents.ts`) plus la coquille Tauri, marques d'icône dans
 `design/marques`.
+
 
 Chaîne de distribution : `NOTICES.md` généré et embarqué, CSP réelle, CHANGELOG, README,
 modèles d'issue, `check.yml` et `release.yml` (binaires, SHA-256, `latest.json`), updater

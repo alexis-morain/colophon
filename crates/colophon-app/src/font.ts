@@ -158,13 +158,21 @@ export function fontLoaded(): Promise<void> {
 if (import.meta.env.DEV && typeof window !== "undefined") {
   const w = window as unknown as Record<string, unknown>;
   w.__mesureMm = measureMm;
-  w.__mesureMmAvec = (pile: string, texte: string, mm: number): number => {
+  w.__mesureMmAvec = (
+    pile: string,
+    texte: string,
+    mm: number,
+    crenage: CanvasFontKerning = "none",
+  ): number => {
     const ctx = contexte();
     if (!ctx) return 0;
     ctx.font = `100px ${pile}`;
+    ctx.fontKerning = crenage;
     const large = (ctx.measureText(texte).width * mm) / 100;
     ctx.font = `100px ${PILE}`;
+    ctx.fontKerning = "none";
     return large;
   };
+
 }
 

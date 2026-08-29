@@ -105,6 +105,11 @@ face by path and index, and reads faces rather than files. A face can be
 pulled out of its file as a font file of its own — one face, the tables a PDF
 asks for, no glyph touched — which is what lets one that lives in a collection
 be embedded at all. The album's own travels inside every PDF it exports.
+Reading a face and setting type in it are two different needs: the reader lets
+the file go, and a face **opened for writing** keeps it, because every line
+asks the character map for glyphs and the file itself goes into the PDF. That
+one path both measures and draws, so what an editor shows and what a printer
+receives cannot drift apart.
 _Avoid_: font, typeface, family, style
 
 **Bleed**:

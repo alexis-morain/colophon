@@ -51,11 +51,6 @@ pub const FONT_DATA: &[u8] = include_bytes!("../assets/SourceSans3-Regular.ttf")
 /// PostScript name, as it goes in `/BaseFont`.
 pub const FONT_NAME: &str = "SourceSans3-Regular";
 
-/// First and last WinAnsi codes we describe. The renderer escapes everything
-/// into WinAnsi, so this covers every glyph a caption can reach.
-pub const FIRST_CHAR: u8 = 32;
-pub const LAST_CHAR: u8 = 255;
-
 /// A face we cannot identify at all: not a font, truncated before its tables,
 /// nameless, or a collection index that does not exist.
 pub const REFUS_ILLISIBLE: &str = "illisible";
@@ -86,8 +81,6 @@ pub struct Metrics {
     /// Embedding permission from OS/2. 0 means unrestricted; bit 1 set would
     /// forbid embedding outright.
     pub fs_type: u16,
-    /// Advance width per WinAnsi code, from [`FIRST_CHAR`] to [`LAST_CHAR`].
-    pub widths: Vec<i32>,
 }
 
 impl Metrics {
@@ -404,35 +397,182 @@ pub fn metrics() -> Result<Metrics> {
         .ok_or_else(|| anyhow!("police incorporée refusée : {}", face.refus.unwrap_or("?")))
 }
 
-/// The metrics, parsed once. Wrapping a paragraph asks for the widths on
-/// every candidate line, and re-reading 430 kB of TrueType each time would
-/// turn a cover render into a benchmark.
-static METRICS: std::sync::LazyLock<Option<Metrics>> =
-    std::sync::LazyLock::new(|| metrics().ok());
+// --- La face qu'on écrit ----------------------------------------------------
 
-/// How wide a string sets, in millimetres, at `size_pt`.
+/// A face opened for writing: it keeps its bytes.
 ///
-/// Advance widths only, no kerning: the face carries none in the tables the
-/// renderer reads, and what is measured here has to be what the PDF draws.
-/// A character outside WinAnsi measures as the `?` the renderer substitutes.
-pub fn text_width_mm(s: &str, size_pt: f64) -> f64 {
-    let Some(m) = METRICS.as_ref() else { return 0.0 };
-    let width = |c: char| -> i32 {
-        let code = winansi_code(c).unwrap_or(b'?');
-        m.widths
-            .get(usize::from(code - FIRST_CHAR))
-            .copied()
-            .unwrap_or(0)
-    };
-    let em: i32 = s.chars().map(width).sum();
-    // Widths are in the 1000-unit em PDF works in.
-    f64::from(em) / 1000.0 * size_pt * 25.4 / 72.0
+/// [`Face`] reads a file and lets it go, which is what discovery wants — 787
+/// faces named without holding a byte. Setting a line is the opposite need:
+/// every character asks the character map for a glyph and `hmtx` for its
+/// advance, and the PDF asks for the file itself. So this one holds on.
+///
+/// It is the only place a string turns into glyphs. [`text_width_mm`] and the
+/// emitter both come through here, or the album would be measured against one
+/// set of advances and drawn with another — the two-geometries trap, applied
+/// to type.
+#[derive(Debug, Clone)]
+pub struct Embarquee {
+    /// The whole font file, as it will go into `FontFile2`.
+    data: Vec<u8>,
+    /// The Unicode character map's subtable, copied out of the file. Copied
+    /// rather than borrowed: a struct that holds a slice of its own field is
+    /// a fight with the borrow checker that buys nothing here.
+    sous_table: Vec<u8>,
+    /// Advance per glyph id, in the 1000-unit em. Its length is the face's
+    /// glyph count, so it is the bounds check as well.
+    avances: Vec<i32>,
+    /// The glyph a character the face cannot draw is replaced by. `None` when
+    /// the face cannot even draw that, and then such characters are dropped.
+    interro: Option<u16>,
+    metrics: Metrics,
+    postscript: String,
 }
 
-/// The WinAnsi code a character is escaped to, the reverse of
-/// [`winansi_char`]. `None` for anything the renderer cannot print.
-pub fn winansi_code(c: char) -> Option<u8> {
-    (FIRST_CHAR..=LAST_CHAR).find(|code| winansi_char(*code) == Some(c))
+impl Embarquee {
+    /// Open a face for writing. `Err` carries the face's refusal code: a face
+    /// the vendor forbids, or one whose outlines PDF cannot embed, never gets
+    /// this far.
+    ///
+    /// `data` must be **the whole file** — the same rule as [`Face::extraire`],
+    /// and for the same reason: the buffer discovery walks with has zeros
+    /// where the outlines are.
+    pub fn depuis(data: Vec<u8>, index: u32) -> std::result::Result<Self, &'static str> {
+        let face = Face::parse(&data, index)?;
+        if let Some(code) = face.refus {
+            return Err(code);
+        }
+        let metrics = face.metrics.clone().ok_or(REFUS_CMAP_ILLISIBLE)?;
+        let dir = sfnt_dir(&data, index).ok_or(REFUS_ILLISIBLE)?;
+        let communes = Communes::lire(&data, dir).ok_or(REFUS_ILLISIBLE)?;
+        let cmap = table(&data, dir, b"cmap").ok_or(REFUS_CMAP_ILLISIBLE)?;
+        let sous_table = unicode_subtable(cmap).ok_or(REFUS_CMAP_ILLISIBLE)?.to_vec();
+        let avances = communes.avances();
+        let mut face = Embarquee {
+            data,
+            sous_table,
+            avances,
+            interro: None,
+            metrics,
+            postscript: face.postscript,
+        };
+        face.interro = face.glyphe('?');
+        Ok(face)
+    }
+
+    /// The face this crate ships, opened once. Wrapping a paragraph asks for
+    /// the advances on every candidate line, and re-reading 430 kB of
+    /// TrueType each time would turn a cover render into a benchmark.
+    pub fn incorporee() -> Option<&'static Embarquee> {
+        static INCORPOREE: std::sync::LazyLock<Option<Embarquee>> =
+            std::sync::LazyLock::new(|| Embarquee::depuis(FONT_DATA.to_vec(), 0).ok());
+        INCORPOREE.as_ref()
+    }
+
+    /// The glyphs a string sets to, each with the character it draws.
+    ///
+    /// The character comes back because `ToUnicode` needs it, and taking it
+    /// from here rather than walking the character map backwards makes that
+    /// table exact by construction: what the reader is told a glyph means is
+    /// what we asked the face to draw.
+    ///
+    /// A character the face has no glyph for is replaced by `?` — never the
+    /// `.notdef` box, which prints as a hollow rectangle nobody sees before
+    /// the guillotine. A face that cannot draw `?` either drops it.
+    pub fn glyphes(&self, s: &str) -> Vec<(u16, char)> {
+        let mut out = Vec::with_capacity(s.len());
+        for c in s.chars() {
+            match self.glyphe(c) {
+                Some(gid) => out.push((gid, c)),
+                None => out.extend(self.interro.map(|gid| (gid, '?'))),
+            }
+        }
+        out
+    }
+
+    /// The glyph a character maps to, or `None` when the face has none. Glyph
+    /// zero is `.notdef` and counts as none: some maps say "missing" that way
+    /// rather than by leaving the character out.
+    fn glyphe(&self, c: char) -> Option<u16> {
+        lookup(&self.sous_table, c as u32)
+            .filter(|gid| *gid != 0 && usize::from(*gid) < self.avances.len())
+    }
+
+    /// A glyph's advance, in the 1000-unit em PDF works in. This is the
+    /// number `/W` carries, so a width measured here and a width declared
+    /// there cannot drift apart.
+    pub fn avance(&self, gid: u16) -> i32 {
+        self.avances.get(usize::from(gid)).copied().unwrap_or(0)
+    }
+
+    /// How wide a string sets, in millimetres, at `size_pt`.
+    ///
+    /// Advance widths only, no kerning: the face's own kerning lives in
+    /// tables this reader does not walk, and what is measured here has to be
+    /// what the PDF draws.
+    pub fn largeur_mm(&self, s: &str, size_pt: f64) -> f64 {
+        let em: i32 = self.glyphes(s).iter().map(|(gid, _)| self.avance(*gid)).sum();
+        f64::from(em) / 1000.0 * size_pt * 25.4 / 72.0
+    }
+
+    pub fn metrics(&self) -> &Metrics {
+        &self.metrics
+    }
+
+    /// The bytes, for `FontFile2` and its `Length1`.
+    pub fn octets(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// The name that goes in `/BaseFont`, read from the face rather than
+    /// assumed: the day a face other than ours is embedded, it names itself.
+    pub fn postscript(&self) -> &str {
+        &self.postscript
+    }
+}
+
+/// The glyphs a document actually draws, and what each one means.
+///
+/// `/W` and `/ToUnicode` are written from this and nothing else. Listing the
+/// whole face instead costs little on the 2 000 glyphs of Source Sans 3 and
+/// becomes absurd on a CJK face, where a three-word caption would drag tens of
+/// thousands of entries behind it.
+///
+/// Ordered, and that is not a detail: two exports of the same album have to be
+/// identical to the byte, and a hash map would shuffle `/W` between runs.
+#[derive(Debug, Clone, Default)]
+pub struct Utilises(std::collections::BTreeMap<u16, char>);
+
+impl Utilises {
+    /// Record a glyph as drawn. When two characters share a glyph, the
+    /// smallest code point wins — any rule would do, as long as it is a rule
+    /// and not the order the album happens to be written in.
+    pub fn noter(&mut self, gid: u16, c: char) {
+        self.0
+            .entry(gid)
+            .and_modify(|garde| {
+                if c < *garde {
+                    *garde = c;
+                }
+            })
+            .or_insert(c);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Glyph and meaning, in glyph order.
+    pub fn iter(&self) -> impl Iterator<Item = (u16, char)> + '_ {
+        self.0.iter().map(|(gid, c)| (*gid, *c))
+    }
+}
+
+/// How wide a string sets in the album's face, in millimetres, at `size_pt`.
+///
+/// A character the face cannot draw measures as the `?` that will be drawn in
+/// its place, because measuring and drawing are the same walk.
+pub fn text_width_mm(s: &str, size_pt: f64) -> f64 {
+    Embarquee::incorporee().map_or(0.0, |face| face.largeur_mm(s, size_pt))
 }
 
 // --- Les faces installées ---------------------------------------------------
@@ -725,28 +865,18 @@ impl<'a> Communes<'a> {
         })
     }
 
-    /// The widths, and with them the whole of [`Metrics`]. `None` when the
-    /// character map is unusable — no Unicode subtable, or one in a format
-    /// this reader does not know — which is the face's one refusal that
-    /// leaves it named and measured everywhere else.
+    /// The whole of [`Metrics`]. `None` when the character map is unusable —
+    /// no Unicode subtable, or one in a format this reader does not know —
+    /// which is the face's one refusal that leaves it named everywhere else.
+    ///
+    /// The map is read here and thrown away: what a face measures is the
+    /// business of [`Embarquee`], which keeps the bytes. This only decides
+    /// whether the face has a usable one at all.
     fn metrics(&self, cmap: &[u8]) -> Option<Metrics> {
         let sub = unicode_subtable(cmap)?;
         // A format we cannot walk is a character map we cannot read, not a
         // face whose glyphs are all missing.
         lookup(sub, u32::from('A'))?;
-        let to_em = |v: i32| -> i32 { (f64::from(v) * 1000.0 / self.upem).round() as i32 };
-        let widths = (FIRST_CHAR..=LAST_CHAR)
-            .map(|code| {
-                // A code with no WinAnsi meaning, or a glyph the face does not
-                // carry, takes the .notdef advance. It can never be drawn: the
-                // renderer only emits what it escaped into WinAnsi.
-                let gid = winansi_char(code)
-                    .and_then(|c| lookup(sub, c as u32))
-                    .filter(|g| *g < self.num_glyphs)
-                    .unwrap_or(0);
-                to_em(i32::from(advance(self.hmtx, self.num_h, gid)))
-            })
-            .collect();
         Some(Metrics {
             bbox: self.bbox,
             ascent: self.ascent,
@@ -754,8 +884,18 @@ impl<'a> Communes<'a> {
             cap_height: self.cap_height,
             italic_angle: self.italic_angle,
             fs_type: self.fs_type,
-            widths,
         })
+    }
+
+    /// Every glyph's advance, in the 1000-unit em, indexed by glyph id. Read
+    /// once when a face is opened for writing: measuring a caption asks for
+    /// the same advances a hundred times, and `hmtx` is a table of pairs
+    /// nobody should walk per character.
+    fn avances(&self) -> Vec<i32> {
+        let to_em = |v: i32| -> i32 { (f64::from(v) * 1000.0 / self.upem).round() as i32 };
+        (0..self.num_glyphs)
+            .map(|gid| to_em(i32::from(advance(self.hmtx, self.num_h, gid))))
+            .collect()
     }
 }
 
@@ -1000,44 +1140,6 @@ fn advance(hmtx: &[u8], num_h: usize, gid: u16) -> u16 {
     u16b(hmtx, i * 4).unwrap_or(0)
 }
 
-/// The character a WinAnsi code stands for. Codes 128 to 159 are the cp1252
-/// additions, which is where the typographic quotes and the œ live, and the
-/// renderer's escaper emits exactly these.
-fn winansi_char(code: u8) -> Option<char> {
-    Some(match code {
-        0x20..=0x7E => char::from(code),
-        0x80 => '€',
-        0x82 => '\u{201A}',
-        0x83 => 'ƒ',
-        0x84 => '\u{201E}',
-        0x85 => '…',
-        0x86 => '†',
-        0x87 => '‡',
-        0x88 => 'ˆ',
-        0x89 => '‰',
-        0x8A => 'Š',
-        0x8B => '‹',
-        0x8C => 'Œ',
-        0x8E => 'Ž',
-        0x91 => '\u{2018}',
-        0x92 => '\u{2019}',
-        0x93 => '\u{201C}',
-        0x94 => '\u{201D}',
-        0x95 => '•',
-        0x96 => '\u{2013}',
-        0x97 => '\u{2014}',
-        0x98 => '˜',
-        0x99 => '™',
-        0x9A => 'š',
-        0x9B => '›',
-        0x9C => 'œ',
-        0x9E => 'ž',
-        0x9F => 'Ÿ',
-        0xA0..=0xFF => char::from(code),
-        _ => return None,
-    })
-}
-
 fn u16b(d: &[u8], at: usize) -> Option<u16> {
     Some(u16::from_be_bytes([*d.get(at)?, *d.get(at.checked_add(1)?)?]))
 }
@@ -1102,13 +1204,23 @@ mod tests {
     use super::*;
     use std::fs;
 
+    /// The advance a fixture gives its glyphs, read the way the emitter reads
+    /// it: through the character map, then `hmtx`. The fixtures give every
+    /// glyph the same advance, so one glyph tells the whole story — and it is
+    /// the number `/W` would carry.
+    fn chasse(data: &[u8], index: u32) -> i32 {
+        let face = Embarquee::depuis(data.to_vec(), index).expect("face ouverte pour écrire");
+        let poses = face.glyphes("A");
+        assert_eq!(poses.len(), 1);
+        face.avance(poses[0].0)
+    }
+
     /// The bundled face parses, and its licence bits allow embedding. If a
     /// future asset swap breaks either, it breaks here and not at a printer.
     #[test]
     fn the_bundled_face_parses_and_may_be_embedded() {
         let m = metrics().expect("police lisible");
         assert!(m.embeddable(), "fsType {} interdit l'incorporation", m.fs_type);
-        assert_eq!(m.widths.len(), 224, "32 à 255 inclus");
         assert!(m.ascent > 0 && m.descent < 0, "{m:?}");
         assert!(m.cap_height > 0);
         assert_eq!(m.italic_angle, 0.0, "la romaine n'est pas inclinée");
@@ -1130,25 +1242,56 @@ mod tests {
         // Le même objet que `metrics()` rend, au chiffre près.
         let a = f.metrics.expect("métriques");
         let b = metrics().unwrap();
-        assert_eq!(a.widths, b.widths);
         assert_eq!((a.bbox, a.ascent, a.descent, a.cap_height), (b.bbox, b.ascent, b.descent, b.cap_height));
+        assert_eq!(a.fs_type, b.fs_type);
     }
 
     /// Widths are real: a space is narrow, an M is wide, and nothing a caption
     /// can print falls back to .notdef.
     #[test]
     fn widths_describe_the_actual_glyphs() {
-        let m = metrics().unwrap();
-        let w = |c: char| m.widths[c as usize - FIRST_CHAR as usize];
+        let face = Embarquee::incorporee().expect("face ouverte");
+        let w = |c: char| {
+            let g = face.glyphes(&c.to_string());
+            assert_eq!(g.len(), 1, "{c} ne se pose pas en un glyphe");
+            assert_eq!(g[0].1, c, "{c} est remplacé alors que la face le porte");
+            face.avance(g[0].0)
+        };
         assert!(w(' ') > 0, "l'espace a une chasse");
         assert!(w('M') > w('i'), "M {} contre i {}", w('M'), w('i'));
         assert!(w('W') > w('.'));
         // The French set, which is the whole point of picking this face.
         for c in ['é', 'è', 'ê', 'à', 'ù', 'ô', 'ç', 'œ', 'Œ', '«', '»', '\u{2019}', '…', '€'] {
-            let code = winansi_code(c).unwrap_or_else(|| panic!("{c} hors WinAnsi"));
-            let width = m.widths[usize::from(code) - usize::from(FIRST_CHAR)];
-            assert!(width > 0, "{c} sans chasse : glyphe absent de la police");
+            assert!(w(c) > 0, "{c} sans chasse : glyphe absent de la police");
         }
+        // Et ce que l'encodage simple ne pouvait pas atteindre : la face les
+        // porte, le composite les dessine, la mesure les voit.
+        for c in ['ł', 'ș', 'ğ', 'Ω', 'д'] {
+            assert!(w(c) > 0, "{c} hors WinAnsi, mais la face le dessine");
+        }
+    }
+
+    /// The substitution rule, both halves. A character the face cannot draw
+    /// becomes the question mark that will be printed in its place — never
+    /// the `.notdef` box, which prints as a hollow rectangle nobody sees
+    /// before the guillotine. A face that cannot draw that either drops it,
+    /// which is the one case where measuring and drawing agree on nothing.
+    #[test]
+    fn un_caractere_absent_devient_un_point_dinterrogation_ou_rien() {
+        let face = Embarquee::depuis(fichier(&[Fonte::neuve()]), 0).expect("face ouverte");
+        let interro = face.glyphes("?");
+        assert_eq!(interro.len(), 1);
+        // La fixture couvre 0x20..0xFF : au-delà, la face ne sait rien.
+        let absent = face.glyphes("→");
+        assert_eq!(absent, interro, "un caractère absent se dessine en ?");
+        assert_eq!(absent[0].1, '?', "et c'est ce que le ToUnicode dira");
+        assert_eq!(face.avance(absent[0].0), face.avance(interro[0].0));
+
+        let mut sans = Fonte::neuve();
+        sans.cmap = Cmap::SansInterro;
+        let face = Embarquee::depuis(fichier(&[sans]), 0).expect("face ouverte");
+        assert!(face.glyphes("?").is_empty(), "rien à dessiner, rien de dessiné");
+        assert_eq!(face.glyphes("A?B").len(), 2, "seul le caractère perdu tombe");
     }
 
     /// The cmap really is being read: a character the face carries resolves to
@@ -1177,6 +1320,10 @@ mod tests {
         Symbole,
         /// A byte map under (3, 1): a Unicode table in a format we refuse.
         Format0,
+        /// Segmented, but starting at `A`: a face that cannot draw the
+        /// question mark it would be replaced by. Exotic, and the only way to
+        /// exercise the second half of the substitution rule.
+        SansInterro,
         Aucune,
     }
 
@@ -1364,6 +1511,7 @@ mod tests {
                 Cmap::Format12 => (3, 10, sous_table_12()),
                 Cmap::Symbole => (3, 0, sous_table_4()),
                 Cmap::Format0 => (3, 1, sous_table_0()),
+                Cmap::SansInterro => (3, 1, sous_table_4_depuis(0x0041)),
             };
             let mut v = Vec::new();
             v.extend_from_slice(&0u16.to_be_bytes());
@@ -1414,6 +1562,14 @@ mod tests {
     /// cmap format 4, two segments: 0x20..0xFF onto glyphs 1.., then the
     /// mandatory 0xFFFF terminator.
     fn sous_table_4() -> Vec<u8> {
+        sous_table_4_depuis(0x0020)
+    }
+
+    /// A segmented table covering `debut`..=0x00FF, first character on glyph
+    /// one. Where it starts is a parameter because a face that does not carry
+    /// the question mark is the only way to see what happens when the
+    /// substitute itself is missing.
+    fn sous_table_4_depuis(debut: u16) -> Vec<u8> {
         let mut v = Vec::new();
         for n in [4u16, 32, 0, 4, 4, 1, 0] {
             v.extend_from_slice(&n.to_be_bytes());
@@ -1421,9 +1577,9 @@ mod tests {
         v.extend_from_slice(&0x00FFu16.to_be_bytes()); // endCode
         v.extend_from_slice(&0xFFFFu16.to_be_bytes());
         v.extend_from_slice(&0u16.to_be_bytes()); // reservedPad
-        v.extend_from_slice(&0x0020u16.to_be_bytes()); // startCode
+        v.extend_from_slice(&debut.to_be_bytes()); // startCode
         v.extend_from_slice(&0xFFFFu16.to_be_bytes());
-        v.extend_from_slice(&(-31i16).to_be_bytes()); // idDelta : 0x20 → 1
+        v.extend_from_slice(&(1i32 - i32::from(debut)) .to_be_bytes()[2..]); // idDelta : debut → 1
         v.extend_from_slice(&1i16.to_be_bytes()); // 0xFFFF → 0
         v.extend_from_slice(&0u16.to_be_bytes()); // idRangeOffset
         v.extend_from_slice(&0u16.to_be_bytes());
@@ -1526,9 +1682,8 @@ mod tests {
         assert!(!f.sous_ensemblage_interdit);
 
         let m = f.metrics.expect("métriques");
-        assert_eq!(m.widths.len(), 224);
         // 1024 sur un em de 2048, soit la moitié de l'em de mille.
-        assert!(m.widths.iter().all(|w| *w == 500), "{:?}", &m.widths[..4]);
+        assert_eq!(chasse(&data, 0), 500);
         assert_eq!(m.bbox, [-49, -244, 977, 879]);
         // OS/2 l'emporte sur hhea, qui dirait 1500 et -300.
         assert_eq!((m.ascent, m.descent, m.cap_height), (781, -195, 684));
@@ -1578,8 +1733,8 @@ mod tests {
         assert_eq!(f1.nom, "Colophon Deux Italic");
         assert_eq!(f0.postscript, "ColophonUne-Regular");
         assert_eq!(f1.postscript, "ColophonDeux-Italic");
-        assert_eq!(f0.metrics.unwrap().widths[0], 500);
-        assert_eq!(f1.metrics.unwrap().widths[0], 1024);
+        assert!(f0.metrics.is_some() && f1.metrics.is_some());
+        assert_eq!((chasse(&data, 0), chasse(&data, 1)), (500, 1024));
         assert_eq!(Face::parse(&data, 2).err(), Some(REFUS_ILLISIBLE), "il n'y a pas de face 2");
     }
 
@@ -1665,7 +1820,7 @@ mod tests {
         assert_eq!(f.genre, Some(Genre::Cff));
         assert_eq!(f.genre.unwrap().code(), "cff");
         assert!(f.embeddable());
-        assert_eq!(f.metrics.expect("métriques par les tables communes").widths[0], 500);
+        assert!(f.metrics.is_some(), "métriques par les tables communes");
 
         let mut var = Fonte::neuve();
         var.variable = true;
@@ -1673,7 +1828,7 @@ mod tests {
         let v = Face::parse(&fichier(&[var]), 0).expect("variable lisible");
         assert!(v.variable);
         assert!(v.embeddable());
-        assert_eq!(v.metrics.expect("l'instance par défaut se mesure").widths[0], 500);
+        assert!(v.metrics.is_some(), "l'instance par défaut se mesure");
     }
 
     /// The PostScript name lives on the Windows platform, or the Macintosh
@@ -1730,7 +1885,6 @@ mod tests {
     /// Every field of the metrics, so an extraction that loses one is seen
     /// here rather than at a printer.
     fn identiques(a: &Metrics, b: &Metrics) {
-        assert_eq!(a.widths, b.widths, "les chasses");
         assert_eq!(
             (a.bbox, a.ascent, a.descent, a.cap_height, a.italic_angle, a.fs_type),
             (b.bbox, b.ascent, b.descent, b.cap_height, b.italic_angle, b.fs_type)
@@ -1752,6 +1906,10 @@ mod tests {
         assert_eq!((apres.nom, apres.postscript), (avant.nom, avant.postscript));
         assert_eq!(apres.genre, Some(Genre::Glyf));
         identiques(&avant.metrics.unwrap(), &apres.metrics.unwrap());
+        // Les chasses, glyphe par glyphe et non plus code par code : c'est
+        // ce que `/W` portera, donc c'est ce qui doit survivre au voyage.
+        let ouverte = |d: &[u8]| Embarquee::depuis(d.to_vec(), 0).expect("face ouverte");
+        assert_eq!(ouverte(&data).avances, ouverte(&sortie).avances, "les chasses");
 
         // Mordant : la liste fermée, tag par tag. Oublier une table la fait
         // tomber ici — y compris `loca`, que pas une métrique ne consulte et
@@ -1786,7 +1944,8 @@ mod tests {
         assert_eq!(f.nom, "Colophon Deux Italic");
         assert_eq!(f.postscript, "ColophonDeux-Italic");
         // Mordant : ses métriques à elle. Extraire la face 0 rendrait 500.
-        assert_eq!(f.metrics.unwrap().widths[0], 1024);
+        assert!(f.metrics.is_some());
+        assert_eq!(chasse(&sortie, 0), 1024);
         assert_eq!(
             Face::parse(&sortie, 1).err(),
             Some(REFUS_ILLISIBLE),
@@ -2116,8 +2275,7 @@ mod tests {
                     i.chemin.display()
                 ),
                 None => {
-                    let m = i.face.metrics.as_ref().expect("une face acceptée est mesurée");
-                    assert_eq!(m.widths.len(), 224, "{}", i.chemin.display());
+                    assert!(i.face.metrics.is_some(), "une face acceptée est mesurée");
                     assert!(i.face.genre.is_some(), "{}", i.chemin.display());
                     assert!(!i.face.postscript.is_empty(), "{} sans nom", i.chemin.display());
                 }
@@ -2262,14 +2420,22 @@ mod tests {
             }
             match (&i.face.metrics, &relue.metrics) {
                 (Some(a), Some(b)) => {
-                    if a.widths != b.widths {
-                        avaries.push("chasses".into());
-                    }
                     if (a.bbox, a.ascent, a.descent, a.cap_height) != (b.bbox, b.ascent, b.descent, b.cap_height) {
                         avaries.push("mesures".into());
                     }
                 }
                 _ => avaries.push("métriques perdues".into()),
+            }
+            // Les chasses, glyphe par glyphe : ce que `/W` portera. Une face
+            // dont l'extraction décale `hmtx` d'un cran se voit exactement là,
+            // et nulle part ailleurs.
+            match (
+                Embarquee::depuis(octets.clone(), i.face.index),
+                Embarquee::depuis(sortie.clone(), 0),
+            ) {
+                (Ok(a), Ok(b)) if a.avances == b.avances => {}
+                (Ok(_), Ok(_)) => avaries.push("chasses".into()),
+                _ => avaries.push("face non ouvrable pour écrire".into()),
             }
             if !avaries.is_empty() {
                 cassees += 1;

@@ -176,7 +176,7 @@ pub fn render_cover_pdf(
         writer.draw_image(&mut content, &mut xobjects, 0, &asset, &rect);
     }
 
-    draw_text(&mut content, &g, &album, &cover);
+    draw_text(&mut content, &mut writer.ecrivain, &g, &album, &cover);
 
     writer.add_page(
         Boxes { media: [g.media_w, g.media_h], trim: g.trim() },
@@ -298,9 +298,9 @@ pub(crate) fn add_cover_page(
                 .with_context(|| format!("photo de couverture : {}", slot.src))?;
                 writer.draw_image(&mut content, &mut xobjects, 0, &asset, &rect);
             }
-            draw_front(&mut content, &g, album, &cover);
+            draw_front(&mut content, &mut writer.ecrivain, &g, album, &cover);
         }
-        Face::Quatrieme => draw_back(&mut content, &g, album, &cover),
+        Face::Quatrieme => draw_back(&mut content, &mut writer.ecrivain, &g, album, &cover),
     }
 
     writer.add_page(
@@ -317,10 +317,16 @@ pub(crate) fn add_cover_page(
 /// The three faces draw separately because they do not always share a sheet:
 /// a supplier that binds a single file gets the front and the back as two
 /// leaves of the interior, with no spine between them.
-fn draw_text(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cover) {
-    draw_front(content, g, album, cover);
-    draw_spine(content, g, album, cover);
-    draw_back(content, g, album, cover);
+fn draw_text(
+    content: &mut String,
+    ecrivain: &mut pdf::Ecrivain,
+    g: &CoverGeometry,
+    album: &Album,
+    cover: &Cover,
+) {
+    draw_front(content, ecrivain, g, album, cover);
+    draw_spine(content, ecrivain, g, album, cover);
+    draw_back(content, ecrivain, g, album, cover);
 }
 
 /// The title the book wears, from the album alone: the cover's when it was
@@ -343,7 +349,13 @@ fn cover_title<'a>(album: &'a Album, cover: &'a Cover) -> &'a str {
 
 /// Front: title block, bottom left, inside the trim by the same share the
 /// editor shows. Baselines stack upward from the subtitle.
-fn draw_front(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cover) {
+fn draw_front(
+    content: &mut String,
+    ecrivain: &mut pdf::Ecrivain,
+    g: &CoverGeometry,
+    album: &Album,
+    cover: &Cover,
+) {
     let scale = album.trim_mm.w / 210.0;
     let title_pt = TITLE_PT_AT_210 * scale;
     let subtitle_pt = SUBTITLE_PT_AT_210 * scale;
@@ -357,13 +369,19 @@ fn draw_front(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Co
     } else {
         (y, y + title_pt * PT_TO_MM * 1.25)
     };
-    plate(content, x, subtitle_y, subtitle_pt, over_photo, &cover.subtitle);
-    plate(content, x, title_y, title_pt, over_photo, title);
+    plate(content, ecrivain, x, subtitle_y, subtitle_pt, over_photo, &cover.subtitle);
+    plate(content, ecrivain, x, title_y, title_pt, over_photo, title);
 }
 
 /// Spine: the title along the fold, running bottom to top, centred. Only when
 /// there is a surface to print on, and never on a single leaf.
-fn draw_spine(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cover) {
+fn draw_spine(
+    content: &mut String,
+    ecrivain: &mut pdf::Ecrivain,
+    g: &CoverGeometry,
+    album: &Album,
+    cover: &Cover,
+) {
     let scale = album.trim_mm.w / 210.0;
     if let Some(spine) = &g.spine {
         if spine.w >= SPINE_TEXT_MIN_MM {
@@ -372,7 +390,7 @@ fn draw_spine(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Co
             let width = font::text_width_mm(title, size);
             let cx = spine.x + spine.w / 2.0 - size * PT_TO_MM * 0.35;
             let cy = spine.y + (spine.h - width) / 2.0;
-            rotated(content, cx, cy, size, pdf::TEXT_INK, title);
+            rotated(content, ecrivain, cx, cy, size, pdf::TEXT_INK, title);
         }
     }
 }
@@ -380,7 +398,13 @@ fn draw_spine(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Co
 /// Back: the quatrième, wrapped to the panel and centred in it, the way the
 /// cover editor shows it. A dedication is a short block on a wide white page;
 /// ranged left in a corner it reads like a caption.
-fn draw_back(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cover) {
+fn draw_back(
+    content: &mut String,
+    ecrivain: &mut pdf::Ecrivain,
+    g: &CoverGeometry,
+    album: &Album,
+    cover: &Cover,
+) {
     let scale = album.trim_mm.w / 210.0;
     if !cover.back_text.is_empty() {
         let size = BACK_TEXT_PT_AT_210 * scale;
@@ -392,7 +416,7 @@ fn draw_back(content: &mut String, g: &CoverGeometry, album: &Album, cover: &Cov
         for line in &lines {
             // Centred on the panel, measured on the real advance widths.
             let x = g.back.x + (g.back.w - font::text_width_mm(line, size)) / 2.0;
-            pdf::text_op(content, x, y, size, pdf::TEXT_INK, line);
+            pdf::text_op(content, ecrivain, x, y, size, pdf::TEXT_INK, line);
             y -= leading;
             if y < g.back.y + g.safe {
                 break; // the editor is where an overlong quatrième is signalled
@@ -406,15 +430,23 @@ const PT_TO_MM: f64 = 25.4 / 72.0;
 /// A line of cover type: white over the photo with one hard shadow under it,
 /// plain ink on a bare panel. Two draws rather than a blur, because a blur
 /// needs transparency and transparency is what a print file argues about.
-fn plate(content: &mut String, x: f64, y: f64, size: f64, over_photo: bool, s: &str) {
+fn plate(
+    content: &mut String,
+    ecrivain: &mut pdf::Ecrivain,
+    x: f64,
+    y: f64,
+    size: f64,
+    over_photo: bool,
+    s: &str,
+) {
     if s.is_empty() {
         return;
     }
     if over_photo {
-        pdf::text_op(content, x + SHADOW_OFFSET, y - SHADOW_OFFSET, size, SHADOW, s);
-        pdf::text_op(content, x, y, size, PAPER, s);
+        pdf::text_op(content, ecrivain, x + SHADOW_OFFSET, y - SHADOW_OFFSET, size, SHADOW, s);
+        pdf::text_op(content, ecrivain, x, y, size, PAPER, s);
     } else {
-        pdf::text_op(content, x, y, size, pdf::TEXT_INK, s);
+        pdf::text_op(content, ecrivain, x, y, size, pdf::TEXT_INK, s);
     }
 }
 
@@ -422,9 +454,17 @@ fn plate(content: &mut String, x: f64, y: f64, size: f64, over_photo: bool, s: &
 /// top. One direction had to be picked and this is the one the cover editor
 /// shows; a spine printed the other way up is a reprint, so the two sides
 /// agree here and the choice is written down rather than left to a default.
-fn rotated(content: &mut String, x: f64, y: f64, size: f64, rgb: [f64; 3], s: &str) {
+fn rotated(
+    content: &mut String,
+    ecrivain: &mut pdf::Ecrivain,
+    x: f64,
+    y: f64,
+    size: f64,
+    rgb: [f64; 3],
+    s: &str,
+) {
     let mut run = String::new();
-    pdf::text_op(&mut run, 0.0, 0.0, size, rgb, s);
+    pdf::text_op(&mut run, ecrivain, 0.0, 0.0, size, rgb, s);
     let mm_to_pt = 72.0 / 25.4;
     content.push_str(&format!(
         "q 0 1 -1 0 {:.2} {:.2} cm\n{run}Q\n",
@@ -579,9 +619,14 @@ mod tests {
             photo: None,
             back_text: String::new(),
         };
-        draw_text(&mut content, &g, &album_de(12), &cover);
-        // The title is on the front and nowhere else: one occurrence.
-        assert_eq!(content.matches("(Corse)").count(), 1, "{content}");
+        draw_text(&mut content, &mut pdf::Ecrivain::incorporee(), &g, &album_de(12), &cover);
+        // The title is on the front and nowhere else: one occurrence. Under
+        // Identity-H a string in the stream is glyph ids, so the title is
+        // looked for the way it is written.
+        let face = font::Embarquee::incorporee().expect("face ouverte");
+        let pose: String =
+            face.glyphes("Corse").iter().map(|(gid, _)| format!("{gid:04X}")).collect();
+        assert_eq!(content.matches(&format!("<{pose}>")).count(), 1, "{content}");
     }
 
     /// The quatrième wraps on the real widths of the face, inside the panel.

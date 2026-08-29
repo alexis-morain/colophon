@@ -41,9 +41,24 @@ export function nomLisible(p: { nom: string; famille?: string }): string {
   return court || p.nom || p.famille || "";
 }
 
-/** Les familles, dans l'ordre, chacune avec ses faces. Une face que le
- *  fichier ne nomme pas du tout — le seul refus qui coûte son nom — n'a pas
- *  de famille où se ranger et sort de la liste. */
+/** Une face que la plate-forme se réserve. macOS en porte des centaines —
+ *  `.SF NS`, `.Apple SD Gothic NeoI`, `.ADT Slab Numeric` — et les nomme
+ *  toutes par un point initial. Personne ne compose un album là-dedans, et
+ *  vu à l'écran, un point trie avant une lettre : sans cette règle, les
+ *  premières familles de la liste sont **toutes** internes et les vraies
+ *  n'apparaissent qu'au filtre. */
+function interne(famille: string): boolean {
+  return famille.startsWith(".");
+}
+
+/** Les familles, dans l'ordre, chacune avec ses faces.
+ *
+ *  Rien n'est caché — le sélecteur montre tout, refus compris — mais les
+ *  faces que la plate-forme se réserve passent après : l'ordre est une
+ *  décision d'écran, comme « la face du projet en tête ».
+ *
+ *  Une face que le fichier ne nomme pas du tout — le seul refus qui coûte
+ *  son nom — n'a pas de famille où se ranger et sort de la liste. */
 export function parFamille(
   polices: PoliceOfferte[],
 ): { famille: string; faces: PoliceOfferte[] }[] {
@@ -57,5 +72,10 @@ export function parFamille(
   }
   return [...map.entries()]
     .map(([famille, faces]) => ({ famille, faces }))
-    .sort((a, b) => a.famille.localeCompare(b.famille));
+    .sort(
+      (a, b) =>
+        Number(interne(a.famille)) - Number(interne(b.famille)) ||
+        a.famille.localeCompare(b.famille),
+    );
 }
+

@@ -707,7 +707,11 @@ export default function App() {
     if (dirty && !(await save())) return;
     setBasculeChoisi(null);
     setBasculeApercu(null);
+    // Le panneau s'ouvre neuf, filtre compris : rouvrir sur « Aucune police
+    // ne correspond » et un mot tapé il y a une heure se lit comme une panne.
+    setPoliceFiltre("");
     setBascule(true);
+
     if (basculeFormats.length === 0) listFormats().then(setBasculeFormats, () => {});
     // Les faces de la machine, une fois par ouverture du panneau plutôt
     // qu'une fois par session : une police installée entre-temps doit

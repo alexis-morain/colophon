@@ -2,6 +2,8 @@
 //! stays in `colophon-core`, the app only opens albums and serves the
 //! thumbnails the book view needs.
 
+mod photos;
+
 use colophon_core::model::Album;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -694,6 +696,78 @@ fn cancel_build(state: State<'_, AppState>) {
     state.cancel_build.store(true, Ordering::Relaxed);
 }
 
+// ---------------------------------------------------------- la photothèque
+//
+// Cinq commandes, et aucune ne touche au moteur : l'import produit un dossier
+// de photographies, que `build_album_from_folder` compose ensuite comme
+// n'importe quel autre. Toute la mécanique est dans `photos.rs`.
+
+/// L'état de la photothèque, prêt pour l'écran. Trois états, pas deux.
+#[tauri::command]
+fn photos_etat() -> photos::Etat {
+    photos::etat()
+}
+
+/// Demande l'accès, puis rend le nouvel état. Bloque le temps que
+/// l'utilisateur réponde à la fenêtre du système, d'où le fil dédié : sans
+/// lui, la fenêtre de Colophon se fige derrière celle de macOS.
+#[tauri::command]
+async fn photos_demander() -> Result<photos::Etat, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        photos::demander();
+        photos::etat()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Le dossier d'import proposé pour un album : visible, dans les Images.
+#[tauri::command]
+fn photos_dossier_propose(nom: String, app: tauri::AppHandle) -> Result<String, String> {
+    let maison = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("dossier personnel introuvable : {e}"))?;
+    Ok(photos::dossier_propose(&maison, &nom)
+        .to_string_lossy()
+        .to_string())
+}
+
+/// Importe un album dans un dossier et rend son rapport.
+///
+/// `reseau` reste faux tant que l'utilisateur n'a pas vu, chiffres en main, ce
+/// qu'un téléchargement coûterait : le rapport du premier passage nomme les
+/// photographies absentes de ce Mac, et c'est lui qui arme la question.
+///
+/// L'annulation réutilise `cancel_build` : l'import et la composition sont les
+/// deux moitiés du même geste pour l'utilisateur, et le bouton Annuler de
+/// l'écran de création est déjà branché là.
+#[tauri::command]
+async fn photos_importer(
+    album: String,
+    dossier: String,
+    reseau: bool,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<photos::RapportImport, String> {
+    state.cancel_build.store(false, Ordering::Relaxed);
+    let flag = state.cancel_build.clone();
+    let emitter = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        photos::importer(
+            &album,
+            Path::new(&dossier),
+            reseau,
+            &move |fait, total| {
+                let _ = emitter.emit("photos:progres", (fait, total));
+            },
+            &move || flag.load(Ordering::Relaxed),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Abandon the print render in flight. The atomic temp + rename in core
 /// means no half-written PDF can survive this.
 #[tauri::command]
@@ -1369,6 +1443,10 @@ pub fn run() {
             police_etat,
             police_octets,
             police_apercu,
+            photos_etat,
+            photos_demander,
+            photos_dossier_propose,
+            photos_importer,
             reveal_data_dir
 
         ])

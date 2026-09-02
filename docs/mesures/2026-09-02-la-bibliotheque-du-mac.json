@@ -1,0 +1,124 @@
+{
+ "date": "2026-09-02",
+ "session": "5.2 préparation — ce que PhotoKit rend, et à quel prix",
+ "machine": "macOS 26, Photothèque.photoslibrary, album « Colophon test » de 64 photos de corse-2013",
+ "outil": "sonde jetable hors dépôt : helper Objective-C compilé par cc, framework Photos lié, bundle fr.morain.colophon.sonde",
+ "le_pont": {
+  "quoi": "PhotoKit est de l'Objective-C à blocs. Le projet n'a jamais lié que du C à la main (heic.rs). La sonde établit que la même forme tient : un helper .m compilé en build-dep, une surface C plate côté Rust, les blocs repliés derrière un dispatch_semaphore et ne franchissant jamais la frontière.",
+  "dependances_rust_ajoutees": 0,
+  "build_dep": "cc",
+  "frameworks": [
+   "Photos",
+   "Foundation"
+  ],
+  "compilation_s": 1.7
+ },
+ "quatre_pieges_mesures": {
+  "sans_autorisation_la_liste_est_vide_pas_en_erreur": {
+   "quoi": "PHAssetCollection.fetch rend un résultat vide quand l'accès n'est pas accordé. Non autorisé et vide sont indiscernables au retour de la requête.",
+   "statut_tcc": 0,
+   "albums_rendus": 0,
+   "erreur_levee": false,
+   "consequence": "authorizationStatusForAccessLevel: se lit explicitement avant toute requête, sinon l'écran dit « aucun album » là où il faut dire « autorisez l'accès »."
+  },
+  "autorise_ne_veut_pas_dire_lisible": {
+   "quoi": "Statut 3 obtenu, et la requête rend quand même une liste vide quand la bibliothèque système est injoignable.",
+   "statut_tcc": 3,
+   "albums_rendus": 0,
+   "echecs_xpc_observes": 64,
+   "consequence": "Un troisième état existe à l'écran, entre « pas autorisé » et « voici vos albums »."
+  },
+  "photokit_ne_lit_que_la_bibliotheque_systeme": {
+   "quoi": "Pas la bibliothèque ouverte dans Photos.app : celle que group.com.apple.photolibraryd.private déclare en SystemLibraryPath. Sur ce Mac elle pointait un chemin supprimé.",
+   "chemin_designe": "/Users/alex-pack/Pictures/Photos Library.photoslibrary",
+   "chemin_designe_existe": false,
+   "chemin_reel": "/Users/alex-pack/Pictures/Photothèque.photoslibrary",
+   "symptome": "CoreData: error: Failed to create NSXPCConnection, en boucle, puis liste vide",
+   "consequence": "C'est un état d'utilisateur réel, pas un accident de machine de développement : quiconque a renommé ou déplacé sa photothèque le rencontre."
+  },
+  "le_droit_tcc_se_lie_a_la_signature": {
+   "quoi": "Chaque resignature ad-hoc crée une identité neuve et redemande l'accès. Deux lancements du même binaire non resigné gardent le statut.",
+   "statut_run_1": 3,
+   "statut_run_2_sans_resignature": 3,
+   "statut_apres_resignature_adhoc": 0,
+   "binaire_lance_hors_bundle": 2
+  }
+ },
+ "ce_que_la_signature_change": {
+  "quoi": "Colophon.app est adhoc, linker-signed, TeamIdentifier absent. Ce Mac porte aussi un certificat Apple Development (5K88WG8JFV). Les deux ont été essayés sur la même sonde, mais l'ordre des essais rend la conclusion plus étroite qu'elle n'en avait l'air.",
+  "adhoc_bibliotheque_morte": "la requête boucle indéfiniment sur l'XPC, sans jamais rendre la main",
+  "apple_development_bibliotheque_morte": "la requête rend la main, et rend une liste vide",
+  "adhoc_bibliotheque_vivante": "la requête répond normalement, zéro échec XPC, sept albums rendus",
+  "ce_quon_peut_conclure": "La signature ne conditionne pas l'accès : ad-hoc lit la photothèque parfaitement dès que la bibliothèque système est joignable, et c'est ce qui compte pour un projet qui refuse le compte Apple avant la vague grand public.",
+  "ce_quon_ne_peut_pas_conclure": "Que la signature explique le blocage indéfini. Les deux essais sous bibliothèque morte se sont suivis, et rien n'a isolé la signature du réchauffement de photolibraryd entre les deux. La garde de délai reste due, parce qu'un blocage indéfini a bien été observé une fois ; sa cause exacte n'est pas établie."
+ },
+ "ce_que_lexport_rend": {
+  "quoi": "writeDataForAssetResource:toFile: avec networkAccessAllowed = NO, sur les 64 photos de l'album, vers un dossier neuf du même volume APFS.",
+  "photos": 64,
+  "ecrites": 64,
+  "refusees": 0,
+  "octets_apparents": 219100811,
+  "disque_reellement_consomme_octets": 2097152,
+  "part_pct": 0.96,
+  "ms_median": 0,
+  "ms_max": 0,
+  "identique_a_loriginal_octet_pour_octet": true,
+  "consequence": "PhotoKit clone les blocs APFS au lieu de copier. L'import matérialise un vrai dossier de photos pour un coût disque quasi nul, et le moteur y lit exactement les octets qu'un dossier ordinaire lui donnerait — donc scan.rs, meta.rs et le pipeline n'ont rien à apprendre.",
+  "reserves": [
+   "Le clone n'existe que sur le même volume APFS. Un dossier d'import posé sur un disque externe serait une vraie copie, et le chiffre remonterait à 219 Mo.",
+   "Le chiffre de 2 Mo est un delta de df, donc il porte le bruit du système sur les deux secondes de la mesure."
+  ]
+ },
+ "ce_que_la_bibliotheque_sait": {
+  "quoi": "Par photo, sur les 64, ce que PHAsset porte au-delà du fichier.",
+  "avec_date_de_prise": 64,
+  "avec_gps": 64,
+  "favoris": 0,
+  "modifiees_dans_photos": 0,
+  "types_de_ressources": {
+   "PHAssetResourceTypePhoto seul": 64
+  },
+  "consequence": "Sur des photos fraîchement importées, la bibliothèque ne sait rien que l'EXIF ne dise déjà, et l'export rendant les octets d'origine, l'EXIF arrive intact. Un sidecar écrit par l'import serait donc une deuxième source de vérité pour rien."
+ },
+ "les_albums_rendus": {
+  "quoi": "Ce que le sélecteur a à montrer sur cette bibliothèque, relevé après que la désignation de bibliothèque système a réveillé la synchronisation iCloud.",
+  "albums": [
+   {
+    "nom": "Colophon test",
+    "photos": 64
+   },
+   {
+    "nom": "Cyrano",
+    "photos": 313
+   },
+   {
+    "nom": "mon sac est fait",
+    "photos": 214
+   },
+   {
+    "nom": "Noirmoutier décembre 2025",
+    "photos": 246
+   }
+  ],
+  "intelligents": [
+   {
+    "nom": "Recents",
+    "photos": 64
+   },
+   {
+    "nom": "Recently Saved",
+    "photos": 64
+   },
+   {
+    "nom": "Selfies",
+    "photos": 3
+   }
+  ],
+  "remarque": "Les titres des albums intelligents remontent en anglais sur un système français : localizedTitle suit la langue de Photos, pas celle de l'application. Trois photos de Corse ont été classées « Selfies » par Apple, ce qui rappelle qu'un album intelligent est une heuristique et non un choix de l'utilisateur.",
+  "effet_de_bord_a_savoir": "Désigner une bibliothèque comme bibliothèque système réveille cloudphotod : trois albums personnels et 773 photographies sont descendus d'iCloud dans les trente-cinq minutes qui ont suivi, et l'espace libre du disque est passé de 20 à 17 Go. Ce n'est pas une conséquence de Colophon, mais c'en est une de la manœuvre que l'écran « injoignable » recommande, et la phrase de cet écran ne doit pas la promettre à la légère."
+ },
+ "ce_qui_reste_non_mesure": [
+  "Une photo modifiée dans Photos : zéro dans le lot, donc PHAssetResourceTypeFullSizePhoto n'a jamais été observée.",
+  "Les originaux optimisés iCloud : au moment de la mesure d'export, cette bibliothèque n'en portait aucun. La synchronisation déclenchée depuis en fabrique peut-être, ce qui rendrait la branche « pas sur ce Mac » vérifiable pour la première fois."
+ ]
+}

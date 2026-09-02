@@ -95,9 +95,9 @@ plat, autre fichier, dos au milieu.
 de l'image, invariant au ratio ; 3.2 est la bascule, qui en est le premier usage ; 3.3
 retire le verdict de la reprise à travers une bascule (« non mesurable ») au lieu de
 compter les replis machine comme des mains. **La vague 4 est close sauf 4.2**, différée
-(compenser le papier sans épreuve imprimée serait deviner). **5.1 est dans `main`**
-(les sidecars Takeout, voir « Le moteur ») ; 5.2 (PhotoKit) et 5.3 (RAW, audit de
-licence d'abord) restent.
+(compenser le papier sans épreuve imprimée serait deviner). **5.1 et 5.2 sont dans
+`main`** (les sidecars Takeout et la photothèque, voir « Le moteur » et « La
+photothèque du Mac ») ; 5.3 (RAW, audit de licence d'abord) reste.
 
 **6.1 est close, ses quatre sessions faites.** s1 : le moteur *lit* les polices du
 système. s2 : il sait **sortir une face de son fichier** (`Face::extraire`, chirurgie
@@ -232,6 +232,49 @@ Titres de chapitre depuis le GPS (`core::places`, GeoNames CC-BY) ; seul
 propositions** (`build::variantes_offertes`), en `album.<id>.json`, effacées au premier
 enregistrement. **Deux planches ordinaires encadrent le livre** (`album.colophon`,
 décochables depuis Envoi) : colophon en queue, page de garde en tête, hors chapitres.
+
+## La photothèque du Mac
+
+**Elle n'entre jamais dans le moteur : elle produit un dossier** (`app/photos.m`,
+`app/photos.rs`, `app/bibliotheque.ts`). L'import écrit les photographies choisies dans
+un dossier visible, et `build_album_from_folder` le compose comme n'importe quel dossier
+du Finder. Ni `scan.rs`, ni `meta.rs`, ni la curation, ni le linter, ni le prévol
+n'apprennent qu'Apple Photos existe, et le gate reste vert sur Ubuntu et Windows **sans
+un `#[cfg]` de plus dans le moteur**. Ce choix se payait d'une copie ; la mesure du 02/09
+l'a rendu gratuit : `writeDataForAssetResource:` rend le fichier d'origine **à l'octet**
+et clone les blocs APFS, 219 Mo de photographies pour **2 Mo de disque réel**.
+
+**Le pont est un fichier Objective-C compilé par `cc`**, la raison de `heic.rs` : les
+liaisons à la main gardent l'arbre vide, et surtout les blocs restent dans la langue qui
+les possède, repliés derrière un `dispatch_semaphore`. La frontière Rust ne voit que du C
+plat et cinq fonctions. Toute la politique (ordre, noms, refus du réseau, annulation,
+rapport) vit côté Rust.
+
+**Le piège central : PhotoKit ne lève jamais pour un défaut d'accès, il rend une liste
+vide.** Trois causes distinctes rendent cette même liste vide, d'où `Etat` à trois
+branches et non un booléen : *pas encore demandé*, *autorisé mais bibliothèque système
+injoignable*, *réellement vide*. Le deuxième est un état d'utilisateur réel, mesuré sur
+cette machine : PhotoKit ne lit **que** la bibliothèque système (`SystemLibraryPath` de
+`group.com.apple.photolibraryd.private`), pas celle qui est ouverte dans Photos.app, et
+un renommage de photothèque laisse le chemin mort — autorisation accordée, échecs
+`NSXPCConnection` en boucle, zéro album. La phrase de cet état nomme le chemin et la
+case à cocher ; sans elle on cherche le défaut dans Colophon pendant une heure.
+`bibliotheque.test.ts` tient la distinction, et il mord (vérifié par mutation).
+
+**Trois règles à ne pas défaire.** Le réseau est refusé au premier passage
+(`networkAccessAllowed = NO`) : ce qui est resté dans iCloud se compte, se **nomme**, et
+ne se télécharge pas sans un oui devant un chiffre. Toute requête porte une garde de
+délai, parce qu'en signature ad-hoc — la nôtre — une requête PhotoKit peut ne jamais
+rendre la main. Et les noms sont préfixés par le rang (`0001-IMG_2193.jpg`) : dans une
+bibliothèque, `originalFilename` collisionne massivement, et un suffixe « (1) »
+rejouerait le dégât que 5.1 répare. Le rapport `import.json` est posé à côté des photos,
+et `scan.rs` ignore déjà `json`.
+
+**`PHAccessLevelReadWrite` n'est pas un choix** : l'énumération n'offre que `AddOnly` et
+`ReadWrite`, il n'existe aucun niveau lecture seule, et `AddOnly` ne lit rien. macOS
+annoncera donc que Colophon peut modifier la photothèque, ce qui est faux ; la
+`NSPhotoLibraryUsageDescription` de l'`Info.plist` est le seul endroit où la vérité se
+rétablit, et c'est elle que l'utilisateur lit.
 
 ## La scène, source unique de ce que porte une planche
 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- La phrase que macOS montre quand Colophon demande la photothèque.
+       PhotoKit n'offre aucun niveau lecture seule : l'énumération
+       PHAccessLevel ne connaît que AddOnly et ReadWrite, et AddOnly ne
+       permet pas de lire. macOS annoncera donc que l'application peut
+       modifier la photothèque, ce qui est faux de Colophon. Cette phrase-ci
+       est le seul endroit où la vérité peut être rétablie, et c'est elle que
+       l'utilisateur lit vraiment. Voir src/photos.m, colophon_photos_demander. -->
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>Colophon copie les photos de l’album que vous choisissez dans un dossier, pour en composer un livre. Il ne modifie ni ne supprime jamais rien dans votre photothèque.</string>
+</dict>
+</plist>

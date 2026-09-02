@@ -48,6 +48,30 @@ export const FR = {
   "accueil.ou.ouvrir": "ou Ouvrir un album existant",
   "accueil.recents": "Albums récents",
 
+  // -- la photothèque du Mac (5.2)
+  // Trois états, parce que PhotoKit rend une liste vide pour trois raisons
+  // différentes. Celle d'« injoignable » est la seule qui épargne une heure
+  // de diagnostic à quelqu'un : elle nomme le chemin mort et la case à cocher.
+  "accueil.ou.photos": "ou Importer un album de Photos",
+  "photos.titre": "Importer depuis Photos",
+  "photos.retour": "Retour",
+  "photos.demander": "Colophon a besoin d’accéder à votre photothèque pour en lire les albums. Il copie les photos que vous choisissez, et n’écrit jamais rien dans la bibliothèque.",
+  "photos.demander.bouton": "Autoriser l’accès…",
+  "photos.refuse": "L’accès à la photothèque est refusé. Il se rend dans Réglages Système, Confidentialité et sécurité, Photos.",
+  "photos.injoignable": "La photothèque système est introuvable. macOS la cherche à l’emplacement {chemin}, qui n’existe plus. Ouvrez Photos, puis Réglages, Général, et cliquez « Utiliser comme photothèque système ».",
+  "photos.injoignable.sans.chemin": "La photothèque système ne répond pas. Ouvrez Photos, puis Réglages, Général, et cliquez « Utiliser comme photothèque système ».",
+  "photos.indisponible": "La photothèque Apple n’existe que sur macOS.",
+  "photos.vide": "Votre photothèque ne contient aucun album de photos. Créez-en un dans Photos, puis revenez.",
+  "photos.intelligent": "album intelligent",
+  "photos.compte": "{n} photos",
+  "photos.dossier": "Les photos seront copiées dans :",
+  "photos.importer": "Importer {n} photos…",
+  "photos.import.encours": "Import de {fait} sur {total}…",
+  "photos.absentes": "{n} photos ne sont pas sur ce Mac, elles sont restées dans iCloud. L’album se compose sans elles.",
+  "photos.absentes.telecharger": "Les télécharger…",
+  "photos.echecs": "{n} photos n’ont pas pu être copiées. Le détail est dans import.json, à côté des photos.",
+  "photos.continuer": "Composer l’album",
+
   // -- commun aux panneaux
   "commun.fermer": "Fermer (Échap)",
 
@@ -745,6 +769,26 @@ export const EN: Record<Cle, string> = {
   "accueil.choisir": "Choose a folder of photographs…",
   "accueil.ou.ouvrir": "or Open an existing album",
   "accueil.recents": "Recent albums",
+
+  "accueil.ou.photos": "or Import an album from Photos",
+  "photos.titre": "Import from Photos",
+  "photos.retour": "Back",
+  "photos.demander": "Colophon needs access to your photo library to read its albums. It copies the photographs you pick, and never writes anything back to the library.",
+  "photos.demander.bouton": "Grant access…",
+  "photos.refuse": "Access to the photo library is denied. You can grant it in System Settings, Privacy & Security, Photos.",
+  "photos.injoignable": "The system photo library cannot be found. macOS looks for it at {chemin}, which no longer exists. Open Photos, then Settings, General, and click “Use as System Photo Library”.",
+  "photos.injoignable.sans.chemin": "The system photo library is not responding. Open Photos, then Settings, General, and click “Use as System Photo Library”.",
+  "photos.indisponible": "The Apple photo library only exists on macOS.",
+  "photos.vide": "Your photo library holds no album of photographs. Create one in Photos, then come back.",
+  "photos.intelligent": "smart album",
+  "photos.compte": "{n} photographs",
+  "photos.dossier": "The photographs will be copied to:",
+  "photos.importer": "Import {n} photographs…",
+  "photos.import.encours": "Importing {fait} of {total}…",
+  "photos.absentes": "{n} photographs are not on this Mac, they stayed in iCloud. The book composes without them.",
+  "photos.absentes.telecharger": "Download them…",
+  "photos.echecs": "{n} photographs could not be copied. The detail is in import.json, next to the photographs.",
+  "photos.continuer": "Compose the book",
 
   "commun.fermer": "Close (Esc)",
 

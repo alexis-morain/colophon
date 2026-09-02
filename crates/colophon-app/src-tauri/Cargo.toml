@@ -13,6 +13,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Compile le pont Objective-C vers PhotoKit (src/photos.m), sur macOS
+# seulement. C'est la seule dépendance que la vague 5.2 ajoute, et elle ne
+# sert qu'à la construction : rien n'entre dans le binaire hormis notre
+# propre fichier et deux frameworks du système.
+cc = "1"
 
 [dependencies]
 colophon-core = { path = "../../colophon-core" }

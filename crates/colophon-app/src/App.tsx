@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AlbumPhotos,
+  Etat as EtatPhotos,
+  RapportImport,
+  cleDeLetat,
+  demanderAcces,
+  dossierPropose,
+  etatBibliotheque,
+  importerAlbum,
+} from "./bibliotheque";
+import {
   BuildBilan,
   buildAlbum,
   checkUpdate,
@@ -2676,12 +2686,73 @@ function Empty({
     setTitle(picked.split("/").pop() ?? "");
   };
 
+  // La photothèque du Mac. Elle n'est qu'un raccourci vers la porte
+  // d'au-dessus : l'import écrit un dossier de photographies, et c'est ce
+  // dossier que le formulaire de création reçoit, exactement comme s'il
+  // avait été choisi au Finder.
+  const [photosOuvert, setPhotosOuvert] = useState(false);
+  const [etatPhotos, setEtatPhotos] = useState<EtatPhotos | null>(null);
+  const [albumPhotos, setAlbumPhotos] = useState<AlbumPhotos | null>(null);
+  const [dossierImport, setDossierImport] = useState("");
+  const [progresImport, setProgresImport] = useState<[number, number] | null>(null);
+  const [rapport, setRapport] = useState<RapportImport | null>(null);
+
+  // Sondé une fois, au montage : hors macOS l'état est « indisponible » et le
+  // lien ne s'affiche jamais. Proposer une photothèque Apple sur Windows
+  // serait une porte qui ne mène nulle part.
+  useEffect(() => {
+    etatBibliotheque().then(setEtatPhotos, () => {});
+  }, []);
+  const photosPossible = etatPhotos !== null && etatPhotos.etat !== "indisponible";
+
+  const ouvrirPhotos = async () => {
+    setPhotosOuvert(true);
+    setRapport(null);
+    setAlbumPhotos(null);
+    setEtatPhotos(await etatBibliotheque());
+  };
+
+  const autoriserPhotos = async () => {
+    // Bloque le temps que macOS pose sa question et que l'utilisateur
+    // réponde. Il n'y a rien à afficher entre les deux.
+    setEtatPhotos(await demanderAcces());
+  };
+
+  const choisirAlbumPhotos = async (a: AlbumPhotos) => {
+    setAlbumPhotos(a);
+    setDossierImport(await dossierPropose(a.nom));
+  };
+
+  const lancerImport = async () => {
+    if (!albumPhotos) return;
+    setProgresImport([0, albumPhotos.photos]);
+    try {
+      const r = await importerAlbum(albumPhotos.id, dossierImport, false, (f, n) =>
+        setProgresImport([f, n]),
+      );
+      setRapport(r);
+      // Rien ne passe sous silence : tant qu'une photographie manque, l'écran
+      // reste et le dit. Sinon on enchaîne directement sur la création.
+      if (r.importees > 0 && r.absentes_du_mac.length === 0 && r.echecs.length === 0) {
+        entrerDansLaCreation(r);
+      }
+    } finally {
+      setProgresImport(null);
+    }
+  };
+
+  const entrerDansLaCreation = (r: RapportImport) => {
+    setPhotosOuvert(false);
+    setDir(r.dossier);
+    setTitle(r.album);
+  };
+
   return (
     <div className="empty">
       <div className={"empty-block" + (dir || building ? " wide" : "")}>
         <p className="kicker">Colophon</p>
 
-        {!dir && !building && (
+        {!dir && !building && !photosOuvert && (
           <>
             <h1>
               {t("accueil.titre")
@@ -2698,6 +2769,13 @@ function Empty({
               </button>{" "}
               (<kbd>⌘</kbd> <kbd>O</kbd>)
             </p>
+            {photosPossible && (
+              <p className="hint">
+                <button className="link" onClick={() => void ouvrirPhotos()}>
+                  {t("accueil.ou.photos")}
+                </button>
+              </p>
+            )}
             {recents.length > 0 && (
               <div className="recents">
                 <h2 className="recents-title">{t("accueil.recents")}</h2>
@@ -2718,6 +2796,91 @@ function Empty({
               </div>
             )}
           </>
+        )}
+
+        {!dir && !building && photosOuvert && etatPhotos && (
+          <div className="photos-import">
+            <h1 className="setup-heading">{t("photos.titre")}</h1>
+
+            {cleDeLetat(etatPhotos) && (
+              <p className="lede">
+                {etatPhotos.etat === "injoignable"
+                  ? etatPhotos.chemin
+                    ? t("photos.injoignable", { chemin: etatPhotos.chemin })
+                    : t("photos.injoignable.sans.chemin")
+                  : t(cleDeLetat(etatPhotos)!)}
+              </p>
+            )}
+
+            {etatPhotos.etat === "a-demander" && (
+              <button className="cta" onClick={() => void autoriserPhotos()}>
+                {t("photos.demander.bouton")}
+              </button>
+            )}
+
+            {etatPhotos.etat === "lisible" && !albumPhotos && (
+              <ul className="recents-list">
+                {etatPhotos.albums.map((a) => (
+                  <li key={a.id}>
+                    <button
+                      className="recent"
+                      onClick={() => void choisirAlbumPhotos(a)}
+                    >
+                      <span className="recent-nom">{a.nom}</span>
+                      <span className="recent-dir">
+                        {t("photos.compte", { n: a.photos })}
+                        {a.intelligent ? ` \u00b7 ${t("photos.intelligent")}` : ""}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {albumPhotos && !rapport && (
+              <>
+                <p className="setup-folder">
+                  {t("photos.dossier")} <code>{dossierImport}</code>
+                </p>
+                {progresImport ? (
+                  <p className="lede" role="status">
+                    {t("photos.import.encours", {
+                      fait: progresImport[0],
+                      total: progresImport[1],
+                    })}
+                  </p>
+                ) : (
+                  <button className="cta" onClick={() => void lancerImport()}>
+                    {t("photos.importer", { n: albumPhotos.photos })}
+                  </button>
+                )}
+              </>
+            )}
+
+            {rapport && (
+              <>
+                {rapport.absentes_du_mac.length > 0 && (
+                  <p className="lede">
+                    {t("photos.absentes", { n: rapport.absentes_du_mac.length })}
+                  </p>
+                )}
+                {rapport.echecs.length > 0 && (
+                  <p className="lede">
+                    {t("photos.echecs", { n: rapport.echecs.length })}
+                  </p>
+                )}
+                <button className="cta" onClick={() => entrerDansLaCreation(rapport)}>
+                  {t("photos.continuer")}
+                </button>
+              </>
+            )}
+
+            <p className="hint">
+              <button className="link" onClick={() => setPhotosOuvert(false)}>
+                {t("photos.retour")}
+              </button>
+            </p>
+          </div>
         )}
 
         {(dir || building) && (

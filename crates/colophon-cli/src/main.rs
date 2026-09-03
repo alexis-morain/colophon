@@ -421,11 +421,12 @@ fn main() -> Result<()> {
         // What the folder held, said once by the only path that has no other
         // way of saying it: the scan is not run here, its counts travel.
         eprintln!(
-            "relevé : {} fiches, {} illisibles, {} HEIC et {} fichiers inconnus \
+            "relevé : {} fiches, {} illisibles, {} HEIC, {} RAW et {} fichiers inconnus \
              écartés au scan",
             releve.photos.len(),
             releve.illisibles.len(),
             releve.skipped_heic,
+            releve.skipped_raw,
             releve.skipped_other
         );
         let t0 = std::time::Instant::now();

@@ -777,6 +777,7 @@ mod tests {
             version: crate::releve::VERSION,
             racine: racine.clone(),
             skipped_heic: 0,
+            skipped_raw: 0,
             skipped_other: 0,
             illisibles: Vec::new(),
             editees: Vec::new(),

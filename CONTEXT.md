@@ -243,6 +243,15 @@ closed list of spellings, never by listing the folder. A sidecar is always
 someone else's; what Colophon writes about a photo is a fiche.
 _Avoid_: companion file, metadata file
 
+**Preview**:
+The JPEG a camera renders and stores inside its RAW file, next to the sensor
+data: the camera's own colours and exposure, at the sensor's size on many
+bodies and smaller on some. Everything before the print reads it, and the
+print does too whenever it holds the resolution floor for its cell; the
+sensor is decoded — the platform's rendering, not the camera's — only when
+the preview falls short. Resolution is always judged on the sensor.
+_Avoid_: thumbnail (that is the album's cache), embedded JPEG, proxy
+
 **Fiche**:
 What one reading of one photo measured — metadata, analysis, original size,
 faces — exactly as the composer consumes it. A fiche is the `Photo` struct

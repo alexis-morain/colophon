@@ -28,7 +28,8 @@ Point it at a folder. It reads the files, throws out what would weaken the
 book, lays out every spread, and hands you a finished draft you can argue
 with.
 
-- **Reads** JPEG, PNG and HEIC, straight from the folder. No import step, no
+- **Reads** JPEG, PNG, HEIC and camera RAW (CR2, CR3, NEF, ARW, DNG, RAF,
+  ORF, RW2 and friends), straight from the folder. No import step, no
   library, no catalogue.
 - **Respects your culling**: star ratings and rejects from XMP sidecars, from
   embedded XMP, or from the Windows rating tag enter the score. A photo you
@@ -226,6 +227,14 @@ those tools are better than this one.
 **What about my HEIC files?**
 Read natively through the system decoder: ImageIO on macOS. The Windows port
 will go through WIC, the system decoder there. No AGPL library in the way.
+
+**And RAW?**
+Same door: the system decoder, which on macOS knows thirty RAW families, CR3
+included. Everything up to the print reads the JPEG preview your camera stored
+inside the file — its colours, its exposure — and the print itself uses that
+preview whenever it holds the resolution floor for its cell; only a cell the
+preview cannot fill asks for the sensor. On Windows, RAW waits for the port
+like HEIC does: counted and named, never silently dropped.
 
 **How do you make money?**
 Not from this. The software is free and stays free, and the full-resolution

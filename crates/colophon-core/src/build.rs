@@ -176,21 +176,22 @@ pub fn releve(photos_dir: &Path, out: &Path, opts: &BuildOptions) -> Result<Rele
         scanned.images.retain(|p| !pinned_srcs.contains(&rel(p)));
     }
     say(&format!(
-        "scan: {} images ({} HEIC skipped, {} unknown skipped)",
+        "scan: {} images ({} HEIC skipped, {} RAW skipped, {} unknown skipped)",
         scanned.images.len(),
         scanned.skipped_heic,
+        scanned.skipped_raw,
         scanned.skipped_other
     ));
-    if scanned.skipped_heic > 0 {
-        say("note: HEIC decoding is not wired yet; those photos are left out for now");
+    if scanned.skipped_heic > 0 || scanned.skipped_raw > 0 {
+        say("note: this platform has no system decoder for HEIC or RAW; those photos are left out");
     }
     // The folder gave nothing to work with: a named refusal, never an album
     // of zero pages presented as a success. Nothing has been written yet.
     if scanned.images.is_empty() {
-        let detail = match (scanned.skipped_heic, scanned.skipped_other) {
-            (0, 0) => "le dossier ne contient aucune image (JPEG, PNG ou HEIC)".to_string(),
-            (h, o) => format!(
-                "aucune image lisible : {h} HEIC que cette machine ne décode pas, \
+        let detail = match (scanned.skipped_heic, scanned.skipped_raw, scanned.skipped_other) {
+            (0, 0, 0) => "le dossier ne contient aucune image (JPEG, PNG, HEIC ou RAW)".to_string(),
+            (h, r, o) => format!(
+                "aucune image lisible : {h} HEIC et {r} RAW que cette machine ne décode pas, \
                  {o} fichiers dans des formats non pris en charge"
             ),
         };
@@ -310,6 +311,7 @@ pub fn releve(photos_dir: &Path, out: &Path, opts: &BuildOptions) -> Result<Rele
         version: crate::releve::VERSION,
         racine: root,
         skipped_heic: scanned.skipped_heic,
+        skipped_raw: scanned.skipped_raw,
         skipped_other: scanned.skipped_other,
         // The decoder's message stops here, on the progress line above:
         // nothing downstream reads it, and it would churn the fiches at
@@ -1951,5 +1953,48 @@ mod tests {
         assert_eq!(cur.title, "v2");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The promise of 5.3, held on the eight reference RAW files (CC0,
+    /// raw.pixls.us, `~/Pictures/colophon-testsets/raw`, out of the
+    /// repository): a RAW folder composes — scan, metadata, thumbnails,
+    /// analysis, curation, layout, preview PDF — without one full decode.
+    /// Every date must come from the file, never from mtime, the four
+    /// containers the exif crate refuses included.
+    /// `cargo test -p colophon-core --release banc_raw_compose -- --ignored --nocapture`
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore]
+    fn banc_raw_compose_sans_decodage_plein() {
+        let dir = std::path::PathBuf::from(std::env::var("HOME").unwrap())
+            .join("Pictures/colophon-testsets/raw");
+        assert!(dir.is_dir(), "{} absent", dir.display());
+        let out = std::env::temp_dir().join(format!("colophon-banc-raw-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&out);
+        let avant = crate::heic::decodages_pleins();
+        let t = std::time::Instant::now();
+        let rapport = build_album(&dir, &out, BuildOptions { spreads: 4, ..Default::default() })
+            .expect("le dossier RAW compose");
+        println!(
+            "composé en {} ms : {} photos scannées, {} gardées, {} planches",
+            t.elapsed().as_millis(),
+            rapport.photos_scanned,
+            rapport.photos_kept,
+            rapport.album.spreads.len()
+        );
+        assert_eq!(
+            crate::heic::decodages_pleins(),
+            avant,
+            "la composition a demandé un dématriçage"
+        );
+        assert_eq!(rapport.photos_scanned, 8);
+        for p in fs::read_dir(&dir).unwrap().filter_map(Result::ok).map(|e| e.path()) {
+            if crate::heic::is_raw(&p) {
+                let m = meta::read(&p);
+                assert!(m.taken_reliable, "date au mtime pour {}", p.display());
+                assert!(m.model.is_some(), "modèle absent pour {}", p.display());
+            }
+        }
+        let _ = fs::remove_dir_all(&out);
     }
 }

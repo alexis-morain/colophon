@@ -53,6 +53,26 @@ pub fn read(path: &Path) -> PhotoMeta {
 }
 
 fn read_exif(path: &Path, meta: &mut PhotoMeta) {
+    // A RAW is read by the system that decodes it, when there is one: the
+    // exif crate only opens true TIFF signatures and HEIF brands, so ORF,
+    // RW2, RAF and CR3 would fall to mtime — wrong chapters and lying
+    // portraits for every recent Canon. One source for one file; the
+    // crate remains the path off macOS, where the TIFF-based containers
+    // still read, and mtime the last resort, as before.
+    if crate::heic::is_raw(path) {
+        if let Some(lu) = crate::heic::exif(path) {
+            if let Some(prise) = lu.prise {
+                meta.taken = prise;
+                meta.taken_reliable = true;
+            }
+            if let Some(o) = lu.orientation {
+                meta.orientation = o;
+            }
+            meta.model = lu.modele;
+            meta.gps = lu.gps;
+            return;
+        }
+    }
     let Ok(file) = fs::File::open(path) else { return };
     let mut reader = std::io::BufReader::new(file);
     let Ok(exif) = exif::Reader::new().read_from_container(&mut reader) else {

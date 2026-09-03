@@ -45,7 +45,16 @@ impl ThumbCache {
                 return Ok(img);
             }
         }
-        let img = crate::heic::open(src).with_context(|| format!("decode {}", src.display()))?;
+        // A RAW hands over the preview its camera rendered, never the
+        // demosaic: everything up to the print reads this cache, and the
+        // print asks for the sensor itself only when the preview falls
+        // short of the resolution floor (`print.rs`).
+        let img = if crate::heic::is_raw(src) {
+            crate::heic::apercu_vignette(src, THUMB_SIZE)
+        } else {
+            crate::heic::open(src)
+        }
+        .with_context(|| format!("decode {}", src.display()))?;
         let img = apply_orientation(img, orientation);
         // Downscale only: `thumbnail` would upscale a small photo to the
         // box, forging pixels the original never had and hiding its real

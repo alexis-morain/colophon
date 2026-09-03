@@ -42,6 +42,10 @@ pub struct Releve {
     /// has no other way to say.
     #[serde(default)]
     pub skipped_heic: usize,
+    /// Absent from every fiche that predates RAW support, and zero on the
+    /// three reference sets: the default keeps them byte-identical.
+    #[serde(default, skip_serializing_if = "est_zero")]
+    pub skipped_raw: usize,
     #[serde(default)]
     pub skipped_other: usize,
     /// Files the decoder refused. Nothing was measured on them — there was
@@ -94,6 +98,7 @@ impl Releve {
             version: VERSION,
             racine,
             skipped_heic: self.skipped_heic,
+            skipped_raw: self.skipped_raw,
             skipped_other: self.skipped_other,
             illisibles: self.illisibles.iter().map(|p| relatif(p, &self.racine)).collect(),
             editees: self
@@ -156,6 +161,10 @@ impl Releve {
     }
 }
 
+fn est_zero(n: &usize) -> bool {
+    *n == 0
+}
+
 fn relatif(p: &Path, racine: &Path) -> PathBuf {
     p.strip_prefix(racine).unwrap_or(p).to_path_buf()
 }
@@ -208,6 +217,7 @@ mod tests {
             version: VERSION,
             racine: racine.clone(),
             skipped_heic: 3,
+            skipped_raw: 2,
             skipped_other: 1,
             illisibles: vec![racine.join("casse.jpg")],
             editees: vec![(racine.join("IMG_2.jpg"), racine.join("IMG_2-edited.jpg"))],

@@ -1,0 +1,150 @@
+{
+ "date": "2026-09-03",
+ "session": "5.3 — le RAW, par le décodeur système et l'aperçu du boîtier",
+ "machine": "macOS 26.5.2, ImageIO de série, 62 types d'image déclarés dont 30 RAW",
+ "les_echantillons": {
+  "quoi": "Huit RAW de référence, un par conteneur, pris sur raw.pixls.us (CC0), dans ~/Pictures/colophon-testsets/raw/, hors dépôt comme les autres jeux. 269 Mo.",
+  "fichiers": [
+   "IMG_0051.CR2",
+   "IMG_6310.CR3",
+   "lossless_compressed_14_bit.NEF",
+   "_DSC0009.ARW",
+   "5G4A9394-compressed-lossless.DNG",
+   "DSCF0118.RAF",
+   "PB290154.ORF",
+   "gx9_3_2.RW2"
+  ]
+ },
+ "ce_que_le_fichier_porte": {
+  "quoi": "Taille du capteur (CopyPropertiesAtIndex), taille de l'aperçu JPEG embarqué (CreateThumbnailAtIndex sans IfAbsent, plafond 100000), et le temps de chaque chemin dans heic.rs, en millisecondes, mesuré par banc_raw_du_mac en release. Le dématriçage est celui d'Apple, chronométré au dessin puisque CreateImageAtIndex est paresseux.",
+  "colonnes": [
+   "fichier",
+   "capteur",
+   "apercu",
+   "ms_apercu",
+   "ms_vignette_1600",
+   "ms_dematricage"
+  ],
+  "lignes": [
+   [
+    "5G4A9394-compressed-lossless.DNG",
+    "5760×3840",
+    "5760×3840",
+    153,
+    56,
+    2239
+   ],
+   [
+    "DSCF0118.RAF",
+    "7728×5152",
+    "4416×2944",
+    83,
+    37,
+    2103
+   ],
+   [
+    "IMG_0051.CR2",
+    "5616×3744",
+    "5616×3744",
+    121,
+    43,
+    611
+   ],
+   [
+    "IMG_6310.CR3",
+    "6000×4000",
+    "6000×4000",
+    133,
+    46,
+    1139
+   ],
+   [
+    "PB290154.ORF",
+    "5184×3888",
+    "3200×2400",
+    50,
+    86,
+    879
+   ],
+   [
+    "_DSC0009.ARW",
+    "6000×4000",
+    "1616×1080",
+    16,
+    24,
+    732
+   ],
+   [
+    "gx9_3_2.RW2",
+    "5184×3888",
+    "1920×1440",
+    15,
+    22,
+    879
+   ],
+   [
+    "lossless_compressed_14_bit.NEF",
+    "6016×4016",
+    "6016×4016",
+    100,
+    49,
+    549
+   ]
+  ],
+  "lecture": "Canon et Nikon embarquent un aperçu à la taille du capteur, Fuji et Olympus un aperçu plus petit, Sony et Panasonic un aperçu de 1616 et 1920 px. L'aperçu coûte 15 à 153 ms, le dématriçage 0,5 à 2,2 s : un rapport de dix à cent."
+ },
+ "les_metadonnees_par_le_systeme": {
+  "quoi": "Ce que le crate exif refuse et ce qu'ImageIO lit. kamadak-exif n'ouvre que les signatures TIFF strictes (II*\\0, MM\\0*) et les marques HEIF ; les quatre conteneurs ci-dessous tombaient au mtime.",
+  "signatures": {
+   "PB290154.ORF": "IIRO",
+   "gx9_3_2.RW2": "IIU\\0",
+   "DSCF0118.RAF": "FUJIFILM",
+   "IMG_6310.CR3": "ftyp crx"
+  },
+  "lu_par_imageio": {
+   "PB290154.ORF": {
+    "prise": "2019-11-29 13:07:45",
+    "modele": "E-M5MarkIII"
+   },
+   "gx9_3_2.RW2": {
+    "prise": "2018-03-26 20:15:02",
+    "modele": "DC-GX9"
+   },
+   "DSCF0118.RAF": {
+    "prise": "2024-06-26 07:27:39",
+    "modele": "X-T50"
+   },
+   "IMG_6310.CR3": {
+    "prise": "2025-05-05 17:15:08",
+    "modele": "Canon EOS R10"
+   }
+  },
+  "non_verifie": "Aucun des huit n'est en portrait (orientation 1 partout) : la parité d'orientation entre l'aperçu et le capteur est supposée, pas mesurée. Aucun ne porte de GPS."
+ },
+ "la_composition_sans_dematricage": {
+  "quoi": "banc_raw_compose_sans_decodage_plein : build_album sur le dossier des huit, compteur heic::decodages_pleins() avant et après.",
+  "ms": 339,
+  "photos": 8,
+  "planches": 7,
+  "decodages_pleins": 0,
+  "cli": "scan: 8 images (0 HEIC skipped, 0 RAW skipped, 0 unknown skipped), done in 317 ms, audit 10 compteurs à zéro, prévol Cloudprinter zéro bloquant (l'avertissement du dos, seul)"
+ },
+ "quels_pixels_vont_au_papier": {
+  "quoi": "Décision 2 de la note du 03/09 vue dans le PDF : pdfimages -list sur album-print.pdf. Une largeur qu'un aperçu ne peut pas donner prouve le capteur.",
+  "album_compose": {
+   "IMG_0051.CR2 en pleine page": "2598 px, depuis l'aperçu de 5616",
+   "PB290154.ORF en pleine page": "2309 px, depuis l'aperçu de 3200",
+   "quad (RW2, ARW, NEF, DNG)": "1425 à 1603 px, depuis les aperçus",
+   "decodages_pleins": 0
+  },
+  "sonde_sony_force_en_pleine_page": {
+   "_DSC0009.ARW": "2598 px à 300 dpi, impossible depuis l'aperçu de 1616 : le capteur a été dématricé",
+   "temps_du_tirage_s": 10.3
+  }
+ },
+ "trois_pieges_imageio": [
+  "CreateImageAtIndex rend en 0 ms : l'objet est paresseux, le dématriçage court à CGContextDrawImage.",
+  "kCGImageSourceCreateThumbnailFromImageIfAbsent seul, sans plafond, rend nul sur les huit fichiers.",
+  "Un plafond sans IfAbsent rend l'aperçu embarqué à sa taille native ; avec IfAbsent et un plafond, l'aperçu mis à l'échelle."
+ ]
+}

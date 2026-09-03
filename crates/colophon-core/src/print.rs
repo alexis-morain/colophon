@@ -64,6 +64,14 @@ fn jpeg_sof(data: &[u8]) -> Option<(u32, u32, u8)> {
     None
 }
 
+/// Whether a RAW's embedded preview, cover-cropped into `rect` and zoomed,
+/// still meets the resolution floor — the one the linter tolerates three
+/// misses of and the preflight none. At or above it the preview prints;
+/// below, the sensor is asked for.
+pub fn apercu_suffit(rect: &pdf::Rect, pw: u32, ph: u32, zoom: f64) -> bool {
+    effective_ppi(rect, pw, ph, zoom) >= crate::audit::MIN_EFFECTIVE_PPI
+}
+
 /// One original resolved for print: passthrough when the file is a plain
 /// upright JPEG already at or below the slot's need, decode + orient +
 /// downscale + re-encode otherwise.
@@ -100,7 +108,28 @@ pub(crate) fn print_asset(
         }
     }
 
-    let img = crate::heic::open(src).with_context(|| format!("décodage de {}", src.display()))?;
+    // A RAW prints from the preview its camera rendered whenever that
+    // preview holds the floor for this cell: the same pixels the screen
+    // showed, the camera's colours, no demosaic. Only a cell the preview
+    // cannot fill asks for the sensor, and then the rendering is the
+    // platform's. The linter and the preflight judge the sensor, which is
+    // never smaller than the preview, so a preview that passes here
+    // prints at least what they promised.
+    let apercu = if crate::heic::is_raw(src) {
+        crate::heic::apercu(src).ok().filter(|a| {
+            // Judged the way the cell will see it: a preview on its side
+            // is measured after the swap, like every other size here.
+            let (w, h) = crate::heic::oriente((a.width(), a.height()), orientation);
+            apercu_suffit(rect, w, h, zoom)
+        })
+    } else {
+        None
+    };
+    let img = match apercu {
+        Some(a) => a,
+        None => crate::heic::open(src)
+            .with_context(|| format!("décodage de {}", src.display()))?,
+    };
     let img = thumb::apply_orientation(img, orientation);
     let f = print_scale(rect, img.width(), img.height()) * zoom;
     let img = if f < 1.0 {

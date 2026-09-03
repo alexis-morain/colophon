@@ -97,7 +97,8 @@ retire le verdict de la reprise à travers une bascule (« non mesurable ») au 
 compter les replis machine comme des mains. **La vague 4 est close sauf 4.2**, différée
 (compenser le papier sans épreuve imprimée serait deviner). **5.1 et 5.2 sont dans
 `main`** (les sidecars Takeout et la photothèque, voir « Le moteur » et « La
-photothèque du Mac ») ; 5.3 (RAW, audit de licence d'abord) reste.
+photothèque du Mac ») ; **5.3 aussi** (le RAW, voir « Le moteur ») : la vague 5 est
+codée en entier, son *fait quand* attend le parcours depuis Photos dans la fenêtre.
 
 **6.1 est close, ses quatre sessions faites.** s1 : le moteur *lit* les polices du
 système. s2 : il sait **sortir une face de son fichier** (`Face::extraire`, chirurgie
@@ -115,9 +116,34 @@ validés le 28/08 avec le questionnaire du bundle.
 
 ## Le moteur
 
-Chaîne : scan (JPEG, PNG, **HEIC via ImageIO, macOS seulement**), analyse (dHash + pHash
-DCT, netteté, exposition, visages), curation, Composer, PDF aperçu + 300 dpi + couverture.
-Hors macOS, `heic::system()` rend `None` et `scan.rs` compte `skipped_heic` : rien ne casse.
+Chaîne : scan (JPEG, PNG, **HEIC et RAW via ImageIO, macOS seulement**), analyse (dHash +
+pHash DCT, netteté, exposition, visages), curation, Composer, PDF aperçu + 300 dpi +
+couverture. Hors macOS, `heic::system()` rend `None` et `scan.rs` compte `skipped_heic`
+et `skipped_raw` : rien ne casse, et l'écran nomme les deux.
+
+**Le RAW passe par le décodeur système du HEIC, jamais par un crate** (5.3, `heic.rs`) :
+les crates purs Rust sont tous LGPL-2.1 et portent un dématriçage que la plate-forme a
+déjà ; l'audit du 03/09 n'a rien eu à auditer. Un RAW porte deux images, le capteur et
+l'**aperçu** JPEG que le boîtier a rendu. Tout ce qui précède le tirage lit l'aperçu
+(`heic::apercu_vignette` dans `thumb.rs`), et le tirage le pose s'il tient le plancher de
+250 ppi pour sa case (`print::apercu_suffit`), sinon il demande le capteur, rendu par
+Apple. **La définition se juge toujours sur le capteur** (`heic::dimensions`), donc le
+linter et le prévol ne bougent pas. Un boîtier dont l'aperçu est sous 1600 px sur un
+capteur qui ne l'est pas paie un décodage, une fois, dans le cache : sinon l'invariant de
+`thumb.rs` (une vignette sous le plafond est la taille de l'original) mentirait à l'écran.
+**Les métadonnées d'un RAW viennent d'ImageIO** (`heic::exif`, avant le crate exif dans
+`meta.rs`) : le crate n'ouvre que les signatures TIFF strictes et les marques HEIF, donc
+ORF, RW2, RAF et CR3 tombaient au mtime. Hors macOS le crate reste le chemin (NEF, CR2,
+ARW, DNG lisent), mtime le dernier repli. Trois pièges mesurés le 03/09 :
+`CreateImageAtIndex` est paresseux, le dématriçage court au dessin ; `IfAbsent` sans
+plafond rend nul ; un plafond sans `IfAbsent` rend l'aperçu natif. Mesuré sur huit
+boîtiers : aperçu 15 à 153 ms, dématriçage 0,5 à 2,2 s ; Sony et Panasonic embarquent un
+aperçu de 1616 et 1920 px, Fuji et Olympus un aperçu plus petit que le capteur, Canon et
+Nikon la pleine taille. `heic::decodages_pleins()` compte, et deux bancs le tiennent :
+`banc_raw_du_mac` et `banc_raw_compose_sans_decodage_plein`, sur les huit RAW de
+référence (CC0, raw.pixls.us) de `~/Pictures/colophon-testsets/raw/`, hors dépôt. Non
+vérifié faute d'échantillon : un RAW en portrait (les huit sont droits), la parité
+d'orientation entre l'aperçu et le capteur y est supposée.
 
 **Le catalogue a un seuil d'entrée** : le banc (`scripts/banc-gabarits.sh`) a retenu 186
 générés sur 1893 dans `gabarit::RETENUS` ; `offerts()` = historique + retenus (387 au

@@ -41,6 +41,18 @@ export type Dump = {
     place: number;
     lignes: [string, number, number][];
   }[];
+  /** Le repli d'un bloc libre sous la mesure synthétique. Là pour la même
+   *  raison que `garde_samples` : où une ligne se coupe dépend de la face, et
+   *  la parité tourne sans face — donc c'est l'algorithme qui voyage. */
+  libre_samples?: {
+    texte: string;
+    largeur: number;
+    taille_pt: number;
+    alignement: "gauche" | "centre" | "droite";
+    lignes: string[];
+    dx: number[];
+    trop_large: boolean;
+  }[];
   crop_windows?: {
     rect: [number, number];
     image: [number, number];

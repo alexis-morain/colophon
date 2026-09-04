@@ -26,7 +26,7 @@ import {
   templates,
 } from "./album";
 import { Dump, setGeometrie } from "./geometrie";
-import { Scene, SceneObject, sceneOf } from "./scene";
+import { decalage, replier, Scene, SceneObject, sceneOf } from "./scene";
 
 /** Page formats the parity run sweeps: every preset shape plus a free size. */
 export const PARITY_FORMATS = [
@@ -108,6 +108,50 @@ export function geometryProblems(dump: Dump, label: string): string[] {
     const wantAt = want.captions[Math.min(partiel, want.captions.length - 1)];
     if (!near(anchor.x, wantAt[0]) || !near(g.h - anchor.y, wantAt[1])) {
       problems.push(`${label} ${name} caption(${partiel}): dump ${wantAt}, lecture ${[anchor.x, g.h - anchor.y]}`);
+    }
+  }
+
+  // Le repli d'un bloc libre, rejoué sous la même mesure : c'est le seul
+  // endroit où les deux ports décident ensemble d'une coupure de ligne, et
+  // une coupure qui divergerait mettrait une ligne à l'écran et une autre
+  // dans le PDF.
+  for (const sample of dump.libre_samples ?? []) {
+    // **La conversion du harnais, pas celle du moteur, et c'est voulu.**
+    // `mesureSynthetique` rend `n × (tailleMm ÷ PT_MM) × 0,2` là où le moteur
+    // rend `n × taille_pt × 0,2` : les deux ne sont le même nombre que si la
+    // taille en millimètres arrive convertie par le `PT_MM` d'ici. Y verser
+    // la conversion exacte (25,4 ÷ 72) introduirait dans la comparaison une
+    // conversion que le moteur n'a jamais faite, et ferait dériver les deux
+    // côtés d'un millionième — mesuré, pas supposé : 7,9 contre 7,900008.
+    //
+    // Ce qui est sous test ici est l'algorithme — où la ligne se coupe, où
+    // elle se pose — pas l'arrondi d'une constante. En production `scene.ts`
+    // convertit avec `album.ts::PT_MM`, qui est le 25,4 ÷ 72 du moteur.
+    const tailleMm = sample.taille_pt * PT_MM;
+    const got = replier(sample.texte, sample.largeur, tailleMm, mesureSynthetique);
+    const tag = `${label} bloc libre « ${sample.texte.split("\n")[0]} »`;
+    if (got.lignes.length !== sample.lignes.length) {
+      problems.push(
+        `${tag}: rust ${sample.lignes.length} lignes, ts ${got.lignes.length}` +
+          ` (${JSON.stringify(got.lignes)})`,
+      );
+      continue;
+    }
+    sample.lignes.forEach((l, i) => {
+      if (l !== got.lignes[i]) {
+        problems.push(`${tag} ligne ${i}: rust « ${l} », ts « ${got.lignes[i]} »`);
+      }
+      // Et où la ligne se pose dans sa boîte : l'alignement est calculé sur
+      // la même mesure, donc il se compare ici et pas dans la fixture.
+      const dx = decalage(sample.alignement, sample.largeur, mesureSynthetique(l, tailleMm));
+      if (!near(sample.dx[i], dx)) {
+        problems.push(`${tag} ligne ${i} décalage: rust ${sample.dx[i]}, ts ${dx}`);
+      }
+    });
+    if (sample.trop_large !== got.tropLarge) {
+      problems.push(
+        `${tag}: rust trop_large=${sample.trop_large}, ts ${got.tropLarge}`,
+      );
     }
   }
 
@@ -209,6 +253,8 @@ export function geometryProblems(dump: Dump, label: string): string[] {
  *  of the media box, type sizes in points. */
 type ObjetMoteur = {
   rect: { x: number; y: number; w: number; h: number };
+  /** Absent quand il vaut zéro, comme le moteur le sérialise. */
+  angle?: number;
   reading: number;
   role: Record<string, any>;
 };
@@ -303,17 +349,24 @@ function objetProblems(
   egal("rôle", want.role.role, got.role.role);
   if (want.role.role !== got.role.role) return p;
   egal("rang de lecture", want.reading, got.reading);
+  // L'angle est le même nombre des deux côtés : il n'est pas converti, il est
+  // porté tel que le moteur le stocke, et c'est un renderer qui le retourne
+  // une fois. Absent dans la fixture veut dire zéro.
+  egal("angle", want.angle ?? 0, got.angle);
 
   const wr = flipRect(want.rect);
   // A photograph's rectangle is the dump's, whole; a text box is measured,
   // so its width is checked against the measure and the rest against the
-  // engine.
+  // engine. A free object's box is neither: it is *stored*, so all four of
+  // its numbers must match, and the only slack is the point-to-millimetre
+  // conversion the two sides write differently.
   const photo = got.role.role === "photo";
+  const libre = got.role.role === "free_text";
   const tol = photo ? NEAR_MM : NEAR_TEXTE_MM;
   ecart("rect.x", wr.x, got.rect.x, tol);
   ecart("rect.y", wr.y, got.rect.y, tol);
   ecart("rect.h", wr.h, got.rect.h, tol);
-  if (photo) ecart("rect.w", wr.w, got.rect.w, tol);
+  if (photo || libre) ecart("rect.w", wr.w, got.rect.w, tol);
 
   switch (got.role.role) {
     case "photo": {
@@ -360,6 +413,36 @@ function objetProblems(
         got.rect.w,
         NEAR_MM,
       );
+      break;
+    }
+    // **Ce que la fixture peut et ne peut pas dire d'un objet libre.**
+    //
+    // Sa boîte, son angle, son index, son alignement et sa première ligne de
+    // base sont stockés ou dérivés de la boîte : aucune mesure ne les bouge,
+    // donc ils se comparent ici, exactement.
+    //
+    // Où ses lignes se coupent, en revanche, dépend de la face — la fixture
+    // est écrite dans la face du projet, la parité tourne sans face. Comparer
+    // les lignes ici mesurerait la fonte, pas le port. C'est `libre_samples`
+    // qui les tient, rejouées des deux côtés sous une mesure que ni l'un ni
+    // l'autre ne possède, et `overflow` avec elles puisqu'il compte les
+    // lignes produites.
+    case "free_text": {
+      egal("index", want.role.index, got.role.index);
+      egal("alignement", want.role.align, got.role.align);
+      ecart("ancre.x", want.role.at.x, got.role.at.x, NEAR_MM);
+      ecart("ancre.y", flipY(want.role.at.y), got.role.at.y, NEAR_TEXTE_MM);
+      // Ce qui se vérifie sans la face : le pas vertical est régulier et
+      // vaut l'interlignage, ligne après ligne. Une ligne qui glisserait
+      // d'un cran ne se verrait pas dans un texte comparé mot à mot, elle se
+      // voit ici.
+      const lignes = got.role.lines;
+      if (lignes.length > 2) {
+        const pas = lignes[1].dyMm - lignes[0].dyMm;
+        lignes.forEach((l, i) => {
+          ecart(`ligne ${i} dy`, i * pas, l.dyMm, NEAR_MM);
+        });
+      }
       break;
     }
   }

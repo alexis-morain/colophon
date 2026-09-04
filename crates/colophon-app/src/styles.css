@@ -685,6 +685,33 @@ input[type="radio"] {
   display: block;
 }
 
+/* Un objet libre : une boîte qui tourne autour de son centre, et des lignes
+   posées droites dedans. Le pli de la rotation est ici, pas dans les lignes,
+   exactement comme dans le flux PDF — une matrice par objet, jamais une par
+   ligne. */
+.objet-libre {
+  position: absolute;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.objet-libre-ligne {
+  position: absolute;
+  font-family: var(--font-book);
+  color: var(--paper-ink);
+  white-space: pre;
+}
+
+/* Ce qui déborde par le bas déborde pour de vrai : rien n'est coupé, et la
+   boîte le dit d'un filet, seulement pendant l'édition. */
+.objet-libre.deborde::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-bottom: 1px dashed var(--accent);
+  pointer-events: none;
+}
+
 .text-page-line.overflow {
   color: var(--accent);
   border-bottom: 1px dashed var(--accent);

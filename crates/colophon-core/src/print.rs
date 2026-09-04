@@ -292,6 +292,7 @@ mod tests {
             text: None,
             edited: false,
             locked: false,
+            objets: Vec::new(),
         });
         fs::write(dir.join("album.json"), serde_json::to_string(&album).unwrap()).unwrap();
 

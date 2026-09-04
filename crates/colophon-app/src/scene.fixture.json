@@ -465,6 +465,194 @@
      }
     }
    ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 188.0,
+      "w": 195.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 188.0,
+      "w": 195.5,
+      "x": 216.5,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/b.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 21.3106,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Les objets libres"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 24.0,
+      "w": 35.0,
+      "x": 20.0,
+      "y": 30.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 20.0,
+       "y": 50.11944444444445
+      },
+      "index": 0,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "un bloc droit qui"
+       },
+       {
+        "dy_mm": 5.23875,
+        "size_pt": 11.0,
+        "text": "revient à la ligne"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": 17.5,
+     "reading": 4,
+     "rect": {
+      "h": 30.0,
+      "w": 60.0,
+      "x": 130.0,
+      "y": 120.0
+     },
+     "role": {
+      "align": "centre",
+      "at": {
+       "x": 130.0,
+       "y": 145.4138888888889
+      },
+      "index": 1,
+      "lines": [
+       {
+        "dx_mm": 23.547341666666668,
+        "dy_mm": 0.0,
+        "size_pt": 13.0,
+        "text": "tourné"
+       },
+       {
+        "dx_mm": 21.48359166666667,
+        "dy_mm": 7.0,
+        "size_pt": 13.0,
+        "text": "et centré"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "reading": 5,
+     "rect": {
+      "h": 12.0,
+      "w": 50.0,
+      "x": 240.0,
+      "y": 40.0
+     },
+     "role": {
+      "align": "droite",
+      "at": {
+       "x": 240.0,
+       "y": 48.47222222222222
+      },
+      "index": 2,
+      "lines": [
+       {
+        "dx_mm": 28.903888888888886,
+        "dy_mm": 0.0,
+        "size_pt": 10.0,
+        "text": "aligné à droite"
+       },
+       {
+        "dx_mm": 37.9985,
+        "dy_mm": 4.762499999999999,
+        "size_pt": 10.0,
+        "text": "sur trois"
+       },
+       {
+        "dx_mm": 19.516472222222223,
+        "dy_mm": 9.524999999999999,
+        "size_pt": 10.0,
+        "text": "lignes qui débordent"
+       }
+      ],
+      "overflow": true,
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": -90.0,
+     "reading": 6,
+     "rect": {
+      "h": 20.0,
+      "w": 25.0,
+      "x": 320.0,
+      "y": 150.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 320.0,
+       "y": 166.825
+      },
+      "index": 3,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 9.0,
+        "text": "anticonstitutionnellement"
+       }
+      ],
+      "role": "free_text",
+      "trop_large": true
+     }
+    }
+   ]
   }
  ],
  "carre-30": [
@@ -930,6 +1118,194 @@
        }
       ],
       "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 266.0,
+      "w": 278.0,
+      "x": 20.0,
+      "y": 20.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 266.0,
+      "w": 278.0,
+      "x": 308.0,
+      "y": 20.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/b.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 21.3106,
+      "x": 14.399999999999999,
+      "y": 12.0475
+     },
+     "role": {
+      "at": {
+       "x": 14.399999999999999,
+       "y": 13.0
+      },
+      "role": "chapter_caption",
+      "text": "Les objets libres"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 24.0,
+      "w": 35.0,
+      "x": 20.0,
+      "y": 30.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 20.0,
+       "y": 50.11944444444445
+      },
+      "index": 0,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "un bloc droit qui"
+       },
+       {
+        "dy_mm": 5.23875,
+        "size_pt": 11.0,
+        "text": "revient à la ligne"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": 17.5,
+     "reading": 4,
+     "rect": {
+      "h": 30.0,
+      "w": 60.0,
+      "x": 130.0,
+      "y": 120.0
+     },
+     "role": {
+      "align": "centre",
+      "at": {
+       "x": 130.0,
+       "y": 145.4138888888889
+      },
+      "index": 1,
+      "lines": [
+       {
+        "dx_mm": 23.547341666666668,
+        "dy_mm": 0.0,
+        "size_pt": 13.0,
+        "text": "tourné"
+       },
+       {
+        "dx_mm": 21.48359166666667,
+        "dy_mm": 7.0,
+        "size_pt": 13.0,
+        "text": "et centré"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "reading": 5,
+     "rect": {
+      "h": 12.0,
+      "w": 50.0,
+      "x": 240.0,
+      "y": 40.0
+     },
+     "role": {
+      "align": "droite",
+      "at": {
+       "x": 240.0,
+       "y": 48.47222222222222
+      },
+      "index": 2,
+      "lines": [
+       {
+        "dx_mm": 28.903888888888886,
+        "dy_mm": 0.0,
+        "size_pt": 10.0,
+        "text": "aligné à droite"
+       },
+       {
+        "dx_mm": 37.9985,
+        "dy_mm": 4.762499999999999,
+        "size_pt": 10.0,
+        "text": "sur trois"
+       },
+       {
+        "dx_mm": 19.516472222222223,
+        "dy_mm": 9.524999999999999,
+        "size_pt": 10.0,
+        "text": "lignes qui débordent"
+       }
+      ],
+      "overflow": true,
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": -90.0,
+     "reading": 6,
+     "rect": {
+      "h": 20.0,
+      "w": 25.0,
+      "x": 320.0,
+      "y": 150.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 320.0,
+       "y": 166.825
+      },
+      "index": 3,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 9.0,
+        "text": "anticonstitutionnellement"
+       }
+      ],
+      "role": "free_text",
+      "trop_large": true
      }
     }
    ]
@@ -1401,6 +1777,194 @@
      }
     }
    ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 188.0,
+      "w": 265.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 188.0,
+      "w": 265.5,
+      "x": 286.5,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/b.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 21.3106,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Les objets libres"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 24.0,
+      "w": 35.0,
+      "x": 20.0,
+      "y": 30.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 20.0,
+       "y": 50.11944444444445
+      },
+      "index": 0,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "un bloc droit qui"
+       },
+       {
+        "dy_mm": 5.23875,
+        "size_pt": 11.0,
+        "text": "revient à la ligne"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": 17.5,
+     "reading": 4,
+     "rect": {
+      "h": 30.0,
+      "w": 60.0,
+      "x": 130.0,
+      "y": 120.0
+     },
+     "role": {
+      "align": "centre",
+      "at": {
+       "x": 130.0,
+       "y": 145.4138888888889
+      },
+      "index": 1,
+      "lines": [
+       {
+        "dx_mm": 23.547341666666668,
+        "dy_mm": 0.0,
+        "size_pt": 13.0,
+        "text": "tourné"
+       },
+       {
+        "dx_mm": 21.48359166666667,
+        "dy_mm": 7.0,
+        "size_pt": 13.0,
+        "text": "et centré"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "reading": 5,
+     "rect": {
+      "h": 12.0,
+      "w": 50.0,
+      "x": 240.0,
+      "y": 40.0
+     },
+     "role": {
+      "align": "droite",
+      "at": {
+       "x": 240.0,
+       "y": 48.47222222222222
+      },
+      "index": 2,
+      "lines": [
+       {
+        "dx_mm": 28.903888888888886,
+        "dy_mm": 0.0,
+        "size_pt": 10.0,
+        "text": "aligné à droite"
+       },
+       {
+        "dx_mm": 37.9985,
+        "dy_mm": 4.762499999999999,
+        "size_pt": 10.0,
+        "text": "sur trois"
+       },
+       {
+        "dx_mm": 19.516472222222223,
+        "dy_mm": 9.524999999999999,
+        "size_pt": 10.0,
+        "text": "lignes qui débordent"
+       }
+      ],
+      "overflow": true,
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": -90.0,
+     "reading": 6,
+     "rect": {
+      "h": 20.0,
+      "w": 25.0,
+      "x": 320.0,
+      "y": 150.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 320.0,
+       "y": 166.825
+      },
+      "index": 3,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 9.0,
+        "text": "anticonstitutionnellement"
+       }
+      ],
+      "role": "free_text",
+      "trop_large": true
+     }
+    }
+   ]
   }
  ],
  "paysage-a4": [
@@ -1866,6 +2430,194 @@
        }
       ],
       "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 188.0,
+      "w": 282.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 188.0,
+      "w": 282.5,
+      "x": 303.5,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/b.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 21.3106,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Les objets libres"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 24.0,
+      "w": 35.0,
+      "x": 20.0,
+      "y": 30.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 20.0,
+       "y": 50.11944444444445
+      },
+      "index": 0,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "un bloc droit qui"
+       },
+       {
+        "dy_mm": 5.23875,
+        "size_pt": 11.0,
+        "text": "revient à la ligne"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": 17.5,
+     "reading": 4,
+     "rect": {
+      "h": 30.0,
+      "w": 60.0,
+      "x": 130.0,
+      "y": 120.0
+     },
+     "role": {
+      "align": "centre",
+      "at": {
+       "x": 130.0,
+       "y": 145.4138888888889
+      },
+      "index": 1,
+      "lines": [
+       {
+        "dx_mm": 23.547341666666668,
+        "dy_mm": 0.0,
+        "size_pt": 13.0,
+        "text": "tourné"
+       },
+       {
+        "dx_mm": 21.48359166666667,
+        "dy_mm": 7.0,
+        "size_pt": 13.0,
+        "text": "et centré"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "reading": 5,
+     "rect": {
+      "h": 12.0,
+      "w": 50.0,
+      "x": 240.0,
+      "y": 40.0
+     },
+     "role": {
+      "align": "droite",
+      "at": {
+       "x": 240.0,
+       "y": 48.47222222222222
+      },
+      "index": 2,
+      "lines": [
+       {
+        "dx_mm": 28.903888888888886,
+        "dy_mm": 0.0,
+        "size_pt": 10.0,
+        "text": "aligné à droite"
+       },
+       {
+        "dx_mm": 37.9985,
+        "dy_mm": 4.762499999999999,
+        "size_pt": 10.0,
+        "text": "sur trois"
+       },
+       {
+        "dx_mm": 19.516472222222223,
+        "dy_mm": 9.524999999999999,
+        "size_pt": 10.0,
+        "text": "lignes qui débordent"
+       }
+      ],
+      "overflow": true,
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": -90.0,
+     "reading": 6,
+     "rect": {
+      "h": 20.0,
+      "w": 25.0,
+      "x": 320.0,
+      "y": 150.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 320.0,
+       "y": 166.825
+      },
+      "index": 3,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 9.0,
+        "text": "anticonstitutionnellement"
+       }
+      ],
+      "role": "free_text",
+      "trop_large": true
      }
     }
    ]
@@ -2337,6 +3089,194 @@
      }
     }
    ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 232.93333333333334,
+      "w": 189.08333333333334,
+      "x": 13.533333333333333,
+      "y": 13.533333333333333
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 232.93333333333334,
+      "w": 189.08333333333334,
+      "x": 209.38333333333333,
+      "y": 13.533333333333333
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/b.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 21.3106,
+      "x": 10.713999999999999,
+      "y": 8.814166666666665
+     },
+     "role": {
+      "at": {
+       "x": 10.713999999999999,
+       "y": 9.766666666666666
+      },
+      "role": "chapter_caption",
+      "text": "Les objets libres"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 24.0,
+      "w": 35.0,
+      "x": 20.0,
+      "y": 30.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 20.0,
+       "y": 50.11944444444445
+      },
+      "index": 0,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "un bloc droit qui"
+       },
+       {
+        "dy_mm": 5.23875,
+        "size_pt": 11.0,
+        "text": "revient à la ligne"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": 17.5,
+     "reading": 4,
+     "rect": {
+      "h": 30.0,
+      "w": 60.0,
+      "x": 130.0,
+      "y": 120.0
+     },
+     "role": {
+      "align": "centre",
+      "at": {
+       "x": 130.0,
+       "y": 145.4138888888889
+      },
+      "index": 1,
+      "lines": [
+       {
+        "dx_mm": 23.547341666666668,
+        "dy_mm": 0.0,
+        "size_pt": 13.0,
+        "text": "tourné"
+       },
+       {
+        "dx_mm": 21.48359166666667,
+        "dy_mm": 7.0,
+        "size_pt": 13.0,
+        "text": "et centré"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "reading": 5,
+     "rect": {
+      "h": 12.0,
+      "w": 50.0,
+      "x": 240.0,
+      "y": 40.0
+     },
+     "role": {
+      "align": "droite",
+      "at": {
+       "x": 240.0,
+       "y": 48.47222222222222
+      },
+      "index": 2,
+      "lines": [
+       {
+        "dx_mm": 28.903888888888886,
+        "dy_mm": 0.0,
+        "size_pt": 10.0,
+        "text": "aligné à droite"
+       },
+       {
+        "dx_mm": 37.9985,
+        "dy_mm": 4.762499999999999,
+        "size_pt": 10.0,
+        "text": "sur trois"
+       },
+       {
+        "dx_mm": 19.516472222222223,
+        "dy_mm": 9.524999999999999,
+        "size_pt": 10.0,
+        "text": "lignes qui débordent"
+       }
+      ],
+      "overflow": true,
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": -90.0,
+     "reading": 6,
+     "rect": {
+      "h": 20.0,
+      "w": 25.0,
+      "x": 320.0,
+      "y": 150.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 320.0,
+       "y": 166.825
+      },
+      "index": 3,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 9.0,
+        "text": "anticonstitutionnellement"
+       }
+      ],
+      "role": "free_text",
+      "trop_large": true
+     }
+    }
+   ]
   }
  ],
  "portrait-a4": [
@@ -2802,6 +3742,194 @@
        }
       ],
       "role": "text"
+     }
+    }
+   ]
+  },
+  {
+   "objects": [
+    {
+     "reading": 0,
+     "rect": {
+      "h": 275.0,
+      "w": 195.5,
+      "x": 14.0,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 0,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/a.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 1,
+     "rect": {
+      "h": 275.0,
+      "w": 195.5,
+      "x": 216.5,
+      "y": 14.0
+     },
+     "role": {
+      "cell": 1,
+      "focal": [
+       0.5,
+       0.5
+      ],
+      "role": "photo",
+      "src": "objets/b.jpg",
+      "zoom": 1.0
+     }
+    },
+    {
+     "reading": 2,
+     "rect": {
+      "h": 4.28625,
+      "w": 21.3106,
+      "x": 10.98,
+      "y": 9.0475
+     },
+     "role": {
+      "at": {
+       "x": 10.98,
+       "y": 10.0
+      },
+      "role": "chapter_caption",
+      "text": "Les objets libres"
+     }
+    },
+    {
+     "reading": 3,
+     "rect": {
+      "h": 24.0,
+      "w": 35.0,
+      "x": 20.0,
+      "y": 30.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 20.0,
+       "y": 50.11944444444445
+      },
+      "index": 0,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 11.0,
+        "text": "un bloc droit qui"
+       },
+       {
+        "dy_mm": 5.23875,
+        "size_pt": 11.0,
+        "text": "revient à la ligne"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": 17.5,
+     "reading": 4,
+     "rect": {
+      "h": 30.0,
+      "w": 60.0,
+      "x": 130.0,
+      "y": 120.0
+     },
+     "role": {
+      "align": "centre",
+      "at": {
+       "x": 130.0,
+       "y": 145.4138888888889
+      },
+      "index": 1,
+      "lines": [
+       {
+        "dx_mm": 23.547341666666668,
+        "dy_mm": 0.0,
+        "size_pt": 13.0,
+        "text": "tourné"
+       },
+       {
+        "dx_mm": 21.48359166666667,
+        "dy_mm": 7.0,
+        "size_pt": 13.0,
+        "text": "et centré"
+       }
+      ],
+      "role": "free_text"
+     }
+    },
+    {
+     "reading": 5,
+     "rect": {
+      "h": 12.0,
+      "w": 50.0,
+      "x": 240.0,
+      "y": 40.0
+     },
+     "role": {
+      "align": "droite",
+      "at": {
+       "x": 240.0,
+       "y": 48.47222222222222
+      },
+      "index": 2,
+      "lines": [
+       {
+        "dx_mm": 28.903888888888886,
+        "dy_mm": 0.0,
+        "size_pt": 10.0,
+        "text": "aligné à droite"
+       },
+       {
+        "dx_mm": 37.9985,
+        "dy_mm": 4.762499999999999,
+        "size_pt": 10.0,
+        "text": "sur trois"
+       },
+       {
+        "dx_mm": 19.516472222222223,
+        "dy_mm": 9.524999999999999,
+        "size_pt": 10.0,
+        "text": "lignes qui débordent"
+       }
+      ],
+      "overflow": true,
+      "role": "free_text"
+     }
+    },
+    {
+     "angle": -90.0,
+     "reading": 6,
+     "rect": {
+      "h": 20.0,
+      "w": 25.0,
+      "x": 320.0,
+      "y": 150.0
+     },
+     "role": {
+      "align": "gauche",
+      "at": {
+       "x": 320.0,
+       "y": 166.825
+      },
+      "index": 3,
+      "lines": [
+       {
+        "dy_mm": 0.0,
+        "size_pt": 9.0,
+        "text": "anticonstitutionnellement"
+       }
+      ],
+      "role": "free_text",
+      "trop_large": true
      }
     }
    ]

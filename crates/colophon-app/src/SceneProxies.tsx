@@ -27,7 +27,7 @@
 import { useEffect, useRef } from "react";
 import { Rect } from "./album";
 import { t } from "./i18n";
-import { Scene, SceneObject } from "./scene";
+import { angleEcran, Scene, SceneObject } from "./scene";
 
 // ---- où le clavier se tient, et pourquoi ça vit hors du composant --------
 //
@@ -78,6 +78,12 @@ export function nomDObjet(o: SceneObject, scene: Scene): string {
         : t("scene.chapitre.vide");
     case "text":
       return t("scene.texte", { texte: role.lines[0]?.text ?? "" });
+    case "free_text": {
+      const premiere = role.lines.find((l) => l.text !== "")?.text ?? "";
+      return premiere
+        ? t("scene.texte.libre", { texte: premiere })
+        : t("scene.texte.libre.vide");
+    }
   }
 }
 
@@ -116,7 +122,9 @@ function auRognage(r: Rect, trim: Rect): Rect {
 /** Un objet dont l'activation ouvre un vrai champ de saisie, donc dont le
  *  focus part ailleurs et doit revenir. */
 const ouvreUnChamp = (o: SceneObject) =>
-  o.role.role === "chapter_caption" || o.role.role === "text";
+  o.role.role === "chapter_caption" ||
+  o.role.role === "text" ||
+  o.role.role === "free_text";
 
 export function SceneProxies({
   scene,
@@ -214,7 +222,20 @@ export function SceneProxies({
       aria-label={t("scene.objets")}
     >
       {enOrdreDeLecture(scene).map(({ o, depth }, i) => {
-        const box = auRognage(o.rect, trim);
+        // Un objet droit garde exactement la boîte qu'il avait : ramenée
+        // dans la page, parce qu'une photo à fond perdu déborde de tous les
+        // côtés et qu'un anneau de focus dessiné sur son bord serait coupé
+        // avec le fond perdu.
+        //
+        // Un objet tourné garde la sienne entière, et tourne avec elle. Le
+        // ramener au rognage voudrait dire rogner un rectangle tourné, donc
+        // un polygone, pour une boîte DOM qui n'en est pas un ; et ce qui
+        // justifiait le rognage — le fond perdu — ne concerne que ce que les
+        // gabarits produisent, qui est toujours droit. Un objet libre qui
+        // sort de la page est un défaut que le linter nomme, pas une cible
+        // de focus à replier.
+        const tourne = o.angle !== 0;
+        const box = tourne ? o.rect : auRognage(o.rect, trim);
         return (
           <button
             key={depth}
@@ -225,6 +246,7 @@ export function SceneProxies({
               top: `${box.y * mm}px`,
               width: `${box.w * mm}px`,
               height: `${box.h * mm}px`,
+              transform: tourne ? `rotate(${angleEcran(o.angle)}deg)` : undefined,
             }}
             aria-label={nomDObjet(o, scene)}
             aria-pressed={

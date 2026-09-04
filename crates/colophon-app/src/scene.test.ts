@@ -12,12 +12,21 @@ import { Dump, setGeometrie } from "./geometrie";
 import { enOrdreDeLecture, nomDObjet } from "./SceneProxies";
 import { setLangue } from "./i18n";
 import {
+  angleEcran,
   avecRecadrage,
   contains,
+  corners,
+  decalage,
   depthOfCell,
+  distanceToTrim,
   hitTest,
+  replier,
+  SceneObject,
   sceneOf,
+  touche,
+  traverseLePli,
 } from "./scene";
+import { Objet } from "./album";
 
 setGeometrie(fixture as unknown as Dump);
 
@@ -319,5 +328,170 @@ describe("a crop still being made", () => {
     const scene = sceneOf(planche("duo", 2), g, mesure);
     avecRecadrage(scene, 0, [0, 0], 4);
     expect(scene.objects[0].role).toMatchObject({ focal: [0.5, 0.42], zoom: 1 });
+  });
+});
+
+// ---- les objets libres, et l'angle qu'ils apportent ---------------------
+//
+// Ce que la fixture de parité épingle, c'est l'accord avec le moteur. Ce qui
+// se teste ici est ce qu'elle ne peut pas montrer : qu'un clic atteint une
+// boîte tournée, que la coupe se mesure sur des coins et pas sur un
+// rectangle, et que le signe de la rotation est pris une fois pour toutes.
+
+function bloc(o: Partial<Objet> = {}): Objet {
+  return {
+    x: 20,
+    y: 20,
+    w: 60,
+    h: 20,
+    type: "texte",
+    texte: "un bloc",
+    taille_pt: 11,
+    ...o,
+  } as Objet;
+}
+
+describe("free objects on the scene", () => {
+  it("sit on top of everything a template produced", () => {
+    const p = planche("duo", 2);
+    p.caption = "Corse, 2013";
+    p.objets = [bloc(), bloc({ x: 200 })];
+    const scene = sceneOf(p, g, mesure);
+    const roles = scene.objects.map((o) => o.role.role);
+    expect(roles.slice(-2)).toEqual(["free_text", "free_text"]);
+    expect(roles.indexOf("free_text")).toBeGreaterThan(
+      roles.lastIndexOf("chapter_caption"),
+    );
+    // Leur index pointe dans `spread.objets`, comme `cell` pointe dans
+    // `spread.slots` : c'est par là qu'une modification repart.
+    const libres = scene.objects.filter((o) => o.role.role === "free_text");
+    expect(libres.map((o) => (o.role as { index: number }).index)).toEqual([0, 1]);
+    // Et la lecture continue au-delà du gabarit, sans trou ni doublon.
+    expect(scene.objects.map((o) => o.reading)).toEqual(
+      scene.objects.map((_, i) => i),
+    );
+  });
+
+  it("carry the box the reader drew, flipped into the screen's frame", () => {
+    const p = planche("duo", 2);
+    p.objets = [bloc({ x: 20, y: 20, w: 60, h: 20 })];
+    const objets = sceneOf(p, g, mesure).objects;
+    const o = objets[objets.length - 1];
+    // Le moteur pose l'origine en bas à gauche, l'écran en haut à gauche :
+    // c'est la seule conversion que ce fichier fasse, et elle se lit ici.
+    expect(o.rect).toEqual({ x: 20, y: g.h - 40, w: 60, h: 20 });
+  });
+
+  it("keep the engine's angle unflipped, and hand the flip to a renderer", () => {
+    const p = planche("duo", 2);
+    p.objets = [bloc({ angle: 30 })];
+    const objets = sceneOf(p, g, mesure).objects;
+    expect(objets[objets.length - 1].angle).toBe(30);
+    // Le sens trigonométrique du moteur est le sens horaire d'un écran : la
+    // négation est prise une fois, ici, et trois rendus la lisent.
+    expect(angleEcran(30)).toBe(-30);
+  });
+});
+
+describe("what sits under a point, once boxes can turn", () => {
+  it("reaches a turned box where the upright one would miss", () => {
+    // Une boîte plate et large, tournée d'un quart de tour : le point qui la
+    // manquait droite tombe dedans tournée, et l'inverse.
+    const o: SceneObject = {
+      rect: { x: 100, y: 100, w: 80, h: 10 },
+      angle: 0,
+      reading: 0,
+      role: { role: "photo", cell: 0, src: "a", focal: [0.5, 0.5], zoom: 1 },
+    };
+    const dehors = { x: 142, y: 130 };
+    const dedans = { x: 175, y: 104 };
+    expect(touche(o, dehors.x, dehors.y)).toBe(false);
+    expect(touche(o, dedans.x, dedans.y)).toBe(true);
+
+    const tourne = { ...o, angle: 90 };
+    expect(touche(tourne, dehors.x, dehors.y)).toBe(true);
+    expect(touche(tourne, dedans.x, dedans.y)).toBe(false);
+  });
+
+  it("still answers the topmost object, turned or not", () => {
+    const p = planche("duo", 2);
+    p.objets = [bloc({ x: 20, y: 20, w: 60, h: 20, angle: 20 })];
+    const scene = sceneOf(p, g, mesure);
+    const libre = scene.objects.length - 1;
+    const c = {
+      x: scene.objects[libre].rect.x + 30,
+      y: scene.objects[libre].rect.y + 10,
+    };
+    // Le centre d'une boîte est dans la boîte quel que soit l'angle : c'est
+    // le point fixe de la rotation.
+    expect(hitTest(scene, c.x, c.y)).toBe(libre);
+  });
+});
+
+describe("the distance to the guillotine, with an angle", () => {
+  it("returns the upright numbers untouched at zero degrees", () => {
+    // Les coins d'une boîte droite sont ceux du rectangle, au bit près :
+    // sans ça, un objet droit mesurerait autre chose qu'avant l'angle.
+    const r = { x: 11.2, y: 18.2, w: 87.3, h: 140.6 };
+    const c = corners(r, 0);
+    expect(c[0]).toEqual({ x: r.x, y: r.y });
+    expect(c[2]).toEqual({ x: r.x + r.w, y: r.y + r.h });
+    const avant = Math.min(
+      r.x - g.bleed,
+      r.y - g.bleed,
+      g.w - g.bleed - (r.x + r.w),
+      g.h - g.bleed - (r.y + r.h),
+    );
+    expect(distanceToTrim(r, 0, g)).toBe(avant);
+  });
+
+  it("sees a corner cross the cut that the upright box cleared", () => {
+    const r = { x: 100, y: 4, w: 120, h: 8 };
+    expect(distanceToTrim(r, 0, g)).toBeGreaterThan(0);
+    expect(distanceToTrim(r, 30, g)).toBeLessThan(0);
+  });
+
+  it("stops a turned corner at the fold the upright box cleared", () => {
+    const pli = g.w / 2;
+    const r = { x: pli - 55, y: 100, w: 50, h: 40 };
+    expect(traverseLePli(r, 0, g)).toBe(false);
+    expect(traverseLePli(r, 45, g)).toBe(true);
+  });
+});
+
+describe("a block that wraps to its box", () => {
+  it("breaks at words and loses nothing", () => {
+    const { lignes, tropLarge } = replier("un deux trois quatre", 30, 4, mesure);
+    expect(lignes.length).toBeGreaterThan(1);
+    for (const l of lignes) expect(mesure(l, 4)).toBeLessThanOrEqual(30);
+    expect(lignes.join(" ")).toBe("un deux trois quatre");
+    expect(tropLarge).toBe(false);
+  });
+
+  it("reports a word wider than the box instead of cutting it", () => {
+    const { lignes, tropLarge } = replier("court anticonstitutionnel", 30, 4, mesure);
+    expect(tropLarge).toBe(true);
+    expect(lignes).toContain("anticonstitutionnel");
+  });
+
+  it("keeps a blank paragraph, because it is spacing", () => {
+    const { lignes } = replier("un\n\ntrois", 100, 4, mesure);
+    expect(lignes).toEqual(["un", "", "trois"]);
+  });
+
+  it("says so when the set text is taller than its box", () => {
+    const p = planche("duo", 2);
+    p.objets = [bloc({ h: 60, texte: "un\ndeux" }), bloc({ h: 4, texte: "un\ndeux\ntrois" })];
+    const [tient, deborde] = sceneOf(p, g, mesure).objects.slice(-2);
+    expect((tient.role as { overflow: boolean }).overflow).toBe(false);
+    expect((deborde.role as { overflow: boolean }).overflow).toBe(true);
+    // Et rien n'a été retiré pour autant : ce qui déborde s'imprime.
+    expect((deborde.role as { lines: unknown[] }).lines).toHaveLength(3);
+  });
+
+  it("offsets a line by its alignment, once, for every renderer", () => {
+    expect(decalage("gauche", 40, 6)).toBe(0);
+    expect(decalage("centre", 40, 6)).toBe(17);
+    expect(decalage("droite", 40, 6)).toBe(34);
   });
 });

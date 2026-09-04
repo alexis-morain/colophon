@@ -353,6 +353,7 @@ mod tests {
             text: None,
             edited: false,
             locked: false,
+            objets: Vec::new(),
         }
     }
 

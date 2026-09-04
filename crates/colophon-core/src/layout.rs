@@ -349,6 +349,7 @@ impl Composer {
                 text: None,
                 edited: false,
                 locked: false,
+                objets: Vec::new(),
             });
 
             let family = name.trim_end_matches("_verso").to_string();

@@ -22,6 +22,7 @@
 // everything else without touching it.
 
 import {
+  Alignement,
   captionAnchor,
   colophonAnchor,
   COLOPHON_LEADING_MM,
@@ -32,8 +33,11 @@ import {
   gardeLayout,
   gardePlace,
   GARDE_TEMPLATE,
+  interligneDe,
+  Objet,
   PHOTO_CAPTION_DROP_MM,
   PHOTO_CAPTION_SIZE_MM,
+  PT_MM,
   Rect,
   Spread,
   SpreadGeometry,
@@ -47,8 +51,18 @@ import {
 export type Point = { x: number; y: number };
 
 /** One line of a text block, already laid out: `dyMm` grows downward from
- *  the block's first baseline. */
-export type SceneLine = { text: string; sizeMm: number; dyMm: number };
+ *  the block's first baseline, `dxMm` rightward from its left edge.
+ *
+ *  `dxMm` carries the alignment of a free block, computed in the assembler
+ *  rather than in each renderer: a line the canvas centred and the PDF did
+ *  not would be a preview that lies. Zero for the three text pages, which
+ *  have never been anything but left-aligned. */
+export type SceneLine = {
+  text: string;
+  sizeMm: number;
+  dyMm: number;
+  dxMm: number;
+};
 
 /**
  * What an object is, as a code with the parameters an interface needs to
@@ -69,12 +83,163 @@ export type Role =
   | { role: "photo_caption"; cell: number; text: string; at: Point }
   | { role: "chapter_caption"; text: string; at: Point }
   /** The half-title, a text page, the colophon: one role, not three cases. */
-  | { role: "text"; at: Point; lines: SceneLine[] };
+  | { role: "text"; at: Point; lines: SceneLine[] }
+  /** A block the reader placed and may have turned. `index` points into
+   *  `spread.objets` the way `cell` points into `spread.slots`, and `at` is
+   *  the first baseline in the object's own upright frame — the renderer
+   *  turns the box once around its centre and draws upright inside it. */
+  | {
+      role: "free_text";
+      index: number;
+      at: Point;
+      lines: SceneLine[];
+      align: Alignement;
+      /** Set text taller than its box. Signalled, never cut. */
+      overflow: boolean;
+      /** One word wider than the box: printed whole, past the edge. */
+      tropLarge: boolean;
+    };
 
-/** One visible element: where it is, when it is read, and what it is. No
- *  rotation, no matrix — an oriented box arrives with the free objects of
- *  wave 6, and with its own linter counter. */
-export type SceneObject = { rect: Rect; reading: number; role: Role };
+/** One visible element: where it is, how it is turned, when it is read, and
+ *  what it is.
+ *
+ *  **An angle and an origin, never a matrix**, mirroring `scene.rs::Object`.
+ *  The angle is degrees counter-clockwise **in the engine's frame** around
+ *  the rectangle's centre — the same number the engine stores, kept
+ *  unconverted so the parity fixture compares like with like. A screen's y
+ *  runs the other way, so a renderer negates it exactly once; `angleEcran`
+ *  below is that once. */
+export type SceneObject = {
+  rect: Rect;
+  angle: number;
+  reading: number;
+  role: Role;
+};
+
+/** The angle to hand a screen transform — a CSS `rotate()`, a canvas
+ *  `ctx.rotate()` — for an object turned by `angle` in the engine's frame.
+ *
+ *  The whole y-flip of this file, for rotations, is this one negation. It is
+ *  a function rather than a comment because three renderers need it and a
+ *  fourth will. */
+export function angleEcran(angle: number): number {
+  return -angle;
+}
+
+/** The centre a turned object pivots around: the middle of its box. */
+export function centre(r: Rect): Point {
+  return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+}
+
+/** One point turned around another. Port of `scene.rs::tourner`, in the
+ *  screen's frame — hence the sign, taken once from `angleEcran`. */
+export function tourner(p: Point, c: Point, angle: number): Point {
+  const t = (angleEcran(angle) * Math.PI) / 180;
+  const [sin, cos] = [Math.sin(t), Math.cos(t)];
+  const [dx, dy] = [p.x - c.x, p.y - c.y];
+  return { x: c.x + dx * cos - dy * sin, y: c.y + dx * sin + dy * cos };
+}
+
+/** The four corners of an oriented rectangle. **The upright case returns the
+ *  rectangle's own numbers**, for the reason `scene.rs::corners` gives:
+ *  `(x + w/2) - w/2` is not `x` in binary floating point, and an upright
+ *  object must measure exactly what it measured before the angle existed. */
+export function corners(r: Rect, angle: number): Point[] {
+  const coins = [
+    { x: r.x, y: r.y },
+    { x: r.x + r.w, y: r.y },
+    { x: r.x + r.w, y: r.y + r.h },
+    { x: r.x, y: r.y + r.h },
+  ];
+  if (angle === 0) return coins;
+  const c = centre(r);
+  return coins.map((p) => tourner(p, c, angle));
+}
+
+/** Whether an oriented box runs across the fold. Port of
+ *  `scene.rs::traverse_le_pli`: the editor stops a gesture with this, because
+ *  nothing has ever crossed the fold and a free object does not start. */
+export function traverseLePli(
+  r: Rect,
+  angle: number,
+  g: SpreadGeometry,
+): boolean {
+  const xs = corners(r, angle).map((p) => p.x);
+  const pli = g.w / 2;
+  return Math.min(...xs) < pli && Math.max(...xs) > pli;
+}
+
+/** Distance from an oriented box to the trimmed edge, in millimetres.
+ *  Negative means the cut runs through it. Port of
+ *  `scene.rs::distance_to_trim`, in the screen's frame, where the flip is
+ *  invisible: the four trim lines are symmetric. */
+export function distanceToTrim(
+  r: Rect,
+  angle: number,
+  g: SpreadGeometry,
+): number {
+  return Math.min(
+    ...corners(r, angle).map((p) =>
+      Math.min(p.x - g.bleed, p.y - g.bleed, g.w - g.bleed - p.x, g.h - g.bleed - p.y),
+    ),
+  );
+}
+
+/** Where a line sits inside the box it was wrapped to, given its alignment.
+ *  Port of `scene.rs::decalage`, and one function rather than a ternary
+ *  copied into each renderer for the same reason the engine has one. */
+export function decalage(
+  align: Alignement,
+  boite: number,
+  ligne: number,
+): number {
+  if (align === "gauche") return 0;
+  return align === "centre" ? (boite - ligne) / 2 : boite - ligne;
+}
+
+/**
+ * Cut a text into the lines it sets as, inside a box `largeur` wide. Port of
+ * `scene.rs::replier`, and the parity fixture is what keeps the two the same
+ * function rather than two functions that agree today.
+ *
+ * A typed newline is a hard break and an empty paragraph keeps its turn.
+ * **A word wider than the box goes on its line whole**: hyphenating is a
+ * decision about someone's language, and the caller is told instead.
+ */
+export function replier(
+  texte: string,
+  largeur: number,
+  tailleMm: number,
+  measure: Measure,
+): { lignes: string[]; tropLarge: boolean } {
+  const lignes: string[] = [];
+  let tropLarge = false;
+  for (const para of texte.split("\n")) {
+    const mots = para.split(" ").filter((m) => m !== "");
+    if (mots.length === 0) {
+      lignes.push("");
+      continue;
+    }
+    let courante = "";
+    for (const mot of mots) {
+      if (courante === "") {
+        courante = mot;
+        continue;
+      }
+      const candidat = `${courante} ${mot}`;
+      if (measure(candidat, tailleMm) <= largeur) {
+        courante = candidat;
+      } else {
+        tropLarge ||= measure(courante, tailleMm) > largeur;
+        lignes.push(courante);
+        courante = mot;
+      }
+    }
+    tropLarge ||= measure(courante, tailleMm) > largeur;
+    lignes.push(courante);
+  }
+  return { lignes, tropLarge };
+}
 
 /** Everything visible on one spread, back to front. **The index is the
  *  depth**: object `n` paints over object `n - 1`, in the exact order the
@@ -141,6 +306,7 @@ export function sceneOf(
     if (!rect) return;
     objects.push({
       rect,
+      angle: 0,
       reading: cell,
       role: {
         role: "photo",
@@ -163,6 +329,7 @@ export function sceneOf(
     const at = { x: rect.x, y: rect.y + rect.h + PHOTO_CAPTION_DROP_MM };
     objects.push({
       rect: inkBox(at.x, at.y, slot.caption, PHOTO_CAPTION_SIZE_MM, measure),
+      angle: 0,
       reading,
       role: { role: "photo_caption", cell, text: slot.caption, at },
     });
@@ -182,10 +349,20 @@ export function sceneOf(
     const at = { x: anchor.x, y: anchor.y };
     objects.push({
       rect: inkBox(at.x, at.y, spread.caption, CAPTION_SIZE_MM, measure),
+      angle: 0,
       reading,
       role: { role: "chapter_caption", text: spread.caption, at },
     });
+    reading += 1;
   }
+
+  // The free objects come last, so they are on top: the order is the depth
+  // here as in the engine, and what the reader placed covers what the
+  // template produced.
+  (spread.objets ?? []).forEach((objet, index) => {
+    objects.push(objetLibre(index, objet, g, reading, measure));
+    reading += 1;
+  });
 
   return { objects };
 }
@@ -208,6 +385,7 @@ function textBlock(
       text: l.texte,
       sizeMm: l.tailleMm,
       dyMm: l.dyMm,
+      dxMm: 0,
     }));
   } else {
     const colophon = spread.template === COLOPHON_TEMPLATE;
@@ -218,7 +396,7 @@ function textBlock(
     // of a stored text is spacing, and the index is what spaces it.
     lines = text
       .split("\n")
-      .map((l, i): SceneLine => ({ text: l, sizeMm, dyMm: i * leading }))
+      .map((l, i): SceneLine => ({ text: l, sizeMm, dyMm: i * leading, dxMm: 0 }))
       .filter((l) => l.text !== "");
   }
 
@@ -226,7 +404,61 @@ function textBlock(
   const rect = lines
     .map((l) => inkBox(at.x, at.y + l.dyMm, l.text, l.sizeMm, measure))
     .reduce(union);
-  return { rect, reading: 0, role: { role: "text", at, lines } };
+  return { rect, angle: 0, reading: 0, role: { role: "text", at, lines } };
+}
+
+/**
+ * One free object, laid out inside the box the reader drew.
+ *
+ * **This is the one place the two frames meet.** The object comes straight
+ * out of `album.json`, so its box is in the engine's own frame — millimetres,
+ * origin bottom-left — and everything else on this side is top-left. The flip
+ * happens here, once, and reads like the flip the parity test performs on the
+ * fixture, because it is the same flip.
+ *
+ * The angle is not flipped: it is kept as the engine stores it, and a
+ * renderer negates it once through `angleEcran`.
+ */
+function objetLibre(
+  index: number,
+  objet: Objet,
+  g: SpreadGeometry,
+  reading: number,
+  measure: Measure,
+): SceneObject {
+  const rect: Rect = { x: objet.x, y: g.h - (objet.y + objet.h), w: objet.w, h: objet.h };
+  const tailleMm = objet.taille_pt * PT_MM;
+  const interligne = interligneDe(objet);
+  const align: Alignement = objet.alignement ?? "gauche";
+
+  const { lignes, tropLarge } = replier(objet.texte, objet.w, tailleMm, measure);
+  const lines: SceneLine[] = lignes.map((text, i) => ({
+    text,
+    sizeMm: tailleMm,
+    dyMm: i * interligne,
+    dxMm: decalage(align, objet.w, measure(text, tailleMm)),
+  }));
+
+  // The set height: the drop to the last baseline plus the line box that
+  // baseline carries. Taller than the box means the text runs past the bottom
+  // — which it may, out loud.
+  const hauteur = (lines[lines.length - 1]?.dyMm ?? 0) + tailleMm * 1.35;
+  const at: Point = { x: rect.x, y: rect.y + tailleMm };
+
+  return {
+    rect,
+    angle: objet.angle ?? 0,
+    reading,
+    role: {
+      role: "free_text",
+      index,
+      at,
+      lines,
+      align,
+      overflow: hauteur > objet.h + 1e-9,
+      tropLarge,
+    },
+  };
 }
 
 /**
@@ -272,9 +504,21 @@ export function contains(r: Rect, x: number, y: number): boolean {
  */
 export function hitTest(scene: Scene, x: number, y: number): number | null {
   for (let i = scene.objects.length - 1; i >= 0; i -= 1) {
-    if (contains(scene.objects[i].rect, x, y)) return i;
+    if (touche(scene.objects[i], x, y)) return i;
   }
   return null;
+}
+
+/** Whether an object holds a point, its angle included.
+ *
+ * A turned box is not tested with a turned test: the *point* is turned back
+ * instead, by the object's own angle, and then the box is the upright box it
+ * always was. One rotation instead of four half-plane tests, and the upright
+ * case costs nothing because `tourner` is never called for it. */
+export function touche(o: SceneObject, x: number, y: number): boolean {
+  if (o.angle === 0) return contains(o.rect, x, y);
+  const p = tourner({ x, y }, centre(o.rect), -o.angle);
+  return contains(o.rect, p.x, p.y);
 }
 
 /** The depth of the photograph in a given cell, or null when that cell holds

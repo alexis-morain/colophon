@@ -56,6 +56,7 @@ import { SceneCanvas } from "./SceneCanvas";
 import { t } from "./i18n";
 import { jusquAuRendu } from "./mesure";
 import {
+  angleEcran,
   avecRecadrage,
   hitTest,
   Point,
@@ -773,6 +774,50 @@ export function SpreadView({
               return (
                 <Fragment key={`texte-${depth}`}>{blocDeTexte(role)}</Fragment>
               );
+
+            // Un objet libre : la boîte tourne, les lignes sont droites
+            // dedans, et les trois nombres qui les posent (`at`, `dxMm`,
+            // `dyMm`) sont ceux que l'émetteur pose dans le flux PDF. Nommé
+            // par son proxy comme tout objet de la scène.
+            case "free_text": {
+              const box = o.rect;
+              return (
+                <div
+                  key={`libre-${role.index}`}
+                  className={
+                    "objet-libre" + (role.overflow ? " deborde" : "")
+                  }
+                  aria-hidden="true"
+                  style={{
+                    left: `${box.x * mm}px`,
+                    top: `${box.y * mm}px`,
+                    width: `${box.w * mm}px`,
+                    height: `${box.h * mm}px`,
+                    transform:
+                      o.angle === 0
+                        ? undefined
+                        : `rotate(${angleEcran(o.angle)}deg)`,
+                  }}
+                >
+                  {role.lines.map((l, i) => {
+                    const px = Math.max(l.sizeMm * mm * 1.35, 11);
+                    return (
+                      <span
+                        key={i}
+                        className="objet-libre-ligne"
+                        style={{
+                          left: `${l.dxMm * mm}px`,
+                          top: `${(role.at.y - box.y + l.dyMm) * mm - px}px`,
+                          fontSize: `${px}px`,
+                        }}
+                      >
+                        {l.text}
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            }
           }
         })}
 

@@ -99,6 +99,7 @@ pub fn spread(titre: &str, f: &Faits, place_mm: f64) -> crate::model::Spread {
         text: Some(texte(titre, f, place_mm)),
         edited: false,
         locked: false,
+        objets: Vec::new(),
     }
 }
 

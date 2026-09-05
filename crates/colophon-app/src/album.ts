@@ -25,7 +25,47 @@ export type Spread = {
   edited?: boolean;
   /** Pinned without being edited: same recomposition shield. */
   locked?: boolean;
+  /** Free objects, mirror of `model.rs::Spread::objets`. **Their order is
+   *  their depth**, and all of them sit above what the template produced.
+   *  Absent = none, which is what every album composed before wave 6.2 says.
+   *
+   *  **These are in the engine's frame** — millimetres, origin bottom-left of
+   *  the media box — because they come straight out of `album.json`, which
+   *  the engine writes. Everything else on this side is top-left; `scene.ts`
+   *  is where the two meet, once. */
+  objets?: Objet[];
 };
+
+/** One free object as `album.json` stores it: a box, an angle, and what
+ *  fills it. Mirror of `model.rs::Objet`. */
+export type Objet = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Degrees, counter-clockwise **in the engine's frame**, around the box's
+   *  centre. Absent = 0. A screen turns the other way, and `scene.ts` is the
+   *  one place that flips the sign. */
+  angle?: number;
+} & ObjetContenu;
+
+export type ObjetContenu = {
+  type: "texte";
+  texte: string;
+  taille_pt: number;
+  /** Absent = the natural leading of that size (1.35 x). */
+  interligne_mm?: number;
+  alignement?: Alignement;
+};
+
+export type Alignement = "gauche" | "centre" | "droite";
+
+/** The leading an object sets at: what an absent `interligne_mm` means.
+ *  Mirror of `model.rs::Objet::interligne`, and the reason it is a function
+ *  rather than a default is that the answer depends on the type size. */
+export function interligneDe(objet: Objet): number {
+  return objet.interligne_mm ?? (objet.taille_pt / (72 / 25.4)) * 1.35;
+}
 
 export type Cover = {
   title: string;
@@ -131,6 +171,13 @@ export function fallbackTemplate(
 }
 
 /** Millimetres, origin top-left of the spread's media box (bleed included). */
+/** Points to millimetres, exactly as the engine computes it.
+ *
+ *  Not the dump's rounded 0.352778: a free block decides where its lines
+ *  break on this number, and a rounding that moved a break would put one line
+ *  on the screen and another in the PDF. */
+export const PT_MM = 25.4 / 72;
+
 export type Rect = { x: number; y: number; w: number; h: number };
 
 export type SpreadGeometry = {

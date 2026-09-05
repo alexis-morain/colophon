@@ -25,7 +25,7 @@ import {
   Rect,
   SpreadGeometry,
 } from "./album";
-import { Scene } from "./scene";
+import { angleEcran, centre, Point, Scene } from "./scene";
 import { imageDe, imageRegleeDe, surImage } from "./photos";
 import { filtreDe, reglagePose, surReglage } from "./reglages";
 
@@ -92,12 +92,22 @@ export function peindre(
     tailleMm: number,
     plancher: number,
     couleur: string,
+    /** L'objet tourne : son angle et le centre qu'il tourne autour, en
+     *  millimètres. Une rotation par objet, jamais une par ligne — le flux
+     *  PDF pose une matrice par objet lui aussi. */
+    rotation?: { angle: number; centre: Point },
   ) => {
     // Type is set in pixels, so the transform has to go for one call: a
     // millimetre-sized font would round to nothing at these scales.
     const px = Math.max(tailleMm * mm * GROSSISSEMENT, plancher);
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (rotation && rotation.angle !== 0) {
+      // En pixels CSS, puisque le repère vient d'y passer pour la fonte.
+      ctx.translate(rotation.centre.x * mm, rotation.centre.y * mm);
+      ctx.rotate((angleEcran(rotation.angle) * Math.PI) / 180);
+      ctx.translate(-rotation.centre.x * mm, -rotation.centre.y * mm);
+    }
     ctx.font = `${px}px ${c.police}`;
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = couleur;
@@ -176,6 +186,23 @@ export function peindre(
           );
         }
         break;
+      // Un objet libre : les mêmes trois nombres que le DOM et que
+      // l'émetteur, et la rotation posée une fois pour l'objet.
+      case "free_text": {
+        const rotation = { angle: o.angle, centre: centre(o.rect) };
+        for (const l of role.lines) {
+          texte(
+            l.text,
+            role.at.x + l.dxMm,
+            role.at.y + l.dyMm,
+            l.sizeMm,
+            PLANCHER_TEXTE,
+            c.ink,
+            rotation,
+          );
+        }
+        break;
+      }
     }
   }
 

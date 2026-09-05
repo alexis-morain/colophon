@@ -3,7 +3,7 @@
 //! into their slot via a clip rectangle, anchored on the focal point.
 
 use crate::font;
-use crate::model::{Album, Spread};
+use crate::model::{Album, Alignement, Spread};
 use crate::pdfx;
 use anyhow::{Context, Result};
 use lopdf::{dictionary, Document, Object, Stream};
@@ -125,6 +125,54 @@ pub(crate) fn text_op(
     let (r, g, b) = (rgb[0], rgb[1], rgb[2]);
     content.push_str(&format!(
         "BT /F1 {size_pt} Tf {r} {g} {b} rg {x:.2} {y:.2} Td <{hex}> Tj ET\n"
+    ));
+}
+
+/// Set one line whose baseline is turned.
+///
+/// **`Td` is left alone for upright text.** An album that carries no turned
+/// object has to produce the byte-for-byte PDF it produced before free
+/// objects existed, and the cheapest way to guarantee that is for the upright
+/// path to be the same code it always was. Above zero degrees the placement
+/// moves to `Tm`, which is the text matrix rather than the graphics one: no
+/// `q`/`Q` to balance, and nothing outside the `BT`/`ET` pair is disturbed.
+///
+/// `x_mm`/`y_mm` are the baseline's origin **already turned** — the caller
+/// owns the centre it turns around, because the centre is a property of the
+/// object and not of a line.
+pub(crate) fn text_op_tourne(
+    content: &mut String,
+    ecrivain: &mut Ecrivain,
+    x_mm: f64,
+    y_mm: f64,
+    angle_deg: f64,
+    size_pt: f64,
+    rgb: [f64; 3],
+    s: &str,
+) {
+    if angle_deg == 0.0 {
+        text_op(content, ecrivain, x_mm, y_mm, size_pt, rgb, s);
+        return;
+    }
+    if s.is_empty() {
+        return;
+    }
+    let glyphes = ecrivain.face.glyphes(s);
+    if glyphes.is_empty() {
+        return;
+    }
+    let mut hex = String::with_capacity(glyphes.len() * 4);
+    for (gid, c) in glyphes {
+        ecrivain.utilises.noter(gid, c);
+        hex.push_str(&format!("{gid:04X}"));
+    }
+    let (x, y) = (x_mm * MM_TO_PT, y_mm * MM_TO_PT);
+    let (r, g, b) = (rgb[0], rgb[1], rgb[2]);
+    let (sin, cos) = angle_deg.to_radians().sin_cos();
+    content.push_str(&format!(
+        "BT /F1 {size_pt} Tf {r} {g} {b} rg \
+{cos:.5} {sin:.5} {msin:.5} {cos:.5} {x:.2} {y:.2} Tm <{hex}> Tj ET\n",
+        msin = -sin,
     ));
 }
 
@@ -337,6 +385,44 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
     })
     .collect();
 
+    // The wrapping of a free block under the same synthetic measure. It is
+    // here for the reason the half-title samples are here: where a line breaks
+    // is a function of the face, and the parity run has no face — so the
+    // *algorithm* is what travels, replayed on both sides under a measure
+    // neither of them owns. The committed scene fixture pins everything about
+    // a free object that a measure cannot move (its box, its angle, its
+    // alignment, its index); this pins the one thing it can.
+    let libre_samples: Vec<serde_json::Value> = [
+        // Ordinary wrap; a hard newline that must survive it; a blank
+        // paragraph that keeps its turn; a word wider than the box; and each
+        // of the three alignments, because the offset a line is set at is
+        // computed from the same measure and is just as much the algorithm.
+        ("un bloc droit qui revient à la ligne tout seul", 40.0, 11.0, Alignement::Gauche),
+        ("deux lignes\ndont la seconde est nettement plus longue", 40.0, 11.0, Alignement::Centre),
+        ("avant\n\naprès", 40.0, 11.0, Alignement::Droite),
+        ("court anticonstitutionnellement court", 25.0, 9.0, Alignement::Centre),
+        ("mot", 100.0, 12.0, Alignement::Droite),
+    ]
+    .iter()
+    .map(|(texte, largeur, taille_pt, alignement)| {
+        let (lignes, trop_large) =
+            crate::scene::replier(texte, *largeur, *taille_pt, &garde_mesure);
+        let dx: Vec<f64> = lignes
+            .iter()
+            .map(|l| crate::scene::decalage(*alignement, *largeur, garde_mesure(l, *taille_pt)))
+            .collect();
+        serde_json::json!({
+            "texte": texte,
+            "largeur": largeur,
+            "taille_pt": taille_pt,
+            "alignement": alignement,
+            "lignes": lignes,
+            "dx": dx,
+            "trop_large": trop_large,
+        })
+    })
+    .collect();
+
     // Count -> [template, capacity], for every count a spread can reach.
     let fallbacks: serde_json::Map<String, serde_json::Value> = (1..=9usize)
         .filter_map(|n| {
@@ -377,6 +463,7 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
                         text: None,
                         edited: false,
                         locked: false,
+                        objets: Vec::new(),
                     };
                     spreads
                 ];
@@ -405,6 +492,7 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
         "anchors": anchors,
         "constantes": constantes,
         "garde_samples": garde_samples,
+        "libre_samples": libre_samples,
         "crop_windows": crop_samples,
         "covers": covers,
     })
@@ -666,6 +754,7 @@ pub fn render_template_sheets(album: &Album, dir: &Path) -> Result<Vec<std::path
             text: None,
             edited: false,
             locked: false,
+            objets: Vec::new(),
         };
         let assets: Vec<JpegAsset> = (0..*n)
             .map(|i| solid_jpeg(SHEET_PALETTE[i], 160, 120))
@@ -964,6 +1053,30 @@ impl PdfWriter {
                 Role::ChapterCaption { text, at } => {
                     text_op(&mut content, &mut self.ecrivain, at.x, at.y, SPREAD_CAPTION_SIZE_PT, INK, text);
                 }
+                // A free block: laid out upright inside its box by the scene,
+                // then turned once around the box's centre. The lines know
+                // nothing about the angle, which is why the same three numbers
+                // draw it here, on the canvas and in the DOM.
+                Role::FreeText { at, lines, .. } => {
+                    let centre = crate::scene::centre(&object.rect);
+                    for l in lines {
+                        let p = crate::scene::tourner(
+                            crate::pdf::Point { x: at.x + l.dx_mm, y: at.y - l.dy_mm },
+                            centre,
+                            object.angle,
+                        );
+                        text_op_tourne(
+                            &mut content,
+                            &mut self.ecrivain,
+                            p.x,
+                            p.y,
+                            object.angle,
+                            l.size_pt,
+                            TEXT_INK,
+                            &l.text,
+                        );
+                    }
+                }
             }
         }
 
@@ -1192,6 +1305,7 @@ mod tests {
             text: None,
             edited: false,
             locked: false,
+            objets: Vec::new(),
         });
         let assets = vec![
             solid_jpeg([200, 30, 40], 160, 120).unwrap(),
@@ -1234,6 +1348,136 @@ mod tests {
         // And the test is not vacuous: move the instant, the file moves.
         let (c, _) = written_at(Local.with_ymd_and_hms(2026, 8, 20, 11, 0, 1).unwrap());
         assert!(a != c, "l'horodatage ne se lit pas dans le fichier");
+    }
+
+    /// The probe of the load-bearing claim of 6.2: **an album that carries no
+    /// free object produces the PDF it produced before free objects existed**,
+    /// byte for byte.
+    ///
+    /// It cannot be a self-contained assertion — the reference lives on the
+    /// other side of the change — so it is a bench, run on both trees, and the
+    /// two files are compared outside. Ignored by default for that reason, and
+    /// not because it is slow.
+    #[test]
+    #[ignore]
+    fn banc_octets_d_un_album_sans_objet_libre() {
+        use chrono::{Local, TimeZone};
+        let t = Local.with_ymd_and_hms(2026, 9, 4, 11, 0, 0).unwrap();
+        let (bytes, _) = written_at(t);
+        let out = std::env::var("COLOPHON_OCTETS")
+            .unwrap_or_else(|_| "/tmp/colophon-octets.pdf".to_string());
+        std::fs::write(&out, &bytes).unwrap();
+        println!("{} octets écrits dans {out}", bytes.len());
+    }
+
+    /// The content stream of a spread that carries one free object, so a test
+    /// can read what the emitter actually wrote.
+    fn flux_avec_objet(objet: crate::model::Objet) -> String {
+        let mut album =
+            Album::new("t", std::path::Path::new("."), Size { w: 210.0, h: 210.0 });
+        album.spreads.push(Spread {
+            template: "texte".into(),
+            slots: vec![],
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets: vec![objet],
+        });
+        let mut w = PdfWriter::new(&album, std::path::Path::new("."));
+        w.add_spread(&album.spreads[0], &[]).unwrap();
+        let path = std::env::temp_dir()
+            .join(format!("colophon-libre-{}-{:?}.pdf", std::process::id(), std::thread::current().id()));
+        w.save(&path).unwrap();
+        let doc = Document::load(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let pages: Vec<_> = doc.get_pages().values().copied().collect();
+        let contents = doc
+            .get_dictionary(pages[0])
+            .unwrap()
+            .get(b"Contents")
+            .unwrap()
+            .as_reference()
+            .unwrap();
+        String::from_utf8_lossy(&flux(&doc, contents)).into_owned()
+    }
+
+    fn bloc_libre(angle: f64) -> crate::model::Objet {
+        crate::model::Objet {
+            x: 40.0,
+            y: 60.0,
+            w: 80.0,
+            h: 30.0,
+            angle,
+            contenu: crate::model::Contenu::Texte {
+                texte: "un bloc".into(),
+                taille_pt: 12.0,
+                interligne_mm: Some(6.0),
+                alignement: crate::model::Alignement::Gauche,
+            },
+        }
+    }
+
+    /// Decision 4 of the 6.2 prompt, read back out of the file. An upright
+    /// block places its lines with `Td` — the operator every album has always
+    /// been written with, which is why no existing PDF moved — and a turned
+    /// one with `Tm`, the *text* matrix rather than the graphics one, so
+    /// nothing outside the `BT`/`ET` pair is disturbed and there is no `q`/`Q`
+    /// to balance.
+    #[test]
+    fn un_bloc_droit_garde_td_un_bloc_tourne_passe_a_tm() {
+        let droit = flux_avec_objet(bloc_libre(0.0));
+        assert!(droit.contains(" Td "), "un bloc droit doit rester en Td :\n{droit}");
+        assert!(!droit.contains(" Tm "), "un bloc droit n'écrit pas de matrice");
+
+        let tourne = flux_avec_objet(bloc_libre(30.0));
+        assert!(tourne.contains(" Tm "), "un bloc tourné doit poser sa matrice :\n{tourne}");
+        assert!(!tourne.contains(" Td "), "et ne pas garder le placement droit");
+        // The matrix is the rotation, not decoration: cos 30° = 0.86603,
+        // sin 30° = 0.5, and the anti-diagonal carries the sign.
+        assert!(
+            tourne.contains("0.86603 0.50000 -0.50000 0.86603"),
+            "matrice inattendue :\n{tourne}"
+        );
+        // And the probe bites: the two files are not the same file.
+        assert_ne!(droit, tourne);
+    }
+
+    /// A free object reaches the page. Stated on its own because the byte
+    /// identity test next door proves the *absence* of a change, and a pair
+    /// of tests where one proves nothing moved is worth little without the
+    /// other proving something can.
+    #[test]
+    fn un_objet_libre_atteint_la_page() {
+        let sans = {
+            let mut album =
+                Album::new("t", std::path::Path::new("."), Size { w: 210.0, h: 210.0 });
+            album.spreads.push(Spread {
+                template: "texte".into(),
+                slots: vec![],
+                caption: None,
+                text: None,
+                edited: false,
+                locked: false,
+                objets: vec![],
+            });
+            let mut w = PdfWriter::new(&album, std::path::Path::new("."));
+            w.add_spread(&album.spreads[0], &[]).unwrap();
+            let path = std::env::temp_dir().join(format!(
+                "colophon-sans-{}-{:?}.pdf",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            w.save(&path).unwrap();
+            let doc = Document::load(&path).unwrap();
+            let _ = std::fs::remove_file(&path);
+            let pages: Vec<_> = doc.get_pages().values().copied().collect();
+            let c = doc.get_dictionary(pages[0]).unwrap().get(b"Contents").unwrap()
+                .as_reference().unwrap();
+            String::from_utf8_lossy(&flux(&doc, c)).into_owned()
+        };
+        assert!(sans.trim().is_empty(), "une planche vide ne dessine rien : {sans:?}");
+        assert!(!flux_avec_objet(bloc_libre(0.0)).trim().is_empty());
     }
 
     /// The header says 1.6 and the line under it carries the binary marker.
@@ -1511,6 +1755,7 @@ mod tests {
             text: None,
             edited: false,
             locked: false,
+            objets: Vec::new(),
         });
         let assets = vec![
             solid_jpeg([200, 30, 40], 160, 120).unwrap(),

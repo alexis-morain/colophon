@@ -219,6 +219,7 @@ mod tests {
             text: None,
             edited: false,
             locked: false,
+            objets: Vec::new(),
         });
         assert_eq!(proposition(&album, 0), None);
         // Hors bornes, planche légendée : mêmes silences.

@@ -219,6 +219,7 @@ pub fn spread(f: &Faits, trim: Size, grammage: f64, version: &str) -> crate::mod
         text: Some(texte(f, trim, grammage, version)),
         edited: false,
         locked: false,
+        objets: Vec::new(),
     }
 }
 

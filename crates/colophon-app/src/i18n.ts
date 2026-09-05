@@ -576,6 +576,8 @@ export const FR = {
   "scene.chapitre": "Titre de chapitre : {texte}",
   "scene.chapitre.vide": "Titre de chapitre, vide",
   "scene.texte": "Bloc de texte : {texte}",
+  "scene.texte.libre": "Texte libre : {texte}",
+  "scene.texte.libre.vide": "Texte libre, vide",
   "planche.recadrer":
     "Glisser pour recadrer · molette pour zoomer · double-clic recentre · ⌥ affine",
   "planche.recadrer.pleine":
@@ -1251,6 +1253,8 @@ export const EN: Record<Cle, string> = {
   "scene.chapitre": "Chapter title: {texte}",
   "scene.chapitre.vide": "Chapter title, empty",
   "scene.texte": "Text block: {texte}",
+  "scene.texte.libre": "Free text: {texte}",
+  "scene.texte.libre.vide": "Free text, empty",
   "planche.recadrer":
     "Drag to crop · wheel to zoom · double-click recentres · ⌥ refines",
   "planche.recadrer.pleine":

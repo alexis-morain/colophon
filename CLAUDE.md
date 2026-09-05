@@ -106,7 +106,16 @@ de table, jamais de glyphe) — les deux étaient de capacité, le PDF ne bougea
 octet. s3 : **le composite**, où chaque octet de chaque PDF change et pas un pixel de
 l'image. s4 : **la police voyage avec l'album** (voir « La police de l'album »).
 Le sous-ensemblage a été reporté avec sa mesure, et il n'est entré dans aucune des
-quatre. Les deux notes de décision de la vague ne bloquent que 6.2.
+quatre.
+
+**Les deux verrous de la vague 6 sont tournés (04/09)** : les objets libres se codent
+contre la scène, sans prérequis canvas ; **la rotation est en V1**. La seconde va contre
+la recommandation de la note, en connaissance de son coût, et elle a imposé l'ordre de
+travail : l'angle entre dans la géométrie au premier objet stocké.
+
+**6.2 s1 est faite** : le modèle stocké, l'angle dans la scène, l'émission PDF, le port
+TypeScript et sa parité (voir « Les objets libres »). **Reste s2** : l'éditeur — poser,
+saisir, glisser, redimensionner, tourner, supprimer, et les deux gardes à la main.
 
 
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
@@ -304,10 +313,12 @@ rétablit, et c'est elle que l'utilisateur lit.
 
 ## La scène, source unique de ce que porte une planche
 
-`Scene::of(planche, géométrie)` rend des objets : rectangle, profondeur (l'indice), rang
-de lecture, rôle codé (`photo`, `photo_caption`, `chapter_caption`, `text`). L'émetteur,
-le tirage 300 dpi, le linter, le prévol **et l'écran** la lisent tous. **Dérivée, jamais
-stockée** : `album.json` n'a pas bougé, donc aucune migration. `garde`, `texte` et
+`Scene::of(planche, géométrie)` rend des objets : rectangle, **angle**, profondeur
+(l'indice), rang de lecture, rôle codé (`photo`, `photo_caption`, `chapter_caption`,
+`text`, `free_text`). L'émetteur, le tirage 300 dpi, le linter, le prévol **et l'écran**
+la lisent tous. **Dérivée sauf les objets libres** : tout ce qu'un gabarit produit se
+reconstruit de `album.json`, et les objets libres, que rien ne peut produire, y sont
+stockés. `garde`, `texte` et
 `colophon` sont un rôle `Text` aux lignes déjà mises en page. Un texte est placé par sa
 ligne de base (`at`) et couvre son encre mesurée (`rect`), deux choses distinctes, et
 `caption_box` reste le proxy de placement du dump. **Pour un gabarit-candidat, c'est
@@ -329,6 +340,53 @@ l'assemblage de la scène, épinglé objet par objet sur neuf planches × six fo
 l'encre mesurée échappe, faute de fonte sous Vitest, et court la mesure synthétique des
 deux côtés. **Les deux fixtures se régénèrent** quand le dump ou la scène change
 (`--dump-geometry`, `scripts/fixture-scene.sh`) : leur fraîcheur est un test.
+
+### Les objets libres, et l'angle qu'ils ont apporté
+
+**Le premier champ stocké au-delà d'un gabarit et de ses cases** : `Spread::objets`
+(`model.rs`), additif, absent quand vide, **le schéma reste à 2** — la montée de version
+et sa migration sont à 6.4, avec les compteurs de linter, `--reprise` et le refus du
+prévol. Un objet porte sa boîte, son angle et son contenu (`Contenu::Texte` aujourd'hui,
+un clipart en 6.3 : le tag est déjà dans le fichier). **Leur ordre est leur profondeur**,
+et ils passent tous au-dessus de ce que le gabarit a produit.
+
+**La rotation est en V1** (décision d'Alexis du 04/09, contre la recommandation de la
+note ; `plans/2026-08-28-note-decision-vague-6.md` hors dépôt). Elle est donc entrée dans
+la géométrie **au premier objet stocké**, pas après : `distance_to_trim` prend l'angle,
+`hitTest` aussi, l'émetteur pose une matrice. **Un angle et une origine, jamais une
+matrice arbitraire** — tout ce qui mesure un objet doit pouvoir en retrouver les quatre
+coins, et une matrice ferait entrer un cisaillement par la même porte.
+
+Quatre choses à ne pas défaire :
+
+- **`corners` rend le rectangle tel quel à l'angle zéro.** Ce n'est pas une optimisation :
+  `(x + w/2) − w/2` n'est pas `x` en flottant binaire, et un objet droit doit mesurer
+  exactement ce qu'il mesurait avant que l'angle existe. C'est là-dessus que repose
+  l'égalité **au bit** de `distance_to_trim` sur les 10 000 cases du balayage de parité.
+- **`Td` reste pour le texte droit, `Tm` n'arrive qu'au-dessus de zéro.** Mesuré : un
+  album sans objet libre rend le PDF de `main` à l'octet (214 808 octets, banc
+  `banc_octets_d_un_album_sans_objet_libre`, à lancer sur les deux arbres).
+- **Un bloc revient à la ligne dans sa boîte**, aux mots, dans la face de l'album. Rien
+  n'est replié en silence : ce qui dépasse dépasse **en hauteur** (`overflow`), et un mot
+  plus large que la boîte est signalé (`trop_large`), jamais coupé — couper un mot est
+  une décision sur une langue.
+- **`decalage` et `replier` sont écrits une fois** et appelés par l'assembleur, le dump et
+  le port. Une ligne que l'émetteur centrerait et qu'un rendu ne centrerait pas est
+  précisément la classe de bug que ce module existe pour rendre impossible.
+
+**Ce que la parité peut et ne peut pas dire.** La fixture de scène épingle ce qu'aucune
+mesure ne bouge : la boîte, l'angle, l'index, l'alignement, l'ancre. Où les lignes se
+coupent dépend de la face, et Vitest n'en a pas — donc c'est `libre_samples` du dump de
+géométrie qui tient le repli, l'alignement et les décalages, rejoués des deux côtés sous
+la mesure synthétique. **Et dans cette boucle-là, la taille se convertit avec le `PT_MM`
+du harnais**, pas avec le 25,4 ÷ 72 du moteur : y verser la conversion exacte fait dériver
+les deux côtés d'un millionième (7,9 contre 7,900008, mesuré). En production `scene.ts`
+convertit bien avec `album.ts::PT_MM`, qui est celui du moteur.
+
+**Un objet tourné garde son proxy d'accessibilité entier**, tourné avec lui, au lieu
+d'être ramené au rognage : rogner un rectangle tourné donnerait un polygone, et ce qui
+justifiait le rognage — le fond perdu — ne concerne que ce que les gabarits produisent,
+qui est toujours droit.
 
 ## L'app
 
@@ -485,8 +543,10 @@ succès parfait sur zéro travail.
 ## Décisions à ne pas rouvrir, côté code
 
 Tauri 2 et React. GPL-3.0. `album.json` état unique réparable à la main. Le PDF fait foi.
-Aucune image ne traverse le pli. Heuristiques d'abord, IA jamais décisionnaire. Jamais de
-résolution sous 250 ppi. Jamais `imazen/heic` (AGPL).
+Aucune image ne traverse le pli, **ni aucun objet libre** : le pli est dur, l'éditeur y
+bute ; la marge de sécurité est molle, on avertit. Heuristiques d'abord, IA jamais
+décisionnaire. Jamais de résolution sous 250 ppi. Jamais `imazen/heic` (AGPL). Un objet
+de scène porte un angle et une origine, **jamais une matrice**.
 
 ## Commandes
 

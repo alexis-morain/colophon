@@ -123,12 +123,104 @@ pub struct Spread {
     /// Pinned by the user without being edited. Same recomposition shield.
     #[serde(default, skip_serializing_if = "is_false")]
     pub locked: bool,
+    /// Free objects, the first thing this file has ever stored that no
+    /// template can produce (wave 6.2). **Their order is their depth**, like
+    /// every other depth in this project: object *n* prints over object
+    /// *n − 1*, and all of them print over what the template produced.
+    ///
+    /// The field is additive and absent when empty, so an album that carries
+    /// none is byte-identical to one written before free objects existed —
+    /// the precedent is `Album::police`. **The schema does not move for it,
+    /// and that is not an oversight**: raising the version with its migration
+    /// is wave 6.4's job, along with the linter counters and the preflight
+    /// refusal, because that is where the consequences of a stored object are
+    /// paid together rather than one at a time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub objets: Vec<Objet>,
 }
 
 impl Spread {
     /// Survives a recomposition untouched.
     pub fn pinned(&self) -> bool {
         self.edited || self.locked
+    }
+}
+
+/// One free object on a spread: a box, an angle, and what fills it.
+///
+/// The box is in the engine's own frame — millimetres, origin bottom-left of
+/// the media box — like every rectangle this crate computes. It is stored
+/// rather than derived because nothing else can produce it: a template owns
+/// its slots, and this is precisely what no template owns.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Objet {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    /// Degrees, counter-clockwise, **around the rectangle's centre**. An
+    /// angle and an origin, never an arbitrary matrix: everything that
+    /// measures this object has to be able to recover its four corners, and
+    /// a matrix would let a shear in through the same door.
+    ///
+    /// Absent = 0, so an album whose objects are all upright is byte-identical
+    /// to one written before the field existed.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub angle: f64,
+    /// What the object is. One variant today; a clipart arrives in 6.3 as
+    /// another, and the tag that tells them apart is already in the file.
+    #[serde(flatten)]
+    pub contenu: Contenu,
+}
+
+/// What fills a free object.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Contenu {
+    /// A block of text the reader placed. Unlike the three text *pages*,
+    /// which print their lines as typed, a block has a width the reader drew,
+    /// and a width is what a block means: it wraps at word boundaries, in the
+    /// album's own face. Nothing is wrapped in silence — what does not fit
+    /// runs past the bottom, the scene says so, and a single word wider than
+    /// the box is reported rather than cut.
+    Texte {
+        texte: String,
+        taille_pt: f64,
+        /// Absent = the natural leading of that size (1.35 x), the ratio this
+        /// engine has drawn a line box with since the first caption.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        interligne_mm: Option<f64>,
+        #[serde(default, skip_serializing_if = "Alignement::est_defaut")]
+        alignement: Alignement,
+    },
+}
+
+/// Where a wrapped line sits inside the box it was wrapped to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Alignement {
+    #[default]
+    Gauche,
+    Centre,
+    Droite,
+}
+
+impl Alignement {
+    fn est_defaut(&self) -> bool {
+        matches!(self, Alignement::Gauche)
+    }
+}
+
+impl Objet {
+    /// The natural leading of a size, in millimetres: what an absent
+    /// `interligne_mm` means. One place says it, so the two renderers and the
+    /// emitter cannot each pick their own.
+    pub fn interligne(&self) -> f64 {
+        match &self.contenu {
+            Contenu::Texte { taille_pt, interligne_mm, .. } => {
+                interligne_mm.unwrap_or(taille_pt / (72.0 / 25.4) * 1.35)
+            }
+        }
     }
 }
 
@@ -388,6 +480,7 @@ mod tests {
             text: None,
             edited: true,
             locked: false,
+            objets: Vec::new(),
         });
         let back: Album =
             serde_json::from_str(&serde_json::to_string(&album).unwrap()).unwrap();
@@ -403,6 +496,10 @@ fn is_default_zoom(z: &f64) -> bool {
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
 }
 
 /// One photo the curation set aside, and why. `curation.json` holds the

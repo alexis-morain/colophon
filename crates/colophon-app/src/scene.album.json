@@ -144,6 +144,43 @@
       "template": "colophon",
       "slots": [],
       "text": "Composé avec Colophon.\n98 photographies, 50 planches.\nsRGB, 300 ppi."
+    },
+    {
+      "template": "duo",
+      "slots": [
+        { "src": "objets/a.jpg", "focal": [0.5, 0.5] },
+        { "src": "objets/b.jpg", "focal": [0.5, 0.5] }
+      ],
+      "caption": "Les objets libres",
+      "objets": [
+        {
+          "x": 20.0, "y": 30.0, "w": 35.0, "h": 24.0,
+          "type": "texte",
+          "texte": "un bloc droit qui revient à la ligne",
+          "taille_pt": 11.0
+        },
+        {
+          "x": 130.0, "y": 120.0, "w": 60.0, "h": 30.0, "angle": 17.5,
+          "type": "texte",
+          "texte": "tourné\net centré",
+          "taille_pt": 13.0,
+          "interligne_mm": 7.0,
+          "alignement": "centre"
+        },
+        {
+          "x": 240.0, "y": 40.0, "w": 50.0, "h": 12.0,
+          "type": "texte",
+          "texte": "aligné à droite\nsur trois\nlignes qui débordent",
+          "taille_pt": 10.0,
+          "alignement": "droite"
+        },
+        {
+          "x": 320.0, "y": 150.0, "w": 25.0, "h": 20.0, "angle": -90.0,
+          "type": "texte",
+          "texte": "anticonstitutionnellement",
+          "taille_pt": 9.0
+        }
+      ]
     }
   ]
 }

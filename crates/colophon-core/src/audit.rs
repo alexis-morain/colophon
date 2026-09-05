@@ -684,6 +684,7 @@ mod tests {
             text: None,
             edited: false,
             locked: false,
+            objets: Vec::new(),
         };
         let faits = crate::colophon::Faits {
             photos_retenues: 6,

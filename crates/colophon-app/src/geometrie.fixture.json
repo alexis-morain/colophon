@@ -482,6 +482,91 @@
       "texte": "Seul"
     }
   ],
+  "libre_samples": [
+    {
+      "alignement": "gauche",
+      "dx": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "largeur": 40.0,
+      "lignes": [
+        "un bloc droit qui",
+        "revient à la ligne",
+        "tout seul"
+      ],
+      "taille_pt": 11.0,
+      "texte": "un bloc droit qui revient à la ligne tout seul",
+      "trop_large": false
+    },
+    {
+      "alignement": "centre",
+      "dx": [
+        7.899999999999999,
+        3.5,
+        0.1999999999999993,
+        13.399999999999999
+      ],
+      "largeur": 40.0,
+      "lignes": [
+        "deux lignes",
+        "dont la seconde",
+        "est nettement plus",
+        "longue"
+      ],
+      "taille_pt": 11.0,
+      "texte": "deux lignes\ndont la seconde est nettement plus longue",
+      "trop_large": false
+    },
+    {
+      "alignement": "droite",
+      "dx": [
+        29.0,
+        40.0,
+        29.0
+      ],
+      "largeur": 40.0,
+      "lignes": [
+        "avant",
+        "",
+        "après"
+      ],
+      "taille_pt": 11.0,
+      "texte": "avant\n\naprès",
+      "trop_large": false
+    },
+    {
+      "alignement": "centre",
+      "dx": [
+        8.0,
+        -10.0,
+        8.0
+      ],
+      "largeur": 25.0,
+      "lignes": [
+        "court",
+        "anticonstitutionnellement",
+        "court"
+      ],
+      "taille_pt": 9.0,
+      "texte": "court anticonstitutionnellement court",
+      "trop_large": true
+    },
+    {
+      "alignement": "droite",
+      "dx": [
+        92.8
+      ],
+      "largeur": 100.0,
+      "lignes": [
+        "mot"
+      ],
+      "taille_pt": 12.0,
+      "texte": "mot",
+      "trop_large": false
+    }
+  ],
   "media": {
     "gutter": 7.0,
     "h": 216.0,

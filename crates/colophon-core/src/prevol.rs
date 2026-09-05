@@ -404,7 +404,7 @@ pub fn check(
 /// cut, and it is measured the same way for everyone.
 fn distance_au_rognage(x: f64, y: f64, g: &pdf::SpreadGeometry, bleed: f64) -> f64 {
     debug_assert!((g.bleed - bleed).abs() < 1e-9, "deux fonds perdus pour une planche");
-    scene::distance_to_trim(&pdf::Rect { x, y, w: 0.0, h: 0.0 }, g)
+    scene::distance_to_trim(&pdf::Rect { x, y, w: 0.0, h: 0.0 }, 0.0, g)
 }
 
 #[cfg(test)]
@@ -423,6 +423,7 @@ mod tests {
                 text: None,
                 edited: false,
                 locked: false,
+                objets: Vec::new(),
             });
         }
         a

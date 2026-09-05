@@ -169,9 +169,18 @@ _Avoid_: scene graph, display list, render tree
 
 **Object**:
 One visible element of a scene — a photo in its cell, a caption, a text block,
-later a free object. It carries a rectangle, a depth, a reading rank and a
-role, and nothing else: no rotation, no matrix.
+a free object. It carries a rectangle, an angle, a depth, a reading rank and a
+role, and nothing else: **an angle around the rectangle's centre, never a
+matrix**. Everything a template produces is upright, and an upright object's
+corners are its rectangle's own numbers, to the bit.
 _Avoid_: item, element, node
+
+**Angle**:
+Degrees, counter-clockwise, around an object's centre, in the engine's frame.
+Stored on a free object and carried unchanged into the scene, so both sides
+compare the same number; a screen's y runs the other way, and the sign is
+flipped in exactly one place (`scene.ts::angleEcran`).
+_Avoid_: rotation matrix, transform, orientation
 
 **Depth**:
 Where an object sits in the paint order, back to front. It is the object's
@@ -206,9 +215,12 @@ An object a template generates, and which therefore never appears in
 rectangle the template already owns.
 
 **Free object**:
-An object no template can generate, placed by hand, which is why it is stored.
-None exist yet: they arrive with free text and cliparts.
-_Avoid_: custom element, overlay
+An object no template can generate, placed by hand, which is why it is stored —
+the first thing `album.json` has ever held beyond a template and its slots. It
+carries its box, its angle and what fills it; its order in the spread's list is
+its depth, and it sits above everything the template produced. Free text
+exists; cliparts follow.
+_Avoid_: custom element, overlay, sticker, layer
 
 ## The measures
 

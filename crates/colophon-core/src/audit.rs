@@ -187,7 +187,20 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
     srcs.dedup();
 
     let (infos, notes) = mesure_photos(dir, &root, root_ok, &srcs)?;
-    let compteurs = compteurs(&album, &infos, &pdf::geometry(&album));
+    // Un bloc libre revient à la ligne dans la face du livre : c'est l'émetteur
+    // qui le dit, en composant sa scène avec `face.largeur_mm`. Le linter doit
+    // donc mesurer dans cette face-là, sinon il rend son verdict sur un repli
+    // que le PDF ne fera pas — mesurer dans une face et dessiner dans une autre
+    // est exactement ce qui fait sortir un titre du massicot, et c'est la seule
+    // chose de ce module qui dépende de la fonte : les dix compteurs d'avant ne
+    // lisent que des rectangles, que `slots_for` produit sans ouvrir un fichier
+    // de police.
+    //
+    // La face absente est le cas ordinaire et ne coûte rien : `face_album` rend
+    // alors celle du projet, empruntée, qui est celle de `text_width_mm`.
+    let face = crate::font::face_album(dir, album.police.as_ref().map(|p| p.fichier.as_str()));
+    let mesure = |s: &str, pt: f64| face.face.largeur_mm(s, pt);
+    let compteurs = compteurs_avec(&album, &infos, &pdf::geometry(&album), &mesure);
     let ok = compteurs.all().iter().all(|c| c.passes());
 
     Ok(AuditReport {
@@ -323,13 +336,29 @@ pub(crate) fn compteurs(
     infos: &HashMap<String, PhotoInfo>,
     g: &pdf::SpreadGeometry,
 ) -> Counters {
+    compteurs_avec(album, infos, g, &crate::font::text_width_mm)
+}
+
+/// The same counters under a caller-supplied measure, which is how the album's
+/// own face reaches the one counter that depends on it, `objet_deborde`.
+///
+/// The sibling exists for the reason [`crate::scene::Scene::of_avec`] exists,
+/// and it is the same shape on purpose. The bench keeps the plain
+/// [`compteurs`]: it tries candidate templates on photographs, never on free
+/// blocks, so no measure of its can move one of its verdicts.
+pub(crate) fn compteurs_avec(
+    album: &Album,
+    infos: &HashMap<String, PhotoInfo>,
+    g: &pdf::SpreadGeometry,
+    mesure: &dyn Fn(&str, f64) -> f64,
+) -> Counters {
     // The cells the linter judges are the objects the emitter draws: one
     // derivation for both, so a counter can never grade a rectangle the PDF
     // does not contain. The scenes are kept rather than thrown away, the
     // free-object counters below reading the very same walk — and the bench
     // re-runs all of this after every candidate substitution.
     let scenes: Vec<crate::scene::Scene> =
-        album.spreads.iter().map(|s| crate::scene::Scene::of(s, g)).collect();
+        album.spreads.iter().map(|s| crate::scene::Scene::of_avec(s, g, mesure)).collect();
     let rects_of: Vec<Vec<pdf::Rect>> = scenes
         .iter()
         .map(|scene| {
@@ -810,6 +839,83 @@ mod tests {
         assert_eq!(cuts, vec!["haut"]);
     }
 
+    /// Le débordement se mesure **dans la face de l'album**, jamais dans celle
+    /// du projet.
+    ///
+    /// L'émetteur compose la scène d'une planche avec `face.largeur_mm`
+    /// (`pdf.rs`, `Scene::of_avec`) : c'est la face du livre qui décide où les
+    /// lignes d'un bloc se coupent, donc combien il en a, donc s'il dépasse sa
+    /// boîte. Un linter qui mesurerait dans une autre face rendrait son verdict
+    /// sur un repli que le PDF ne fera pas — dans les deux sens, en criant sur
+    /// un bloc qui tient et en se taisant sur un bloc qui déborde.
+    ///
+    /// Le test mord par la mesure : la même boîte, le même texte, deux faces
+    /// qui n'ont pas la même chasse. Sous une face étroite le bloc tient, sous
+    /// une large il déborde, et c'est `compteurs_avec` qui doit le rapporter.
+    /// Rebrancher `Scene::of` à la place de `Scene::of_avec` fige les deux
+    /// verdicts sur celui de la face du projet, et ce test tombe.
+    #[test]
+    fn le_debordement_se_mesure_dans_la_face_de_lalbum() {
+        use crate::model::{Alignement, Contenu, Objet};
+
+        let mut a = crate::model::Album::new(
+            "t",
+            std::path::Path::new("/p"),
+            crate::model::Size { w: 210.0, h: 210.0 },
+        );
+        let g = pdf::geometry(&a);
+        // Une boîte de deux lignes de haut, et un texte qui en fait deux dans
+        // une face étroite et trois dans une large.
+        a.spreads = vec![crate::model::Spread {
+            template: "texte".into(),
+            slots: Vec::new(),
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets: vec![Objet {
+                x: 80.0,
+                y: 80.0,
+                w: 40.0,
+                h: 11.0,
+                angle: 0.0,
+                contenu: Contenu::Texte {
+                    texte: "un texte de quelques mots à replier".into(),
+                    taille_pt: 10.0,
+                    interligne_mm: Some(5.0),
+                    alignement: Alignement::Gauche,
+                },
+            }],
+        }];
+
+        // Deux chasses synthétiques plutôt que deux vraies faces : ce que le
+        // test doit prouver est que la mesure reçue est celle qui décide, pas
+        // qu'une police du Mac est plus large qu'une autre. Le banc à la main
+        // en dessous le prouve, lui, sur une vraie face.
+        let etroite = |t: &str, pt: f64| t.chars().count() as f64 * pt * 0.14;
+        let large = |t: &str, pt: f64| t.chars().count() as f64 * pt * 0.28;
+
+        let tient = compteurs_avec(&a, &HashMap::new(), &g, &etroite);
+        assert_eq!(
+            tient.objet_deborde.count, 0,
+            "dans une face étroite le bloc tient : {:?}", tient.objet_deborde.details
+        );
+        let deborde = compteurs_avec(&a, &HashMap::new(), &g, &large);
+        assert_eq!(
+            deborde.objet_deborde.count, 1,
+            "dans une face large le même bloc déborde : {:?}", deborde.objet_deborde.details
+        );
+
+        // Et `compteurs` est bien le même sous la face du projet : le doublet
+        // ne se paie d'aucune divergence.
+        assert_eq!(
+            compteurs(&a, &HashMap::new(), &g).objet_deborde.count,
+            compteurs_avec(&a, &HashMap::new(), &g, &crate::font::text_width_mm)
+                .objet_deborde
+                .count
+        );
+    }
+
     /// Les deux compteurs des objets libres, sur un album fabriqué pour eux :
     /// un objet posé dans la bande sûre, un objet dont le texte dépasse sa
     /// boîte. Les deux montent, et **eux seuls** — un compteur qui tape sur
@@ -941,3 +1047,4 @@ mod tests {
         assert_eq!(quantile(&s, 0.75), 3.0);
     }
 }
+

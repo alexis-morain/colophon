@@ -134,6 +134,21 @@ pub fn traverse_le_pli(r: &Rect, angle_deg: f64, g: &SpreadGeometry) -> bool {
     min < pli && max > pli
 }
 
+/// Whether an oriented rectangle leaves the safe zone.
+///
+/// **The margin is soft**, where the fold is hard: an object deliberately
+/// laid to the bleed is a choice, so the editor warns and the linter counts,
+/// and neither refuses. What is measured is the box the reader drew, corners
+/// included, against the band the engine already keeps free for a chapter
+/// caption — [`crate::pdf::CAPTION_SAFE`] of the margin, inside the cut.
+///
+/// The screen's `scene.ts::horsMarge` is this function, and was written
+/// before it: the threshold used to live on the TypeScript side alone, which
+/// is one language too few for a rule the linter now reads too.
+pub fn hors_marge(r: &Rect, angle_deg: f64, g: &SpreadGeometry) -> bool {
+    distance_to_trim(r, angle_deg, g) < pdf::CAPTION_SAFE * g.margin
+}
+
 /// What an object is, with what the interface needs to name it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
@@ -871,6 +886,30 @@ mod tests {
         let frole = Rect { x: pli - 55.0, y: 100.0, w: 50.0, h: 40.0 };
         assert!(!traverse_le_pli(&frole, 0.0, &g));
         assert!(traverse_le_pli(&frole, 45.0, &g), "le coin tourné passe le pli");
+    }
+
+    /// La marge est molle, mais elle se mesure : la zone sûre est celle que
+    /// le moteur garde déjà libre pour une légende, et elle se lit sur les
+    /// coins comme le pli.
+    #[test]
+    fn la_marge_se_mesure_sur_les_coins() {
+        let g = geom();
+        let sur = pdf::CAPTION_SAFE * g.margin;
+        // Bien à l'intérieur : rien à dire.
+        let dedans = Rect { x: g.bleed + sur + 5.0, y: g.bleed + sur + 5.0, w: 40.0, h: 20.0 };
+        assert!(!hors_marge(&dedans, 0.0, &g));
+        // Le bord gauche entre dans la bande : on avertit.
+        let bord = Rect { x: g.bleed + 1.0, y: 100.0, w: 40.0, h: 20.0 };
+        assert!(hors_marge(&bord, 0.0, &g));
+        // Droit il dégage la bande d'un cheveu ; tourné, son coin y entre.
+        let frole = Rect { x: g.bleed + sur + 0.5, y: 100.0, w: 40.0, h: 30.0 };
+        assert!(!hors_marge(&frole, 0.0, &g));
+        assert!(hors_marge(&frole, 30.0, &g), "le coin tourné entre dans la marge");
+        // Et un objet que la coupe traverse est hors marge a fortiori : la
+        // marge est la bande, le rognage en est le fond.
+        let coupe = Rect { x: g.bleed - 5.0, y: 100.0, w: 40.0, h: 20.0 };
+        assert!(distance_to_trim(&coupe, 0.0, &g) < 0.0);
+        assert!(hors_marge(&coupe, 0.0, &g));
     }
 
     /// A free object is stored, so it is the one thing on the scene that no

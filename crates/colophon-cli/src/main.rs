@@ -202,7 +202,15 @@ fn main() -> Result<()> {
     // Un dossier neuf n'a pas d'album.json, et un album déjà au schéma
     // courant ressort sans être réécrit — la migration s'arrête avant.
     if cli.out.join("album.json").exists() {
-        let _ = colophon_core::build::migrate_album_folder(&cli.out);
+        // Un album venu d'un build plus récent est le seul échec de migration
+        // qui arrête tout : le lire lui ferait perdre ce que ce build ne sait
+        // pas relire, et la première écriture le graverait. Les autres échecs
+        // restent tolérés — la lecture qui suit les dit mieux, avec son chemin.
+        if let Err(e) = colophon_core::build::migrate_album_folder(&cli.out) {
+            if e.is::<colophon_core::build::SchemaTropRecent>() {
+                return Err(e);
+            }
+        }
     }
 
     if cli.dump_geometry {

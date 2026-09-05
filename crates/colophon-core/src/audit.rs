@@ -109,10 +109,19 @@ pub struct Counters {
     pub legende_manquante: Counter,
     pub legende_sur_photo: Counter,
     pub repetition_gabarit: Counter,
+    /// Un objet libre dont la boîte entre dans la bande sûre. Les dix
+    /// compteurs d'avant jugent le travail du Composer ; ces deux-là jugent
+    /// une main, ce qui est nouveau ici et assumé : le Composer ne pose aucun
+    /// objet libre, et l'éditeur a déjà averti au moment du geste.
+    pub objet_hors_marge: Counter,
+    /// Un objet libre dont le texte ne tient pas dans la boîte qu'on lui a
+    /// dessinée — trop haut, ou un mot trop large. Le moteur ne coupe rien :
+    /// il laisse dépasser et le dit, et c'est ce qu'on lit ici.
+    pub objet_deborde: Counter,
 }
 
 impl Counters {
-    pub(crate) fn all(&self) -> [&Counter; 10] {
+    pub(crate) fn all(&self) -> [&Counter; 12] {
         [
             &self.visage_coupe,
             &self.orientation_trahie,
@@ -124,6 +133,8 @@ impl Counters {
             &self.legende_manquante,
             &self.legende_sur_photo,
             &self.repetition_gabarit,
+            &self.objet_hors_marge,
+            &self.objet_deborde,
         ]
     }
 }
@@ -314,12 +325,15 @@ pub(crate) fn compteurs(
 ) -> Counters {
     // The cells the linter judges are the objects the emitter draws: one
     // derivation for both, so a counter can never grade a rectangle the PDF
-    // does not contain.
-    let rects_of: Vec<Vec<pdf::Rect>> = album
-        .spreads
+    // does not contain. The scenes are kept rather than thrown away, the
+    // free-object counters below reading the very same walk — and the bench
+    // re-runs all of this after every candidate substitution.
+    let scenes: Vec<crate::scene::Scene> =
+        album.spreads.iter().map(|s| crate::scene::Scene::of(s, g)).collect();
+    let rects_of: Vec<Vec<pdf::Rect>> = scenes
         .iter()
-        .map(|s| {
-            crate::scene::Scene::of(s, g)
+        .map(|scene| {
+            scene
                 .objects
                 .iter()
                 .filter(|o| matches!(o.role, crate::scene::Role::Photo { .. }))
@@ -508,6 +522,54 @@ pub(crate) fn compteurs(
         })
         .collect();
 
+    // -- objets libres : ce que la scène a déjà mesuré, lu et compté.
+    //
+    // Rien n'est recalculé ici. `hors_marge` et `overflow` vivent dans
+    // `scene`, avec le geste de l'éditeur et l'émetteur du PDF, et une
+    // seconde implémentation de la doctrine est exactement ce que ce
+    // module-là existe pour supprimer. Les cliparts n'existent pas encore :
+    // le jour où ils arrivent, ils arrivent avec leurs propres compteurs.
+    let mut hors_marge = Vec::new();
+    let mut deborde = Vec::new();
+    for (si, scene) in scenes.iter().enumerate() {
+        for objet in &scene.objects {
+            let crate::scene::Role::FreeText { index, overflow, trop_large, .. } = &objet.role
+            else {
+                continue;
+            };
+            if crate::scene::hors_marge(&objet.rect, objet.angle, g) {
+                hors_marge.push(Finding {
+                    planche: si + 1,
+                    case_idx: None,
+                    src: None,
+                    info: format!(
+                        "objet libre n° {} à {:.1} mm du rognage",
+                        index + 1,
+                        crate::scene::distance_to_trim(&objet.rect, objet.angle, g)
+                    ),
+                });
+            }
+            if *overflow {
+                deborde.push(Finding {
+                    planche: si + 1,
+                    case_idx: None,
+                    src: None,
+                    info: format!("le texte de l'objet libre n° {} dépasse sa boîte", index + 1),
+                });
+            } else if *trop_large {
+                deborde.push(Finding {
+                    planche: si + 1,
+                    case_idx: None,
+                    src: None,
+                    info: format!(
+                        "un mot de l'objet libre n° {} est plus large que sa boîte",
+                        index + 1
+                    ),
+                });
+            }
+        }
+    }
+
     Counters {
         visage_coupe: Counter::new(0, true, visage),
         orientation_trahie: Counter::new(0, true, orientation),
@@ -519,6 +581,15 @@ pub(crate) fn compteurs(
         legende_manquante: Counter::new(0, true, legende_manquante),
         legende_sur_photo: Counter::new(0, true, legende_sur_photo),
         repetition_gabarit: Counter::new(1, false, repetition),
+        // Mous, et pourtant à zéro. Mous parce qu'un objet posé volontairement
+        // à fond perdu est un choix et pas un défaut : le linter est là pour
+        // qu'on n'en expédie pas un par accident, pas pour interdire — le
+        // refus, lui, est au prévol, et seulement sur la coupe et le pli.
+        // Zéro parce qu'aucun des trois jeux de référence n'en porte un : le
+        // jour où un album légitime en compte, c'est le seuil qui bouge, pas
+        // la classe.
+        objet_hors_marge: Counter::new(0, false, hors_marge),
+        objet_deborde: Counter::new(0, false, deborde),
     }
 }
 
@@ -737,6 +808,131 @@ mod tests {
         // the same top-border face now reads as cut.
         let cuts = face_cuts(&rect, 2000.0, 1000.0, [0.5, 0.5], 1.5, &faces);
         assert_eq!(cuts, vec!["haut"]);
+    }
+
+    /// Les deux compteurs des objets libres, sur un album fabriqué pour eux :
+    /// un objet posé dans la bande sûre, un objet dont le texte dépasse sa
+    /// boîte. Les deux montent, et **eux seuls** — un compteur qui tape sur
+    /// autre chose rendrait rouges les trois jeux de référence, qui ne
+    /// portent aucun objet libre.
+    #[test]
+    fn les_objets_libres_font_monter_leurs_deux_compteurs_et_eux_seuls() {
+        use crate::model::{Alignement, Contenu, Objet};
+
+        let mut a = crate::model::Album::new(
+            "t",
+            std::path::Path::new("/p"),
+            crate::model::Size { w: 210.0, h: 210.0 },
+        );
+        let g = pdf::geometry(&a);
+        let bloc = |x: f64, y: f64, w: f64, h: f64, texte: &str| Objet {
+            x,
+            y,
+            w,
+            h,
+            angle: 0.0,
+            contenu: Contenu::Texte {
+                texte: texte.into(),
+                taille_pt: 10.0,
+                interligne_mm: Some(5.0),
+                alignement: Alignement::Gauche,
+            },
+        };
+        let planche = |objets: Vec<Objet>| crate::model::Spread {
+            template: "texte".into(),
+            slots: Vec::new(),
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets,
+        };
+        // Deux planches sans photo : aucun compteur de case n'a rien à lire,
+        // et le test ne dépend d'aucun fichier.
+        a.spreads = vec![
+            // Le bord gauche entre dans la bande sûre, la coupe ne le touche pas.
+            planche(vec![bloc(g.bleed + 1.0, 100.0, 40.0, 20.0, "un mot")]),
+            // Bien à l'intérieur, mais quatre lignes dans 6 mm de haut.
+            planche(vec![bloc(
+                80.0,
+                80.0,
+                40.0,
+                6.0,
+                "une ligne\nune deuxième\nune troisième\nune quatrième",
+            )]),
+        ];
+
+        let c = compteurs(&a, &HashMap::new(), &g);
+        assert_eq!(c.objet_hors_marge.count, 1, "{:?}", c.objet_hors_marge.details);
+        assert_eq!(c.objet_deborde.count, 1, "{:?}", c.objet_deborde.details);
+        assert_eq!(c.objet_hors_marge.details[0].planche, 1);
+        assert_eq!(c.objet_deborde.details[0].planche, 2);
+        for autre in [
+            &c.visage_coupe,
+            &c.orientation_trahie,
+            &c.doublon_planche,
+            &c.sous_resolution,
+            &c.chapitre_orphelin,
+            &c.ouverture_faible,
+            &c.rythme_plat,
+            &c.legende_manquante,
+            &c.legende_sur_photo,
+            &c.repetition_gabarit,
+        ] {
+            assert_eq!(autre.count, 0, "{:?}", autre.details);
+        }
+
+        // Et sans objet libre, les deux compteurs sont muets : c'est ce qui
+        // fait que les trois jeux de référence ne bougent pas d'un chiffre.
+        a.spreads = vec![planche(Vec::new()), planche(Vec::new())];
+        let c = compteurs(&a, &HashMap::new(), &g);
+        assert_eq!(c.objet_hors_marge.count, 0);
+        assert_eq!(c.objet_deborde.count, 0);
+    }
+
+    /// Un mot plus large que sa boîte déborde lui aussi, latéralement : le
+    /// moteur le signale plutôt que de le couper, et le compteur le lit au
+    /// même titre que le texte trop haut. Deux façons de ne pas tenir dans la
+    /// boîte qu'on a dessinée, un seul compteur — en ouvrir un second pour le
+    /// second cas serait la classe de défaut que la vague a refusée.
+    #[test]
+    fn un_mot_plus_large_que_sa_boite_deborde_aussi() {
+        use crate::model::{Alignement, Contenu, Objet};
+
+        let mut a = crate::model::Album::new(
+            "t",
+            std::path::Path::new("/p"),
+            crate::model::Size { w: 210.0, h: 210.0 },
+        );
+        let g = pdf::geometry(&a);
+        a.spreads = vec![crate::model::Spread {
+            template: "texte".into(),
+            slots: Vec::new(),
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets: vec![Objet {
+                x: 80.0,
+                y: 80.0,
+                w: 8.0,
+                h: 40.0,
+                angle: 0.0,
+                contenu: Contenu::Texte {
+                    texte: "anticonstitutionnellement".into(),
+                    taille_pt: 10.0,
+                    interligne_mm: Some(5.0),
+                    alignement: Alignement::Gauche,
+                },
+            }],
+        }];
+        let c = compteurs(&a, &HashMap::new(), &g);
+        assert_eq!(c.objet_deborde.count, 1, "{:?}", c.objet_deborde.details);
+        assert!(
+            c.objet_deborde.details[0].info.contains("large"),
+            "{}",
+            c.objet_deborde.details[0].info
+        );
     }
 
     #[test]

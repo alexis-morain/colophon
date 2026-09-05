@@ -702,6 +702,136 @@ input[type="radio"] {
   white-space: pre;
 }
 
+/* Un bloc qu'on peut prendre. Le curseur dit qu'il se déplace ; le cadre
+   n'apparaît qu'au survol, pour que la planche au repos reste une planche. */
+.objet-libre.saisissable {
+  pointer-events: auto;
+  cursor: move;
+}
+
+.objet-libre.saisissable:hover {
+  outline: 1px dashed rgb(var(--ink-rgb) / 0.35);
+  outline-offset: 2px;
+}
+
+/* Choisi : le calque de manipulation prend le dessus, et le bloc lui laisse
+   le pointeur — sans ça les poignées seraient sous le texte. */
+.objet-libre.choisi {
+  pointer-events: none;
+}
+
+/* ---- le calque de manipulation ---------------------------------------- */
+
+.objet-calque {
+  position: absolute;
+  transform-origin: center;
+  outline: 1.5px solid var(--accent);
+  outline-offset: 0;
+  cursor: move;
+  touch-action: none;
+}
+
+/* Hors de la zone sûre : l'avertissement est visible sans être un refus. */
+.objet-calque.hors-marge {
+  outline-color: rgb(var(--ink-rgb) / 0.72);
+  outline-style: dashed;
+}
+
+.objet-poignee {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  background: var(--paper);
+  touch-action: none;
+}
+
+.objet-poignee:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.objet-poignee-hg { left: -6px; top: -6px; cursor: nwse-resize; }
+.objet-poignee-hd { right: -6px; top: -6px; cursor: nesw-resize; }
+.objet-poignee-bd { right: -6px; bottom: -6px; cursor: nwse-resize; }
+.objet-poignee-bg { left: -6px; bottom: -6px; cursor: nesw-resize; }
+
+/* La poignée de rotation, au-dessus du bord haut, ronde pour qu'on ne la
+   confonde pas avec un coin. Sa tige la relie à la boîte. */
+.objet-poignee-tourner {
+  left: 50%;
+  top: -26px;
+  margin-left: -6px;
+  border-radius: 50%;
+  cursor: grab;
+}
+
+.objet-poignee-tourner::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1.5px;
+  height: 14px;
+  margin-left: -0.75px;
+  background: var(--accent);
+}
+
+.objet-avertis {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  display: flex;
+  gap: 3px;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.objet-warn {
+  pointer-events: auto;
+  padding: 2px 6px;
+  background: rgb(var(--ink-rgb) / 0.72);
+  color: var(--chip-accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-11);
+  cursor: help;
+}
+
+.objet-supprimer {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--paper);
+  background: var(--accent);
+  transform-origin: center;
+  cursor: pointer;
+}
+
+/* Le champ d'un bloc : droit, même quand le bloc est tourné. */
+.objet-champ {
+  position: absolute;
+  z-index: 3;
+  margin: 0;
+  padding: 2px;
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  font-family: var(--font-book);
+  line-height: 1.35;
+  color: var(--paper-ink);
+  background: var(--paper);
+  resize: none;
+}
+
 /* Ce qui déborde par le bas déborde pour de vrai : rien n'est coupé, et la
    boîte le dit d'un filet, seulement pendant l'édition. */
 .objet-libre.deborde::after {

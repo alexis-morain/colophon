@@ -44,6 +44,9 @@ export type Dump = {
   /** Le repli d'un bloc libre sous la mesure synthétique. Là pour la même
    *  raison que `garde_samples` : où une ligne se coupe dépend de la face, et
    *  la parité tourne sans face — donc c'est l'algorithme qui voyage. */
+  /** Les deux boîtes de contenu, `[x, y, w, h]` en repère moteur : gauche
+   *  puis droite. L'éditeur y pose un bloc libre neuf. */
+  pages?: [number, number, number, number][];
   libre_samples?: {
     texte: string;
     largeur: number;

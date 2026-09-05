@@ -26,6 +26,7 @@ import {
   Album,
   CAPTION_SIZE_MM,
   PHOTO_CAPTION_SIZE_MM,
+  PT_MM,
   Rect,
   Slot,
   Spread,
@@ -59,12 +60,14 @@ import {
   angleEcran,
   avecRecadrage,
   hitTest,
+  retournerBoite,
   Point,
   Role,
   SceneObject,
   sceneOf,
 } from "./scene";
 import { cachedThumb, loadThumb } from "./thumbs";
+import { ObjetLibreCalque, PoseObjet } from "./ObjetLibreCalque";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
 type CropDraft = { slot: number; focal: [number, number]; zoom: number };
@@ -85,6 +88,11 @@ export function SpreadView({
   onOverflow,
   onSansMarge,
   onPlanche,
+  objet,
+  onObjetSelect,
+  onObjet,
+  onObjetTexte,
+  onObjetSupprimer,
 }: {
   album: Album;
   spread: Spread;
@@ -114,10 +122,26 @@ export function SpreadView({
   /** Tourner la planche depuis la couche d'objets, au bout de l'ordre de
    *  lecture. Rend vrai si elle a tourné. */
   onPlanche?: (sens: 1 | -1) => boolean;
+  /** L'objet libre choisi, s'il y en a un. Un second état à côté de
+   *  `selected`, et pas une union tagguée : une case choisie est un éditeur
+   *  de recadrage, un objet choisi est un éditeur de transformation. App
+   *  tient l'invariant qu'au plus un des deux est posé. */
+  objet?: number | null;
+  onObjetSelect?: (index: number | null) => void;
+  /** Un geste a fini : une boîte et un angle, en repère moteur. */
+  onObjet?: (index: number, rect: Rect, angle: number) => void;
+  onObjetTexte?: (index: number, texte: string) => void;
+  onObjetSupprimer?: (index: number) => void;
 }) {
   const paper = useRef<HTMLDivElement>(null);
   const [mm, setMm] = useState(1);
   const [draft, setDraft] = useState<CropDraft | null>(null);
+  /** La pose d'un objet libre pendant son geste : montrée, pas encore
+   *  écrite. Comme le brouillon de recadrage, et pour la même raison — ⌘Z
+   *  défait un glissement, pas chacun de ses frémissements. */
+  const [draftObjet, setDraftObjet] = useState<PoseObjet | null>(null);
+  /** Le bloc dont le champ de saisie est ouvert. */
+  const [ecrit, setEcrit] = useState<number | null>(null);
   const [editingCaption, setEditingCaption] = useState(false);
   // The text block's editing state lives here rather than inside the block,
   // because the keyboard opens it from the proxy layer and the mouse opens
@@ -172,7 +196,26 @@ export function SpreadView({
   // renderer on the side: a draft is not another scene, it is these objects
   // with one framing not yet written down — and neither renderer has to
   // learn what a crop draft is.
-  const pose = sceneOf(spread, geom, measureMm);
+  // Un objet en cours de geste entre par la planche plutôt que par la scène :
+  // sa boîte décide où ses lignes se coupent, donc une boîte substituée après
+  // coup montrerait le texte de l'ancienne. Une planche brouillon, et
+  // l'assembleur refait son travail — c'est son travail.
+  const dessinee =
+    draftObjet !== null && objet !== null && objet !== undefined && spread.objets
+      ? {
+          ...spread,
+          objets: spread.objets.map((o, i) =>
+            i === objet
+              ? {
+                  ...o,
+                  ...retournerBoite(draftObjet.rect, geom),
+                  angle: draftObjet.angle,
+                }
+              : o,
+          ),
+        }
+      : spread;
+  const pose = sceneOf(dessinee, geom, measureMm);
   const scene = draft
     ? avecRecadrage(pose, draft.slot, draft.focal, draft.zoom)
     : pose;
@@ -353,7 +396,8 @@ export function SpreadView({
    */
   const enEdition = (o: SceneObject) =>
     (o.role.role === "chapter_caption" && editingCaption && !!onSpreadCaption) ||
-    (o.role.role === "text" && editingText && !!onText);
+    (o.role.role === "text" && editingText && !!onText) ||
+    (o.role.role === "free_text" && ecrit === o.role.index);
 
   /**
    * What Enter does on a focused object — the keyboard's half of what a
@@ -374,6 +418,14 @@ export function SpreadView({
         break;
       case "text":
         if (onText && spread.template === "texte") setEditingText(true);
+        break;
+      // Le clavier fait ce que le double-clic fait : choisir le bloc et
+      // ouvrir son champ. Choisir d'abord, pour que la barre de contexte
+      // montre ses réglages même si le champ se referme aussitôt.
+      case "free_text":
+        if (!onObjetTexte) break;
+        onObjetSelect?.(o.role.index);
+        setEcrit(o.role.index);
         break;
     }
   };
@@ -430,6 +482,16 @@ export function SpreadView({
     const cell = caseSous(p.x, p.y);
     e.currentTarget.setPointerCapture(e.pointerId);
     const commun = { x: e.clientX, y: e.clientY, moved: false, signale: false, at };
+    // Un objet libre est au-dessus de tout : s'il est sous le pointeur, c'est
+    // lui qu'on choisit, et aucun geste de case ne démarre. Le calque prend
+    // le relais dès l'image suivante — c'est lui qui porte le glissement.
+    const role = at === null ? null : scene.objects[at].role;
+    if (role?.role === "free_text" && onObjetSelect) {
+      geste.current = null;
+      onSelect?.(null);
+      onObjetSelect(role.index);
+      return;
+    }
     if (cell !== null && cell === selected && onCrop) {
       const slot = spread.slots[cell];
       const f = (draft?.slot === cell ? draft.focal : slot?.focal) ?? [0.5, 0.42];
@@ -506,7 +568,10 @@ export function SpreadView({
     if (!g.moved) {
       // A click that moved nothing is a click: the same thing the proxy
       // layer does with Enter, and the same thing a `<div>` used to do.
-      if (g.at === null) onSelect?.(null);
+      if (g.at === null) {
+        onSelect?.(null);
+        onObjetSelect?.(null);
+      }
       else activer(scene.objects[g.at]);
       return;
     }
@@ -640,7 +705,13 @@ export function SpreadView({
           "--spread-aspect": trimW / album.trim_mm.h,
         } as React.CSSProperties
       }
-      onClick={() => onSelect?.(null)}
+      // Le papier nu lâche les deux choix. Sans ça, un objet libre resterait
+      // choisi pendant qu'on travaille ailleurs sur la planche, et sa barre
+      // de réglages parlerait d'un bloc que personne ne regarde plus.
+      onClick={() => {
+        onSelect?.(null);
+        onObjetSelect?.(null);
+      }}
     >
       <div
         className="media-box"
@@ -781,13 +852,33 @@ export function SpreadView({
             // par son proxy comme tout objet de la scène.
             case "free_text": {
               const box = o.rect;
+              const index = role.index;
               return (
                 <div
-                  key={`libre-${role.index}`}
+                  key={`libre-${index}`}
                   className={
-                    "objet-libre" + (role.overflow ? " deborde" : "")
+                    "objet-libre" +
+                    (role.overflow ? " deborde" : "") +
+                    (onObjetSelect ? " saisissable" : "") +
+                    (objet === index ? " choisi" : "")
                   }
                   aria-hidden="true"
+                  title={role.tropLarge ? t("objet.trop.large") : undefined}
+                  onClick={
+                    onObjetSelect &&
+                    ((e) => {
+                      e.stopPropagation();
+                      onObjetSelect(objet === index ? null : index);
+                    })
+                  }
+                  onDoubleClick={
+                    onObjetTexte &&
+                    ((e) => {
+                      e.stopPropagation();
+                      onObjetSelect?.(index);
+                      setEcrit(index);
+                    })
+                  }
                   style={{
                     left: `${box.x * mm}px`,
                     top: `${box.y * mm}px`,
@@ -800,7 +891,24 @@ export function SpreadView({
                   }}
                 >
                   {role.lines.map((l, i) => {
-                    const px = Math.max(l.sizeMm * mm * 1.35, 11);
+                    // **Un bloc libre se dessine à sa taille d'impression**,
+                    // et c'est le seul texte de l'éditeur dans ce cas.
+                    //
+                    // Partout ailleurs l'écran grossit le corps d'un tiers,
+                    // parce qu'un corps 7 est illisible à l'écran et que rien
+                    // ne dépend de sa largeur exacte : une légende est posée
+                    // par sa ligne de base, une page de texte imprime ses
+                    // lignes telles qu'elles sont tapées. Ici, **la boîte
+                    // décide où les lignes se coupent** — grossir le texte
+                    // d'un tiers sans grossir la boîte montrerait des
+                    // coupures que le PDF n'a pas. Mesuré le 05/09 : une
+                    // ligne de 255 px de boîte en rendait 331.
+                    //
+                    // Pas de plancher de lisibilité non plus, pour la même
+                    // raison : un plancher est un grossissement qui ne dit
+                    // pas son nom. Un bloc trop petit pour être lu à l'écran
+                    // l'est aussi sur le papier, et le corps est un réglage.
+                    const px = l.sizeMm * mm;
                     return (
                       <span
                         key={i}
@@ -820,6 +928,88 @@ export function SpreadView({
             }
           }
         })}
+
+        {/* La prise sur l'objet choisi : cadre, poignées, avertissements. En
+            DOM comme au canvas — une poignée a un curseur, un nom pour
+            VoiceOver et un état de survol, et un canvas n'a rien de tout ça.
+            Le même précédent que les pastilles d'une case. */}
+        {onObjet &&
+          objet !== null &&
+          objet !== undefined &&
+          (() => {
+            const cible = scene.objects.find(
+              (o) => o.role.role === "free_text" && o.role.index === objet,
+            );
+            if (!cible || cible.role.role !== "free_text") return null;
+            if (ecrit === objet) return null;
+            return (
+              <ObjetLibreCalque
+                pose={draftObjet ?? { rect: cible.rect, angle: cible.angle }}
+                geom={geom}
+                mm={mm}
+                deborde={cible.role.overflow}
+                onDraft={setDraftObjet}
+                onCommit={(p) => {
+                  setDraftObjet(null);
+                  onObjet(objet, retournerBoite(p.rect, geom), p.angle);
+                }}
+                onEcrire={() => setEcrit(objet)}
+                onSupprimer={() => {
+                  onObjetSelect?.(null);
+                  onObjetSupprimer?.(objet);
+                }}
+              />
+            );
+          })()}
+
+        {/* Le champ d'un bloc, **droit même si le bloc est tourné** : un
+            curseur et une sélection dans un champ tourné sont le plus faible
+            chemin d'un navigateur, et ce qu'on vient y faire est taper. Le
+            bloc reprend son angle à la fermeture. */}
+        {onObjetTexte &&
+          ecrit !== null &&
+          (() => {
+            const cible = scene.objects.find(
+              (o) => o.role.role === "free_text" && o.role.index === ecrit,
+            );
+            const stocke = spread.objets?.[ecrit];
+            if (!cible || !stocke) return null;
+            const px = stocke.taille_pt * PT_MM * mm;
+            return (
+              <textarea
+                className="objet-champ"
+                autoFocus
+                aria-label={t("objet.saisir")}
+                defaultValue={stocke.texte}
+                style={{
+                  left: `${cible.rect.x * mm}px`,
+                  top: `${cible.rect.y * mm}px`,
+                  width: `${cible.rect.w * mm}px`,
+                  height: `${Math.max(cible.rect.h * mm, px * 2)}px`,
+                  fontSize: `${px}px`,
+                }}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  onObjetTexte(ecrit, e.target.value);
+                  setEcrit(null);
+                }}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  // Échap referme sans écrire ; ⌘⏎ écrit et referme. Un
+                  // retour simple reste un retour à la ligne : c'est un bloc
+                  // de texte, pas un champ d'une ligne.
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setEcrit(null);
+                  } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  }
+                }}
+              />
+            );
+          })()}
 
         {/* An untitled chapter has no object on the scene, and the invitation
             to title one is not a thing that prints: it is the one anchor this

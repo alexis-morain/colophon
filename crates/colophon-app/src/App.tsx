@@ -53,18 +53,22 @@ import {
 } from "./bridge";
 import {
   Album,
+  boiteDePage,
   Discard,
-  spreadGeometry,
+  Objet,
   OpenedAlbum,
   Reglage,
   Slot,
   slotsFor,
   Spread,
+  spreadGeometry,
   templateCapacity,
   TITRE_MAX,
 } from "./album";
 import { adopterGeometrie } from "./geometrie";
 import { ReglageBloc } from "./ReglageBloc";
+import { ObjetBloc } from "./ObjetBloc";
+import { coteDe, retenirAuPli, retournerBoite } from "./scene";
 import { filtreDe, poserReglages, useReglages } from "./reglages";
 import {
   changeTemplate,
@@ -87,6 +91,10 @@ import {
   setReglage,
   setSlotCaption,
   setSlotCrop,
+  setObjet as setObjetEdit,
+  setObjetTexte,
+  removeObjet,
+  addObjet,
   setSpreadCaption,
   setSpreadText,
   spreadOf,
@@ -177,6 +185,11 @@ export default function App() {
   const [savedAlbum, setSavedAlbum] = useState<Album | null>(null);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
+  /** L'objet libre choisi. Un second état à côté de `selected`, et non une
+   *  union tagguée : une case choisie ouvre l'éditeur de recadrage, un objet
+   *  choisi ouvre celui de transformation — deux choses différentes, et les
+   *  fondre churnerait trente sites d'appel pour ne rien gagner. */
+  const [objet, setObjet] = useState<number | null>(null);
   const [error, setError] = useState<Fault | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [building, setBuilding] = useState<string[] | null>(null);
@@ -408,6 +421,19 @@ export default function App() {
   }, [adopt]);
 
   /** Push an edited album onto the history. No-op edits stay off the stack. */
+  /** Choisir une case, et lâcher l'objet libre s'il y en avait un. C'est ici
+   *  qu'est tenu l'invariant : au plus un des deux choix est posé. */
+  const choisirCase = useCallback((cell: number | null) => {
+    setSelected(cell);
+    if (cell !== null) setObjet(null);
+  }, []);
+
+  /** Et la réciproque. */
+  const choisirObjet = useCallback((index: number | null) => {
+    setObjet(index);
+    if (index !== null) setSelected(null);
+  }, []);
+
   const apply = useCallback((edit: (album: Album) => Album) => {
     setHist((h) => {
       if (!h) return h;
@@ -1219,7 +1245,10 @@ export default function App() {
   }, [total, index]);
 
   // The selection belongs to one spread only.
-  useEffect(() => setSelected(null), [index]);
+  useEffect(() => {
+    setSelected(null);
+    setObjet(null);
+  }, [index]);
 
   // Unsaved work guards the window, in the app and in the dev browser alike.
   useEffect(() => {
@@ -1532,6 +1561,41 @@ export default function App() {
             setStatus(t("zoom.remis"));
             return;
           }
+        }
+      }
+
+      // Les touches de l'objet libre choisi : les flèches le déplacent d'un
+      // millimètre (⇧ pour deux dixièmes, comme ⌥ affine ailleurs), ⌫ le
+      // retire. Le pli bute ici comme il bute à la souris : une seule
+      // implémentation de la garde, appelée par les deux gestes.
+      if (objet !== null && index >= 0) {
+        const stocke = album?.spreads[index]?.objets?.[objet];
+        const pas = e.shiftKey ? 0.2 : 1;
+        const vers: Record<string, [number, number]> = {
+          ArrowLeft: [-pas, 0],
+          ArrowRight: [pas, 0],
+          // Le repère du fichier a son y vers le haut : la flèche du haut
+          // augmente y, contrairement à celle de l'écran.
+          ArrowUp: [0, pas],
+          ArrowDown: [0, -pas],
+        };
+        const d = vers[e.key];
+        if (stocke && d && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          const g = spreadGeometry(album!);
+          const bouge = { ...stocke, x: stocke.x + d[0], y: stocke.y + d[1] };
+          const ecran = retournerBoite(bouge, g);
+          const tenu = retenirAuPli(ecran, bouge.angle ?? 0, g, coteDe(ecran, g));
+          apply((a) =>
+            setObjetEdit(a, index, objet, { ...bouge, ...retournerBoite(tenu, g) }),
+          );
+          return;
+        }
+        if (stocke && (e.key === "Backspace" || e.key === "Delete")) {
+          e.preventDefault();
+          setObjet(null);
+          apply((a) => removeObjet(a, index, objet));
+          return;
         }
       }
 
@@ -1874,7 +1938,24 @@ export default function App() {
                   spread={spread}
                   planche={index}
                   selected={selected}
-                  onSelect={setSelected}
+                  onSelect={choisirCase}
+                  objet={objet}
+                  onObjetSelect={choisirObjet}
+                  onObjet={(i, rect, angle) =>
+                    apply((a) => {
+                      const o = a.spreads[index]?.objets?.[i];
+                      if (!o) return a;
+                      return setObjetEdit(a, index, i, {
+                        ...o,
+                        ...rect,
+                        angle: angle === 0 ? undefined : angle,
+                      });
+                    })
+                  }
+                  onObjetTexte={(i, texte) =>
+                    apply((a) => setObjetTexte(a, index, i, texte))
+                  }
+                  onObjetSupprimer={(i) => apply((a) => removeObjet(a, index, i))}
                   onSwap={(a, b) => apply((al) => swapPhotos(al, index, a, b))}
                   onPlace={place}
                   onCrop={(slot, focal, zoom) =>
@@ -1903,6 +1984,23 @@ export default function App() {
           spread={spread}
           onCover={onCover}
           selected={selected}
+          objet={objet}
+          onAjouterObjet={
+            spread && !onCover
+              ? () => {
+                  // Le bloc naît dans la boîte de contenu de la page de
+                  // gauche : jamais à cheval sur le pli, jamais hors marge,
+                  // par construction. La boîte vient du dump, en repère
+                  // moteur, qui est celui d'`album.json`.
+                  const g = spreadGeometry(album);
+                  const page = boiteDePage(false, g);
+                  const rang = spread.objets?.length ?? 0;
+                  apply((a) => addObjet(a, index, retournerBoite(page, g)));
+                  choisirObjet(rang);
+                }
+              : undefined
+          }
+          onObjetReglage={(i, o) => apply((a) => setObjetEdit(a, index, i, o))}
           onTemplate={(t) => apply((a) => changeTemplate(a, index, t))}
           onReglage={(src, r) => apply((a) => setReglage(a, src, r))}
           spreadIndex={index}
@@ -2321,6 +2419,9 @@ function ContextLine({
   onReglage,
   fidele,
   onFidele,
+  objet,
+  onAjouterObjet,
+  onObjetReglage,
 }: {
   album: Album;
   spread: Spread | null;
@@ -2329,6 +2430,11 @@ function ContextLine({
   spreadIndex: number;
   onTemplate: (t: string) => void;
   onLock?: () => void;
+  /** L'objet libre choisi, et de quoi en poser un. */
+  objet?: number | null;
+  onAjouterObjet?: () => void;
+  /** Un pas d'annulation. */
+  onObjetReglage?: (index: number, o: Objet) => void;
   /** One history step through `edits.ts::setReglage`, at slider release. */
   onReglage: (src: string, reglage: Reglage) => void;
   /** The faithful preview is on, and the toggle that turns it off. */
@@ -2385,6 +2491,17 @@ function ContextLine({
                 </button>
               )}
             </span>
+            {/* Poser un bloc de texte : là où vivent déjà le sélecteur de
+                gabarit et les réglages d'une photo. Pas un sixième panneau. */}
+            {onAjouterObjet && (
+              <button
+                className="link"
+                onClick={onAjouterObjet}
+                title={t("objet.ajouter.titre")}
+              >
+                {t("objet.ajouter")}
+              </button>
+            )}
             {/* The three adjustments of the chosen photo, native controls in
                 a bar already tabbable: no sixth panel, no menu entry. */}
             {selected !== null && spread.slots[selected] && (
@@ -2393,10 +2510,21 @@ function ContextLine({
                 onCommit={onReglage}
               />
             )}
+            {objet !== null &&
+              objet !== undefined &&
+              onObjetReglage &&
+              spread.objets?.[objet] && (
+                <ObjetBloc
+                  objet={spread.objets[objet]}
+                  onCommit={(o) => onObjetReglage(objet, o)}
+                />
+              )}
             <span className="context-hint">
-              {selected !== null
-                ? t("contexte.recadrage")
-                : ""}
+              {objet !== null && objet !== undefined
+                ? t("contexte.objet")
+                : selected !== null
+                  ? t("contexte.recadrage")
+                  : ""}
             </span>
           </>
         )

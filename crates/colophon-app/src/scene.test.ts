@@ -16,11 +16,14 @@ import {
   avecRecadrage,
   contains,
   corners,
+  coteDe,
   decalage,
   depthOfCell,
   distanceToTrim,
   hitTest,
+  horsMarge,
   replier,
+  retenirAuPli,
   SceneObject,
   sceneOf,
   touche,
@@ -493,5 +496,55 @@ describe("a block that wraps to its box", () => {
     expect(decalage("gauche", 40, 6)).toBe(0);
     expect(decalage("centre", 40, 6)).toBe(17);
     expect(decalage("droite", 40, 6)).toBe(34);
+  });
+});
+
+describe("the two guards a gesture applies", () => {
+  const pli = () => g.w / 2;
+
+  it("names the side an object is on by its centre", () => {
+    expect(coteDe({ x: 10, y: 10, w: 40, h: 20 }, g)).toBe(-1);
+    expect(coteDe({ x: g.w - 60, y: 10, w: 40, h: 20 }, g)).toBe(1);
+  });
+
+  it("holds an object back at the fold instead of refusing the gesture", () => {
+    // Le pli est dur, mais on bute : le geste continue de suivre la main.
+    const trop = { x: pli() - 10, y: 100, w: 50, h: 20 };
+    const tenu = retenirAuPli(trop, 0, g, -1);
+    expect(tenu.x + tenu.w).toBeCloseTo(pli(), 9);
+    expect(tenu.y).toBe(trop.y);
+    expect(tenu.w).toBe(trop.w);
+    // De l'autre côté, la butée pousse dans l'autre sens.
+    const tenuD = retenirAuPli(trop, 0, g, 1);
+    expect(tenuD.x).toBeCloseTo(pli(), 9);
+  });
+
+  it("measures the fold on the corners, so a turned object is held too", () => {
+    // Droite, elle dégage le pli de 5 mm ; tournée, un coin le franchit.
+    const r = { x: pli() - 55, y: 100, w: 50, h: 40 };
+    expect(retenirAuPli(r, 0, g, -1)).toBe(r);
+    const tenu = retenirAuPli(r, 45, g, -1);
+    expect(tenu.x).toBeLessThan(r.x);
+    expect(traverseLePli(tenu, 45, g)).toBe(false);
+  });
+
+  it("leaves an object that already clears the fold exactly where it is", () => {
+    const r = { x: 20, y: 20, w: 40, h: 20 };
+    expect(retenirAuPli(r, 0, g, -1)).toBe(r);
+    expect(retenirAuPli(r, 30, g, -1)).toBe(r);
+  });
+
+  it("warns about the safety margin without refusing anything", () => {
+    // Bien à l'intérieur : rien à dire.
+    const dedans = { x: 60, y: 60, w: 40, h: 20 };
+    expect(horsMarge(dedans, 0, g)).toBe(false);
+    // Collé à la coupe : la pastille s'allume, et c'est tout ce qui arrive.
+    const dehors = { x: g.bleed, y: 60, w: 40, h: 20 };
+    expect(horsMarge(dehors, 0, g)).toBe(true);
+    // Et l'angle compte, ici comme partout : une boîte qui tient droite peut
+    // franchir la zone sûre d'un coin une fois tournée.
+    const juste = { x: 60, y: g.bleed + g.margin * 0.6, w: 80, h: 6 };
+    expect(horsMarge(juste, 0, g)).toBe(false);
+    expect(horsMarge(juste, 25, g)).toBe(true);
   });
 });

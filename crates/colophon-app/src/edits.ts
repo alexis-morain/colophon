@@ -8,6 +8,7 @@ import {
   Cover,
   Discard,
   GARDE_TEMPLATE,
+  Objet,
   Reglage,
   Slot,
   Spread,
@@ -319,6 +320,105 @@ export function setSpreadText(album: Album, at: number, text: string): Album {
   if (!spread) return album;
   if ((spread.text ?? "") === text) return album;
   return withSpread(album, at, touched({ ...spread, text }));
+}
+
+// ---- les objets libres ---------------------------------------------------
+//
+// Six mutations, toutes pures, toutes un pas d'annulation. Elles ne valident
+// rien de géométrique : ce qui décide qu'une boîte a le droit d'être là est
+// dans `scene.ts` (le pli, la coupe), et c'est le geste qui l'applique avant
+// d'arriver ici. Une fonction qui referait ce contrôle en donnerait une
+// seconde version, et une seconde version diverge.
+
+/** La taille de corps d'un bloc neuf, et la part de la page qu'il occupe. */
+export const OBJET_TAILLE_PT = 12;
+const OBJET_PART = 0.6;
+/** Le décalage en cascade d'un bloc posé quand la planche en porte déjà. */
+const OBJET_CASCADE_MM = 4;
+
+/**
+ * Poser un bloc de texte vide sur une planche.
+ *
+ * **Il naît dans la boîte de contenu de la page de gauche**, centré, à 60 % de
+ * sa largeur : donc jamais à cheval sur le pli et jamais hors de la marge, par
+ * construction. Chaque bloc suivant descend d'un cran vers la droite, comme
+ * une fenêtre dupliquée, et le cran s'arrête au bord de la boîte plutôt que de
+ * pousser le bloc dehors.
+ *
+ * La boîte arrive en repère moteur — origine en bas à gauche — parce que c'est
+ * ce que `album.json` stocke ; l'appelant lui passe la boîte de contenu déjà
+ * convertie, comme il le fait pour tout le reste.
+ */
+export function addObjet(
+  album: Album,
+  at: number,
+  /** Boîte de contenu de la page de gauche, repère moteur. */
+  page: { x: number; y: number; w: number; h: number },
+): Album {
+  const spread = album.spreads[at];
+  if (!spread) return album;
+  const objets = spread.objets ?? [];
+  const w = page.w * OBJET_PART;
+  const h = (OBJET_TAILLE_PT / (72 / 25.4)) * 1.35 * 3;
+  const cran = objets.length * OBJET_CASCADE_MM;
+  const x = Math.min(page.x + (page.w - w) / 2 + cran, page.x + page.w - w);
+  const y = Math.max(page.y + (page.h - h) / 2 - cran, page.y);
+  const objet: Objet = {
+    x,
+    y,
+    w,
+    h,
+    type: "texte",
+    texte: "",
+    taille_pt: OBJET_TAILLE_PT,
+  };
+  return withSpread(album, at, touched({ ...spread, objets: [...objets, objet] }));
+}
+
+/** Remplacer un objet libre, boîte et angle compris. Le seul chemin par lequel
+ *  un geste atterrit : glisser, redimensionner et tourner rendent tous une
+ *  boîte, et c'est celle-là qu'on écrit. */
+export function setObjet(
+  album: Album,
+  at: number,
+  index: number,
+  objet: Objet,
+): Album {
+  const spread = album.spreads[at];
+  const objets = spread?.objets;
+  if (!spread || !objets || !objets[index]) return album;
+  const suite = objets.slice();
+  suite[index] = objet;
+  return withSpread(album, at, touched({ ...spread, objets: suite }));
+}
+
+/** Le texte d'un bloc. Vide est une valeur : un bloc sans texte reste un objet
+ *  qu'on peut déplacer et dans lequel on reviendra taper — l'effacer serait
+ *  supprimer sous la main de quelqu'un qui vient d'effacer sa phrase. */
+export function setObjetTexte(
+  album: Album,
+  at: number,
+  index: number,
+  texte: string,
+): Album {
+  const objet = album.spreads[at]?.objets?.[index];
+  if (!objet || objet.texte === texte) return album;
+  return setObjet(album, at, index, { ...objet, texte });
+}
+
+/** Retirer un objet libre. Les objets qui le suivaient remontent d'un rang,
+ *  donc d'une profondeur : leur ordre est leur profondeur, et rien d'autre ne
+ *  la porte. */
+export function removeObjet(album: Album, at: number, index: number): Album {
+  const spread = album.spreads[at];
+  const objets = spread?.objets;
+  if (!spread || !objets || !objets[index]) return album;
+  const suite = objets.filter((_, i) => i !== index);
+  return withSpread(
+    album,
+    at,
+    touched({ ...spread, objets: suite.length ? suite : undefined }),
+  );
 }
 
 /** Toggle the padlock. Locking is not an edit: the badge stays honest. */

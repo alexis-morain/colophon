@@ -24,6 +24,7 @@
 import {
   Alignement,
   captionAnchor,
+  CAPTION_SAFE,
   colophonAnchor,
   COLOPHON_LEADING_MM,
   COLOPHON_SIZE_MM,
@@ -195,6 +196,69 @@ export function decalage(
 ): number {
   if (align === "gauche") return 0;
   return align === "centre" ? (boite - ligne) / 2 : boite - ligne;
+}
+
+/**
+ * Une boîte du repère de l'écran vers celui du moteur, ou l'inverse.
+ *
+ * Le moteur pose l'origine en bas à gauche, l'écran en haut à gauche — et le
+ * retournement est **son propre inverse**, donc une seule fonction dit les
+ * deux sens. C'est la conversion que `objetLibre` fait à l'aller ; celle-ci
+ * est le retour, celui qu'un geste emprunte pour écrire dans `album.json`.
+ */
+export function retournerBoite(r: Rect, g: SpreadGeometry): Rect {
+  return { ...r, y: g.h - (r.y + r.h) };
+}
+
+/** De quel côté du pli un objet se tient : -1 la page de gauche, 1 celle de
+ *  droite. Pris au *début* d'un geste et gardé jusqu'à sa fin, pour qu'un
+ *  glissement ne fasse jamais sauter un objet d'une page à l'autre. */
+export type Cote = -1 | 1;
+
+/** Le côté où se tient le centre d'une boîte. */
+export function coteDe(r: Rect, g: SpreadGeometry): Cote {
+  return r.x + r.w / 2 < g.w / 2 ? -1 : 1;
+}
+
+/**
+ * Ramener une boîte du bon côté du pli, en la translatant.
+ *
+ * **Le pli est dur** : aucune image ne l'a jamais traversé, et un objet libre
+ * ne commence pas. La butée est une translation et pas un refus, pour que le
+ * geste continue de suivre la main au lieu de se figer — on bute, on ne casse
+ * pas.
+ *
+ * Elle travaille sur les coins, donc sur l'objet tourné : une boîte qui
+ * dégagerait le pli droite peut le franchir d'un coin une fois tournée.
+ */
+export function retenirAuPli(
+  r: Rect,
+  angle: number,
+  g: SpreadGeometry,
+  cote: Cote,
+): Rect {
+  const xs = corners(r, angle).map((p) => p.x);
+  const pli = g.w / 2;
+  const dx =
+    cote === -1
+      ? Math.min(0, pli - Math.max(...xs))
+      : Math.max(0, pli - Math.min(...xs));
+  return dx === 0 ? r : { ...r, x: r.x + dx };
+}
+
+/**
+ * L'objet sort-il de la zone sûre ?
+ *
+ * **La marge est molle** : on avertit, on ne refuse pas. C'est la règle du
+ * projet — tout défaut a une échappatoire manuelle — et c'est aussi la seule
+ * tenable, puisqu'un objet délibérément posé à fond perdu est un choix, pas
+ * une erreur. Le compteur de linter qui comptera ceux-là arrive en 6.4.
+ *
+ * La zone sûre est celle que le moteur ancre déjà pour les légendes :
+ * `CAPTION_SAFE` de marge à l'intérieur de la coupe.
+ */
+export function horsMarge(r: Rect, angle: number, g: SpreadGeometry): boolean {
+  return distanceToTrim(r, angle, g) < CAPTION_SAFE * g.margin;
 }
 
 /**

@@ -171,6 +171,26 @@ export function fallbackTemplate(
 }
 
 /** Millimetres, origin top-left of the spread's media box (bleed included). */
+/**
+ * La boîte de contenu d'une page, marges comprises, **en repère moteur**.
+ *
+ * Lue du dump plutôt que recalculée : c'est `pdf.rs::page_box` qui décide
+ * qu'une demi-gouttière reste du côté du pli, et l'éditeur n'a pas à
+ * redécouvrir cette règle pour poser un bloc. Le repli garde la formule, pour
+ * qu'un dump d'avant ce champ n'empêche pas de poser un bloc.
+ */
+export function boiteDePage(droite: boolean, g: SpreadGeometry): Rect {
+  const dump = geometrieCourante().pages?.[droite ? 1 : 0];
+  if (dump) return { x: dump[0], y: dump[1], w: dump[2], h: dump[3] };
+  const moitie = g.w / 2;
+  return {
+    x: droite ? moitie + g.gutter / 2 : g.margin,
+    y: g.margin,
+    w: moitie - g.margin - g.gutter / 2,
+    h: g.h - 2 * g.margin,
+  };
+}
+
 /** Points to millimetres, exactly as the engine computes it.
  *
  *  Not the dump's rounded 0.352778: a free block decides where its lines

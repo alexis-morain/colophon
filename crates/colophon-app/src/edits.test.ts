@@ -12,6 +12,7 @@ import { Dump, setGeometrie } from "./geometrie";
 // run the binary) asserts the fixture is the engine's current output.
 setGeometrie(fixture as unknown as Dump);
 import {
+  addObjet,
   changeTemplate,
   duplicateSpread,
   insertSpread,
@@ -19,6 +20,7 @@ import {
   moveBlocker,
   moveSpread,
   placePhoto,
+  removeObjet,
   removePhoto,
   removeSpread,
   hasGarde,
@@ -30,6 +32,8 @@ import {
   setSlotCrop,
   setCover,
   setGarde,
+  setObjet,
+  setObjetTexte,
   setSpreadText,
   swapPhotos,
   templateChoices,
@@ -469,5 +473,107 @@ describe("setReglage", () => {
     a = setReglage(a, "p1.jpg", { expo: 0, contraste: 0, nb: true });
     a = setReglage(a, "p0.jpg", { expo: 0, contraste: 0, nb: false });
     expect(a.reglages).toEqual({ "p1.jpg": { expo: 0, contraste: 0, nb: true } });
+  });
+});
+
+// ---- les objets libres ---------------------------------------------------
+
+/** La boîte de contenu d'une page de gauche, en repère moteur. */
+const PAGE = { x: 14, y: 14, w: 185, h: 188 };
+
+describe("addObjet", () => {
+  it("pose un bloc dans la page, jamais à cheval sur le pli", () => {
+    const a = album(spread("duo", 2));
+    const b = addObjet(a, 0, PAGE);
+    const o = b.spreads[0].objets![0];
+    expect(o.type).toBe("texte");
+    expect(o.texte).toBe("");
+    // Il tient tout entier dans la boîte de contenu, donc du bon côté du pli
+    // et à l'intérieur de la marge, par construction.
+    expect(o.x).toBeGreaterThanOrEqual(PAGE.x);
+    expect(o.x + o.w).toBeLessThanOrEqual(PAGE.x + PAGE.w);
+    expect(o.y).toBeGreaterThanOrEqual(PAGE.y);
+    expect(o.y + o.h).toBeLessThanOrEqual(PAGE.y + PAGE.h);
+    // Et la planche est estampillée : une pose à la main survit à une
+    // recomposition, comme n'importe quelle retouche.
+    expect(b.spreads[0].edited).toBe(true);
+  });
+
+  it("décale chaque bloc suivant, sans jamais le pousser dehors", () => {
+    let a: Album = album(spread("duo", 2));
+    for (let i = 0; i < 12; i += 1) a = addObjet(a, 0, PAGE);
+    const objets = a.spreads[0].objets!;
+    expect(objets).toHaveLength(12);
+    expect(objets[1].x).toBeGreaterThan(objets[0].x);
+    expect(objets[1].y).toBeLessThan(objets[0].y);
+    for (const o of objets) {
+      expect(o.x + o.w).toBeLessThanOrEqual(PAGE.x + PAGE.w + 1e-9);
+      expect(o.y).toBeGreaterThanOrEqual(PAGE.y - 1e-9);
+    }
+  });
+
+  it("laisse l'album d'entrée intact, comme toute mutation", () => {
+    const a = album(spread("duo", 2));
+    const b = addObjet(a, 0, PAGE);
+    expect(a.spreads[0].objets).toBeUndefined();
+    expect(b.spreads[0].objets).toHaveLength(1);
+  });
+});
+
+describe("setObjet", () => {
+  it("écrit la boîte et l'angle qu'un geste vient de rendre", () => {
+    const a = addObjet(album(spread("duo", 2)), 0, PAGE);
+    const avant = a.spreads[0].objets![0];
+    const b = setObjet(a, 0, 0, { ...avant, x: 40, y: 50, angle: 17.5 });
+    const apres = b.spreads[0].objets![0];
+    expect([apres.x, apres.y, apres.angle]).toEqual([40, 50, 17.5]);
+    // L'entrée n'a pas bougé : la pile d'annulation garde des références.
+    expect(a.spreads[0].objets![0].angle).toBeUndefined();
+  });
+
+  it("ne fabrique rien pour un index qui n'existe pas", () => {
+    const a = addObjet(album(spread("duo", 2)), 0, PAGE);
+    const o = a.spreads[0].objets![0];
+    expect(setObjet(a, 0, 4, o)).toBe(a);
+    expect(setObjet(a, 9, 0, o)).toBe(a);
+  });
+});
+
+describe("setObjetTexte", () => {
+  it("écrit le texte, et rend le même album quand rien ne change", () => {
+    const a = addObjet(album(spread("duo", 2)), 0, PAGE);
+    const b = setObjetTexte(a, 0, 0, "une phrase");
+    expect(b.spreads[0].objets![0].texte).toBe("une phrase");
+    expect(setObjetTexte(b, 0, 0, "une phrase")).toBe(b);
+  });
+
+  it("garde un bloc vidé de son texte", () => {
+    // Vider n'est pas supprimer : quelqu'un qui vient d'effacer sa phrase
+    // s'attend à retrouver sa boîte, pas à la voir disparaître sous sa main.
+    const a = setObjetTexte(addObjet(album(spread("duo", 2)), 0, PAGE), 0, 0, "x");
+    const b = setObjetTexte(a, 0, 0, "");
+    expect(b.spreads[0].objets).toHaveLength(1);
+    expect(b.spreads[0].objets![0].texte).toBe("");
+  });
+});
+
+describe("removeObjet", () => {
+  it("fait remonter d'un rang ce qui suivait, donc d'une profondeur", () => {
+    let a: Album = album(spread("duo", 2));
+    a = addObjet(a, 0, PAGE);
+    a = addObjet(a, 0, PAGE);
+    a = addObjet(a, 0, PAGE);
+    a = setObjetTexte(a, 0, 0, "un");
+    a = setObjetTexte(a, 0, 1, "deux");
+    a = setObjetTexte(a, 0, 2, "trois");
+    const b = removeObjet(a, 0, 1);
+    expect(b.spreads[0].objets!.map((o) => o.texte)).toEqual(["un", "trois"]);
+  });
+
+  it("retire le champ quand le dernier objet s'en va", () => {
+    // Absent, pas vide : un album sans objet libre doit rester identique à
+    // l'octet à celui d'avant que les objets libres existent.
+    const a = addObjet(album(spread("duo", 2)), 0, PAGE);
+    expect(removeObjet(a, 0, 0).spreads[0].objets).toBeUndefined();
   });
 });

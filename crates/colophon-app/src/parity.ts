@@ -11,6 +11,7 @@
 // spread holds.
 
 import {
+  boiteDePage,
   captionAnchor,
   CAPTION_SIZE_MM,
   coverSheet,
@@ -110,6 +111,20 @@ export function geometryProblems(dump: Dump, label: string): string[] {
       problems.push(`${label} ${name} caption(${partiel}): dump ${wantAt}, lecture ${[anchor.x, g.h - anchor.y]}`);
     }
   }
+
+  // Les deux boîtes de contenu : l'éditeur y pose un bloc neuf, donc une
+  // dérive mettrait un bloc à cheval sur la gouttière le jour où quelqu'un
+  // change la marge.
+  (dump.pages ?? []).forEach((want, i) => {
+    const got = boiteDePage(i === 1, g);
+    [got.x, got.y, got.w, got.h].forEach((v, k) => {
+      if (!near(want[k], v)) {
+        problems.push(
+          `${label} page ${i === 1 ? "droite" : "gauche"}[${"xywh"[k]}]: dump ${want[k]}, lecture ${v}`,
+        );
+      }
+    });
+  });
 
   // Le repli d'un bloc libre, rejoué sous la même mesure : c'est le seul
   // endroit où les deux ports décident ensemble d'une coupure de ligne, et

@@ -388,6 +388,55 @@ d'être ramené au rognage : rogner un rectangle tourné donnerait un polygone, 
 justifiait le rognage — le fond perdu — ne concerne que ce que les gabarits produisent,
 qui est toujours droit.
 
+### L'éditeur des objets libres (6.2 s2)
+
+**La sélection est un second état, pas une union.** `App` tient `selected` (l'indice de
+case) et `objet` (l'indice de l'objet libre), et deux aides-mémoire imposent qu'**au plus
+un des deux est posé**. Une case choisie ouvre l'éditeur de recadrage, un objet choisi
+celui de transformation : les fondre en une union churnerait trente sites d'appel pour ne
+rien gagner. Le papier nu lâche les deux.
+
+**`ObjetLibreCalque` porte le geste, en DOM dans les deux rendus** — le précédent est
+celui des pastilles d'une case : une poignée a un curseur, un nom pour VoiceOver et un
+état de survol, et un canvas n'a rien de tout ça. Au canvas, la *sélection* passe par
+`hitTest` (un objet libre est au-dessus de tout, donc il gagne), le calque prend le relais
+ensuite. Le calque ne décide de rien de géométrique : `retenirAuPli` et `horsMarge` vivent
+dans `scene.ts`, et le clavier les appelle aussi.
+
+**Le pli bute, la marge avertit.** La butée est une translation, pas un refus — le geste
+continue de suivre la main —, et le côté est pris **au début** du geste, sinon un
+glissement ferait sauter l'objet d'une page à l'autre en le touchant. Vérifié à l'écran
+le 05/09 : bloc tourné à −46° poussé 293 px au-delà, bord droit arrêté au pli au pixel.
+
+**Un geste ne pose qu'un pas d'annulation** : un brouillon local pendant, une édition à la
+fin. Le brouillon entre par la **planche**, pas par la scène — la boîte décide où les
+lignes se coupent, donc substituer la boîte après coup montrerait le texte de l'ancienne.
+Et c'est la dernière pose gardée dans la ref qui est validée, jamais la prop : un dernier
+déplacement et le relâchement peuvent tomber dans la même image.
+
+**Le piège qui a coûté le plus, et qu'il ne faut pas défaire.** Partout ailleurs l'éditeur
+dessine le texte **un tiers plus grand** qu'il ne s'imprime, pour la lisibilité. Un bloc
+libre est **la seule exception** : sa boîte décide de ses coupures, donc grossir son texte
+sans grossir sa boîte montre des coupures que le PDF n'a pas. Mesuré le 05/09 avant
+correction : une ligne rendait 331 px dans une boîte de 255. Il se dessine à sa taille
+d'impression, **sans plancher de lisibilité non plus** — un plancher est un grossissement
+qui ne dit pas son nom. Les deux rendus le font, et le disent au même endroit.
+
+**Le champ de saisie est droit même si le bloc est tourné** : un curseur et une sélection
+dans un champ tourné sont le plus faible chemin d'un navigateur, et ce qu'on vient y faire
+est taper. Échap referme sans écrire, ⌘⏎ écrit et referme, un retour simple reste un
+retour à la ligne.
+
+**`boiteDePage` est lue du dump**, pas recalculée : c'est `pdf.rs::page_box` qui décide
+qu'une demi-gouttière reste du côté du pli, et un bloc neuf naît dans cette boîte — donc
+jamais à cheval sur le pli, jamais hors marge, par construction. La parité la compare.
+
+`tailler` (redimensionner par un coin) travaille **dans les axes de la boîte** : on ramène
+le déplacement par une rotation inverse, on y lit largeur et hauteur, puis on replace le
+centre. L'invariant est testé à tous les angles — **le coin opposé ne bouge pas dans le
+monde** —, et c'est lui qui empêche la boîte de glisser sous la main pendant qu'on la
+retaille.
+
 ## L'app
 
 Recadrage, tiroir, table lumineuse ⌘3, badge « éditée » et cadenas ⌘L, « rendre à

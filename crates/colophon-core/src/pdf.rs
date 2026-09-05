@@ -206,6 +206,11 @@ pub(crate) fn full_page(right: bool, g: &SpreadGeometry) -> Rect {
     Rect { x: if right { half } else { 0.0 }, y: 0.0, w: half, h: g.media_h }
 }
 
+/// One content box as the dump carries it: `[x, y, w, h]`, engine frame.
+fn let_page(r: Rect) -> serde_json::Value {
+    serde_json::json!([r.x, r.y, r.w, r.h])
+}
+
 /// The margined content box of one page. Half a gutter is kept on the fold
 /// side so two facing images do not kiss across the binding.
 pub(crate) fn page_box(right: bool, g: &SpreadGeometry) -> Rect {
@@ -493,6 +498,13 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
         "constantes": constantes,
         "garde_samples": garde_samples,
         "libre_samples": libre_samples,
+        // La boîte de contenu de chaque page. L'éditeur y pose un bloc libre
+        // neuf, donc il doit la lire là où elle est calculée plutôt que
+        // recomposer une marge de son côté.
+        "pages": [
+            let_page(page_box(false, &g)),
+            let_page(page_box(true, &g)),
+        ],
         "crop_windows": crop_samples,
         "covers": covers,
     })

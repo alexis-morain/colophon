@@ -115,6 +115,30 @@ export function peindre(
     ctx.restore();
   };
 
+  /** Le même tracé, à la taille d'impression exacte : pas de grossissement,
+   *  pas de plancher. Réservé aux objets libres, pour la raison ci-dessus. */
+  const texteBrut = (
+    s: string,
+    x: number,
+    baseline: number,
+    tailleMm: number,
+    couleur: string,
+    rotation?: { angle: number; centre: Point },
+  ) => {
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (rotation && rotation.angle !== 0) {
+      ctx.translate(rotation.centre.x * mm, rotation.centre.y * mm);
+      ctx.rotate((angleEcran(rotation.angle) * Math.PI) / 180);
+      ctx.translate(-rotation.centre.x * mm, -rotation.centre.y * mm);
+    }
+    ctx.font = `${tailleMm * mm}px ${c.police}`;
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = couleur;
+    ctx.fillText(s, x * mm, baseline * mm);
+    ctx.restore();
+  };
+
   const cases = new Map<number, Rect>();
 
   for (const o of scene.objects) {
@@ -191,15 +215,11 @@ export function peindre(
       case "free_text": {
         const rotation = { angle: o.angle, centre: centre(o.rect) };
         for (const l of role.lines) {
-          texte(
-            l.text,
-            role.at.x + l.dxMm,
-            role.at.y + l.dyMm,
-            l.sizeMm,
-            PLANCHER_TEXTE,
-            c.ink,
-            rotation,
-          );
+          // Ni grossissement ni plancher : la boîte décide où les lignes se
+          // coupent, et les gonfler montrerait des coupures que le PDF n'a
+          // pas. Le rendu DOM fait exactement la même chose, et le dit au
+          // même endroit — les deux images doivent rester la même image.
+          texteBrut(l.text, role.at.x + l.dxMm, role.at.y + l.dyMm, l.sizeMm, c.ink, rotation);
         }
         break;
       }

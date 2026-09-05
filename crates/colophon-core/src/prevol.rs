@@ -345,7 +345,59 @@ pub fn check(
         }
     }
 
-    // 7. The spine. Not a defect: a number that travels, and must travel with
+    // 7. Les objets libres. Deux refus, et ce sont les deux seules règles de
+    // ce fichier qui portent sur quelque chose que la machine n'a pas proposé.
+    //
+    // Elles mesurent la **boîte**, pas l'encre : c'est la boîte que la main a
+    // posée, c'est elle que l'éditeur retient au pli, et c'est donc elle que
+    // le prévol doit retrouver. Les deux mesures viennent de `scene`, où le
+    // geste les prend déjà — rien n'est réécrit ici, et un objet droit y
+    // retombe au bit près sur les quatre nombres d'avant l'angle.
+    //
+    // `case` reste vide : un bloc libre n'est pas une case, et le numéro qui
+    // le désigne est son rang dans la planche, dit dans la cause.
+    for (si, spread) in album.spreads.iter().enumerate() {
+        for object in scene::Scene::of(spread, &g).objects.iter() {
+            let scene::Role::FreeText { index, .. } = &object.role else { continue };
+            let rang = index + 1;
+            if scene::distance_to_trim(&object.rect, object.angle, &g) < 0.0 {
+                defauts.push(Defaut {
+                    regle: "objet_coupe",
+                    bloquant: true,
+                    planche: Some(si + 1),
+                    case_idx: None,
+                    src: None,
+                    cause: format!(
+                        "le bloc {rang} de cette planche est traversé par la coupe : le massicot \
+                         en emporterait une partie"
+                    ),
+                    remede: "rentrez le bloc dans la page, ou réduisez-le : l'éditeur affiche la \
+                              zone sûre pendant le geste"
+                        .into(),
+                });
+            }
+            // Le pli est dur, et il l'est depuis avant les objets libres :
+            // aucune image ne l'a jamais traversé. L'éditeur y bute, donc un
+            // bloc à cheval vient d'un `album.json` réparé à la main — le seul
+            // chemin par lequel il puisse arriver, et la raison de cette règle.
+            if scene::traverse_le_pli(&object.rect, object.angle, &g) {
+                defauts.push(Defaut {
+                    regle: "objet_pli",
+                    bloquant: true,
+                    planche: Some(si + 1),
+                    case_idx: None,
+                    src: None,
+                    cause: format!(
+                        "le bloc {rang} de cette planche est à cheval sur le pli : la reliure \
+                         en avalerait le milieu"
+                    ),
+                    remede: "posez le bloc d'un seul côté du pli".into(),
+                });
+            }
+        }
+    }
+
+    // 8. The spine. Not a defect: a number that travels, and must travel with
     // its provenance attached.
     let dos_mm = profil.dos_mm(pages, GRAMMAGE_DEFAUT);
     if let Dos::Calcule { certitude: Certitude::Provisoire, .. } = profil.dos {
@@ -427,6 +479,84 @@ mod tests {
             });
         }
         a
+    }
+
+    /// Un bloc traversé par la coupe et un bloc à cheval sur le pli sont
+    /// bloquants ; le même album sans eux passe.
+    ///
+    /// Le second cas ne peut venir que d'un `album.json` réparé à la main :
+    /// l'éditeur bute au pli, et c'est précisément pour ça que le prévol le
+    /// contrôle — la main est le seul chemin qui reste, et le pli est dur
+    /// depuis avant les objets libres.
+    #[test]
+    fn un_bloc_coupe_et_un_bloc_a_cheval_sur_le_pli_bloquent() {
+        use crate::model::{Contenu, Objet};
+
+        let profil = PrinterProfile::par_id("generique").unwrap();
+        let dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+
+        let bloc = |x: f64, y: f64, w: f64, angle: f64| Objet {
+            x,
+            y,
+            w,
+            h: 20.0,
+            angle,
+            contenu: Contenu::Texte {
+                texte: "un mot".into(),
+                taille_pt: 9.0,
+                interligne_mm: None,
+                alignement: Default::default(),
+            },
+        };
+
+        // Témoin : un bloc bien posé sur la page de gauche ne dit rien.
+        let mut sage = album_de(24, 3.0);
+        sage.spreads[0].objets = vec![bloc(60.0, 60.0, 50.0, 0.0)];
+        let r = check(&sage, profil, &dims);
+        assert!(r.ok, "un bloc bien posé ne bloque rien : {:?}", r.defauts);
+
+        // La coupe. Le média va de 0 à 426 × 216, le rognage est à 3 mm : un
+        // bloc qui commence à −10 est traversé.
+        let mut coupe = album_de(24, 3.0);
+        coupe.spreads[2].objets = vec![bloc(-10.0, 60.0, 40.0, 0.0)];
+        let r = check(&coupe, profil, &dims);
+        assert!(!r.ok, "un bloc coupé arrête l'export");
+        let d: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "objet_coupe").collect();
+        assert_eq!(d.len(), 1, "{:?}", r.defauts);
+        assert!(d[0].bloquant);
+        assert_eq!(d[0].planche, Some(3), "la planche est nommée");
+        assert!(d[0].case_idx.is_none(), "un bloc libre n'est pas une case");
+        assert!(d[0].cause.contains("bloc 1"), "le rang est dit : {}", d[0].cause);
+        assert!(!d[0].remede.is_empty(), "le geste qui répare est écrit");
+
+        // Le pli, au milieu du média : 426 / 2 = 213.
+        let mut pli = album_de(24, 3.0);
+        pli.spreads[4].objets = vec![bloc(200.0, 60.0, 26.0, 0.0)];
+        let r = check(&pli, profil, &dims);
+        assert!(!r.ok, "un bloc à cheval sur le pli arrête l'export");
+        let d: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "objet_pli").collect();
+        assert_eq!(d.len(), 1, "{:?}", r.defauts);
+        assert!(d[0].bloquant);
+        assert_eq!(d[0].planche, Some(5));
+
+        // Et l'angle compte : un bloc qui dégage le pli à plat le franchit
+        // d'un coin une fois tourné. C'est `corners` qui le dit, des deux
+        // côtés du projet, et le prévol le lit comme l'éditeur.
+        // 182..212 à plat, le pli à 213 : il dégage d'un millimètre. Tourné à
+        // 45°, sa demi-diagonale en x vaut (30 + 20)·√2/2 / 2 ≈ 17,7 autour
+        // d'un centre à 197, donc un coin passe à 214,7.
+        let mut droit = album_de(24, 3.0);
+        droit.spreads[0].objets = vec![bloc(182.0, 60.0, 30.0, 0.0)];
+        assert!(check(&droit, profil, &dims).ok, "à plat, il dégage");
+        let mut tourne = album_de(24, 3.0);
+        tourne.spreads[0].objets = vec![bloc(182.0, 60.0, 30.0, 45.0)];
+        let r = check(&tourne, profil, &dims);
+        assert!(
+            r.defauts.iter().any(|d| d.regle == "objet_pli"),
+            "tourné, il franchit : {:?}", r.defauts
+        );
     }
 
     /// Big originals, matching bleed, sane pagination: nothing stops the file,

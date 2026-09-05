@@ -109,10 +109,19 @@ pub struct Counters {
     pub legende_manquante: Counter,
     pub legende_sur_photo: Counter,
     pub repetition_gabarit: Counter,
+    /// A free block whose box leaves the safe zone (wave 6.4). Soft, because
+    /// a block set to bleed on purpose is a choice and the editor already
+    /// warned under the hand; the counter is here so nobody ships one by
+    /// accident.
+    pub objet_hors_marge: Counter,
+    /// A free block whose set text runs past the bottom of its box. Soft for
+    /// the same reason, and never silent: nothing is ever wrapped away or
+    /// cut, so what does not fit says so here.
+    pub objet_deborde: Counter,
 }
 
 impl Counters {
-    pub(crate) fn all(&self) -> [&Counter; 10] {
+    pub(crate) fn all(&self) -> [&Counter; 12] {
         [
             &self.visage_coupe,
             &self.orientation_trahie,
@@ -124,6 +133,8 @@ impl Counters {
             &self.legende_manquante,
             &self.legende_sur_photo,
             &self.repetition_gabarit,
+            &self.objet_hors_marge,
+            &self.objet_deborde,
         ]
     }
 }
@@ -176,7 +187,15 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
     srcs.dedup();
 
     let (infos, notes) = mesure_photos(dir, &root, root_ok, &srcs)?;
-    let compteurs = compteurs(&album, &infos, &pdf::geometry(&album));
+    // Un bloc libre revient à la ligne dans la face du livre, donc le compteur
+    // de débordement se mesure dans cette face-là. C'est la règle du projet —
+    // mesurer dans une face et dessiner dans une autre est ce qui fait sortir
+    // un titre du massicot — et c'est la seule chose de ce module qui dépende
+    // de la fonte : les dix compteurs d'avant lisent des rectangles, que
+    // `slots_for` produit sans jamais ouvrir un fichier de police.
+    let face = crate::font::face_album(dir, album.police.as_ref().map(|p| p.fichier.as_str()));
+    let mesure = |s: &str, pt: f64| face.face.largeur_mm(s, pt);
+    let compteurs = compteurs_avec(&album, &infos, &pdf::geometry(&album), &mesure);
     let ok = compteurs.all().iter().all(|c| c.passes());
 
     Ok(AuditReport {
@@ -312,14 +331,37 @@ pub(crate) fn compteurs(
     infos: &HashMap<String, PhotoInfo>,
     g: &pdf::SpreadGeometry,
 ) -> Counters {
-    // The cells the linter judges are the objects the emitter draws: one
-    // derivation for both, so a counter can never grade a rectangle the PDF
-    // does not contain.
-    let rects_of: Vec<Vec<pdf::Rect>> = album
+    compteurs_avec(album, infos, g, &crate::font::text_width_mm)
+}
+
+/// The same counters under a caller-supplied measure, which is how the
+/// album's own face reaches the one counter that depends on it.
+///
+/// The sibling exists for the reason [`crate::scene::Scene::of_avec`] exists,
+/// and it is the same shape on purpose: the bench tries candidate templates
+/// on photographs and never on free blocks, so it keeps the plain
+/// [`compteurs`] and the face this crate ships.
+pub(crate) fn compteurs_avec(
+    album: &Album,
+    infos: &HashMap<String, PhotoInfo>,
+    g: &pdf::SpreadGeometry,
+    mesure: &dyn Fn(&str, f64) -> f64,
+) -> Counters {
+    // One walk of the spreads, one scene each: the cells the linter judges
+    // are the objects the emitter draws, and so are the free blocks. A
+    // counter can never grade a rectangle the PDF does not contain, and the
+    // two counters of wave 6.4 read what the scene already decided rather
+    // than deciding it a second time — a second implementation of the
+    // doctrine is precisely what that module was written to remove.
+    let scenes: Vec<crate::scene::Scene> = album
         .spreads
         .iter()
-        .map(|s| {
-            crate::scene::Scene::of(s, g)
+        .map(|s| crate::scene::Scene::of_avec(s, g, mesure))
+        .collect();
+    let rects_of: Vec<Vec<pdf::Rect>> = scenes
+        .iter()
+        .map(|scene| {
+            scene
                 .objects
                 .iter()
                 .filter(|o| matches!(o.role, crate::scene::Role::Photo { .. }))
@@ -508,6 +550,52 @@ pub(crate) fn compteurs(
         })
         .collect();
 
+    // -- les objets libres : deux compteurs, lus sur la scène.
+    //
+    // Ils lisent, ils ne recalculent pas. `hors_marge` est la fonction que le
+    // calque de l'éditeur appelle sous la main, `overflow` est le champ que le
+    // rôle `FreeText` a posé en se composant : ce que l'écran a averti et ce
+    // que le linter compte sont la même mesure, ou l'un des deux ment.
+    //
+    // Ce qu'ils ne comptent pas, et c'est délibéré : `trop_large`, le mot plus
+    // large que sa boîte. Il est signalé par la scène et montré par l'éditeur,
+    // mais son encre déborde à droite sans que la boîte, elle, bouge — un
+    // compteur qui le lirait mesurerait de l'encre là où les deux autres
+    // mesurent une boîte. Il attend sa propre classe.
+    let mut hors_marge = Vec::new();
+    let mut deborde = Vec::new();
+    for (si, scene) in scenes.iter().enumerate() {
+        for object in &scene.objects {
+            let crate::scene::Role::FreeText { index, overflow, .. } = &object.role else {
+                continue;
+            };
+            if crate::scene::hors_marge(&object.rect, object.angle, g) {
+                let d = crate::scene::distance_to_trim(&object.rect, object.angle, g);
+                hors_marge.push(Finding {
+                    planche: si + 1,
+                    case_idx: None,
+                    src: None,
+                    info: format!(
+                        "le bloc {} passe à {d:.1} mm du rognage, la zone sûre en garde {:.1}",
+                        index + 1,
+                        crate::scene::marge_sure(g)
+                    ),
+                });
+            }
+            if *overflow {
+                deborde.push(Finding {
+                    planche: si + 1,
+                    case_idx: None,
+                    src: None,
+                    info: format!(
+                        "le bloc {} : le texte composé dépasse le bas de sa boîte",
+                        index + 1
+                    ),
+                });
+            }
+        }
+    }
+
     Counters {
         visage_coupe: Counter::new(0, true, visage),
         orientation_trahie: Counter::new(0, true, orientation),
@@ -519,6 +607,11 @@ pub(crate) fn compteurs(
         legende_manquante: Counter::new(0, true, legende_manquante),
         legende_sur_photo: Counter::new(0, true, legende_sur_photo),
         repetition_gabarit: Counter::new(1, false, repetition),
+        // Mous, seuil zéro. Un bloc posé volontairement à fond perdu est un
+        // choix, et l'éditeur a déjà averti : le linter est là pour qu'on n'en
+        // expédie pas un par accident, pas pour l'interdire.
+        objet_hors_marge: Counter::new(0, false, hors_marge),
+        objet_deborde: Counter::new(0, false, deborde),
     }
 }
 
@@ -650,6 +743,109 @@ fn quantile(scores: &[f64], q: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Un bloc hors marge et un bloc qui déborde font monter leurs deux
+    /// compteurs — **et eux seuls**. La seconde moitié est la vraie
+    /// assertion : les dix compteurs d'avant lisent des photos et des
+    /// gabarits, et un objet libre n'a rien à y changer. On compare les douze
+    /// à ceux du même album sans les blocs, plutôt que de les citer un par un :
+    /// un onzième compteur ajouté demain entre dans la comparaison tout seul.
+    #[test]
+    fn les_deux_compteurs_dobjet_libre_montent_et_rien_dautre() {
+        use crate::model::{Album, Contenu, Objet, Size, Slot, Spread};
+
+        let mut album = Album::new("t", std::path::Path::new("/p"), Size { w: 210.0, h: 210.0 });
+        album.spreads = (0..4)
+            .map(|i| Spread {
+                template: "solo".into(),
+                slots: vec![Slot::new(format!("{i}.jpg"), [0.5, 0.5])],
+                caption: (i == 0).then(|| "Chapitre".to_string()),
+                text: None,
+                edited: false,
+                locked: false,
+                objets: Vec::new(),
+            })
+            .collect();
+        let infos: HashMap<String, PhotoInfo> = (0..4)
+            .map(|i| {
+                (
+                    format!("{i}.jpg"),
+                    PhotoInfo {
+                        w: 4000.0,
+                        h: 3000.0,
+                        dhash: 0x0f0f_0f0f_0f0f_0f0f ^ (i as u64) << 40,
+                        phash: 0xf0f0_f0f0_f0f0_f0f0 ^ (i as u64) << 8,
+                        colorsig: [i as u8 * 40; 12],
+                        score: 1.0 + i as f64,
+                        faces: Vec::new(),
+                        orig: (6000, 4500),
+                        taken: None,
+                    },
+                )
+            })
+            .collect();
+        let g = pdf::geometry(&album);
+        let avant = compteurs(&album, &infos, &g);
+
+        // Un bloc collé au bord : dans le fond perdu de la coupe, donc hors de
+        // la zone sûre. Son texte tient dans sa boîte — il ne doit lever que
+        // le premier compteur.
+        let colle = Objet {
+            x: 5.0,
+            y: 5.0,
+            w: 40.0,
+            h: 30.0,
+            angle: 0.0,
+            contenu: Contenu::Texte {
+                texte: "court".into(),
+                taille_pt: 9.0,
+                interligne_mm: None,
+                alignement: Default::default(),
+            },
+        };
+        // Et un bloc au milieu de la page de gauche, bien au chaud, dont le
+        // texte ne tient pas dans la hauteur : lui ne doit lever que le second.
+        let plein = Objet {
+            x: 60.0,
+            y: 60.0,
+            w: 50.0,
+            h: 6.0,
+            angle: 0.0,
+            contenu: Contenu::Texte {
+                texte: "un texte bien trop long pour six millimètres de hauteur, \
+                        qui reviendra donc à la ligne plusieurs fois"
+                    .into(),
+                taille_pt: 11.0,
+                interligne_mm: None,
+                alignement: Default::default(),
+            },
+        };
+        // Les deux hypothèses du test, vérifiées plutôt que supposées : sans
+        // elles, un test vert pourrait ne prouver que « les deux blocs sont
+        // hors marge », ou « les deux débordent ».
+        let rect = |o: &Objet| pdf::Rect { x: o.x, y: o.y, w: o.w, h: o.h };
+        assert!(crate::scene::hors_marge(&rect(&colle), 0.0, &g), "le bloc collé au bord");
+        assert!(!crate::scene::hors_marge(&rect(&plein), 0.0, &g), "le bloc du milieu");
+
+        album.spreads[1].objets = vec![colle];
+        album.spreads[2].objets = vec![plein];
+        let apres = compteurs(&album, &infos, &g);
+
+        assert_eq!(apres.objet_hors_marge.count, 1, "{:?}", apres.objet_hors_marge.details);
+        assert_eq!(apres.objet_deborde.count, 1, "{:?}", apres.objet_deborde.details);
+        assert_eq!(apres.objet_hors_marge.details[0].planche, 2, "la planche est nommée");
+        assert_eq!(apres.objet_deborde.details[0].planche, 3);
+        // Mous : deux blocs posés exprès ne rougissent pas le gate à eux seuls.
+        assert!(!apres.objet_hors_marge.dur && !apres.objet_deborde.dur);
+        assert_eq!((apres.objet_hors_marge.seuil, apres.objet_deborde.seuil), (0, 0));
+
+        // Et les dix autres n'ont pas bougé d'une unité.
+        let (a, b) = (avant.all(), apres.all());
+        for (i, (x, y)) in a.iter().zip(b.iter()).enumerate().take(10) {
+            assert_eq!(x.count, y.count, "compteur {i} a bougé : {:?}", y.details);
+        }
+        assert_eq!((a[10].count, a[11].count), (0, 0), "aucun objet, aucun compteur");
+    }
 
     #[test]
     fn flat_runs_finds_long_stretches_only() {

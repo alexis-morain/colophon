@@ -46,7 +46,8 @@ pub struct Album {
     /// crate ships, which is what every album composed before the picker
     /// existed says, and it needs no migration to say it: like `reglages`
     /// and `colophon` before it, the field is additive and absence is a
-    /// meaning rather than a gap. The schema stays at 2.
+    /// meaning rather than a gap — the schema did not move for it, and when
+    /// it later moved to 3 it was for [`Spread::objets`], not for this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub police: Option<Police>,
 }
@@ -130,11 +131,14 @@ pub struct Spread {
     ///
     /// The field is additive and absent when empty, so an album that carries
     /// none is byte-identical to one written before free objects existed —
-    /// the precedent is `Album::police`. **The schema does not move for it,
-    /// and that is not an oversight**: raising the version with its migration
-    /// is wave 6.4's job, along with the linter counters and the preflight
-    /// refusal, because that is where the consequences of a stored object are
-    /// paid together rather than one at a time.
+    /// the precedent is `Album::police`. **The schema still moved for it**
+    /// (wave 6.4, [`SCHEMA`] 3), and that is the one case where an additive
+    /// field is not enough: absence has a meaning here too, but a build that
+    /// does not know the field drops what is present, at the reader's next
+    /// save, without a word. The version is what lets such a build refuse
+    /// instead. The linter counters and the preflight refusal landed with it,
+    /// because that is where the consequences of a stored object are paid
+    /// together rather than one at a time.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objets: Vec<Objet>,
 }
@@ -272,7 +276,35 @@ pub fn default_zoom() -> f64 {
 /// as soon as the format changed, and a bascule therefore destroyed manual
 /// work in silence. 2 reads it as a point of the image, which is a property
 /// of the photograph and survives any ratio.
-pub const SCHEMA: u32 = 2;
+///
+/// 3 means **this file may carry free objects**. Nothing in it reads
+/// differently from 2 — a schema-2 album and a schema-3 album with no
+/// `objets` say exactly the same thing — and the bump is therefore not about
+/// meaning at all. It is about refusal: a build that does not know
+/// [`Spread::objets`] drops them at the first save, in silence, and the only
+/// way to stop that is a number it can compare. The refusal lives in
+/// [`crate::build::migrate_album_folder`], which is what every reader of an
+/// album folder passes through.
+///
+/// **A version is not a feature flag.** 3 says the file *may* carry objects,
+/// never that it does: an album stamped 3 with no free object is the ordinary
+/// case, and a build that only reads 2 would still be wrong to open it — it
+/// would be right today and wrong at the reader's next save. The clipart of
+/// 6.3 arrives as a second [`Contenu`] under this same 3, because it falls
+/// into the exact same hole and the door is now shut.
+pub const SCHEMA: u32 = 3;
+
+/// The schema `focal` changed meaning at: below it, and only below it, the
+/// number in the file is a fraction of the leftover room and has to be
+/// converted by [`point_from_room`].
+///
+/// It exists so the migration can be **staged**. `migrate_album_folder` used
+/// to convert for any version under `SCHEMA`, which was right while `SCHEMA`
+/// was 2 and became a data-loss bug the instant it was not: every album at
+/// schema 2 would have had its focals converted a second time, and the
+/// migration says of itself that « une double migration abîme ce qu'une
+/// simple réparait ». One conversion, one boundary, named.
+pub const SCHEMA_FOCAL_POINT: u32 = 2;
 
 /// One schema-1 `focal`, converted into a schema-2 `focal`.
 ///
@@ -354,15 +386,22 @@ mod tests {
     }
 
     /// The chosen face survives the round trip, an album that chose none
-    /// writes no field, and the schema does not move for either. The
+    /// writes no field, and **the schema does not move for either**. The
     /// precedent is `reglages`: additive, absent by default, read as
     /// « the face of the project ». A migration here would migrate nothing
     /// and age every album ever composed.
+    ///
+    /// The number is read from [`SCHEMA`] rather than written down, because
+    /// the claim is « the picker did not move it », not « it is 2 ». It moved
+    /// later, for the free objects of 6.4, and this test has nothing to say
+    /// about that — an assertion on the literal would have turned red at that
+    /// bump and been repaired by editing the number, which is the opposite of
+    /// what it is for.
     #[test]
     fn la_police_est_additive_et_le_schema_ne_bouge_pas() {
         let mut album = Album::new("t", std::path::Path::new("/p"), Size { w: 210.0, h: 210.0 });
         assert!(album.police.is_none());
-        assert_eq!(album.version, 2, "le schéma reste à 2");
+        assert_eq!(album.version, SCHEMA, "un album neuf porte le schéma courant");
 
         album.police = Some(Police {
             fichier: crate::font::POLICE_TTF.into(),
@@ -374,7 +413,7 @@ mod tests {
         let p = back.police.expect("la police survit");
         assert_eq!(p.fichier, "police.ttf");
         assert_eq!(p.postscript, "HelveticaNeue");
-        assert_eq!(back.version, 2);
+        assert_eq!(back.version, SCHEMA, "choisir une face ne migre rien");
 
         // And an album written before the picker reads as « the project's
         // face », with nothing to repair.

@@ -1044,12 +1044,54 @@ pub fn poser_police(dir: &Path, source: &Path, index: u32) -> Result<model::Poli
     })
 }
 
+/// The album folder was written by a later build than this one.
+///
+/// A type rather than a message, because two callers have to tell this
+/// failure apart from the ordinary ones — an unreadable `album.json`, a
+/// missing folder — which they are right to walk past, the read that follows
+/// naming them better. This one they must not walk past: matching on the
+/// wording would work until somebody rewrote the sentence, and the sentence
+/// is written for a human.
+#[derive(Debug, Clone, Copy)]
+pub struct TropRecent {
+    /// The schema the folder declares.
+    pub version: u32,
+    /// The highest schema this build knows, [`model::SCHEMA`].
+    pub connu: u32,
+}
+
+impl std::fmt::Display for TropRecent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "cet album est au format {} et cette version de Colophon ne lit que le {} : \
+             l'ouvrir perdrait sans le dire ce qu'elle ne sait pas lire. \
+             Mettez Colophon à jour pour l'ouvrir.",
+            self.version, self.connu
+        )
+    }
+}
+
+impl std::error::Error for TropRecent {}
+
+/// Whether a [`migrate_album_folder`] failure is the refusal above.
+///
+/// The two callers that discard the other failures ask this one question
+/// before doing so. A caller that propagates everything — `render_album_pdf`
+/// with its `?` — needs nothing.
+pub fn est_trop_recent(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<TropRecent>().is_some()
+}
+
 /// What a migration did, so a bilan can say it instead of staying quiet.
 
 #[derive(Debug, Clone, Copy)]
 pub struct Migration {
     /// The schema the folder was written under.
     pub depuis: u32,
+    /// Slots whose `focal` was converted. Zero for a migration that only
+    /// stamps — 2 to 3 converts nothing, and saying « 0 slots » is the
+    /// honest report of that, not a failure to look.
     pub slots: usize,
     /// Slots whose photo could not be resolved, and whose `focal` was
     /// therefore left as it stood. Approximate, and named as such.
@@ -1070,84 +1112,117 @@ pub struct Migration {
 /// by construction, `image_dimensions` reads only their header, and their
 /// ratio is the original's to within a rounded pixel. A photo with no
 /// thumbnail keeps its `focal` and is counted.
+///
+/// **The migration is staged, and it has to be.** Each step runs only for the
+/// versions that need it: the `focal` conversion below
+/// [`model::SCHEMA_FOCAL_POINT`], the stamp for everyone. Converting for
+/// « anything under `SCHEMA` » was right exactly once, while `SCHEMA` was the
+/// version the conversion led to; the day another step was added on top it
+/// would have re-converted every schema-2 album, and a double migration
+/// damages what a single one repaired — which this function already said
+/// about itself, at the stamp, before there was a second step to say it to.
+///
+/// **A version above `SCHEMA` is an error, not a no-op.** It is a file some
+/// later build wrote, carrying fields this one cannot name; opening it is
+/// harmless, but the save that follows writes back what was understood and
+/// drops the rest without a word. That is exactly how a free object would
+/// disappear from an album, and the refusal here is the whole reason the
+/// version moved at all. Every reader of an album folder passes through this
+/// function, so the refusal covers all of them at once — which is why both
+/// callers now propagate it instead of discarding it.
 pub fn migrate_album_folder(dir: &Path) -> Result<Option<Migration>> {
     let json = dir.join("album.json");
     let mut album: model::Album = serde_json::from_str(
         &fs::read_to_string(&json).with_context(|| format!("read {}", json.display()))?,
     )
     .context("album.json illisible")?;
-    if album.version >= model::SCHEMA {
+    if album.version > model::SCHEMA {
+        return Err(TropRecent { version: album.version, connu: model::SCHEMA }.into());
+    }
+    if album.version == model::SCHEMA {
         return Ok(None);
     }
     let depuis = album.version;
 
-    // Un index de vignettes absent ou illisible ne fait pas échouer la
-    // migration : il la rend intégralement irrésolue, et c'est le compteur
-    // qui le dit. Refuser d'ouvrir un album parce qu'on n'a pas su le migrer
-    // serait punir l'utilisateur d'un changement de schéma qui est le nôtre.
-    let thumbs: std::collections::BTreeMap<String, String> =
-        fs::read_to_string(dir.join("thumbs.json"))
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-    let mut ratios: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-    let mut ratio = |src: &str| -> Option<f64> {
-        if let Some(r) = ratios.get(src) {
-            return Some(*r);
-        }
-        let name = thumbs.get(src)?;
-        let (w, h) = image::image_dimensions(dir.join(".cache").join("thumbs").join(name)).ok()?;
-        if w == 0 || h == 0 {
-            return None;
-        }
-        let r = f64::from(w) / f64::from(h);
-        ratios.insert(src.to_string(), r);
-        Some(r)
-    };
-
-    let g = crate::pdf::geometry(&album);
     let (mut slots, mut irresolus) = (0usize, 0usize);
-    for spread in &mut album.spreads {
-        let rects = crate::pdf::slots_for(&spread.template, spread.slots.len(), &g);
-        for (i, slot) in spread.slots.iter_mut().enumerate() {
-            slots += 1;
-            let (Some(r), Some(rect)) = (ratio(&slot.src), rects.get(i)) else {
-                irresolus += 1;
-                continue;
-            };
-            slot.focal = model::point_from_room(rect.w / rect.h, r, slot.focal, slot.zoom);
-        }
-    }
 
-    // La couverture est un second site : son rect ne vient pas de `slots_for`
-    // mais de la géométrie de couverture. Le dos n'y entre pas — `photo_rect`
-    // fait `trim.w + fond perdu extérieur` sur `trim.h + haut + bas` — donc
-    // seuls les fonds perdus du profil font varier son ratio, de l'ordre du
-    // pour cent. N'importe quel profil répond donc au pixel près, et ne pas
-    // la migrer du tout serait l'erreur bien plus grosse.
-    if let Some(profil) = crate::printer::PrinterProfile::tous().first() {
-        let cg = crate::cover::geometry(&album, profil);
-        let rect = crate::cover::photo_rect(&cg);
-        if let Some(slot) = album.cover.as_mut().and_then(|c| c.photo.as_mut()) {
-            slots += 1;
-            match ratios.get(&slot.src).copied().or_else(|| {
-                let name = thumbs.get(&slot.src)?;
-                let (w, h) =
-                    image::image_dimensions(dir.join(".cache").join("thumbs").join(name)).ok()?;
-                (w > 0 && h > 0).then(|| f64::from(w) / f64::from(h))
-            }) {
-                Some(r) => {
-                    slot.focal =
-                        model::point_from_room(rect.w / rect.h, r, slot.focal, slot.zoom)
+    // Étape 1 → 2 : `focal` devient un point de l'image. Elle ne tourne que
+    // pour les albums qui portent l'ancien sens, et c'est tout l'objet de
+    // l'étage : la relancer sur un schéma 2 recadrerait une seconde fois ce
+    // qu'elle a déjà remis d'aplomb.
+    if depuis < model::SCHEMA_FOCAL_POINT {
+        // Un index de vignettes absent ou illisible ne fait pas échouer la
+        // migration : il la rend intégralement irrésolue, et c'est le compteur
+        // qui le dit. Refuser d'ouvrir un album parce qu'on n'a pas su le migrer
+        // serait punir l'utilisateur d'un changement de schéma qui est le nôtre.
+        let thumbs: std::collections::BTreeMap<String, String> =
+            fs::read_to_string(dir.join("thumbs.json"))
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+        let mut ratios: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+        let mut ratio = |src: &str| -> Option<f64> {
+            if let Some(r) = ratios.get(src) {
+                return Some(*r);
+            }
+            let name = thumbs.get(src)?;
+            let (w, h) = image::image_dimensions(dir.join(".cache").join("thumbs").join(name)).ok()?;
+            if w == 0 || h == 0 {
+                return None;
+            }
+            let r = f64::from(w) / f64::from(h);
+            ratios.insert(src.to_string(), r);
+            Some(r)
+        };
+
+        let g = crate::pdf::geometry(&album);
+        for spread in &mut album.spreads {
+            let rects = crate::pdf::slots_for(&spread.template, spread.slots.len(), &g);
+            for (i, slot) in spread.slots.iter_mut().enumerate() {
+                slots += 1;
+                let (Some(r), Some(rect)) = (ratio(&slot.src), rects.get(i)) else {
+                    irresolus += 1;
+                    continue;
+                };
+                slot.focal = model::point_from_room(rect.w / rect.h, r, slot.focal, slot.zoom);
+            }
+        }
+
+        // La couverture est un second site : son rect ne vient pas de `slots_for`
+        // mais de la géométrie de couverture. Le dos n'y entre pas — `photo_rect`
+        // fait `trim.w + fond perdu extérieur` sur `trim.h + haut + bas` — donc
+        // seuls les fonds perdus du profil font varier son ratio, de l'ordre du
+        // pour cent. N'importe quel profil répond donc au pixel près, et ne pas
+        // la migrer du tout serait l'erreur bien plus grosse.
+        if let Some(profil) = crate::printer::PrinterProfile::tous().first() {
+            let cg = crate::cover::geometry(&album, profil);
+            let rect = crate::cover::photo_rect(&cg);
+            if let Some(slot) = album.cover.as_mut().and_then(|c| c.photo.as_mut()) {
+                slots += 1;
+                match ratios.get(&slot.src).copied().or_else(|| {
+                    let name = thumbs.get(&slot.src)?;
+                    let (w, h) =
+                        image::image_dimensions(dir.join(".cache").join("thumbs").join(name)).ok()?;
+                    (w > 0 && h > 0).then(|| f64::from(w) / f64::from(h))
+                }) {
+                    Some(r) => {
+                        slot.focal =
+                            model::point_from_room(rect.w / rect.h, r, slot.focal, slot.zoom)
+                    }
+                    None => irresolus += 1,
                 }
-                None => irresolus += 1,
             }
         }
     }
 
-    // Estampiller même quand tout ne s'est pas résolu : ne pas le faire ferait
-    // re-migrer au chargement suivant les slots déjà convertis, et une double
-    // migration abîme ce qu'une simple réparait.
+    // Étape 2 → 3 : un estampillage, et rien d'autre. Le 3 ne dit pas que le
+    // fichier se lit autrement, il dit qu'il peut porter des objets libres —
+    // il n'y a donc rien à convertir, et le rapport annonce zéro slot parce
+    // que zéro slot avait besoin de quoi que ce soit.
+    //
+    // Estampiller même quand tout ne s'est pas résolu, aussi : ne pas le faire
+    // ferait re-migrer au chargement suivant les slots déjà convertis, et une
+    // double migration abîme ce qu'une simple réparait.
     album.version = model::SCHEMA;
     fs::write(&json, serde_json::to_string_pretty(&album)?)
         .with_context(|| format!("write {}", json.display()))?;
@@ -1551,6 +1626,95 @@ mod tests {
         assert_eq!(lu.version, model::SCHEMA, "estampillé quand même");
         assert_eq!(lu.spreads[0].slots[0].focal, [0.2, 0.8], "gardé tel quel");
         assert!(migrate_album_folder(&out).unwrap().is_none(), "ne re-migre pas");
+    }
+
+    /// L'étage 2 → 3 estampille et ne touche à rien. C'est la seule assertion
+    /// qui prouve que la migration est étagée : sous l'ancienne forme — tout
+    /// ce qui est sous `SCHEMA` se convertit — ce test lit des `focal`
+    /// reconvertis une seconde fois, et la comparaison est faite **à l'octet**
+    /// parce qu'un `point_from_room` rejoué sur un point déjà converti rend
+    /// une valeur voisine, pas une valeur absurde : à 1e-9 près, il passerait.
+    #[test]
+    fn un_album_de_schema_2_monte_a_3_avec_ses_focal_intacts() {
+        let (_photos, out) = dossier_test("migration-2-vers-3");
+        let thumbs = out.join(".cache").join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        // Des vignettes bien là : si un étage se déclenchait, il aurait de quoi
+        // convertir. Un test dont les ratios manquent ne prouverait rien.
+        image::RgbImage::from_fn(120, 80, |_, _| image::Rgb([120, 40, 200]))
+            .save(thumbs.join("ta.jpg"))
+            .unwrap();
+        fs::write(out.join("thumbs.json"), r#"{"a.jpg":"ta.jpg"}"#).unwrap();
+        // Et un objet libre dans le fichier : le schéma 3 existe pour lui, et
+        // c'est l'album de la décision 9 — un schéma 2 écrit par un build de
+        // 6.2, qui en porte déjà.
+        let avant = r#"{"version":2,"title":"t","root":".","trim_mm":{"w":210.0,"h":210.0},
+           "bleed_mm":3.0,"spreads":[{"template":"duo","slots":[
+             {"src":"a.jpg","focal":[0.2,0.8]}],
+             "objets":[{"x":20.0,"y":30.0,"w":60.0,"h":25.0,"angle":-12.0,
+                        "type":"texte","texte":"un mot","taille_pt":11.0}]}]}"#;
+        fs::write(out.join("album.json"), avant).unwrap();
+
+        let m = migrate_album_folder(&out).unwrap().expect("il y avait à estampiller");
+        assert_eq!(m.depuis, 2);
+        assert_eq!((m.slots, m.irresolus), (0, 0), "un estampillage ne convertit rien");
+
+        let lu: model::Album =
+            serde_json::from_str(&fs::read_to_string(out.join("album.json")).unwrap()).unwrap();
+        assert_eq!(lu.version, 3);
+        assert_eq!(
+            lu.spreads[0].slots[0].focal,
+            [0.2, 0.8],
+            "le focal d'un schéma 2 est déjà un point de l'image : le reconvertir l'abîme"
+        );
+        // Et l'objet libre traverse la migration entier, angle compris.
+        let objet = &lu.spreads[0].objets[0];
+        assert_eq!((objet.x, objet.y, objet.w, objet.h), (20.0, 30.0, 60.0, 25.0));
+        assert_eq!(objet.angle, -12.0);
+        assert_eq!(
+            objet.contenu,
+            crate::model::Contenu::Texte {
+                texte: "un mot".into(),
+                taille_pt: 11.0,
+                interligne_mm: None,
+                alignement: crate::model::Alignement::default(),
+            }
+        );
+
+        assert!(migrate_album_folder(&out).unwrap().is_none(), "ne re-migre pas");
+    }
+
+    /// Un album écrit par un build d'après est refusé, et il est refusé par un
+    /// type : c'est à cette question que les deux appelants qui avalent les
+    /// autres échecs répondent avant de les avaler. Sans elle, l'album s'ouvre,
+    /// se réenregistre amputé de ses objets, et personne n'a rien vu passer —
+    /// exactement le trou pour lequel le schéma a bougé.
+    #[test]
+    fn un_album_trop_recent_est_refuse_au_lieu_detre_ampute() {
+        let (_photos, out) = dossier_test("migration-trop-recent");
+        fs::create_dir_all(&out).unwrap();
+        fs::write(
+            out.join("album.json"),
+            format!(
+                r#"{{"version":{},"title":"t","root":".","trim_mm":{{"w":210.0,"h":210.0}},
+                   "bleed_mm":3.0,"spreads":[]}}"#,
+                model::SCHEMA + 1
+            ),
+        )
+        .unwrap();
+
+        let e = migrate_album_folder(&out).expect_err("un schéma d'après ne s'ouvre pas");
+        assert!(est_trop_recent(&e), "et il se reconnaît par son type : {e}");
+        let dit = e.to_string();
+        assert!(
+            dit.contains(&(model::SCHEMA + 1).to_string()) && dit.contains("à jour"),
+            "la phrase nomme le format et le remède : {dit}"
+        );
+
+        // Rien n'a été réécrit : un refus ne touche pas au fichier qu'il refuse.
+        let relu: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(out.join("album.json")).unwrap()).unwrap();
+        assert_eq!(relu["version"], model::SCHEMA + 1);
     }
 
     /// The 16/08 case, first form: an empty folder. The old behaviour was a

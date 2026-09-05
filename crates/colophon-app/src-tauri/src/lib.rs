@@ -86,10 +86,19 @@ fn load_album(path: &Path) -> Result<(PathBuf, Album, ThumbIndex), String> {
     // la migration convertirait alors une seconde fois. C'est le seul vrai
     // danger de ce changement de schéma, et il se ferme ici.
     //
-    // L'échec ne bloque pas l'ouverture : la migration ne peut plus échouer
-    // faute de vignettes, et si `album.json` est en cause la lecture juste
-    // en dessous le dira mieux, avec son chemin.
-    let _ = colophon_core::build::migrate_album_folder(&dir);
+    // Un échec de conversion ne bloque pas l'ouverture : la migration ne peut
+    // plus échouer faute de vignettes, et si `album.json` est en cause la
+    // lecture juste en dessous le dira mieux, avec son chemin. **Un album
+    // écrit par une version plus récente, lui, arrête tout** : l'ouvrir se
+    // passerait bien, et le premier enregistrement réécrirait ce que cette
+    // version a compris en jetant le reste — un bloc libre, un clipart, ce
+    // qu'une version d'après aura ajouté. Le seul endroit qui peut refuser
+    // est celui qui a lu le numéro, donc celui-ci.
+    if let Err(e) = colophon_core::build::migrate_album_folder(&dir) {
+        if colophon_core::build::est_trop_recent(&e) {
+            return Err(e.to_string());
+        }
+    }
 
     let text = std::fs::read_to_string(&json)
         .map_err(|e| format!("lecture de {} : {e}", json.display()))?;

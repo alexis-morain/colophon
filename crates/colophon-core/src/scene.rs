@@ -124,14 +124,39 @@ pub fn centre(r: &Rect) -> Point {
 ///
 /// The fold is the middle of the media box. No image has ever crossed it —
 /// the doctrine is older than this module — and a free object does not
-/// either. The editor stops a gesture with this; the linter will count what
-/// an album repaired by hand slipped past (wave 6.4).
+/// either. The editor stops a gesture with this, and the preflight refuses
+/// with it (`objet_pli`, wave 6.4): the editor butts, so a block astride the
+/// fold can only come from an `album.json` repaired by hand, which is exactly
+/// what a preflight is for.
 pub fn traverse_le_pli(r: &Rect, angle_deg: f64, g: &SpreadGeometry) -> bool {
     let pli = g.media_w / 2.0;
     let xs = corners(r, angle_deg).map(|p| p.x);
     let min = xs.iter().copied().fold(f64::INFINITY, f64::min);
     let max = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     min < pli && max > pli
+}
+
+/// Whether an oriented rectangle leaves the safe zone.
+///
+/// **The margin is soft**, where the fold is hard: a block deliberately set
+/// to bleed is a choice, so this warns and never refuses. The editor shows it
+/// under the hand (`scene.ts::horsMarge`), the linter counts what an album
+/// slipped past anyway (`objet_hors_marge`), and the two have to agree — so
+/// there is one function, ported once, exactly as [`traverse_le_pli`] is.
+///
+/// The zone is the one the engine already anchors a chapter caption in:
+/// [`crate::pdf::CAPTION_SAFE`] of the margin, inside the cut. Reusing it
+/// rather than declaring a second number is the point — a block and a caption
+/// are both ink that must survive the guillotine, and two safe zones on one
+/// spread would be two answers to one question.
+pub fn hors_marge(r: &Rect, angle_deg: f64, g: &SpreadGeometry) -> bool {
+    distance_to_trim(r, angle_deg, g) < marge_sure(g)
+}
+
+/// How much clearance the safe zone asks for, in millimetres. Named because
+/// a counter that reports a distance has to report what it was short of.
+pub fn marge_sure(g: &SpreadGeometry) -> f64 {
+    pdf::CAPTION_SAFE * g.margin
 }
 
 /// What an object is, with what the interface needs to name it.

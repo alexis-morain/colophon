@@ -201,8 +201,16 @@ fn main() -> Result<()> {
     // rendrait un verdict sur un autre recadrage que celui qui est réglé.
     // Un dossier neuf n'a pas d'album.json, et un album déjà au schéma
     // courant ressort sans être réécrit — la migration s'arrête avant.
+    // Un album trop récent arrête la commande, quelle qu'elle soit : l'auditer
+    // ou le tirer rendrait un verdict sur ce qu'on a su lire, et le recomposer
+    // le réécrirait amputé. Les autres échecs restent muets pour la raison
+    // d'origine : la commande qui suit lira le fichier et le dira mieux.
     if cli.out.join("album.json").exists() {
-        let _ = colophon_core::build::migrate_album_folder(&cli.out);
+        if let Err(e) = colophon_core::build::migrate_album_folder(&cli.out) {
+            if colophon_core::build::est_trop_recent(&e) {
+                return Err(e);
+            }
+        }
     }
 
     if cli.dump_geometry {

@@ -113,9 +113,18 @@ contre la scène, sans prérequis canvas ; **la rotation est en V1**. La seconde
 la recommandation de la note, en connaissance de son coût, et elle a imposé l'ordre de
 travail : l'angle entre dans la géométrie au premier objet stocké.
 
-**6.2 s1 est faite** : le modèle stocké, l'angle dans la scène, l'émission PDF, le port
-TypeScript et sa parité (voir « Les objets libres »). **Reste s2** : l'éditeur — poser,
-saisir, glisser, redimensionner, tourner, supprimer, et les deux gardes à la main.
+**6.2 est close, ses deux sessions faites.** s1 : le modèle stocké, l'angle dans la
+scène, l'émission PDF, le port TypeScript et sa parité. s2 : l'éditeur — poser, saisir,
+glisser, redimensionner, tourner, supprimer, et les deux gardes à la main (voir « Les
+objets libres » et « L'éditeur des objets libres »).
+
+**6.4 est close (05/09), et elle a précédé 6.3 pour une raison** : un ornement tomberait
+dans le même trou qu'un objet libre — un build ancien ouvrirait un album trop récent en
+jetant ses objets en silence —, donc la montée de schéma passe d'abord. Ce que 6.4 livre
+tient en une phrase : un album qui porte des blocs libres est compté, repris, contrôlé et
+versionné comme le reste, et un album qui n'en porte aucun ne change en rien (les trois
+jeux de référence le prouvent, leurs deux nouveaux compteurs à zéro et leurs dix autres
+verdicts intacts). Voir « Ce que les objets libres obligent ailleurs ».
 
 
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
@@ -194,7 +203,7 @@ aussi : un caractère que la face ne dessine pas devient `?`, jamais la case vid
 projet** avec `/Widths` : plus de table de chasses par code, plus d'échappement octal.
 
 **La police de l'album voyage avec lui, et rien ne cherche jamais une police par son
-nom** (6.1 s4). `album.police` est **additif, le schéma reste à 2** — le précédent est
+nom** (6.1 s4). `album.police` est **additif, et n'a pas fait bouger le schéma** — le précédent est
 `reglages` : absent veut dire « la face du projet », donc aucune migration et un vieil
 album s'ouvre tel quel. Il porte le **nom du fichier** posé à côté d'`album.json`, et ce
 nom n'a que deux valeurs (`police.ttf` pour du `glyf`, `police.otf` pour du CFF) : un
@@ -344,9 +353,9 @@ deux côtés. **Les deux fixtures se régénèrent** quand le dump ou la scène 
 ### Les objets libres, et l'angle qu'ils ont apporté
 
 **Le premier champ stocké au-delà d'un gabarit et de ses cases** : `Spread::objets`
-(`model.rs`), additif, absent quand vide, **le schéma reste à 2** — la montée de version
-et sa migration sont à 6.4, avec les compteurs de linter, `--reprise` et le refus du
-prévol. Un objet porte sa boîte, son angle et son contenu (`Contenu::Texte` aujourd'hui,
+(`model.rs`), additif, absent quand vide. **Le schéma est monté à 3 pour lui** (6.4,
+voir plus bas) : additif ne suffisait pas ici, un build qui ignore le champ jetant ce
+qu'il porte au premier enregistrement. Un objet porte sa boîte, son angle et son contenu (`Contenu::Texte` aujourd'hui,
 un clipart en 6.3 : le tag est déjà dans le fichier). **Leur ordre est leur profondeur**,
 et ils passent tous au-dessus de ce que le gabarit a produit.
 
@@ -437,6 +446,50 @@ centre. L'invariant est testé à tous les angles — **le coin opposé ne bouge
 monde** —, et c'est lui qui empêche la boîte de glisser sous la main pendant qu'on la
 retaille.
 
+### Ce que les objets libres obligent ailleurs (6.4)
+
+**Le schéma monte à 3, et 3 veut dire « ce fichier peut porter des objets libres ».**
+Rien ne s'y lit autrement qu'en 2 — la montée n'est pas sémantique, elle est là pour
+qu'un build qui ne connaît pas `Spread::objets` **refuse** au lieu de les jeter au
+premier enregistrement. `migrate_album_folder` est la seule porte, tout lecteur d'un
+dossier d'album y passe, et **une version au-dessus de `SCHEMA` est maintenant une
+erreur** (`build::TropRecent`, un type et pas une phrase — les deux appelants qui
+avalent les autres échecs interrogent `est_trop_recent`). Un refus ne touche pas au
+fichier qu'il refuse.
+
+**La migration est étagée, et il le fallait** : la conversion des `focal` ne tourne que
+sous `model::SCHEMA_FOCAL_POINT` (2), l'étape 2 → 3 n'est qu'un estampillage. Convertir
+« tout ce qui est sous `SCHEMA` » était juste exactement une fois ; le jour où un second
+étage arrive au-dessus, ça reconvertit tous les schémas 2 — et le fichier dit lui-même
+qu'« une double migration abîme ce qu'une simple réparait ». Le test qui mord compare les
+`focal` **à l'octet**, parce qu'un `point_from_room` rejoué sur un point déjà converti
+rend une valeur voisine : à 1e-9 près, il passerait.
+
+**Deux compteurs de linter, mous, seuil 0** : `objet_hors_marge` et `objet_deborde`.
+Attention à ce que ça veut dire ici — `dur` n'est qu'une étiquette du rapport, c'est
+`seuil` qui décide, donc **un bloc hors marge rend bien `--audit` rouge**. Ils **lisent**
+la scène et ne la recalculent pas : `scene::hors_marge` (le jumeau Rust de
+`scene.ts::horsMarge`, même zone sûre que la légende, `CAPTION_SAFE` de la marge) et le
+champ `overflow` du rôle `FreeText`. Ce que l'écran a averti et ce que le linter compte
+sont la même mesure, ou l'un des deux ment. **`trop_large` n'est compté par personne**,
+délibérément : son encre déborde à droite sans que la boîte bouge, et les deux compteurs
+mesurent une boîte. **Et le débordement se mesure dans la face de l'album**, pas celle du
+projet : `audit()` ouvre `font::face_album` et passe la mesure à `compteurs_avec`, sur le
+modèle de `Scene::of_avec` — les dix compteurs d'avant ne lisent que des rectangles, donc
+eux ne bougent pas d'un cheveu.
+
+**`--reprise` gagne `Classe::ObjetLibre`, sans compteur parent** : poser un bloc est un
+geste de goût, rien ne le propose donc rien n'aurait pu le manquer. La détection est
+`origine.objets != actuel.objets` — `Objet` est `PartialEq`, donc l'angle et le contenu y
+entrent sans être énumérés, et un champ ajouté en 6.3 aussi.
+
+**Le prévol refuse deux choses, bloquantes** : `objet_coupe`
+(`scene::distance_to_trim < 0`) et `objet_pli` (`scene::traverse_le_pli`). Elles mesurent
+la **boîte**, pas l'encre — c'est la boîte que la main pose et que l'éditeur retient — et
+`case` reste vide, un bloc libre n'étant pas une case. Un bloc à cheval sur le pli ne peut
+venir que d'un `album.json` réparé à la main, l'éditeur y butant : c'est exactement la
+raison de la règle.
+
 ## L'app
 
 Recadrage, tiroir, table lumineuse ⌘3, badge « éditée » et cadenas ⌘L, « rendre à
@@ -506,7 +559,7 @@ l'aperçu fidèle ; `--print` = 300 dpi, rien ne court-circuite `print_scale` ; 
 la feuille à plat, une par profil. **Ce qui doit survivre au massicot se mesure depuis la
 coupe**, et il n'y a plus qu'une implémentation, `scene::distance_to_trim`.
 
-`--audit` : dix compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions de
+`--audit` : douze compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions de
 chaque jeu. `--reprise` : part des planches corrigées à la main contre
 `album.origin.json` ; sous 10 % bon, jusqu'à 30 % à surveiller, au-delà rédhibitoire.
 `--prevol --profil <id>` : bloquants contre un `PrinterProfile`.

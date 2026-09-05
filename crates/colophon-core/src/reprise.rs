@@ -44,6 +44,7 @@ pub enum Classe {
     Recadrage,
     Legende,
     Texte,
+    ObjetLibre,
     Ordre,
     Insertion,
     Suppression,
@@ -57,6 +58,7 @@ impl Classe {
             Classe::Recadrage => "recadrage",
             Classe::Legende => "legende",
             Classe::Texte => "texte",
+            Classe::ObjetLibre => "objet_libre",
             Classe::Ordre => "ordre",
             Classe::Insertion => "insertion",
             Classe::Suppression => "suppression",
@@ -73,7 +75,15 @@ impl Classe {
             Classe::Recadrage => "visage_coupe",
             Classe::Legende => "legende_manquante, legende_sur_photo",
             Classe::Ordre => "chapitre_orphelin, rythme_plat",
-            Classe::Texte | Classe::Insertion | Classe::Suppression => "",
+            // Poser un bloc libre est un geste de goût, pas un défaut qu'un
+            // composeur aurait pu attraper : rien n'en propose, donc rien
+            // n'aurait pu en manquer un. Les deux compteurs de 6.4 comptent
+            // ce qu'un bloc posé a de mal placé, jamais le fait de l'avoir
+            // posé — les nommer ici ferait lire cette classe comme un défaut.
+            Classe::Texte
+            | Classe::ObjetLibre
+            | Classe::Insertion
+            | Classe::Suppression => "",
         }
     }
 }
@@ -490,6 +500,14 @@ fn classify(origine: &Spread, actuel: &Spread) -> Vec<Classe> {
     if origine.text != actuel.text {
         out.push(Classe::Texte);
     }
+    // Posé, déplacé, tourné, réécrit, supprimé : une seule classe pour tout
+    // ce qui touche aux blocs libres. La comparaison est celle du modèle —
+    // `Objet` est `PartialEq` — donc elle voit l'angle et le contenu sans
+    // qu'on ait à les énumérer ici, et un champ ajouté en 6.3 y entrera sans
+    // que ce fichier ait à l'apprendre.
+    if origine.objets != actuel.objets {
+        out.push(Classe::ObjetLibre);
+    }
     out
 }
 
@@ -586,6 +604,73 @@ mod tests {
             locked: false,
             objets: Vec::new(),
         }
+    }
+
+    /// Poser, déplacer, tourner, réécrire ou retirer un bloc libre : une seule
+    /// classe, `objet_libre`, et **sans compteur parent** — rien n'en propose,
+    /// donc rien n'aurait pu en manquer un. La classe entre dans le
+    /// pourcentage comme les autres : c'est une planche que la main a corrigée.
+    #[test]
+    fn un_bloc_libre_pose_a_la_main_porte_sa_classe() {
+        use crate::model::{Contenu, Objet};
+
+        let bloc = |angle: f64, texte: &str| Objet {
+            x: 60.0,
+            y: 60.0,
+            w: 50.0,
+            h: 20.0,
+            angle,
+            contenu: Contenu::Texte {
+                texte: texte.into(),
+                taille_pt: 11.0,
+                interligne_mm: None,
+                alignement: Default::default(),
+            },
+        };
+
+        let proposition = album(vec![
+            spread("duo", &["a.jpg", "b.jpg"]),
+            spread("solo", &["c.jpg"]),
+        ]);
+
+        // 1. Un bloc posé là où la machine n'en proposait aucun.
+        let mut pose = album(vec![
+            spread("duo", &["a.jpg", "b.jpg"]),
+            spread("solo", &["c.jpg"]),
+        ]);
+        pose.spreads[1].objets = vec![bloc(0.0, "un mot")];
+        let r = compare("t", &proposition, &pose);
+        assert_eq!(r.planches_touchees, 1);
+        let c = &r.classes[0];
+        assert_eq!(c.classe, Classe::ObjetLibre);
+        assert_eq!(c.classe.nom(), "objet_libre");
+        assert_eq!(c.planches, 1);
+        assert_eq!(c.compteur_parent, "", "poser un bloc est un goût, pas un défaut");
+        assert_eq!(r.details[0].planche, Some(2), "la planche est nommée");
+        assert_eq!(r.details[0].classes, vec![Classe::ObjetLibre]);
+
+        // 2. Tourné : la classe voit l'angle, sans que ce fichier le nomme.
+        let mut tourne = pose.clone();
+        tourne.spreads[1].objets = vec![bloc(-12.0, "un mot")];
+        assert_eq!(
+            compare("t", &pose, &tourne).details[0].classes,
+            vec![Classe::ObjetLibre],
+            "un angle changé est une correction"
+        );
+
+        // 3. Réécrit : elle voit le contenu aussi.
+        let mut reecrit = pose.clone();
+        reecrit.spreads[1].objets = vec![bloc(0.0, "un autre mot")];
+        assert_eq!(
+            compare("t", &pose, &reecrit).details[0].classes,
+            vec![Classe::ObjetLibre]
+        );
+
+        // 4. Et retiré : la planche revient à la proposition, donc elle ne
+        // compte plus. C'est ce qui fait de cette classe une mesure et pas un
+        // drapeau — `edited` resterait posé, le diff dit la vérité.
+        let r = compare("t", &proposition, &proposition);
+        assert_eq!(r.planches_touchees, 0);
     }
 
     /// An album nobody touched costs nothing.

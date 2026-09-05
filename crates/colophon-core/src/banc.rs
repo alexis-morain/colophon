@@ -438,6 +438,11 @@ mod tests {
         let etouffe = gabarit::parse_genere("g_p_p").unwrap();
         album.spreads.insert(1, planche(&["p1.jpg", "p2.jpg"], "duo", Some("Chapitre")));
         let base = audit::compteurs(&album, &infos, &g);
+        assert!(
+            base.all().iter().all(|c| c.passes()),
+            "la planche insérée doit laisser la référence verte : sans ça, le \
+             legende_sur_photo mesuré plus bas serait le sien, pas celui du candidat"
+        );
         match essaie_sur_planche(&album, &infos, &g, &etouffe, 1) {
             Some(Err(nom)) => assert_eq!(nom, "legende_sur_photo"),
             autre => panic!("attendu legende_sur_photo, obtenu {autre:?}"),

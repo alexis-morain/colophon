@@ -88,8 +88,15 @@ fn load_album(path: &Path) -> Result<(PathBuf, Album, ThumbIndex), String> {
     //
     // L'échec ne bloque pas l'ouverture : la migration ne peut plus échouer
     // faute de vignettes, et si `album.json` est en cause la lecture juste
-    // en dessous le dira mieux, avec son chemin.
-    let _ = colophon_core::build::migrate_album_folder(&dir);
+    // en dessous le dira mieux, avec son chemin. Une exception, et une seule :
+    // un album écrit par un build plus récent. Celui-là, l'ouvrir lui ferait
+    // perdre ce que cette version ne sait pas relire, et le premier
+    // enregistrement le graverait — on refuse, en le disant.
+    if let Err(e) = colophon_core::build::migrate_album_folder(&dir) {
+        if e.is::<colophon_core::build::SchemaTropRecent>() {
+            return Err(e.to_string());
+        }
+    }
 
     let text = std::fs::read_to_string(&json)
         .map_err(|e| format!("lecture de {} : {e}", json.display()))?;

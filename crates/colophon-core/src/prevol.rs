@@ -345,6 +345,51 @@ pub fn check(
         }
     }
 
+    // 6 bis. Free objects. Two refusals and two only: the cut, and the fold.
+    // The margin stays soft — a block laid to the bleed on purpose is a
+    // choice, the editor said so at the gesture and the linter counts it —
+    // but a block the guillotine goes through comes back mutilated, and one
+    // across the fold comes back split by the binding. Neither is measured
+    // here: `distance_to_trim` and `traverse_le_pli` are the doctrine, and
+    // this reads them with the object's own angle.
+    for (si, spread) in album.spreads.iter().enumerate() {
+        for objet in scene::Scene::of(spread, &g).objects.iter() {
+            let scene::Role::FreeText { index, .. } = &objet.role else { continue };
+            let marge = scene::distance_to_trim(&objet.rect, objet.angle, &g);
+            if marge < 0.0 {
+                defauts.push(Defaut {
+                    regle: "objet_coupe",
+                    bloquant: true,
+                    planche: Some(si + 1),
+                    case_idx: None,
+                    src: None,
+                    cause: format!(
+                        "l'objet libre n° {} dépasse de {:.1} mm au-delà du rognage : \
+                         la coupe passe dedans",
+                        index + 1,
+                        -marge
+                    ),
+                    remede: "déplacez l'objet vers l'intérieur de la page, ou réduisez-le".into(),
+                });
+            }
+            if scene::traverse_le_pli(&objet.rect, objet.angle, &g) {
+                defauts.push(Defaut {
+                    regle: "objet_pli",
+                    bloquant: true,
+                    planche: Some(si + 1),
+                    case_idx: None,
+                    src: None,
+                    cause: format!(
+                        "l'objet libre n° {} est à cheval sur le pli : la reliure le \
+                         coupera en deux",
+                        index + 1
+                    ),
+                    remede: "glissez l'objet d'un seul côté du pli : l'éditeur y bute tout seul".into(),
+                });
+            }
+        }
+    }
+
     // 7. The spine. Not a defect: a number that travels, and must travel with
     // its provenance attached.
     let dos_mm = profil.dos_mm(pages, GRAMMAGE_DEFAUT);
@@ -427,6 +472,72 @@ mod tests {
             });
         }
         a
+    }
+
+    /// Un objet libre que la coupe traverse, un autre que le pli traverse :
+    /// deux bloquants, chacun nommé, et le même album sans eux passe. Ce sont
+    /// les deux seules choses que le prévol refuse à un objet libre — la
+    /// marge, elle, est molle, et c'est le linter qui la compte.
+    #[test]
+    fn un_objet_libre_coupe_ou_a_cheval_sur_le_pli_est_bloquant() {
+        use crate::model::{Alignement, Contenu, Objet};
+
+        let bloc = |x: f64, y: f64| Objet {
+            x,
+            y,
+            w: 40.0,
+            h: 20.0,
+            angle: 0.0,
+            contenu: Contenu::Texte {
+                texte: "Calvi".into(),
+                taille_pt: 10.0,
+                interligne_mm: Some(5.0),
+                alignement: Alignement::Gauche,
+            },
+        };
+
+        let mut a = album_de(24, 3.0);
+        let g = pdf::geometry(&a);
+        let dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        let profil = PrinterProfile::par_id("generique").unwrap();
+
+        // Bien à l'intérieur d'une page : rien à dire, l'album passe.
+        a.spreads[0].objets = vec![bloc(40.0, 60.0)];
+        let r = check(&a, profil, &dims);
+        assert!(r.ok, "défauts : {:?}", r.defauts);
+
+        // Le coin gauche passe sous la coupe.
+        a.spreads[0].objets = vec![bloc(g.bleed - 10.0, 60.0)];
+        let r = check(&a, profil, &dims);
+        let coupe: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "objet_coupe").collect();
+        assert_eq!(coupe.len(), 1, "défauts : {:?}", r.defauts);
+        assert!(coupe[0].bloquant);
+        assert_eq!(coupe[0].planche, Some(1));
+        assert!(!r.ok);
+
+        // À cheval sur le pli.
+        a.spreads[0].objets = vec![bloc(g.media_w / 2.0 - 20.0, 60.0)];
+        let r = check(&a, profil, &dims);
+        let pli: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "objet_pli").collect();
+        assert_eq!(pli.len(), 1, "défauts : {:?}", r.defauts);
+        assert!(pli[0].bloquant);
+        assert!(!r.ok);
+
+        // Et l'angle compte : droit il s'arrête 5 mm avant le pli, tourné son
+        // coin le passe de 10. C'est la scène qui le dit, pas la boîte.
+        let frole = Objet { w: 40.0, h: 60.0, ..bloc(g.media_w / 2.0 - 45.0, 60.0) };
+        a.spreads[0].objets = vec![frole.clone()];
+        let droit = check(&a, profil, &dims);
+        assert!(droit.ok, "droit il ne touche rien : {:?}", droit.defauts);
+        a.spreads[0].objets = vec![Objet { angle: 45.0, ..frole }];
+        let r = check(&a, profil, &dims);
+        assert!(
+            r.defauts.iter().any(|d| d.regle == "objet_pli"),
+            "le coin tourné passe le pli : {:?}",
+            r.defauts
+        );
     }
 
     /// Big originals, matching bleed, sane pagination: nothing stops the file,

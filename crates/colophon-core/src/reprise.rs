@@ -44,6 +44,7 @@ pub enum Classe {
     Recadrage,
     Legende,
     Texte,
+    ObjetLibre,
     Ordre,
     Insertion,
     Suppression,
@@ -57,6 +58,7 @@ impl Classe {
             Classe::Recadrage => "recadrage",
             Classe::Legende => "legende",
             Classe::Texte => "texte",
+            Classe::ObjetLibre => "objet_libre",
             Classe::Ordre => "ordre",
             Classe::Insertion => "insertion",
             Classe::Suppression => "suppression",
@@ -73,7 +75,14 @@ impl Classe {
             Classe::Recadrage => "visage_coupe",
             Classe::Legende => "legende_manquante, legende_sur_photo",
             Classe::Ordre => "chapitre_orphelin, rythme_plat",
-            Classe::Texte | Classe::Insertion | Classe::Suppression => "",
+            // Poser un objet libre est un geste de goût, pas un défaut que le
+            // Composer aurait pu attraper : il n'en propose aucun, et aucun
+            // compteur ne pouvait donc le prévenir. `objet_hors_marge` et
+            // `objet_deborde` comptent un objet *raté*, jamais un objet posé.
+            Classe::Texte
+            | Classe::ObjetLibre
+            | Classe::Insertion
+            | Classe::Suppression => "",
         }
     }
 }
@@ -490,6 +499,13 @@ fn classify(origine: &Spread, actuel: &Spread) -> Vec<Classe> {
     if origine.text != actuel.text {
         out.push(Classe::Texte);
     }
+    // Égalité exacte, sans epsilon, à la différence du recadrage : un focal
+    // est un nombre que la machine a proposé et qu'une main a déplacé de peu,
+    // alors qu'une proposition ne porte jamais d'objet libre. Toute différence
+    // ici est donc une main, jusqu'au dernier bit.
+    if origine.objets != actuel.objets {
+        out.push(Classe::ObjetLibre);
+    }
     out
 }
 
@@ -586,6 +602,47 @@ mod tests {
             locked: false,
             objets: Vec::new(),
         }
+    }
+
+    /// Un objet libre posé à la main est une reprise, et d'une classe à lui.
+    /// Elle n'accuse aucun compteur : le Composer n'en propose jamais, donc
+    /// aucun compteur ne pouvait l'attraper avant la main.
+    #[test]
+    fn un_objet_libre_pose_est_une_reprise_sans_compteur_parent() {
+        use crate::model::{Alignement, Contenu, Objet};
+        let bloc = |texte: &str| Objet {
+            x: 30.0,
+            y: 30.0,
+            w: 40.0,
+            h: 20.0,
+            angle: 0.0,
+            contenu: Contenu::Texte {
+                texte: texte.into(),
+                taille_pt: 10.0,
+                interligne_mm: None,
+                alignement: Alignement::Gauche,
+            },
+        };
+
+        let origine = album(vec![spread("duo", &["a.jpg", "b.jpg"])]);
+        let mut actuel = album(vec![spread("duo", &["a.jpg", "b.jpg"])]);
+        actuel.spreads[0].objets = vec![bloc("Calvi, au matin")];
+
+        let r = compare("t", &origine, &actuel);
+        assert_eq!(r.planches_touchees, 1);
+        assert_eq!(r.details[0].classes, vec![Classe::ObjetLibre]);
+        assert_eq!(r.classes[0].classe.nom(), "objet_libre");
+        assert_eq!(r.classes[0].compteur_parent, "");
+
+        // Déplacé, tourné, réécrit : toujours la même classe, une seule fois.
+        let mut bouge = album(vec![spread("duo", &["a.jpg", "b.jpg"])]);
+        bouge.spreads[0].objets = vec![Objet { angle: 12.0, ..bloc("Calvi, au matin") }];
+        let r = compare("t", &actuel, &bouge);
+        assert_eq!(r.details[0].classes, vec![Classe::ObjetLibre]);
+
+        // Et deux albums qui portent le même objet n'ont rien à se dire.
+        let r = compare("t", &actuel, &actuel);
+        assert_eq!(r.planches_touchees, 0);
     }
 
     /// An album nobody touched costs nothing.

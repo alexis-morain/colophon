@@ -1044,12 +1044,48 @@ pub fn poser_police(dir: &Path, source: &Path, index: u32) -> Result<model::Poli
     })
 }
 
+/// An `album.json` written under a schema this build does not know.
+///
+/// The one refusal in the whole opening path, and the only thing the schema
+/// number buys. Serde would read such a file happily — every field it does
+/// not know is simply dropped — and the next save would write the loss back
+/// to disk. So the version is checked before anything is read, and a file
+/// from the future is refused with both numbers in the sentence.
+///
+/// It is a type rather than a plain message because its two callers have to
+/// tell it apart from the other ways a migration can fail: those stay
+/// tolerated, so that a broken `album.json` is diagnosed by the read that
+/// follows, which knows the path. This one stops everything.
+#[derive(Debug, Clone, Copy)]
+pub struct SchemaTropRecent {
+    /// The schema the file declares.
+    pub version: u32,
+    /// The highest schema this build knows, [`model::SCHEMA`].
+    pub connu: u32,
+}
+
+impl std::fmt::Display for SchemaTropRecent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "cet album est écrit dans le schéma {} et cette version de Colophon ne \
+             connaît que le {} : l'ouvrir lui ferait perdre ce qu'elle ne sait pas \
+             lire. Mettez Colophon à jour.",
+            self.version, self.connu
+        )
+    }
+}
+
+impl std::error::Error for SchemaTropRecent {}
+
 /// What a migration did, so a bilan can say it instead of staying quiet.
 
 #[derive(Debug, Clone, Copy)]
 pub struct Migration {
     /// The schema the folder was written under.
     pub depuis: u32,
+    /// Slots the 1 → 2 step converted. Zero for any other step: it is the
+    /// only one that converts anything, the rest being stamps.
     pub slots: usize,
     /// Slots whose photo could not be resolved, and whose `focal` was
     /// therefore left as it stood. Approximate, and named as such.
@@ -1057,7 +1093,16 @@ pub struct Migration {
 }
 
 /// Bring an album folder up to [`model::SCHEMA`], in place, and say what it
-/// cost. `Ok(None)` when there was nothing to do.
+/// cost. `Ok(None)` when there was nothing to do, and
+/// [`SchemaTropRecent`] when the file comes from a build this one does not
+/// know — the one failure its callers must not swallow.
+///
+/// **The migration is staged, and it has to be.** Each step knows the one
+/// version it comes from: 1 → 2 converts the `focal`, 2 → 3 stamps and
+/// nothing else. Running the whole thing for any version below `SCHEMA`
+/// worked while there was a single step, and became a trap at the second —
+/// a schema-2 album would have had its `focal` converted a second time, and
+/// a double conversion breaks exactly what a single one repaired.
 ///
 /// **One hook, one write.** The migration rewrites `album.json`, so every
 /// later reader — the audit, the print pass, the cover, the bench — sees the
@@ -1065,22 +1110,64 @@ pub struct Migration {
 /// into each reader instead would mean six places to keep in step, and the
 /// first one forgotten would read a point of the image as a fraction of the
 /// room without anything failing.
-///
-/// The aspect ratios come from the cached thumbnails: they are in the folder
-/// by construction, `image_dimensions` reads only their header, and their
-/// ratio is the original's to within a rounded pixel. A photo with no
-/// thumbnail keeps its `focal` and is counted.
 pub fn migrate_album_folder(dir: &Path) -> Result<Option<Migration>> {
     let json = dir.join("album.json");
     let mut album: model::Album = serde_json::from_str(
         &fs::read_to_string(&json).with_context(|| format!("read {}", json.display()))?,
     )
     .context("album.json illisible")?;
-    if album.version >= model::SCHEMA {
+    // Avant toute lecture : un fichier venu d'au-dessus est refusé. Serde le
+    // lirait sans broncher, en laissant tomber ce qu'il ne connaît pas, et la
+    // prochaine sauvegarde écrirait la perte sur le disque.
+    if album.version > model::SCHEMA {
+        return Err(anyhow::Error::new(SchemaTropRecent {
+            version: album.version,
+            connu: model::SCHEMA,
+        }));
+    }
+    if album.version == model::SCHEMA {
         return Ok(None);
     }
     let depuis = album.version;
 
+    // Étape 1 → 2 : les `focal`, et elle seule.
+    let (slots, irresolus) = if depuis < 2 {
+        focal_du_schema_1(dir, &mut album)
+    } else {
+        (0, 0)
+    };
+
+    // Étape 2 → 3 : rien à convertir, et c'est toute l'étape. Le schéma 3 ne
+    // veut dire qu'une chose, « ce fichier peut porter des objets libres », et
+    // les champs qui les portent sont additifs : un album de schéma 2 les lit
+    // déjà. Ce qui s'achète ici s'achète chez le build d'à côté, qui ne les
+    // connaît pas et qui refusera le fichier au lieu de les jeter.
+    //
+    // Estampiller même quand tout ne s'est pas résolu : ne pas le faire ferait
+    // re-migrer au chargement suivant les slots déjà convertis, et une double
+    // migration abîme ce qu'une simple réparait.
+    album.version = model::SCHEMA;
+    fs::write(&json, serde_json::to_string_pretty(&album)?)
+        .with_context(|| format!("write {}", json.display()))?;
+    Ok(Some(Migration { depuis, slots, irresolus }))
+}
+
+/// The 1 → 2 step: every `focal` of the album, converted from a fraction of
+/// the leftover room inside its cell into a point of the image. Returns the
+/// slots it walked and the ones it could not resolve.
+///
+/// It is a function of its own because it is a *step*, not the migration: it
+/// runs for an album written under schema 1 and for no other, and the day a
+/// second conversion arrives it will sit beside this one rather than inside
+/// it. The steps of 6.4 taught that the hard way — see
+/// [`migrate_album_folder`].
+///
+/// The aspect ratios come from the cached thumbnails: they are in the folder
+/// by construction, `image_dimensions` reads only their header, and their
+/// ratio is the original's to within a rounded pixel. A photo with no
+/// thumbnail keeps its `focal` and is counted.
+fn focal_du_schema_1(dir: &Path, album: &mut model::Album) -> (usize, usize) {
+    let (mut slots, mut irresolus) = (0usize, 0usize);
     // Un index de vignettes absent ou illisible ne fait pas échouer la
     // migration : il la rend intégralement irrésolue, et c'est le compteur
     // qui le dit. Refuser d'ouvrir un album parce qu'on n'a pas su le migrer
@@ -1105,8 +1192,7 @@ pub fn migrate_album_folder(dir: &Path) -> Result<Option<Migration>> {
         Some(r)
     };
 
-    let g = crate::pdf::geometry(&album);
-    let (mut slots, mut irresolus) = (0usize, 0usize);
+    let g = crate::pdf::geometry(album);
     for spread in &mut album.spreads {
         let rects = crate::pdf::slots_for(&spread.template, spread.slots.len(), &g);
         for (i, slot) in spread.slots.iter_mut().enumerate() {
@@ -1145,13 +1231,7 @@ pub fn migrate_album_folder(dir: &Path) -> Result<Option<Migration>> {
         }
     }
 
-    // Estampiller même quand tout ne s'est pas résolu : ne pas le faire ferait
-    // re-migrer au chargement suivant les slots déjà convertis, et une double
-    // migration abîme ce qu'une simple réparait.
-    album.version = model::SCHEMA;
-    fs::write(&json, serde_json::to_string_pretty(&album)?)
-        .with_context(|| format!("write {}", json.display()))?;
-    Ok(Some(Migration { depuis, slots, irresolus }))
+    (slots, irresolus)
 }
 
 /// Re-render `album.pdf` from `album.json` alone, resolving every photo
@@ -1526,6 +1606,121 @@ mod tests {
                 "slot {i} : migré deux fois"
             );
         }
+    }
+
+    /// Le piège de la vague 6.4, et la raison pour laquelle la migration est
+    /// étagée : monter `SCHEMA` à 3 sans étages ferait re-convertir les
+    /// `focal` de tout album de schéma 2 — et le fichier dit lui-même qu'une
+    /// double migration abîme ce qu'une simple réparait.
+    ///
+    /// L'assertion est plus forte qu'une comparaison de `focal` : le fichier
+    /// entier doit être celui d'avant, à l'estampille près. Et les vignettes
+    /// sont là exprès, sans quoi le test passerait tout seul — la conversion
+    /// non étagée n'aurait rien eu à convertir et se serait tue.
+    #[test]
+    fn un_album_de_schema_2_monte_en_3_sans_toucher_a_rien() {
+        let (_photos, out) = dossier_test("migration-2-vers-3");
+        let thumbs = out.join(".cache").join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        image::RgbImage::from_fn(120, 80, |_, _| image::Rgb([120, 40, 200]))
+            .save(thumbs.join("ta.jpg"))
+            .unwrap();
+        image::RgbImage::from_fn(60, 120, |_, _| image::Rgb([20, 180, 90]))
+            .save(thumbs.join("tb.jpg"))
+            .unwrap();
+        fs::write(
+            out.join("thumbs.json"),
+            r#"{"a.jpg":"ta.jpg","b.jpg":"tb.jpg"}"#,
+        )
+        .unwrap();
+
+        // Un album de schéma 2 qui porte déjà un objet libre : les builds de
+        // 6.2 en ont écrit, et ils migrent comme les autres.
+        let mut album = model::Album::new("t", Path::new("."), model::Size { w: 210.0, h: 210.0 });
+        album.version = 2;
+        album.root = ".".into();
+        album.spreads.push(model::Spread {
+            template: "duo".into(),
+            slots: vec![
+                model::Slot::new("a.jpg".into(), [0.2, 0.8]),
+                model::Slot::new("b.jpg".into(), [0.9, 0.1]),
+            ],
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets: vec![model::Objet {
+                x: 30.0,
+                y: 30.0,
+                w: 40.0,
+                h: 20.0,
+                angle: 12.5,
+                contenu: model::Contenu::Texte {
+                    texte: "Calvi, au matin".into(),
+                    taille_pt: 11.0,
+                    interligne_mm: None,
+                    alignement: model::Alignement::Centre,
+                },
+            }],
+        });
+        let json = out.join("album.json");
+        fs::write(&json, serde_json::to_string_pretty(&album).unwrap()).unwrap();
+
+        let m = migrate_album_folder(&out).unwrap().expect("il y avait à estampiller");
+        assert_eq!(m.depuis, 2);
+        assert_eq!((m.slots, m.irresolus), (0, 0), "l'étape 2 → 3 ne convertit rien");
+
+        // Le fichier entier, à l'estampille près.
+        album.version = 3;
+        assert_eq!(
+            fs::read_to_string(&json).unwrap(),
+            serde_json::to_string_pretty(&album).unwrap(),
+            "l'étape 2 → 3 a touché autre chose que la version"
+        );
+
+        // Et les `focal` au bit, dit séparément : c'est l'assertion que le
+        // prompt de la session demande, et elle ne doit pas dépendre du
+        // sérialiseur.
+        let relu: model::Album = serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
+        assert_eq!(relu.version, model::SCHEMA);
+        for (i, attendu) in [[0.2_f64, 0.8_f64], [0.9, 0.1]].iter().enumerate() {
+            let f = relu.spreads[0].slots[i].focal;
+            assert_eq!(
+                [f[0].to_bits(), f[1].to_bits()],
+                [attendu[0].to_bits(), attendu[1].to_bits()],
+                "slot {i} : focal re-converti"
+            );
+        }
+        assert_eq!(relu.spreads[0].objets, album.spreads[0].objets, "objets intacts");
+        assert!(migrate_album_folder(&out).unwrap().is_none(), "ne re-migre pas");
+    }
+
+    /// Un album écrit par un build plus récent est refusé, au lieu d'être
+    /// ouvert en perdant en silence ce que ce build ne sait pas lire. C'est
+    /// la seule chose que la montée de schéma achète, et c'est ici qu'elle
+    /// s'achète : un `>=` laissait passer sans un mot tout ce qui vient
+    /// d'au-dessus.
+    #[test]
+    fn un_album_de_schema_inconnu_est_refuse_et_pas_reecrit() {
+        let (_photos, out) = dossier_test("migration-trop-recent");
+        fs::create_dir_all(&out).unwrap();
+        let json = out.join("album.json");
+        let ecrit = format!(
+            r#"{{"version":{},"title":"t","root":".","trim_mm":{{"w":210.0,"h":210.0}},
+               "bleed_mm":3.0,"spreads":[]}}"#,
+            model::SCHEMA + 1
+        );
+        fs::write(&json, &ecrit).unwrap();
+
+        let err = migrate_album_folder(&out).expect_err("un schéma inconnu doit être refusé");
+        assert!(
+            err.is::<SchemaTropRecent>(),
+            "le refus doit être reconnaissable par ses appelants : {err:#}"
+        );
+        let msg = format!("{err}");
+        assert!(msg.contains(&(model::SCHEMA + 1).to_string()), "{msg}");
+        assert!(msg.contains(&model::SCHEMA.to_string()), "{msg}");
+        assert_eq!(fs::read_to_string(&json).unwrap(), ecrit, "le fichier a été réécrit");
     }
 
     /// Une photo sans vignette garde son focal, et se compte. Un album qui

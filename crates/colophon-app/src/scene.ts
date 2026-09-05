@@ -256,6 +256,11 @@ export function retenirAuPli(
  *
  * La zone sûre est celle que le moteur ancre déjà pour les légendes :
  * `CAPTION_SAFE` de marge à l'intérieur de la coupe.
+ *
+ * Port de `scene.rs::hors_marge`, comme `traverseLePli` l'est de
+ * `traverse_le_pli` : le compteur `objet_hors_marge` du linter lit la même
+ * règle, et un seuil qui ne vivrait que de ce côté-ci ferait avertir l'écran
+ * sur des objets que le rapport ne compterait pas.
  */
 export function horsMarge(r: Rect, angle: number, g: SpreadGeometry): boolean {
   return distanceToTrim(r, angle, g) < CAPTION_SAFE * g.margin;

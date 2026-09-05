@@ -597,6 +597,8 @@ export async function reportData(): Promise<ReportData> {
         legende_manquante: compteur(2, 4, false),
         legende_sur_photo: compteur(0, 0, true),
         repetition_gabarit: compteur(0, 0, true),
+        objet_hors_marge: compteur(0, 0, false),
+        objet_deborde: compteur(0, 0, false),
       },
     },
   };

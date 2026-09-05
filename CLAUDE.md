@@ -113,9 +113,18 @@ contre la scène, sans prérequis canvas ; **la rotation est en V1**. La seconde
 la recommandation de la note, en connaissance de son coût, et elle a imposé l'ordre de
 travail : l'angle entre dans la géométrie au premier objet stocké.
 
-**6.2 s1 est faite** : le modèle stocké, l'angle dans la scène, l'émission PDF, le port
-TypeScript et sa parité (voir « Les objets libres »). **Reste s2** : l'éditeur — poser,
-saisir, glisser, redimensionner, tourner, supprimer, et les deux gardes à la main.
+**6.2 est close, ses deux sessions faites** : s1 le modèle stocké, l'angle dans la scène,
+l'émission PDF, le port TypeScript et sa parité ; s2 l'éditeur (voir « Les objets libres »
+et « L'éditeur des objets libres »).
+
+**6.4 est close** : ce que les objets libres obligeaient partout ailleurs. Le linter
+gagne **deux compteurs**, `objet_hors_marge` et `objet_deborde` (voir « Le linter et les
+objets libres ») ; `--reprise` gagne la classe **`objet_libre`**, sans compteur parent,
+parce que le Composer n'en propose jamais et qu'aucun compteur ne pouvait donc prévenir
+la main ; le prévol gagne **deux bloquants**, `objet_coupe` et `objet_pli` ; et le schéma
+d'`album.json` **monte à 3** (voir « Le schéma, et sa migration étagée »). Rien de neuf à
+l'écran, aucun seuil existant touché, et les trois jeux de référence rendent les mêmes
+verdicts qu'avant, compteur par compteur.
 
 
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
@@ -194,16 +203,17 @@ aussi : un caractère que la face ne dessine pas devient `?`, jamais la case vid
 projet** avec `/Widths` : plus de table de chasses par code, plus d'échappement octal.
 
 **La police de l'album voyage avec lui, et rien ne cherche jamais une police par son
-nom** (6.1 s4). `album.police` est **additif, le schéma reste à 2** — le précédent est
-`reglages` : absent veut dire « la face du projet », donc aucune migration et un vieil
-album s'ouvre tel quel. Il porte le **nom du fichier** posé à côté d'`album.json`, et ce
-nom n'a que deux valeurs (`police.ttf` pour du `glyf`, `police.otf` pour du CFF) : un
-`album.json` est réparable à la main, donc `dir.join(ce qu'il dit)` serait une traversée
-de chemin. Les octets posés sont ceux de `Face::extraire`, **jamais le fichier système
-recopié** — Helvetica Neue sort à 14 % de sa `.ttc`. `font::face_album(dir, fichier)`
-est la seule porte : elle rend la face **et** `defaut`, le code d'un fichier nommé et
-introuvable. **Ce cas ne fait jamais échouer un export** : l'album sort dans la face du
-projet et l'écran le dit, en haut d'Envoi comme dans le panneau *Format*.
+nom** (6.1 s4). `album.police` est **additif** — le précédent est `reglages` : absent veut
+dire « la face du projet », donc aucune migration et un vieil album s'ouvre tel quel. Le
+schéma n'a pas bougé pour lui (il est monté à 3 en 6.4, pour une autre raison). Il porte
+le **nom du fichier** posé à côté d'`album.json`, et ce nom n'a que deux valeurs
+(`police.ttf` pour du `glyf`, `police.otf` pour du CFF) : un `album.json` est réparable à
+la main, donc `dir.join(ce qu'il dit)` serait une traversée de chemin. Les octets posés
+sont ceux de `Face::extraire`, **jamais le fichier système recopié** — Helvetica Neue
+sort à 14 % de sa `.ttc`. `font::face_album(dir, fichier)` est la seule porte : elle rend
+la face **et** `defaut`, le code d'un fichier nommé et introuvable. **Ce cas ne fait
+jamais échouer un export** : l'album sort dans la face du projet et l'écran le dit, en
+haut d'Envoi comme dans le panneau *Format*.
 
 **Le dossier qui compte est celui d'`album.json`, jamais `album.root`** (les photos).
 `PdfWriter::new(album, dir)` le prend, `print`, `cover` et `build` l'ont tous en main.
@@ -344,11 +354,12 @@ deux côtés. **Les deux fixtures se régénèrent** quand le dump ou la scène 
 ### Les objets libres, et l'angle qu'ils ont apporté
 
 **Le premier champ stocké au-delà d'un gabarit et de ses cases** : `Spread::objets`
-(`model.rs`), additif, absent quand vide, **le schéma reste à 2** — la montée de version
-et sa migration sont à 6.4, avec les compteurs de linter, `--reprise` et le refus du
-prévol. Un objet porte sa boîte, son angle et son contenu (`Contenu::Texte` aujourd'hui,
-un clipart en 6.3 : le tag est déjà dans le fichier). **Leur ordre est leur profondeur**,
-et ils passent tous au-dessus de ce que le gabarit a produit.
+(`model.rs`), additif, absent quand vide — **le schéma est monté à 3 en 6.4**, et pas
+pour lui : un champ additif ne demande aucune conversion, et 3 n'achète que le refus
+(voir « Le schéma, et sa migration étagée »). Un objet porte sa boîte, son angle et son
+contenu (`Contenu::Texte` aujourd'hui, un clipart en 6.3 : le tag est déjà dans le
+fichier). **Leur ordre est leur profondeur**, et ils passent tous au-dessus de ce que le
+gabarit a produit.
 
 **La rotation est en V1** (décision d'Alexis du 04/09, contre la recommandation de la
 note ; `plans/2026-08-28-note-decision-vague-6.md` hors dépôt). Elle est donc entrée dans
@@ -437,6 +448,55 @@ centre. L'invariant est testé à tous les angles — **le coin opposé ne bouge
 monde** —, et c'est lui qui empêche la boîte de glisser sous la main pendant qu'on la
 retaille.
 
+### Le linter, la reprise et le prévol devant un objet libre (6.4)
+
+**Le linter et le prévol lisent la scène, aucun des deux ne recalcule.** `hors_marge` et
+`traverse_le_pli` vivent dans `scene.rs`, avec le geste de l'éditeur et l'émetteur ; les
+deux les appellent. Une seconde implémentation de la doctrine est exactement ce que ce
+module-là existe pour supprimer, et `hors_marge` n'était écrit qu'en TypeScript jusqu'ici
+— un seuil dans une seule langue pour une règle que deux lisent. `--reprise`, lui, ne
+lit pas la scène mais le fichier : il mesure un écart entre deux `album.json`, et un
+objet libre y est un champ, pas un rectangle.
+
+**Deux compteurs de linter, mous et à zéro.** `objet_hors_marge` (la boîte entre dans la
+bande sûre, `CAPTION_SAFE` × marge à l'intérieur de la coupe) et `objet_deborde` (le
+texte est plus haut que sa boîte, `overflow`, ou un mot y est plus large, `trop_large` —
+deux façons de ne pas tenir dans la boîte qu'on a dessinée, un seul compteur). **Mous**
+parce qu'un objet posé volontairement à fond perdu est un choix et que l'éditeur a déjà
+averti ; **à zéro** parce qu'aucun des trois jeux de référence n'en porte un — le jour où
+un album légitime en compte, c'est le seuil qui bouge, pas la classe. Les cliparts
+n'existent pas : leurs deux compteurs arrivent avec eux, en 6.3.
+
+**Deux bloquants au prévol, et deux seulement** : `objet_coupe`
+(`distance_to_trim < 0`) et `objet_pli` (`traverse_le_pli`). La marge reste molle
+partout ; ce que la guillotine traverse et ce que la reliure coupe en deux, non.
+
+**`--reprise` gagne la classe `objet_libre`, sans compteur parent.** Poser un objet est
+un geste de goût, pas un défaut que le Composer aurait pu attraper — il n'en propose aucun,
+donc aucun compteur ne pouvait prévenir la main, comme pour `insertion` et `suppression`.
+La détection est une **égalité exacte** sur `Spread::objets`, sans epsilon à la différence
+du recadrage : un focal est un nombre que la machine a proposé, un objet libre n'existe
+que parce qu'une main l'a posé.
+
+### Le schéma, et sa migration étagée (6.4)
+
+**`SCHEMA` vaut 3, et 3 veut dire « ce fichier peut porter des objets libres ».** Rien ne
+s'y lit autrement — `objets` et `police` sont additifs, un album de schéma 2 les lit
+déjà. La montée achète **une seule chose**, et elle la vaut : `migrate_album_folder`
+**refuse** désormais toute version au-dessus de la sienne (`SchemaTropRecent`), au lieu
+de laisser serde ouvrir le fichier en jetant ce qu'il ne connaît pas et la première
+sauvegarde graver la perte. L'ancien `>= SCHEMA` laissait passer le dessus sans un mot.
+C'est le seul échec de migration que les deux appelants ne ravalent pas.
+
+**La migration est étagée, et il le fallait.** Chaque étape connaît la version d'où elle
+part : 1 → 2 convertit les `focal` (`focal_du_schema_1`), 2 → 3 estampille et rien
+d'autre. Faire tourner le tout pour « toute version sous `SCHEMA` » marchait tant qu'il
+n'y avait qu'une étape et devenait un piège à la deuxième — un album de schéma 2 aurait
+vu ses `focal` reconvertis, et **une double migration abîme ce qu'une simple réparait**.
+Le test qui mord compare le fichier entier, à l'estampille près, avec les vignettes
+présentes exprès : sans elles la conversion non étagée n'aurait rien eu à convertir et se
+serait tue.
+
 ## L'app
 
 Recadrage, tiroir, table lumineuse ⌘3, badge « éditée » et cadenas ⌘L, « rendre à
@@ -506,8 +566,8 @@ l'aperçu fidèle ; `--print` = 300 dpi, rien ne court-circuite `print_scale` ; 
 la feuille à plat, une par profil. **Ce qui doit survivre au massicot se mesure depuis la
 coupe**, et il n'y a plus qu'une implémentation, `scene::distance_to_trim`.
 
-`--audit` : dix compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions de
-chaque jeu. `--reprise` : part des planches corrigées à la main contre
+`--audit` : douze compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions
+de chaque jeu. `--reprise` : part des planches corrigées à la main contre
 `album.origin.json` ; sous 10 % bon, jusqu'à 30 % à surveiller, au-delà rédhibitoire.
 `--prevol --profil <id>` : bloquants contre un `PrinterProfile`.
 
@@ -518,6 +578,12 @@ prévol, fiches, rythmes, formats, variantes) : le jour où ça compte, des code
 moteur et le libellé côté app. **Vitest tourne sans `navigator`**, langue par défaut
 anglaise : un test qui affirme du français pose `setLangue("fr")`. Sous
 `pipeline::PETIT_DOSSIER` (25 photos), la curation se limite aux rejets certains.
+
+**Une migration de schéma est étagée, jamais « tout ce qui est sous `SCHEMA` ».** Le
+jour où une deuxième étape arrive, la première se remettrait à tourner sur des albums
+qu'elle a déjà convertis, et une double conversion abîme ce qu'une simple réparait. Une
+étape = une version de départ, et `Migration::slots` ne compte que ce que 1 → 2 a
+converti. Voir « Le schéma, et sa migration étagée ».
 
 **`album.origin.json` ne se réécrit jamais**, c'est la référence de `--reprise` :
 composer dans un dossier déjà utilisé mesurerait l'album du jour contre une vieille
@@ -593,7 +659,9 @@ succès parfait sur zéro travail.
 
 Tauri 2 et React. GPL-3.0. `album.json` état unique réparable à la main. Le PDF fait foi.
 Aucune image ne traverse le pli, **ni aucun objet libre** : le pli est dur, l'éditeur y
-bute ; la marge de sécurité est molle, on avertit. Heuristiques d'abord, IA jamais
+bute et le prévol refuse ; la marge de sécurité est molle, on avertit et le linter compte.
+Un `album.json` d'un schéma inconnu se refuse, jamais ne s'ouvre en perdant des champs.
+Heuristiques d'abord, IA jamais
 décisionnaire. Jamais de résolution sous 250 ppi. Jamais `imazen/heic` (AGPL). Un objet
 de scène porte un angle et une origine, **jamais une matrice**.
 

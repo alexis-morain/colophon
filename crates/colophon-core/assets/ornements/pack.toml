@@ -1,0 +1,57 @@
+# Le pack d'ornements typographiques livré avec Colophon.
+#
+# Un ornement est un dessin vectoriel : un fleuron qui ferme un chapitre, un
+# filet qui sépare deux blocs. Ce n'est pas un clipart, et le mot ne vit plus
+# dans ce projet — `CONTRIBUTING.md` porte la frontière, publiquement.
+#
+# **Contribuer, c'est ajouter une entrée ici et un `.svg` à côté**, sans
+# toucher une ligne de Rust. Ce que le dépôt exige en retour, et que deux
+# tests refusent :
+#
+#   - la licence est `CC0-1.0` ou `PD`, et rien d'autre. Une CC BY-SA
+#     contaminerait le PDF de quelqu'un d'autre ; une CC BY y collerait une
+#     attribution qui voyagerait avec son livre ;
+#   - `auteur` et `source` sont obligatoires — la source est l'URL de la page
+#     d'origine, pas celle du fichier : c'est elle qui porte la preuve ;
+#   - le `.svg` tient dans le sous-ensemble que `ornement.rs` traduit
+#     littéralement en opérateurs PDF : un `<svg viewBox>`, des `<path d>`,
+#     `M m L l H h V v C c Z z`, `fill-rule`, et rien d'autre. Pas de
+#     `transform`, pas de `style`, pas d'arc, pas de `<text>`.
+#
+# Un fichier hors sous-ensemble ne se répare pas en silence : le test le
+# nomme, avec la commande fautive, et on le normalise dans Inkscape avant de
+# le déposer (objet en chemin, aplatir les transformations, SVG simple).
+#
+# Trois familles, et pas de quatrième : `fleuron`, `filet`, `separateur`. Les
+# cartouches n'ont aucun gisement libre sur Commons — ils tombent, ou ils se
+# dessinent.
+
+[[ornement]]
+id = "filet-flare"
+fichier = "filet-flare.svg"
+famille = "filet"
+titre.fr = "Filet à renflement"
+titre.en = "Centre-flare rule"
+licence = "PD"
+auteur = "Rehua"
+source = "https://commons.wikimedia.org/wiki/File:Rule_Segment_-_Flare_Centre_-_140px.svg"
+
+[[ornement]]
+id = "filet-fleche"
+fichier = "filet-fleche.svg"
+famille = "filet"
+titre.fr = "Filet à flèche"
+titre.en = "Arrow rule"
+licence = "CC0-1.0"
+auteur = "Yodin"
+source = "https://commons.wikimedia.org/wiki/File:Rule_Segment_-_Arrow_Right_-_12px.svg"
+
+[[ornement]]
+id = "filet-losange"
+fichier = "filet-losange.svg"
+famille = "filet"
+titre.fr = "Filet en losange"
+titre.en = "Lozenge rule"
+licence = "PD"
+auteur = "Inductiveload"
+source = "https://commons.wikimedia.org/wiki/File:Rule_Segment_-_Lozenge_5px_-_100px.svg"

@@ -352,9 +352,13 @@ pub fn check(
     // across the fold comes back split by the binding. Neither is measured
     // here: `distance_to_trim` and `traverse_le_pli` are the doctrine, and
     // this reads them with the object's own angle.
+    //
+    // **Whatever fills the object.** A fleuron the cut goes through is a
+    // mutilated fleuron; the box is what is measured, and an ornament's box
+    // is its ink.
     for (si, spread) in album.spreads.iter().enumerate() {
         for objet in scene::Scene::of(spread, &g).objects.iter() {
-            let scene::Role::FreeText { index, .. } = &objet.role else { continue };
+            let Some(index) = objet.role.index_libre() else { continue };
             let marge = scene::distance_to_trim(&objet.rect, objet.angle, &g);
             if marge < 0.0 {
                 defauts.push(Defaut {

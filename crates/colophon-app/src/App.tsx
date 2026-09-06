@@ -27,6 +27,7 @@ import {
   listDensities,
   DensitePreset,
   listFormats,
+  chargeOrnements,
   listPrinters,
   onBuildProgress,
   colophonSpread,
@@ -267,6 +268,13 @@ export default function App() {
 
   useEffect(() => {
     listPrinters().then(setPrinters, () => setPrinters([]));
+  }, []);
+
+  // Le pack d'ornements, une fois. Il est compilé dans le moteur, donc il ne
+  // change pas sous la fenêtre, et rien n'attend après lui : un pack absent
+  // laisse un album entier lisible.
+  useEffect(() => {
+    void chargeOrnements();
   }, []);
 
   // Une seule interrogation, au lancement, en arrière-plan. Hors ligne, feed
@@ -2521,7 +2529,13 @@ function ContextLine({
               )}
             <span className="context-hint">
               {objet !== null && objet !== undefined
-                ? t("contexte.objet")
+                ? // Un ornement n'a pas de champ : lui proposer le double-clic
+                  // serait promettre un geste qui ne fait rien. Sa boîte, elle,
+                  // garde ses proportions, et c'est la seule chose que la
+                  // phrase doit apprendre.
+                  spread.objets?.[objet]?.type === "ornement"
+                  ? t("contexte.ornement")
+                  : t("contexte.objet")
                 : selected !== null
                   ? t("contexte.recadrage")
                   : ""}

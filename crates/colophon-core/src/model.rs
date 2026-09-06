@@ -167,8 +167,9 @@ pub struct Objet {
     /// to one written before the field existed.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub angle: f64,
-    /// What the object is. One variant today; a clipart arrives in 6.3 as
-    /// another, and the tag that tells them apart is already in the file.
+    /// What the object is: a block of text, or an ornament taken from the
+    /// pack. The tag that tells them apart has been in the file since the
+    /// first free object, so an ornament costs no migration.
     #[serde(flatten)]
     pub contenu: Contenu,
 }
@@ -193,6 +194,15 @@ pub enum Contenu {
         #[serde(default, skip_serializing_if = "Alignement::est_defaut")]
         alignement: Alignement,
     },
+    /// A typographic ornament: a fleuron closing a chapter, a rule parting
+    /// two blocks. **The object carries the identity, never the drawing** —
+    /// no colour, no scale, no mirror. The box already holds the size and the
+    /// angle, and one more field would be a second source of truth for a
+    /// geometry [`Objet`] owns.
+    ///
+    /// `pack` travels beside `id` so a second pack can arrive one day without
+    /// identifiers having to be unique across packs.
+    Ornement { pack: String, id: String },
 }
 
 /// Where a wrapped line sits inside the box it was wrapped to.
@@ -220,6 +230,10 @@ impl Objet {
             Contenu::Texte { taille_pt, interligne_mm, .. } => {
                 interligne_mm.unwrap_or(taille_pt / (72.0 / 25.4) * 1.35)
             }
+            // An ornament sets no line. Zero rather than an `Option`: every
+            // caller of this asks "how far down is the next baseline", and an
+            // ornament's answer is "there is no next baseline".
+            Contenu::Ornement { .. } => 0.0,
         }
     }
 }

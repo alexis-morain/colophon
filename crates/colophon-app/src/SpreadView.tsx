@@ -66,6 +66,7 @@ import {
   SceneObject,
   sceneOf,
 } from "./scene";
+import { attributD, attributViewBox, ornementDe, rapport } from "./ornement";
 import { cachedThumb, loadThumb } from "./thumbs";
 import { ObjetLibreCalque, PoseObjet } from "./ObjetLibreCalque";
 
@@ -427,6 +428,12 @@ export function SpreadView({
         onObjetSelect?.(o.role.index);
         setEcrit(o.role.index);
         break;
+      // Un ornement n'a pas de champ : Entrée le choisit, et la barre de
+      // contexte montre son angle. Le basculer ferme la prise, comme sur une
+      // case.
+      case "ornement":
+        onObjetSelect?.(objet === o.role.index ? null : o.role.index);
+        break;
     }
   };
 
@@ -486,7 +493,7 @@ export function SpreadView({
     // lui qu'on choisit, et aucun geste de case ne démarre. Le calque prend
     // le relais dès l'image suivante — c'est lui qui porte le glissement.
     const role = at === null ? null : scene.objects[at].role;
-    if (role?.role === "free_text" && onObjetSelect) {
+    if ((role?.role === "free_text" || role?.role === "ornement") && onObjetSelect) {
       geste.current = null;
       onSelect?.(null);
       onObjetSelect(role.index);
@@ -926,6 +933,61 @@ export function SpreadView({
                 </div>
               );
             }
+
+            // Un ornement : le `<svg>` du pack, posé dans sa boîte. Le
+            // `viewBox` fait tout le placement — c'est lui qui met le dessin
+            // à l'échelle de la boîte, exactement comme la matrice du flux
+            // PDF —, donc rien ici ne calcule une coordonnée.
+            //
+            // `preserveAspectRatio="none"` est correct **parce que** la boîte
+            // garde déjà le rapport du dessin : ce qui la contraint est le
+            // geste, pas le rendu, et laisser le SVG recadrer masquerait le
+            // jour où le geste cesserait de la contraindre.
+            case "ornement": {
+              const orn = ornementDe(role.id);
+              if (!orn) return null;
+              const box = o.rect;
+              const index = role.index;
+              return (
+                <svg
+                  key={`ornement-${index}`}
+                  className={
+                    "objet-libre objet-ornement" +
+                    (onObjetSelect ? " saisissable" : "") +
+                    (objet === index ? " choisi" : "")
+                  }
+                  aria-hidden="true"
+                  viewBox={attributViewBox(orn.dessin)}
+                  preserveAspectRatio="none"
+                  onClick={
+                    onObjetSelect &&
+                    ((e) => {
+                      e.stopPropagation();
+                      onObjetSelect(objet === index ? null : index);
+                    })
+                  }
+                  style={{
+                    left: `${box.x * mm}px`,
+                    top: `${box.y * mm}px`,
+                    width: `${box.w * mm}px`,
+                    height: `${box.h * mm}px`,
+                    transform:
+                      o.angle === 0
+                        ? undefined
+                        : `rotate(${angleEcran(o.angle)}deg)`,
+                  }}
+                >
+                  {orn.dessin.chemins.map((chemin, i) => (
+                    <path
+                      key={i}
+                      d={attributD(chemin)}
+                      fill="var(--paper-ink)"
+                      fillRule={chemin.evenodd ? "evenodd" : "nonzero"}
+                    />
+                  ))}
+                </svg>
+              );
+            }
           }
         })}
 
@@ -937,23 +999,34 @@ export function SpreadView({
           objet !== null &&
           objet !== undefined &&
           (() => {
+            // La prise vaut pour tout ce qu'une main a posé : un bloc et un
+            // ornement se déplacent, se tournent et se suppriment du même
+            // geste. Ce qui les sépare tient en deux props — un ornement n'a
+            // pas de champ à ouvrir, et sa boîte garde le rapport de son
+            // dessin.
             const cible = scene.objects.find(
-              (o) => o.role.role === "free_text" && o.role.index === objet,
+              (o) =>
+                (o.role.role === "free_text" || o.role.role === "ornement") &&
+                o.role.index === objet,
             );
-            if (!cible || cible.role.role !== "free_text") return null;
+            if (!cible) return null;
+            const bloc = cible.role.role === "free_text" ? cible.role : null;
+            const orn =
+              cible.role.role === "ornement" ? ornementDe(cible.role.id) : undefined;
             if (ecrit === objet) return null;
             return (
               <ObjetLibreCalque
                 pose={draftObjet ?? { rect: cible.rect, angle: cible.angle }}
                 geom={geom}
                 mm={mm}
-                deborde={cible.role.overflow}
+                deborde={bloc?.overflow ?? false}
+                rapport={orn && rapport(orn.dessin)}
                 onDraft={setDraftObjet}
                 onCommit={(p) => {
                   setDraftObjet(null);
                   onObjet(objet, retournerBoite(p.rect, geom), p.angle);
                 }}
-                onEcrire={() => setEcrit(objet)}
+                onEcrire={bloc ? () => setEcrit(objet) : undefined}
                 onSupprimer={() => {
                   onObjetSelect?.(null);
                   onObjetSupprimer?.(objet);
@@ -973,7 +1046,7 @@ export function SpreadView({
               (o) => o.role.role === "free_text" && o.role.index === ecrit,
             );
             const stocke = spread.objets?.[ecrit];
-            if (!cible || !stocke) return null;
+            if (!cible || !stocke || stocke.type !== "texte") return null;
             const px = stocke.taille_pt * PT_MM * mm;
             return (
               <textarea

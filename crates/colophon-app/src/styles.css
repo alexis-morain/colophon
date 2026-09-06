@@ -702,6 +702,13 @@ input[type="radio"] {
   white-space: pre;
 }
 
+/* Un ornement : le SVG du pack, à l'échelle de sa boîte. `overflow: visible`
+   parce que sa boîte EST son encre — rien ne dépasse, et un rognage qui ne
+   sert jamais est un rognage dont on ne saurait pas qu'il a servi. */
+.objet-ornement {
+  overflow: visible;
+}
+
 /* Un bloc qu'on peut prendre. Le curseur dit qu'il se déplace ; le cadre
    n'apparaît qu'au survol, pour que la planche au repos reste une planche. */
 .objet-libre.saisissable {

@@ -26,6 +26,7 @@ import {
   SpreadGeometry,
 } from "./album";
 import { angleEcran, centre, Point, Scene } from "./scene";
+import { ornementDe, peindre as peindreOrnement } from "./ornement";
 import { imageDe, imageRegleeDe, surImage } from "./photos";
 import { filtreDe, reglagePose, surReglage } from "./reglages";
 
@@ -221,6 +222,27 @@ export function peindre(
           // même endroit — les deux images doivent rester la même image.
           texteBrut(l.text, role.at.x + l.dxMm, role.at.y + l.dyMm, l.sizeMm, c.ink, rotation);
         }
+        break;
+      }
+      // Un ornement : les chemins du pack, à l'échelle de sa boîte, et la
+      // rotation posée une fois pour l'objet comme partout ailleurs.
+      //
+      // **Le même tracé que le DOM**, à la chaîne près : `Path2D` lit un `d`
+      // de SVG, donc les deux rendus consomment ce que `ornement.ts` a écrit
+      // une seule fois. Un identifiant qu'aucun pack ne porte ne dessine rien
+      // — le moteur fait pareil, et son proxy le dit à voix haute.
+      case "ornement": {
+        const orn = ornementDe(role.id);
+        if (!orn) break;
+        ctx.save();
+        if (o.angle !== 0) {
+          const ctr = centre(o.rect);
+          ctx.translate(ctr.x, ctr.y);
+          ctx.rotate((angleEcran(o.angle) * Math.PI) / 180);
+          ctx.translate(-ctr.x, -ctr.y);
+        }
+        peindreOrnement(ctx, orn.dessin, o.rect, c.ink);
+        ctx.restore();
         break;
       }
     }

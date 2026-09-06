@@ -593,8 +593,11 @@ export const FR = {
   "objet.alignement.droite": "À droite",
   "objet.saisir": "Texte du bloc",
   "contexte.objet": "Glissez pour déplacer, les coins pour la taille, la poignée du haut pour tourner. Double-clic pour écrire.",
+  "contexte.ornement": "Glissez pour déplacer, les coins pour la taille : elle garde ses proportions. La poignée du haut pour tourner.",
   "scene.texte.libre": "Texte libre : {texte}",
   "scene.texte.libre.vide": "Texte libre, vide",
+  "scene.ornement": "Ornement : {titre}",
+  "scene.ornement.inconnu": "Ornement absent du pack",
   "planche.recadrer":
     "Glisser pour recadrer · molette pour zoomer · double-clic recentre · ⌥ affine",
   "planche.recadrer.pleine":
@@ -1287,8 +1290,11 @@ export const EN: Record<Cle, string> = {
   "objet.alignement.droite": "Right",
   "objet.saisir": "Block text",
   "contexte.objet": "Drag to move, corners to resize, the top handle to turn. Double-click to write.",
+  "contexte.ornement": "Drag to move, corners to resize: it keeps its proportions. The top handle to turn.",
   "scene.texte.libre": "Free text: {texte}",
   "scene.texte.libre.vide": "Free text, empty",
+  "scene.ornement": "Ornament: {titre}",
+  "scene.ornement.inconnu": "Ornament missing from the pack",
   "planche.recadrer":
     "Drag to crop · wheel to zoom · double-click recentres · ⌥ refines",
   "planche.recadrer.pleine":

@@ -1,0 +1,114 @@
+{
+  "session": "6.3 s1 — l'ornement entre dans le modèle et sort dans le PDF",
+  "date": "2026-09-06",
+  "machine": "Mac d'Alexis, macOS 25.5, cargo --release",
+
+  "le_pack": {
+    "quoi": "Trois actifs de démonstration, pris à la main dans Category:SVG rule segments de Wikimedia Commons, domaine public et CC0 seulement. Le pack complet des 32 arrivera par une PR de données, qui ne touchera aucune ligne de Rust : c'est ce que le format existe pour permettre, et le prouver avec trois vaut mieux que le supposer avec trente-deux.",
+    "actifs": [
+      {
+        "id": "filet-losange",
+        "licence": "PD",
+        "auteur": "Inductiveload",
+        "source": "https://commons.wikimedia.org/wiki/File:Rule_Segment_-_Lozenge_5px_-_100px.svg",
+        "viewbox": "0 0 100 5",
+        "segments": 6,
+        "octets_svg_normalise": 112
+      },
+      {
+        "id": "filet-flare",
+        "licence": "PD",
+        "auteur": "Rehua",
+        "source": "https://commons.wikimedia.org/wiki/File:Rule_Segment_-_Flare_Centre_-_140px.svg",
+        "viewbox": "0 0 140 9",
+        "segments": 16,
+        "octets_svg_normalise": 282
+      },
+      {
+        "id": "filet-fleche",
+        "licence": "CC0-1.0",
+        "auteur": "Yodin",
+        "source": "https://commons.wikimedia.org/wiki/File:Rule_Segment_-_Arrow_Right_-_12px.svg",
+        "viewbox": "0 0 12 17",
+        "segments": 9,
+        "octets_svg_normalise": 119
+      }
+    ],
+    "normalisation": "Les trois sont arrivés hors sous-ensemble et ont été normalisés à la main avant dépôt, comme un contributeur le ferait dans Inkscape : DOCTYPE, <defs>, <g>, style= et les métadonnées RDF retirés, viewBox ajouté quand il manquait (deux sur trois n'en avaient pas). La géométrie, elle, était déjà dans le sous-ensemble : pas un arc, pas une quadratique, pas une cubique lisse dans les trois. C'est la mesure du 05/09 confirmée sur pièces — l'emballage est ce qui sort du sous-ensemble, jamais le dessin."
+  },
+
+  "le_poids": {
+    "quoi": "Ce qu'un ornement ajoute au PDF de tirage, flux compressé compris. Album minimal, planche vide, un ornement, contre le même album sans.",
+    "reference_note_du_05_09": "767 octets médians sur 8 actifs du calibre filet ou séparateur",
+    "par_ornement": {
+      "filet-losange": 108,
+      "filet-fleche": 118,
+      "filet-flare": 189
+    },
+    "neuf_ornements_trois_actifs": {
+      "sans": 211749,
+      "avec": 212073,
+      "delta": 324,
+      "par_ornement": 36,
+      "pourquoi": "Neuf poses de trois dessins : Flate écrase la répétition, donc le neuvième ornement d'un album ne coûte presque rien."
+    },
+    "verdict": "108 à 189 octets, sous les 767 de la note et du même ordre de grandeur — le convertisseur n'a pas de gras. L'écart tient à l'échantillon : nos trois actifs portent 6 à 16 segments, les huit de la note en portaient davantage. Aucun ordre de grandeur d'écart, donc rien à corriger.",
+    "a_comparer": "212 Ko pour la seule feuille de couverture mesurée en 6.1. Vingt ornements dans un album coûtent moins qu'un pour cent de cela."
+  },
+
+  "l_identite_a_l_octet": {
+    "quoi": "Un album sans ornement rend le PDF de main, octet pour octet.",
+    "banc": "banc_octets_d_un_album_sans_objet_libre, lancé sur les deux arbres",
+    "main": "623dc7d",
+    "octets": 214808,
+    "verdict": "identique",
+    "pourquoi_ca_compte": "6.1 s3 et 6.2 s1 ont payé cette contrainte assez cher pour qu'on ne la casse pas ici. La seule chose qui pouvait la casser est la refonte de text_op_tourne en coefficients_rotation, et c'est précisément ce qu'elle vérifie."
+  },
+
+  "l_encre_dans_la_boite": {
+    "quoi": "Le pli, la coupe, le prévol et le linter ne mesurent jamais que le rectangle d'un objet libre. Pour un ornement ce n'est pas une approximation mais un invariant, parce que sa boîte garde le rapport de son viewBox. Mesuré au raster, à 10 pixels par millimètre : sips rasterise à 72 ppp par défaut, soit 0,35 mm par pixel, où une tolérance d'un demi-millimètre battrait au hasard sur un bord anticrénelé.",
+    "script": "scripts/ornement-encre.py, branché dans check.sh à côté de pdf-png",
+    "tolerance_mm": 0.5,
+    "poses": [
+      { "id": "filet-losange", "angle": 0, "pire_bord_mm": 0.0 },
+      { "id": "filet-flare", "angle": -46, "pire_bord_mm": -1.39 },
+      { "id": "filet-fleche", "angle": 0, "pire_bord_mm": 0.0 }
+    ],
+    "negatif_veut_dire": "l'encre s'arrête en deçà du bord, ce qui est normal : un filet à renflement se termine en pointe plus fine qu'un pixel.",
+    "la_sonde_mord": "Vérifié en mutant l'émetteur, matrice de placement décalée de trois points (1,06 mm). Le losange passe de +0,00 à +0,20 mm et laisserait le test vert — il se termine en pointe et absorbe l'erreur. La flèche, qui touche ses quatre bords, passe à +1,00 mm et le rougit. C'est pour ça qu'elle est dans le jeu : sans elle la mesure aurait été une mesure de complaisance."
+  },
+
+  "la_rotation_est_unique": {
+    "quoi": "Un bloc de texte tourne par la matrice de texte (Tm), un ornement par celle du graphique (cm). Deux opérateurs, une seule rotation : pdf.rs::coefficients_rotation, appelée par les deux.",
+    "angle": -46,
+    "coefficients": "0.69466 -0.71934 0.71934 0.69466",
+    "test": "un_ornement_tourne_pose_la_meme_matrice_qu_un_bloc_tourne",
+    "verdict": "identiques ; le test compare les deux flux et refuse le jour où quelqu'un réécrit la rotation à côté."
+  },
+
+  "pdf_a_2b": {
+    "quoi": "Un flux de chemins ne doit rien casser, et c'est vérifié plutôt que supposé.",
+    "outil": "veraPDF -f 2b",
+    "fichier": "tirage d'un album portant neuf ornements",
+    "verdict": "PASS",
+    "note": "Le remplissage est écrit 0 0 0 rg, pas 0 g comme la décision 3 l'écrivait en raccourci. Noir dans les deux cas ; DeviceRGB parce que ce document déclare un seul espace de couleur et un seul OutputIntent, et faire entrer DeviceGray par un fleuron mettrait un second espace devant veraPDF sans rien acheter."
+  },
+
+  "les_defauts_de_l_analyseur": {
+    "quoi": "Quatre défauts d'un analyseur écrit à la main, tous trouvés en relecture et aucun par un actif du pack. Deux par relecture de l'auteur, deux par une revue à contexte frais.",
+    "liste": [
+      { "entree": "un .svg qui s'arrête sur son `=`", "avant": "panique, tranche hors bornes", "apres": "refus nommé" },
+      { "entree": "M0,0 Z5", "avant": "boucle infinie, fermetures empilées jusqu'à la mémoire", "apres": "Refus::ApresFermeture" },
+      { "entree": "<!-- ancien <path/> <path d=\"M9,9 L8,8\"/> -->", "avant": "deux chemins rendus au lieu d'aucun : le tracé commenté revenait à l'encre", "apres": "le commentaire se ferme sur --> et rend zéro chemin" },
+      { "entree": "<path/> ou <path d=\"\"/>", "avant": "accepté comme chemin vide, l'émetteur posant un `f` sans tracé devant", "apres": "Refus::CheminVide" }
+    ],
+    "ce_que_ca_dit": "Aucun n'est atteignable depuis un album, le pack étant compilé. Tous les quatre frappaient le contributeur, c'est-à-dire exactement la personne à qui ce module doit un message clair. La doctrine du module — refuser, jamais ignorer — vaut pour son propre lecteur avant de valoir pour les fichiers qu'il lit."
+  },
+
+  "la_parite": {
+    "quoi": "La fixture de scène régénérée avec deux ornements — un droit, un tourné à -46° — sur les six formats.",
+    "fixture": "crates/colophon-app/src/scene.fixture.json, 66,1 Kio",
+    "verdict": "verte",
+    "ce_qu_elle_couvre": "la boîte, l'angle, l'index, le pack et l'identifiant. Pas les chemins : la scène ne les connaît pas, et les faire voyager ferait comparer des milliers de coordonnées que les deux côtés ne recalculent pas."
+  }
+}

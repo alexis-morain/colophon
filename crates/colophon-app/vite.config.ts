@@ -106,6 +106,20 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // Le pack d'ornements, tel que le moteur le lit : le harnais tire du
+      // même endroit que la fenêtre, sinon l'un des deux montrerait un pack
+      // que l'autre n'a pas.
+      server.middlewares.use("/__dev/ornements", (_req, res) => {
+        try {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            execFileSync(engineBinary, ["--dump-ornements"], { encoding: "utf8" }),
+          );
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
       // The raw geometry dump the editor draws from: the album's own by
       // default, any bare format via ?format=WxH&bleed=N (the creation
       // screen previews formats before an album exists).

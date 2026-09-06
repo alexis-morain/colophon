@@ -251,6 +251,19 @@ fn geometrie_format(w: f64, h: f64, bleed: f64) -> serde_json::Value {
     colophon_core::pdf::dump_geometry(&album)
 }
 
+/// The ornament pack, read once and handed over whole: identity, provenance
+/// and normalised drawing of every asset.
+///
+/// **The screen draws from the engine's pack, never from a copy of it.** The
+/// format exists so that contributing an ornament is a `pack.toml` entry and
+/// a `.svg`, without a line of Rust; a second list on this side would make it
+/// a line of TypeScript too, and the two would drift the first time someone
+/// forgot one.
+#[tauri::command]
+fn ornements() -> &'static [colophon_core::ornement::Ornement] {
+    colophon_core::ornement::pack()
+}
+
 /// The photos curation set aside, with reasons, from curation.json.
 /// Empty when the album predates the export: the sorting view just shows
 /// the hand-removed photos then.
@@ -1427,6 +1440,7 @@ pub fn run() {
             proposition_legende,
             gabarits_compatibles,
             geometrie,
+            ornements,
             geometrie_format,
             detected_focal,
             curation,

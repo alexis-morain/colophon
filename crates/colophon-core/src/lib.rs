@@ -21,6 +21,7 @@ pub mod legende;
 pub mod log;
 pub mod meta;
 pub mod model;
+pub mod ornement;
 pub mod pdf;
 pub mod pdfx;
 pub mod pipeline;

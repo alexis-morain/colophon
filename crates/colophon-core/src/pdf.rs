@@ -168,12 +168,83 @@ pub(crate) fn text_op_tourne(
     }
     let (x, y) = (x_mm * MM_TO_PT, y_mm * MM_TO_PT);
     let (r, g, b) = (rgb[0], rgb[1], rgb[2]);
-    let (sin, cos) = angle_deg.to_radians().sin_cos();
+    let rot = coefficients_rotation(angle_deg);
     content.push_str(&format!(
-        "BT /F1 {size_pt} Tf {r} {g} {b} rg \
-{cos:.5} {sin:.5} {msin:.5} {cos:.5} {x:.2} {y:.2} Tm <{hex}> Tj ET\n",
-        msin = -sin,
+        "BT /F1 {size_pt} Tf {r} {g} {b} rg {rot} {x:.2} {y:.2} Tm <{hex}> Tj ET\n"
     ));
+}
+
+/// The four linear coefficients of a rotation, as a content stream writes
+/// them: `cos sin -sin cos`.
+///
+/// **One turn, written once.** A line of text turns through the text matrix
+/// and an ornament through the graphics matrix — two operators, one rotation
+/// — and the day the two disagree it is because someone duplicated this. The
+/// test compares an ornament's `cm` with a block's `Tm` at the same angle, so
+/// a second implementation would fail before it shipped.
+pub(crate) fn coefficients_rotation(angle_deg: f64) -> String {
+    let (sin, cos) = angle_deg.to_radians().sin_cos();
+    format!("{cos:.5} {sin:.5} {msin:.5} {cos:.5}", msin = -sin)
+}
+
+/// Draw one ornament: the pack's own paths, mapped from its `viewBox` into
+/// the box the reader drew, turned once around that box's centre.
+///
+/// **Paths, never an image.** The measured cost of the vector route is 767
+/// compressed bytes for a rule; a raster fallback would need a second image
+/// path in this file — Flate, an `/SMask`, a colour, and a fresh PDF/A-2b
+/// verification — for a need the vector already covers.
+///
+/// Black, and one fill. The project has no colour picker anywhere, and the
+/// asset's own `fill` is dropped at the pack's door. It is written `0 0 0 rg`
+/// rather than `0 g` on purpose: this document declares one colour space and
+/// one OutputIntent, and letting DeviceGray in through a fleuron would put a
+/// second one in front of veraPDF for no gain.
+pub(crate) fn ornement_op(
+    content: &mut String,
+    dessin: &crate::ornement::Dessin,
+    rect: &Rect,
+    angle_deg: f64,
+) {
+    use crate::ornement::Segment;
+    let [minx, miny, vw, vh] = dessin.viewbox;
+    let (x0, y0) = (rect.x * MM_TO_PT, rect.y * MM_TO_PT);
+    let (w, h) = (rect.w * MM_TO_PT, rect.h * MM_TO_PT);
+    let (sx, sy) = (w / vw, h / vh);
+
+    content.push_str("q\n");
+    // The turn first, the placement second: a content stream premultiplies,
+    // so the matrix written last is the one applied first to a point.
+    if angle_deg != 0.0 {
+        let c = crate::scene::centre(rect);
+        let (cx, cy) = (c.x * MM_TO_PT, c.y * MM_TO_PT);
+        let (sin, cos) = angle_deg.to_radians().sin_cos();
+        let (e, f) = (cx - cos * cx + sin * cy, cy - sin * cx - cos * cy);
+        content.push_str(&format!("{} {e:.2} {f:.2} cm\n", coefficients_rotation(angle_deg)));
+    }
+    // The `viewBox` runs y downward and a page runs it upward, which is the
+    // whole of the `-sy`: one flip, in the placement matrix, so that not a
+    // single coordinate below has to know about it.
+    content.push_str(&format!(
+        "{sx:.5} 0 0 {msy:.5} {e:.3} {f:.3} cm\n0 0 0 rg\n",
+        msy = -sy,
+        e = x0 - minx * sx,
+        f = y0 + h + miny * sy,
+    ));
+    for chemin in &dessin.chemins {
+        for seg in &chemin.segments {
+            match seg {
+                Segment::Vers { x, y } => content.push_str(&format!("{x:.4} {y:.4} m\n")),
+                Segment::Ligne { x, y } => content.push_str(&format!("{x:.4} {y:.4} l\n")),
+                Segment::Courbe { x1, y1, x2, y2, x, y } => content.push_str(&format!(
+                    "{x1:.4} {y1:.4} {x2:.4} {y2:.4} {x:.4} {y:.4} c\n"
+                )),
+                Segment::Ferme => content.push_str("h\n"),
+            }
+        }
+        content.push_str(if chemin.evenodd { "f*\n" } else { "f\n" });
+    }
+    content.push_str("Q\n");
 }
 
 /// A resolved image ready to embed: raw JPEG bytes plus pixel size.
@@ -1089,6 +1160,15 @@ impl PdfWriter {
                         );
                     }
                 }
+                // An ornament: the pack's paths, mapped into the box. A name
+                // that no pack answers draws nothing and fails nothing — an
+                // `album.json` is repairable by hand, so an unknown id is a
+                // state someone can reach, and it must never cost an export.
+                Role::Ornement { id, .. } => {
+                    if let Some(o) = crate::ornement::par_id(id) {
+                        ornement_op(&mut content, &o.dessin, &object.rect, object.angle);
+                    }
+                }
             }
         }
 
@@ -1453,6 +1533,103 @@ mod tests {
         );
         // And the probe bites: the two files are not the same file.
         assert_ne!(droit, tourne);
+    }
+
+    fn ornement_libre(angle: f64) -> crate::model::Objet {
+        crate::model::Objet {
+            x: 40.0,
+            y: 60.0,
+            w: 80.0,
+            h: 30.0,
+            angle,
+            contenu: crate::model::Contenu::Ornement {
+                pack: crate::ornement::PACK_INTERNE.into(),
+                id: "filet-losange".into(),
+            },
+        }
+    }
+
+    /// **Une seule rotation dans le projet.** Un bloc tourne par la matrice de
+    /// texte, un ornement par celle du graphique — deux opérateurs, et les
+    /// mêmes quatre coefficients. Si les deux divergent un jour, c'est que
+    /// quelqu'un a réécrit la rotation à côté, et c'est ce test qui le dit.
+    #[test]
+    fn un_ornement_tourne_pose_la_meme_matrice_qu_un_bloc_tourne() {
+        const ANGLE: f64 = -46.0;
+        let bloc = flux_avec_objet(bloc_libre(ANGLE));
+        let orn = flux_avec_objet(ornement_libre(ANGLE));
+        let coef = coefficients_rotation(ANGLE);
+        assert_eq!(coef, "0.69466 -0.71934 0.71934 0.69466", "cos/sin de -46°");
+        assert!(bloc.contains(&format!("{coef} ")), "le bloc :\n{bloc}");
+        assert!(orn.contains(&format!("{coef} ")), "l'ornement :\n{orn}");
+        // Le bloc pose sa matrice en `Tm`, l'ornement en `cm` : c'est la
+        // seule chose qui les sépare, et l'assertion le dit plutôt que de
+        // laisser croire que les deux flux sont interchangeables.
+        assert!(bloc.contains(" Tm ") && !bloc.contains(" cm"));
+        assert!(orn.contains(" cm") && !orn.contains(" Tm "));
+    }
+
+    /// Un ornement droit n'écrit **qu'une** matrice, celle du placement : la
+    /// rotation ne s'invite pas à zéro degré, exactement comme `Td` reste `Td`
+    /// pour un bloc droit.
+    #[test]
+    fn un_ornement_droit_ne_pose_que_sa_matrice_de_placement() {
+        let flux = flux_avec_objet(ornement_libre(0.0));
+        assert_eq!(flux.matches(" cm").count(), 1, "une seule matrice :\n{flux}");
+        // Le `viewBox` du losange est 100 x 5 et la boîte 80 x 30 mm : le
+        // dessin est bien mis à l'échelle des deux côtés, et le `y` du SVG
+        // descend là où celui de la page monte, d'où l'échelle négative.
+        assert!(flux.contains("2.26772 0 0 -17.00787"), "échelle inattendue :\n{flux}");
+        assert!(flux.contains("0 0 0 rg"), "un ornement est noir :\n{flux}");
+        assert!(flux.contains("\nf\n"), "et rempli :\n{flux}");
+    }
+
+    /// **L'encre d'un ornement tombe dans sa boîte**, parce que sa boîte est
+    /// son encre : le `viewBox` s'y étale exactement, coin à coin. C'est
+    /// l'invariant sur lequel reposent le prévol et le pli, qui ne mesurent
+    /// jamais que le rectangle.
+    #[test]
+    fn l_encre_d_un_ornement_tient_dans_sa_boite() {
+        let flux = flux_avec_objet(ornement_libre(0.0));
+        let dessin = &crate::ornement::par_id("filet-losange").unwrap().dessin;
+        let [minx, miny, vw, vh] = dessin.viewbox;
+        // Les points du flux sont en unités de `viewBox` ; on refait le
+        // chemin inverse à la main, sans réutiliser le code de l'émetteur.
+        let m: Vec<f64> = flux
+            .lines()
+            .find(|l| l.ends_with(" cm"))
+            .unwrap()
+            .split_whitespace()
+            .take(6)
+            .map(|n| n.parse().unwrap())
+            .collect();
+        let boite = Rect { x: 40.0, y: 60.0, w: 80.0, h: 30.0 };
+        for (vx, vy) in [(minx, miny), (minx + vw, miny + vh)] {
+            let x = (m[0] * vx + m[2] * vy + m[4]) / MM_TO_PT;
+            let y = (m[1] * vx + m[3] * vy + m[5]) / MM_TO_PT;
+            assert!(
+                x >= boite.x - 0.01 && x <= boite.x + boite.w + 0.01,
+                "x = {x} hors de la boîte"
+            );
+            assert!(
+                y >= boite.y - 0.01 && y <= boite.y + boite.h + 0.01,
+                "y = {y} hors de la boîte"
+            );
+        }
+    }
+
+    /// Un identifiant qu'aucun pack ne connaît ne dessine rien et ne fait rien
+    /// échouer : un `album.json` se répare à la main, donc cet état est
+    /// atteignable, et **jamais un échec silencieux à l'export** ne veut pas
+    /// dire « jamais un export qui échoue pour une faute de frappe ».
+    #[test]
+    fn un_ornement_inconnu_ne_casse_pas_l_export() {
+        let mut o = ornement_libre(0.0);
+        o.contenu = crate::model::Contenu::Ornement {
+            pack: "colophon".into(),
+            id: "celui-la-n-existe-pas".into(),
+        };
+        assert!(flux_avec_objet(o).trim().is_empty());
     }
 
     /// A free object reaches the page. Stated on its own because the byte

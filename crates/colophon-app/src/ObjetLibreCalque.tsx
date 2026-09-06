@@ -40,6 +40,7 @@ export function ObjetLibreCalque({
   geom,
   mm,
   deborde,
+  rapport,
   onDraft,
   onCommit,
   onEcrire,
@@ -51,9 +52,15 @@ export function ObjetLibreCalque({
   mm: number;
   /** Le texte dépasse le bas de sa boîte : dit ici, jamais coupé. */
   deborde: boolean;
+  /** Le rapport largeur/hauteur que la boîte doit garder, s'il y en a un.
+   *  Un ornement en a un — sa boîte **est** son encre, donc l'étirer
+   *  mentirait au pli et à la coupe ; un bloc de texte n'en a pas, sa boîte
+   *  décidant seulement où les lignes se coupent. */
+  rapport?: number;
   onDraft: (p: PoseObjet | null) => void;
   onCommit: (p: PoseObjet) => void;
-  onEcrire: () => void;
+  /** Ouvrir le champ. Absent pour un ornement, qui n'a rien à écrire. */
+  onEcrire?: () => void;
   onSupprimer: () => void;
 }) {
   const calque = useRef<HTMLDivElement>(null);
@@ -120,7 +127,7 @@ export function ObjetLibreCalque({
     } else if (g.mode === "tourner") {
       suivante = { rect: g.pose.rect, angle: tourne(g, e) };
     } else {
-      suivante = tailler(g.pose, g.coin, dx, dy);
+      suivante = tailler(g.pose, g.coin, dx, dy, rapport);
     }
 
     // Le pli est dur : on bute, on ne refuse pas — le geste continue de
@@ -173,10 +180,13 @@ export function ObjetLibreCalque({
       onPointerMove={suivre}
       onPointerUp={lacher}
       onPointerCancel={lacher}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        onEcrire();
-      }}
+      onDoubleClick={
+        onEcrire &&
+        ((e) => {
+          e.stopPropagation();
+          onEcrire();
+        })
+      }
       onClick={(e) => e.stopPropagation()}
     >
       {COINS.map((_, i) => poignee(i))}
@@ -264,6 +274,9 @@ export function tailler(
   coin: number,
   dx: number,
   dy: number,
+  /** Le rapport à garder, s'il y en a un : la boîte suit alors la main sans
+   *  jamais changer de forme. */
+  rapport?: number,
 ): PoseObjet {
   const { rect, angle } = pose;
   const c = centre(rect);
@@ -283,8 +296,22 @@ export function tailler(
   // boîte : une rotation inverse, et on est revenu à un rectangle droit.
   const v = { x: p.x - fixe.x, y: p.y - fixe.y };
   const local = angle === 0 ? v : tourner(v, { x: 0, y: 0 }, -angle);
-  const w = Math.max(Math.abs(local.x), MIN_MM);
-  const h = Math.max(Math.abs(local.y), MIN_MM);
+  // Proportionnel : la boîte **couvre** ce que la main demande dans les deux
+  // axes, plutôt que d'en moyenner un. Le geste ne recule donc jamais sous le
+  // pointeur, et le plancher entre dans le même maximum pour qu'il ne casse
+  // pas le rapport en s'appliquant après.
+  const [w, h] =
+    rapport === undefined
+      ? [Math.max(Math.abs(local.x), MIN_MM), Math.max(Math.abs(local.y), MIN_MM)]
+      : (() => {
+          const l = Math.max(
+            Math.abs(local.x),
+            Math.abs(local.y) * rapport,
+            MIN_MM,
+            MIN_MM * rapport,
+          );
+          return [l, l / rapport];
+        })();
 
   // Le centre de la nouvelle boîte : à mi-chemin du coin fixe, dans les axes
   // de la boîte, puis remis dans le monde.

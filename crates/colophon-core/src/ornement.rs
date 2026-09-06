@@ -181,6 +181,8 @@ pub enum Refus {
     ApresFermeture,
     /// Un `<svg>` qui ne porte aucun `<path>`.
     AucunChemin,
+    /// Un `<path>` sans `d`, ou dont le `d` ne pose aucun segment.
+    CheminVide,
 }
 
 impl fmt::Display for Refus {
@@ -209,6 +211,7 @@ impl fmt::Display for Refus {
                 "un nombre suit un Z sans commande : Z ne prend aucun paramètre"
             ),
             Refus::AucunChemin => write!(f, "aucun <path> dans le fichier"),
+            Refus::CheminVide => write!(f, "un <path> qui ne dessine rien"),
         }
     }
 }
@@ -402,7 +405,16 @@ pub fn lire_svg(src: &str) -> Result<Dessin, Refus> {
                 let evenodd = attributs
                     .iter()
                     .any(|(k, v)| k == "fill-rule" && v.trim() == "evenodd");
-                chemins.push(Chemin { segments: lire_chemin(&d)?, evenodd });
+                let segments = lire_chemin(&d)?;
+                // **Un `<path>` qui ne dessine rien se refuse**, au lieu
+                // d'entrer comme un chemin vide. C'est la doctrine du module —
+                // refuser plutôt qu'ignorer — et c'est aussi ce qui empêche
+                // l'émetteur de poser un `f` sans le moindre tracé devant :
+                // un fragment de flux dégénéré que rien n'aurait signalé.
+                if segments.is_empty() {
+                    return Err(Refus::CheminVide);
+                }
+                chemins.push(Chemin { segments, evenodd });
             }
             autre => return Err(Refus::Balise(autre.into())),
         }
@@ -442,6 +454,22 @@ fn balises(src: &str) -> Vec<(String, Vec<(String, String)>)> {
         }
         // `<?xml ... ?>`, `<!-- ... -->`, `<!DOCTYPE ...>`, `</svg>`.
         if matches!(o.get(i + 1), Some('?') | Some('!') | Some('/')) {
+            // **Un commentaire se ferme sur `-->`, jamais sur le premier `>`
+            // venu.** Un commentaire qui contient une balise en contient un au
+            // milieu, et s'arrêter là faisait reprendre la lecture *à
+            // l'intérieur* du commentaire : `<!-- ancien <path/> <path d="…"/>
+            // -->` rendait deux chemins au lieu d'aucun, et du dessin qu'on
+            // venait de désactiver revenait à l'encre. Commenter un chemin est
+            // la chose la plus ordinaire du monde dans un `.svg` retouché à la
+            // main ou exporté par un outil.
+            if o[i..].starts_with(&['<', '!', '-', '-']) {
+                i += 4;
+                while i < o.len() && !o[i..].starts_with(&['-', '-', '>']) {
+                    i += 1;
+                }
+                i = (i + 3).min(o.len());
+                continue;
+            }
             while i < o.len() && o[i] != '>' {
                 i += 1;
             }
@@ -887,6 +915,47 @@ mod tests {
         assert_eq!(lire_chemin("M0,0 H1 Z M5,5 H6 Z").unwrap().len(), 6);
     }
 
+    /// **Un commentaire ne fuit pas dans le dessin.**
+    ///
+    /// Commenter un chemin est la chose la plus ordinaire du monde dans un
+    /// `.svg` retouché à la main. Sauter le commentaire jusqu'au premier `>`
+    /// venu faisait reprendre la lecture à l'intérieur, et le tracé qu'on
+    /// venait de désactiver revenait à l'encre — sans erreur, sans trace, et
+    /// sans qu'aucun des trois actifs livrés ne le montre.
+    #[test]
+    fn un_chemin_commente_ne_revient_pas_a_l_encre() {
+        let svg = "<svg viewBox=\"0 0 10 10\">\n\
+                   <!-- ancien <path/> <path d=\"M9,9 L8,8\"/> -->\n\
+                   <path d=\"M2,2 L3,3\"/>\n</svg>";
+        let d = lire_svg(svg).unwrap();
+        assert_eq!(d.chemins.len(), 1, "le commenté est entré : {:?}", d.chemins);
+        assert_eq!(d.chemins[0].segments[0], Segment::Vers { x: 2.0, y: 2.0 });
+
+        // Un commentaire non fermé avale la fin du fichier, ce qui est
+        // exactement ce qu'il est : ce qui le suit ne compte pas, et le
+        // lecteur s'arrête sans boucler ni paniquer.
+        let ouvert = lire_svg(
+            "<svg viewBox=\"0 0 1 1\"><path d=\"M0,0 H1 Z\"/><!-- fin <path d=\"M5,5 H6 Z\"/>",
+        )
+        .unwrap();
+        assert_eq!(ouvert.chemins.len(), 1);
+        assert_eq!(ouvert.viewbox, [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    /// Un `<path>` qui ne dessine rien se refuse, plutôt que d'entrer comme un
+    /// chemin vide : c'est la doctrine du module, et c'est ce qui empêche
+    /// l'émetteur de poser un `f` sans le moindre tracé devant.
+    #[test]
+    fn un_chemin_qui_ne_dessine_rien_se_refuse() {
+        for svg in [
+            r#"<svg viewBox="0 0 10 10"><path/></svg>"#,
+            r#"<svg viewBox="0 0 10 10"><path d=""/></svg>"#,
+            r#"<svg viewBox="0 0 10 10"><path d="   "/></svg>"#,
+        ] {
+            assert_eq!(lire_svg(svg).unwrap_err(), Refus::CheminVide, "{svg}");
+        }
+    }
+
     #[test]
     fn un_chemin_qui_ne_commence_pas_par_un_deplacement_se_refuse() {
         assert_eq!(lire_chemin("L 10,10").unwrap_err(), Refus::SansDepart);
@@ -940,4 +1009,5 @@ mod tests {
         assert!(matches!(toml_ornements(m), Err(RefusPack::Manifeste(_))));
     }
 }
+
 

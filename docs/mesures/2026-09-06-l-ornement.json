@@ -94,6 +94,17 @@
     "note": "Le remplissage est écrit 0 0 0 rg, pas 0 g comme la décision 3 l'écrivait en raccourci. Noir dans les deux cas ; DeviceRGB parce que ce document déclare un seul espace de couleur et un seul OutputIntent, et faire entrer DeviceGray par un fleuron mettrait un second espace devant veraPDF sans rien acheter."
   },
 
+  "les_defauts_de_l_analyseur": {
+    "quoi": "Quatre défauts d'un analyseur écrit à la main, tous trouvés en relecture et aucun par un actif du pack. Deux par relecture de l'auteur, deux par une revue à contexte frais.",
+    "liste": [
+      { "entree": "un .svg qui s'arrête sur son `=`", "avant": "panique, tranche hors bornes", "apres": "refus nommé" },
+      { "entree": "M0,0 Z5", "avant": "boucle infinie, fermetures empilées jusqu'à la mémoire", "apres": "Refus::ApresFermeture" },
+      { "entree": "<!-- ancien <path/> <path d=\"M9,9 L8,8\"/> -->", "avant": "deux chemins rendus au lieu d'aucun : le tracé commenté revenait à l'encre", "apres": "le commentaire se ferme sur --> et rend zéro chemin" },
+      { "entree": "<path/> ou <path d=\"\"/>", "avant": "accepté comme chemin vide, l'émetteur posant un `f` sans tracé devant", "apres": "Refus::CheminVide" }
+    ],
+    "ce_que_ca_dit": "Aucun n'est atteignable depuis un album, le pack étant compilé. Tous les quatre frappaient le contributeur, c'est-à-dire exactement la personne à qui ce module doit un message clair. La doctrine du module — refuser, jamais ignorer — vaut pour son propre lecteur avant de valoir pour les fichiers qu'il lit."
+  },
+
   "la_parite": {
     "quoi": "La fixture de scène régénérée avec deux ornements — un droit, un tourné à -46° — sur les six formats.",
     "fixture": "crates/colophon-app/src/scene.fixture.json, 66,1 Kio",

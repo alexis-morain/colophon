@@ -451,6 +451,16 @@ est un `L` (deux des trois actifs livrés en portent), `c0,0.931-33.845,3.722` p
 nombres où le signe tient lieu de séparateur, et un `Z` ramène le point courant au départ
 du sous-chemin — sans quoi le dessin dérive sans qu'aucune commande soit fausse.
 
+**Un analyseur écrit à la main refuse ou casse là où personne ne regarde**, et quatre
+défauts l'ont montré, tous trouvés en relecture et aucun par un actif du pack. Un fichier
+qui s'arrête sur son `=` **paniquait** ; un nombre après un `Z` **bouclait à l'infini** ;
+un commentaire sauté jusqu'au premier `>` venu faisait **revenir à l'encre un chemin
+commenté** (`<!-- ancien <path/> <path d="…"/> -->` rendait deux chemins au lieu
+d'aucun) ; et un `<path>` sans `d` entrait comme un chemin vide, l'émetteur posant alors
+un `f` sans le moindre tracé devant. Aucun n'est atteignable depuis un album — le pack
+est compilé — et tous les quatre frappaient la personne à qui ce module doit un message
+clair : le contributeur. La leçon est dans le module : **refuser, jamais ignorer**.
+
 **Une seule rotation dans le projet.** Un bloc tourne par `Tm`, un ornement par `cm`, et
 les quatre coefficients sortent de `pdf::coefficients_rotation`, appelée par les deux ;
 le test compare les deux flux au même angle. **`Td` reste `Td`** : un album sans ornement

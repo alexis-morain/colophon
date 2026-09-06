@@ -85,8 +85,14 @@ test, sometimes a new counter in the linter.
 
 ## What will get declined
 
-Cliparts, stickers, masks, decorative backgrounds, fancy borders. Anything
-that retouches the user's pixels. Telemetry, in any form, however anonymous,
+Stickers, masks, decorative backgrounds, fancy borders. Anything that
+retouches the user's pixels.
+
+Typographic ornaments are the one thing on that list that came back, under its
+own name: a fleuron closing a chapter, a rule parting two blocks, a printer's
+divider. They ship as a small, coherent, public-domain set — never as a
+library to browse — and they are the boundary, not an opening: a sticker is
+still a sticker when it is called an ornament. Telemetry, in any form, however anonymous,
 however opt-in. Accounts, logins, sync. Onboarding carousels, guided tours,
 badges, streaks, rating prompts, promotional banners. Any feature that makes a
 project captive.

@@ -49,14 +49,20 @@ export type Objet = {
   angle?: number;
 } & ObjetContenu;
 
-export type ObjetContenu = {
-  type: "texte";
-  texte: string;
-  taille_pt: number;
-  /** Absent = the natural leading of that size (1.35 x). */
-  interligne_mm?: number;
-  alignement?: Alignement;
-};
+export type ObjetContenu =
+  | {
+      type: "texte";
+      texte: string;
+      taille_pt: number;
+      /** Absent = the natural leading of that size (1.35 x). */
+      interligne_mm?: number;
+      alignement?: Alignement;
+    }
+  /** A typographic ornament, named by its pack and its identifier — never by
+   *  a file path, never with a drawing, a colour or a scale of its own. The
+   *  box already carries the size and the angle, and the pack carries the
+   *  paths. Mirror of `model.rs::Contenu::Ornement`. */
+  | { type: "ornement"; pack: string; id: string };
 
 export type Alignement = "gauche" | "centre" | "droite";
 
@@ -64,6 +70,7 @@ export type Alignement = "gauche" | "centre" | "droite";
  *  Mirror of `model.rs::Objet::interligne`, and the reason it is a function
  *  rather than a default is that the answer depends on the type size. */
 export function interligneDe(objet: Objet): number {
+  if (objet.type !== "texte") return 0;
   return objet.interligne_mm ?? (objet.taille_pt / (72 / 25.4)) * 1.35;
 }
 

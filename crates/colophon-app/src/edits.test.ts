@@ -3,7 +3,7 @@
 // must leave the input untouched (the undo stack stores references).
 
 import { describe, expect, it } from "vitest";
-import { Album, Slot, Spread, templateCapacity } from "./album";
+import { Album, Objet, Slot, Spread, templateCapacity } from "./album";
 import fixture from "./geometrie.fixture.json";
 import { Dump, setGeometrie } from "./geometrie";
 
@@ -11,6 +11,14 @@ import { Dump, setGeometrie } from "./geometrie";
 // binary, so they load the committed fixture. The parity test (which does
 // run the binary) asserts the fixture is the engine's current output.
 setGeometrie(fixture as unknown as Dump);
+
+/** Le texte d'un objet dont on sait que c'est un bloc. Les tests d'ici n'en
+ *  posent pas d'autre ; la levée est là pour que la lecture soit sûre, pas
+ *  pour couvrir un cas. */
+const texteDe = (o: Objet): string => {
+  if (o.type !== "texte") throw new Error(`objet « ${o.type} », attendu un bloc`);
+  return o.texte;
+};
 import {
   addObjet,
   changeTemplate,
@@ -487,7 +495,7 @@ describe("addObjet", () => {
     const b = addObjet(a, 0, PAGE);
     const o = b.spreads[0].objets![0];
     expect(o.type).toBe("texte");
-    expect(o.texte).toBe("");
+    expect(texteDe(o)).toBe("");
     // Il tient tout entier dans la boîte de contenu, donc du bon côté du pli
     // et à l'intérieur de la marge, par construction.
     expect(o.x).toBeGreaterThanOrEqual(PAGE.x);
@@ -543,7 +551,7 @@ describe("setObjetTexte", () => {
   it("écrit le texte, et rend le même album quand rien ne change", () => {
     const a = addObjet(album(spread("duo", 2)), 0, PAGE);
     const b = setObjetTexte(a, 0, 0, "une phrase");
-    expect(b.spreads[0].objets![0].texte).toBe("une phrase");
+    expect(texteDe(b.spreads[0].objets![0])).toBe("une phrase");
     expect(setObjetTexte(b, 0, 0, "une phrase")).toBe(b);
   });
 
@@ -553,7 +561,7 @@ describe("setObjetTexte", () => {
     const a = setObjetTexte(addObjet(album(spread("duo", 2)), 0, PAGE), 0, 0, "x");
     const b = setObjetTexte(a, 0, 0, "");
     expect(b.spreads[0].objets).toHaveLength(1);
-    expect(b.spreads[0].objets![0].texte).toBe("");
+    expect(texteDe(b.spreads[0].objets![0])).toBe("");
   });
 });
 
@@ -567,7 +575,7 @@ describe("removeObjet", () => {
     a = setObjetTexte(a, 0, 1, "deux");
     a = setObjetTexte(a, 0, 2, "trois");
     const b = removeObjet(a, 0, 1);
-    expect(b.spreads[0].objets!.map((o) => o.texte)).toEqual(["un", "trois"]);
+    expect(b.spreads[0].objets!.map(texteDe)).toEqual(["un", "trois"]);
   });
 
   it("retire le champ quand le dernier objet s'en va", () => {

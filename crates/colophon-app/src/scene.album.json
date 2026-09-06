@@ -1,186 +1,231 @@
 {
-  "version": 2,
-  "title": "scène de référence",
-  "root": "/nulle-part",
-  "trim_mm": {
-    "w": 210.0,
-    "h": 210.0
+ "version": 2,
+ "title": "scène de référence",
+ "root": "/nulle-part",
+ "trim_mm": {
+  "w": 210.0,
+  "h": 210.0
+ },
+ "bleed_mm": 3.0,
+ "spreads": [
+  {
+   "template": "garde",
+   "slots": [],
+   "text": "Un été & deux hivers\n\nDu 27 octobre au 3 novembre 2013\nCalvi, Ajaccio, Bonifacio"
   },
-  "bleed_mm": 3.0,
-  "spreads": [
+  {
+   "template": "full1",
+   "slots": [
     {
-      "template": "garde",
-      "slots": [],
-      "text": "Un été & deux hivers\n\nDu 27 octobre au 3 novembre 2013\nCalvi, Ajaccio, Bonifacio"
-    },
-    {
-      "template": "full1",
-      "slots": [
-        {
-          "src": "a.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        }
-      ],
-      "caption": "Corse, 2013"
-    },
-    {
-      "template": "duo",
-      "slots": [
-        {
-          "src": "b.jpg",
-          "focal": [
-            0.3,
-            0.6
-          ],
-          "zoom": 1.8,
-          "caption": "la plage"
-        },
-        {
-          "src": "c.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ],
-          "caption": ""
-        }
-      ],
-      "caption": "Une légende de chapitre assez longue pour mesurer"
-    },
-    {
-      "template": "quad",
-      "slots": [
-        {
-          "src": "d.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        },
-        {
-          "src": "e.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        },
-        {
-          "src": "f.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        },
-        {
-          "src": "g.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        }
-      ]
-    },
-    {
-      "template": "trio_verso",
-      "slots": [
-        {
-          "src": "h.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        },
-        {
-          "src": "i.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        }
-      ],
-      "caption": "un trio tronqué à deux"
-    },
-    {
-      "template": "g_v_1x2q_b8",
-      "slots": [
-        {
-          "src": "j.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        },
-        {
-          "src": "k.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        }
-      ],
-      "caption": "une bande déclarée"
-    },
-    {
-      "template": "texte",
-      "slots": [],
-      "text": "Première ligne.\n\nTroisième ligne, après un blanc qui prend son tour.\nQuatrième."
-    },
-    {
-      "template": "gabarit-inconnu-repare-a-la-main",
-      "slots": [
-        {
-          "src": "l.jpg",
-          "focal": [
-            0.5,
-            0.42
-          ]
-        }
-      ],
-      "caption": "le repli honnête"
-    },
-    {
-      "template": "colophon",
-      "slots": [],
-      "text": "Composé avec Colophon.\n98 photographies, 50 planches.\nsRGB, 300 ppi."
-    },
-    {
-      "template": "duo",
-      "slots": [
-        { "src": "objets/a.jpg", "focal": [0.5, 0.5] },
-        { "src": "objets/b.jpg", "focal": [0.5, 0.5] }
-      ],
-      "caption": "Les objets libres",
-      "objets": [
-        {
-          "x": 20.0, "y": 30.0, "w": 35.0, "h": 24.0,
-          "type": "texte",
-          "texte": "un bloc droit qui revient à la ligne",
-          "taille_pt": 11.0
-        },
-        {
-          "x": 130.0, "y": 120.0, "w": 60.0, "h": 30.0, "angle": 17.5,
-          "type": "texte",
-          "texte": "tourné\net centré",
-          "taille_pt": 13.0,
-          "interligne_mm": 7.0,
-          "alignement": "centre"
-        },
-        {
-          "x": 240.0, "y": 40.0, "w": 50.0, "h": 12.0,
-          "type": "texte",
-          "texte": "aligné à droite\nsur trois\nlignes qui débordent",
-          "taille_pt": 10.0,
-          "alignement": "droite"
-        },
-        {
-          "x": 320.0, "y": 150.0, "w": 25.0, "h": 20.0, "angle": -90.0,
-          "type": "texte",
-          "texte": "anticonstitutionnellement",
-          "taille_pt": 9.0
-        }
-      ]
+     "src": "a.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
     }
-  ]
+   ],
+   "caption": "Corse, 2013"
+  },
+  {
+   "template": "duo",
+   "slots": [
+    {
+     "src": "b.jpg",
+     "focal": [
+      0.3,
+      0.6
+     ],
+     "zoom": 1.8,
+     "caption": "la plage"
+    },
+    {
+     "src": "c.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ],
+     "caption": ""
+    }
+   ],
+   "caption": "Une légende de chapitre assez longue pour mesurer"
+  },
+  {
+   "template": "quad",
+   "slots": [
+    {
+     "src": "d.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
+    },
+    {
+     "src": "e.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
+    },
+    {
+     "src": "f.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
+    },
+    {
+     "src": "g.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
+    }
+   ]
+  },
+  {
+   "template": "trio_verso",
+   "slots": [
+    {
+     "src": "h.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
+    },
+    {
+     "src": "i.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
+    }
+   ],
+   "caption": "un trio tronqué à deux"
+  },
+  {
+   "template": "g_v_1x2q_b8",
+   "slots": [
+    {
+     "src": "j.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
+    },
+    {
+     "src": "k.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
+    }
+   ],
+   "caption": "une bande déclarée"
+  },
+  {
+   "template": "texte",
+   "slots": [],
+   "text": "Première ligne.\n\nTroisième ligne, après un blanc qui prend son tour.\nQuatrième."
+  },
+  {
+   "template": "gabarit-inconnu-repare-a-la-main",
+   "slots": [
+    {
+     "src": "l.jpg",
+     "focal": [
+      0.5,
+      0.42
+     ]
+    }
+   ],
+   "caption": "le repli honnête"
+  },
+  {
+   "template": "colophon",
+   "slots": [],
+   "text": "Composé avec Colophon.\n98 photographies, 50 planches.\nsRGB, 300 ppi."
+  },
+  {
+   "template": "duo",
+   "slots": [
+    {
+     "src": "objets/a.jpg",
+     "focal": [
+      0.5,
+      0.5
+     ]
+    },
+    {
+     "src": "objets/b.jpg",
+     "focal": [
+      0.5,
+      0.5
+     ]
+    }
+   ],
+   "caption": "Les objets libres",
+   "objets": [
+    {
+     "x": 20.0,
+     "y": 30.0,
+     "w": 35.0,
+     "h": 24.0,
+     "type": "texte",
+     "texte": "un bloc droit qui revient à la ligne",
+     "taille_pt": 11.0
+    },
+    {
+     "x": 130.0,
+     "y": 120.0,
+     "w": 60.0,
+     "h": 30.0,
+     "angle": 17.5,
+     "type": "texte",
+     "texte": "tourné\net centré",
+     "taille_pt": 13.0,
+     "interligne_mm": 7.0,
+     "alignement": "centre"
+    },
+    {
+     "x": 240.0,
+     "y": 40.0,
+     "w": 50.0,
+     "h": 12.0,
+     "type": "texte",
+     "texte": "aligné à droite\nsur trois\nlignes qui débordent",
+     "taille_pt": 10.0,
+     "alignement": "droite"
+    },
+    {
+     "x": 320.0,
+     "y": 150.0,
+     "w": 25.0,
+     "h": 20.0,
+     "angle": -90.0,
+     "type": "texte",
+     "texte": "anticonstitutionnellement",
+     "taille_pt": 9.0
+    },
+    {
+     "x": 60.0,
+     "y": 180.0,
+     "w": 60.0,
+     "h": 3.0,
+     "type": "ornement",
+     "pack": "colophon",
+     "id": "filet-losange"
+    },
+    {
+     "x": 200.0,
+     "y": 170.0,
+     "w": 70.0,
+     "h": 4.5,
+     "angle": -46.0,
+     "type": "ornement",
+     "pack": "colophon",
+     "id": "filet-flare"
+    }
+   ]
+  }
+ ]
 }

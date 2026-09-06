@@ -556,15 +556,23 @@ pub(crate) fn compteurs_avec(
     // Rien n'est recalculé ici. `hors_marge` et `overflow` vivent dans
     // `scene`, avec le geste de l'éditeur et l'émetteur du PDF, et une
     // seconde implémentation de la doctrine est exactement ce que ce
-    // module-là existe pour supprimer. Les cliparts n'existent pas encore :
-    // le jour où ils arrivent, ils arrivent avec leurs propres compteurs.
+    // module-là existe pour supprimer.
+    //
+    // **Les deux compteurs n'ont pas la même portée, et c'est voulu.**
+    // `objet_hors_marge` mesure une boîte, donc il compte tout ce qu'une main
+    // a posé, ornement compris. `objet_deborde` mesure un texte contre la
+    // boîte où on l'a coupé : un ornement n'a rien à déborder, sa boîte garde
+    // le rapport de son dessin et elle **est** son encre.
     let mut hors_marge = Vec::new();
     let mut deborde = Vec::new();
     for (si, scene) in scenes.iter().enumerate() {
         for objet in &scene.objects {
-            let crate::scene::Role::FreeText { index, overflow, trop_large, .. } = &objet.role
-            else {
-                continue;
+            let Some(index) = objet.role.index_libre() else { continue };
+            let (overflow, trop_large) = match &objet.role {
+                crate::scene::Role::FreeText { overflow, trop_large, .. } => {
+                    (*overflow, *trop_large)
+                }
+                _ => (false, false),
             };
             if crate::scene::hors_marge(&objet.rect, objet.angle, g) {
                 hors_marge.push(Finding {
@@ -578,14 +586,14 @@ pub(crate) fn compteurs_avec(
                     ),
                 });
             }
-            if *overflow {
+            if overflow {
                 deborde.push(Finding {
                     planche: si + 1,
                     case_idx: None,
                     src: None,
                     info: format!("le texte de l'objet libre n° {} dépasse sa boîte", index + 1),
                 });
-            } else if *trop_large {
+            } else if trop_large {
                 deborde.push(Finding {
                     planche: si + 1,
                     case_idx: None,

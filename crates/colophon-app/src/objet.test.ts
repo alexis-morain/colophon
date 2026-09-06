@@ -80,3 +80,61 @@ describe("tailler", () => {
     expect(ecrase.rect.h).toBeGreaterThanOrEqual(4);
   });
 });
+
+/**
+ * Un ornement se retaille en gardant le rapport de son dessin.
+ *
+ * Ce n'est pas une question de goût : sa boîte **est** son encre, et c'est
+ * cette égalité qui rend honnête tout ce qui ne mesure jamais que le rectangle
+ * — le pli, la coupe, le prévol, les deux compteurs du linter. Un fleuron
+ * étiré est laid ; un fleuron dont la boîte ment au prévol est un livre gâché.
+ */
+describe("tailler, à rapport imposé", () => {
+  // Le rapport de `filet-fleche` : 12 sur 17. Mesuré à l'écran le 06/09 après
+  // un glissement de coin, la boîte rendait 0,7058.
+  const R = 12 / 17;
+
+  it("garde le rapport, quelle que soit la direction du geste", () => {
+    for (const [dx, dy] of [
+      [40, 0],
+      [0, 40],
+      [40, 40],
+      [-20, 5],
+      [60, -30],
+    ]) {
+      const a = tailler({ rect: { x: 40, y: 60, w: 12, h: 17 }, angle: 0 }, 2, dx, dy, R);
+      expect(a.rect.w / a.rect.h).toBeCloseTo(R, 9);
+    }
+  });
+
+  it("couvre ce que la main demande, dans les deux axes", () => {
+    // La boîte suit le pointeur plutôt que d'en moyenner les deux courses :
+    // un geste qui reculerait sous la main serait un geste qu'on ne peut pas
+    // viser.
+    const a = tailler({ rect: { x: 0, y: 0, w: 12, h: 17 }, angle: 0 }, 2, 30, 0, R);
+    expect(a.rect.w).toBeCloseTo(42, 9);
+    const b = tailler({ rect: { x: 0, y: 0, w: 12, h: 17 }, angle: 0 }, 2, 0, 30, R);
+    expect(b.rect.h).toBeCloseTo(47, 9);
+    expect(b.rect.w).toBeCloseTo(47 * R, 9);
+  });
+
+  it("garde le coin opposé fixe, tourné comme droit", () => {
+    for (const angle of [0, 30, -46, 137]) {
+      const avant: PoseObjet = { rect: { x: 40, y: 60, w: 12, h: 17 }, angle };
+      const apres = tailler(avant, 1, 9, -11, R);
+      const fixe = corners(avant.rect, angle)[FIXE[1]];
+      const encore = corners(apres.rect, apres.angle)[FIXE[1]];
+      expect(encore.x).toBeCloseTo(fixe.x, 6);
+      expect(encore.y).toBeCloseTo(fixe.y, 6);
+    }
+  });
+
+  it("respecte le plancher sans casser le rapport", () => {
+    // Le plancher entre dans le même maximum que le rapport : l'appliquer
+    // après écraserait la forme au moment précis où la boîte devient petite.
+    const a = tailler({ rect: { x: 0, y: 0, w: 12, h: 17 }, angle: 0 }, 2, -200, -200, R);
+    expect(a.rect.w).toBeGreaterThanOrEqual(4);
+    expect(a.rect.h).toBeGreaterThanOrEqual(4);
+    expect(a.rect.w / a.rect.h).toBeCloseTo(R, 9);
+  });
+});

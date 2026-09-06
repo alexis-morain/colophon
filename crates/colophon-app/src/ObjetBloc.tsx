@@ -1,4 +1,5 @@
-// Les réglages du bloc choisi : corps, angle, interligne, alignement.
+// Les réglages de l'objet choisi : l'angle pour tous, et le corps,
+// l'interligne et l'alignement pour un bloc de texte.
 //
 // Des contrôles natifs dans une barre déjà tabulable, comme les trois
 // réglages d'une photo juste à côté — pas un sixième panneau, pas une entrée
@@ -11,6 +12,11 @@
 // champ garde donc sa saisie chez lui et valide en sortant, ou sur Entrée.
 // Le menu d'alignement, lui, n'a pas d'état intermédiaire : il valide tout de
 // suite.
+//
+// **Un ornement n'a que son angle.** Sa taille est celle de sa boîte, qui
+// garde le rapport de son dessin ; il n'a ni corps, ni interligne, ni
+// alignement, et lui offrir des champs morts serait pire que de ne rien
+// offrir.
 
 import { useEffect, useState } from "react";
 import { Alignement, Objet, PT_MM } from "./album";
@@ -31,11 +37,11 @@ export function ObjetBloc({
   /** Un pas d'annulation. */
   onCommit: (o: Objet) => void;
 }) {
-  const interligne = objet.interligne_mm ?? objet.taille_pt * PT_MM * 1.35;
+  const bloc = objet.type === "texte" ? objet : null;
   const posees: Record<Cle, number> = {
-    taille_pt: objet.taille_pt,
+    taille_pt: bloc?.taille_pt ?? 0,
     angle: objet.angle ?? 0,
-    interligne_mm: interligne,
+    interligne_mm: bloc ? bloc.interligne_mm ?? bloc.taille_pt * PT_MM * 1.35 : 0,
   };
   // Ce qui est tapé mais pas encore validé. Remis à plat dès que l'objet
   // change sous nous — un autre bloc choisi, une annulation.
@@ -50,7 +56,9 @@ export function ObjetBloc({
     if (!Number.isFinite(v)) return;
     const borne = Math.min(Math.max(v, min), max);
     if (borne === posees[cle]) return;
-    onCommit({ ...objet, [cle]: borne });
+    if (cle === "angle") return onCommit({ ...objet, angle: borne });
+    if (!bloc) return;
+    onCommit({ ...bloc, [cle]: borne });
   };
 
   const nombre = (
@@ -84,17 +92,18 @@ export function ObjetBloc({
 
   return (
     <span className="objet-reglages">
-      {nombre("taille_pt", t("objet.taille"), CORPS_MIN, CORPS_MAX, 0.5)}
+      {bloc && nombre("taille_pt", t("objet.taille"), CORPS_MIN, CORPS_MAX, 0.5)}
       {nombre("angle", t("objet.angle"), -180, 180, 1)}
-      {nombre("interligne_mm", t("objet.interligne"), 1, 120, 0.5)}
+      {bloc && nombre("interligne_mm", t("objet.interligne"), 1, 120, 0.5)}
+      {bloc && (
       <label className="reglage-champ" title={t("objet.alignement")}>
         <span className="reglage-libelle">{t("objet.alignement")}</span>
         <select
-          value={objet.alignement ?? "gauche"}
+          value={bloc.alignement ?? "gauche"}
           aria-label={t("objet.alignement")}
           onKeyDown={(e) => e.stopPropagation()}
           onChange={(e) =>
-            onCommit({ ...objet, alignement: e.target.value as Alignement })
+            onCommit({ ...bloc, alignement: e.target.value as Alignement })
           }
         >
           <option value="gauche">{t("objet.alignement.gauche")}</option>
@@ -102,6 +111,7 @@ export function ObjetBloc({
           <option value="droite">{t("objet.alignement.droite")}</option>
         </select>
       </label>
+      )}
     </span>
   );
 }

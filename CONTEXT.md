@@ -218,9 +218,18 @@ rectangle the template already owns.
 An object no template can generate, placed by hand, which is why it is stored —
 the first thing `album.json` has ever held beyond a template and its slots. It
 carries its box, its angle and what fills it; its order in the spread's list is
-its depth, and it sits above everything the template produced. Free text
-exists; cliparts follow.
+its depth, and it sits above everything the template produced. Two of them
+exist: free text, and an ornament.
 _Avoid_: custom element, overlay, sticker, layer
+
+**Ornament**:
+A vector drawing taken from a pack shipped with the application, designated by
+its pack and its identifier — never by a file path, and never carrying its own
+paths into `album.json`. A fleuron, a rule, a divider: the vocabulary of
+typography, not of clip art, and the word « clipart » does not belong to this
+project. Its box keeps its drawing's aspect ratio, which is what makes the box
+its ink.
+_Avoid_: clipart, sticker, decoration, graphic, asset
 
 ## The measures
 

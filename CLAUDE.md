@@ -117,6 +117,11 @@ travail : l'angle entre dans la géométrie au premier objet stocké.
 l'émission PDF, le port TypeScript et sa parité ; s2 l'éditeur (voir « Les objets libres »
 et « L'éditeur des objets libres »).
 
+**6.3 s1 est close (06/09)** : l'ornement typographique entre dans le modèle et sort
+dans le PDF (voir « Les ornements »). Reste **6.3 s2** — le sélecteur, la naissance hors
+des cases photo, le compteur `ornement_sur_photo`, l'attribution dans À propos — et la
+sélection nominative des 32 actifs, qui est un travail d'œil et appartient à Alexis.
+
 **6.4 est close** : ce que les objets libres obligeaient partout ailleurs. Le linter
 gagne **deux compteurs**, `objet_hors_marge` et `objet_deborde` (voir « Le linter et les
 objets libres ») ; `--reprise` gagne la classe **`objet_libre`**, sans compteur parent,
@@ -357,8 +362,8 @@ deux côtés. **Les deux fixtures se régénèrent** quand le dump ou la scène 
 (`model.rs`), additif, absent quand vide — **le schéma est monté à 3 en 6.4**, et pas
 pour lui : un champ additif ne demande aucune conversion, et 3 n'achète que le refus
 (voir « Le schéma, et sa migration étagée »). Un objet porte sa boîte, son angle et son
-contenu (`Contenu::Texte` aujourd'hui, un clipart en 6.3 : le tag est déjà dans le
-fichier). **Leur ordre est leur profondeur**, et ils passent tous au-dessus de ce que le
+contenu (`Contenu::Texte` ou `Contenu::Ornement`, le tag étant dans le fichier
+depuis le premier objet libre — un ornement n'a donc coûté aucune migration). **Leur ordre est leur profondeur**, et ils passent tous au-dessus de ce que le
 gabarit a produit.
 
 **La rotation est en V1** (décision d'Alexis du 04/09, contre la recommandation de la
@@ -398,6 +403,78 @@ convertit bien avec `album.ts::PT_MM`, qui est celui du moteur.
 d'être ramené au rognage : rogner un rectangle tourné donnerait un polygone, et ce qui
 justifiait le rognage — le fond perdu — ne concerne que ce que les gabarits produisent,
 qui est toujours droit.
+
+### Les ornements (6.3 s1)
+
+**Un ornement est un objet libre de plus, et rien d'autre n'a bougé** : il se pose, se
+glisse, se tourne et se supprime avec le code de 6.2, sans une ligne de geste réécrite.
+`Contenu::Ornement { pack, id }` **ne porte que l'identité** — pas de couleur, pas
+d'échelle, pas de miroir : la boîte tient la taille, l'angle est déjà là, et un champ de
+plus serait une seconde source de vérité pour une géométrie qu'`Objet` détient.
+`Role::Ornement { index, pack, id }` fait pareil côté scène : **la scène ne connaît pas
+les chemins**, le dessin est affaire de rendu, et la parité Rust/TypeScript porte donc
+sur la boîte, l'angle et l'identité, pas sur des milliers de coordonnées que les deux
+côtés recalculeraient chacun de son côté.
+
+**Le mot « clipart » a quitté le projet.** `CONTRIBUTING.md` porte désormais la frontière
+publiquement : stickers, masques, fonds décoratifs et cadres fantaisie restent refusés,
+l'ornement typographique entre sous son nom. `CONTEXT.md` le définit, et l'interdit comme
+synonyme.
+
+**La boîte d'un ornement garde le rapport de son `viewBox`** (`Dessin::rapport`,
+`ornement.ts::rapport`), et c'est la décision dont tout le reste découle : la boîte **est**
+l'encre, donc « le rectangle d'un objet libre est sa boîte » reste vrai sans exception, et
+le pli comme la coupe mesurent exactement ce qui s'imprime. Le redimensionnement est donc
+proportionnel — `tailler` prend un rapport optionnel, et **le plancher entre dans le même
+maximum**, sinon il écraserait la forme au moment précis où la boîte devient petite.
+Mesuré à l'écran le 06/09 : 0,7058 après un glissement de coin, soit 12/17 à la
+quatrième décimale.
+
+**Le pack est de la donnée compilée, jamais un dossier de l'utilisateur** :
+`assets/ornements/pack.toml` plus un `.svg` par actif. Contribuer, c'est une entrée et un
+fichier, sans une ligne de Rust — **ni de TypeScript** : l'app lit le pack du moteur
+(`--dump-ornements`, commande `ornements`, `/__dev/ornements`), donc une seconde liste ne
+peut pas dériver puisqu'il n'y en a pas. Trois refus tenus par des tests : licence hors de
+`{CC0-1.0, PD}`, champ manquant, `.svg` hors sous-ensemble. Le manifeste **refuse au lieu
+d'ignorer** toute ligne qu'il ne comprend pas : un lecteur tolérant est celui qui laisse
+passer une faute de frappe dans une licence.
+
+**Le sous-ensemble SVG est `<svg viewBox>`, `<path d>`, `M m L l H h V v C c Z z`,
+`fill-rule`, et rien d'autre** — le domaine où la traduction en opérateurs PDF est
+littérale. Le refus se prononce **à la fabrication du pack**, jamais au chargement :
+personne ne dépose de SVG dans un album, donc un message à l'écran serait un message que
+personne ne devrait lire. `lire_svg` rend un dessin **normalisé** — absolu, droites et
+cubiques —, si bien qu'aucun rendu n'interprète de SVG : le PDF émet les opérateurs, et
+`ornement.ts::attributD` écrit le tracé **une fois** pour le `<path>` du DOM et le
+`Path2D` du canvas. Trois pièges mesurés le 06/09 : une paire de coordonnées après un `M`
+est un `L` (deux des trois actifs livrés en portent), `c0,0.931-33.845,3.722` porte six
+nombres où le signe tient lieu de séparateur, et un `Z` ramène le point courant au départ
+du sous-chemin — sans quoi le dessin dérive sans qu'aucune commande soit fausse.
+
+**Une seule rotation dans le projet.** Un bloc tourne par `Tm`, un ornement par `cm`, et
+les quatre coefficients sortent de `pdf::coefficients_rotation`, appelée par les deux ;
+le test compare les deux flux au même angle. **`Td` reste `Td`** : un album sans ornement
+rend le PDF de `main` à l'octet, revérifié à 214 808 octets. Un ornement est noir, un seul
+remplissage, et il s'écrit `0 0 0 rg` et non `0 g` — ce document déclare un espace de
+couleur et un OutputIntent, et faire entrer DeviceGray par un fleuron mettrait un second
+espace devant veraPDF sans rien acheter. **PASS PDF/A-2b** avec neuf ornements dedans.
+Un identifiant qu'aucun pack ne porte **ne dessine rien et ne fait rien échouer** : un
+`album.json` se répare à la main, donc cet état est atteignable.
+
+**L'encre tombe dans la boîte, et c'est mesuré au raster**
+(`scripts/ornement-encre.py`, dans `check.sh` à côté de `pdf-png`, macOS seulement).
+Trois poses, dix pixels par millimètre — à 72 ppp un demi-millimètre vaut un pixel et
+demi et la mesure battrait au hasard. **La flèche est la sonde** : elle touche ses quatre
+bords, là où un filet en losange se termine en pointe et absorbe un millimètre d'erreur
+en silence. Vérifié en mutant la matrice de trois points : le losange passe à +0,20 mm et
+laisse vert, la flèche à +1,00 mm et rougit. Chiffres :
+`docs/mesures/2026-09-06-l-ornement.json`.
+
+**Ce que 6.3 s1 n'a pas fait**, et qui est s2 : le sélecteur d'ornements, la naissance
+hors des cases photo, le compteur `ornement_sur_photo`, l'entrée d'À propos. Le jeu livré
+est **trois actifs de démonstration** ; les 32 arrivent par une PR de données. Les
+cartouches n'ont aucun gisement libre sur Commons : trois familles, `fleuron`, `filet`,
+`separateur`, et pas de quatrième.
 
 ### L'éditeur des objets libres (6.2 s2)
 
@@ -464,8 +541,15 @@ texte est plus haut que sa boîte, `overflow`, ou un mot y est plus large, `trop
 deux façons de ne pas tenir dans la boîte qu'on a dessinée, un seul compteur). **Mous**
 parce qu'un objet posé volontairement à fond perdu est un choix et que l'éditeur a déjà
 averti ; **à zéro** parce qu'aucun des trois jeux de référence n'en porte un — le jour où
-un album légitime en compte, c'est le seuil qui bouge, pas la classe. Les cliparts
-n'existent pas : leurs deux compteurs arrivent avec eux, en 6.3.
+un album légitime en compte, c'est le seuil qui bouge, pas la classe.
+
+**Les deux compteurs n'ont pas la même portée, et 6.3 s1 l'a tranché** :
+`objet_hors_marge` mesure une boîte, donc il compte tout ce qu'une main a posé, ornement
+compris ; `objet_deborde` mesure un texte contre la boîte où on l'a coupé, et un ornement
+n'a rien à déborder. Le prévol, lui, mord sur les deux sans distinction. Ce qui rend cela
+sûr est `Role::index_libre` : **un seul accesseur** au lieu d'un `match` par appelant, sans
+quoi un troisième contenu compilerait pendant qu'il cesserait silencieusement d'être
+mesuré.
 
 **Deux bloquants au prévol, et deux seulement** : `objet_coupe`
 (`distance_to_trim < 0`) et `objet_pli` (`traverse_le_pli`). La marge reste molle
@@ -593,6 +677,9 @@ dans `audit.rs`, importés par `layout.rs`.
 
 **Les actifs sous licence gardent leur licence à côté** : `colophon-core/assets/` (OFL,
 ICC sRGB, GeoNames **CC-BY, attribution obligatoire**) ; l'écran À propos porte les trois.
+Le pack d'ornements a le sien, `assets/ornements/LICENCES.md`, **engendré** par
+`ornement::licences_md` et dont la fraîcheur est un test — un inventaire de licences tenu
+à la main est faux au premier ajout. Son entrée dans À propos arrive en 6.3 s2.
 
 **Le serveur de dev écrase le vrai `album.json`** (POST `/__dev/album`) : copies jetables.
 **Recharger la page après toute édition de source**, le fast refresh Vite corrompt l'état
@@ -676,8 +763,10 @@ de scène porte un angle et une origine, **jamais une matrice**.
 ```
 
 Autres drapeaux : `--print`, `--cover`, `--prevol --profil <id>`, `--densite`,
-`--variantes`, `--reprise`, `--bascule <FORMAT> [--essai]`, `--dump-scene`, `--dump-geometry`, `--profils`. Scripts :
-`pdfx.sh full`, `install-app.sh`, `fixture-scene.sh`, `notices.sh`, `apercu-fidele.py`,
+`--variantes`, `--reprise`, `--bascule <FORMAT> [--essai]`, `--dump-scene`,
+`--dump-geometry`, `--dump-ornements`, `--profils`. Scripts :
+`pdfx.sh full`, `install-app.sh`, `fixture-scene.sh`, `ornement-encre.py`, `notices.sh`,
+`apercu-fidele.py`,
 `banc-gabarits.sh`, `mesure-cdp.mjs`, `feuille-cdp.mjs`, `police-cdp.mjs`. App :
 `npm run tauri dev`.
 
@@ -700,14 +789,16 @@ COLOPHON_POLICE=.albums/corse-2013 cargo test -p colophon-core --release \
 
 Workspace Cargo. **`colophon-core`** : `scan` → `meta` → `thumb` → `analyze` → `face` →
 `heic` → `pipeline` (curation) → `layout` (Composer, `Densite`) → `scene` → `pdf` →
-`print` → `cover` → `audit` ; `build.rs` enchaîne. À côté : `font`, `icc`, `places` (les
-trois actifs), `pdfx`, `reprise`, `log`, `printer`, `prevol`, `colophon` (la page).
+`print` → `cover` → `audit` ; `build.rs` enchaîne. À côté : `font`, `icc`, `places`,
+`ornement` (les quatre actifs), `pdfx`, `reprise`, `log`, `printer`, `prevol`,
+`colophon` (la page).
 **`colophon-cli`** : clap. **`colophon-app`** : React et Vite (`bridge.ts` seule porte,
 `album.ts` géométries, `scene.ts` la scène et `hitTest`, `SceneCanvas.tsx` le peintre,
 `SceneProxies.tsx` le clavier, `rendu.ts` l'interrupteur, `feuille.ts` le modèle de la
 feuille qui tourne, `raster.ts` le PDF en bitmaps, `Feuilletage.tsx` la scène du
 feuilletage, `photos.ts` vignettes décodées et badges, `font.ts` la mesure de texte sur
 les octets de l'album, `police.ts` les noms et les refus d'une face,
+`ornement.ts` le pack et le seul tracé que les deux rendus partagent,
 `menu.ts`, `signaler.ts`, `pdfview.tsx`, `reasons.ts`, `icons.tsx`, `recents.ts`) plus la coquille Tauri, marques d'icône dans
 `design/marques`.
 

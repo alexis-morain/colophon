@@ -651,6 +651,37 @@
       "role": "free_text",
       "trop_large": true
      }
+    },
+    {
+     "reading": 7,
+     "rect": {
+      "h": 3.0,
+      "w": 60.0,
+      "x": 60.0,
+      "y": 180.0
+     },
+     "role": {
+      "id": "filet-losange",
+      "index": 4,
+      "pack": "colophon",
+      "role": "ornement"
+     }
+    },
+    {
+     "angle": -46.0,
+     "reading": 8,
+     "rect": {
+      "h": 4.5,
+      "w": 70.0,
+      "x": 200.0,
+      "y": 170.0
+     },
+     "role": {
+      "id": "filet-flare",
+      "index": 5,
+      "pack": "colophon",
+      "role": "ornement"
+     }
     }
    ]
   }
@@ -1306,6 +1337,37 @@
       ],
       "role": "free_text",
       "trop_large": true
+     }
+    },
+    {
+     "reading": 7,
+     "rect": {
+      "h": 3.0,
+      "w": 60.0,
+      "x": 60.0,
+      "y": 180.0
+     },
+     "role": {
+      "id": "filet-losange",
+      "index": 4,
+      "pack": "colophon",
+      "role": "ornement"
+     }
+    },
+    {
+     "angle": -46.0,
+     "reading": 8,
+     "rect": {
+      "h": 4.5,
+      "w": 70.0,
+      "x": 200.0,
+      "y": 170.0
+     },
+     "role": {
+      "id": "filet-flare",
+      "index": 5,
+      "pack": "colophon",
+      "role": "ornement"
      }
     }
    ]
@@ -1963,6 +2025,37 @@
       "role": "free_text",
       "trop_large": true
      }
+    },
+    {
+     "reading": 7,
+     "rect": {
+      "h": 3.0,
+      "w": 60.0,
+      "x": 60.0,
+      "y": 180.0
+     },
+     "role": {
+      "id": "filet-losange",
+      "index": 4,
+      "pack": "colophon",
+      "role": "ornement"
+     }
+    },
+    {
+     "angle": -46.0,
+     "reading": 8,
+     "rect": {
+      "h": 4.5,
+      "w": 70.0,
+      "x": 200.0,
+      "y": 170.0
+     },
+     "role": {
+      "id": "filet-flare",
+      "index": 5,
+      "pack": "colophon",
+      "role": "ornement"
+     }
     }
    ]
   }
@@ -2618,6 +2711,37 @@
       ],
       "role": "free_text",
       "trop_large": true
+     }
+    },
+    {
+     "reading": 7,
+     "rect": {
+      "h": 3.0,
+      "w": 60.0,
+      "x": 60.0,
+      "y": 180.0
+     },
+     "role": {
+      "id": "filet-losange",
+      "index": 4,
+      "pack": "colophon",
+      "role": "ornement"
+     }
+    },
+    {
+     "angle": -46.0,
+     "reading": 8,
+     "rect": {
+      "h": 4.5,
+      "w": 70.0,
+      "x": 200.0,
+      "y": 170.0
+     },
+     "role": {
+      "id": "filet-flare",
+      "index": 5,
+      "pack": "colophon",
+      "role": "ornement"
      }
     }
    ]
@@ -3275,6 +3399,37 @@
       "role": "free_text",
       "trop_large": true
      }
+    },
+    {
+     "reading": 7,
+     "rect": {
+      "h": 3.0,
+      "w": 60.0,
+      "x": 60.0,
+      "y": 180.0
+     },
+     "role": {
+      "id": "filet-losange",
+      "index": 4,
+      "pack": "colophon",
+      "role": "ornement"
+     }
+    },
+    {
+     "angle": -46.0,
+     "reading": 8,
+     "rect": {
+      "h": 4.5,
+      "w": 70.0,
+      "x": 200.0,
+      "y": 170.0
+     },
+     "role": {
+      "id": "filet-flare",
+      "index": 5,
+      "pack": "colophon",
+      "role": "ornement"
+     }
     }
    ]
   }
@@ -3930,6 +4085,37 @@
       ],
       "role": "free_text",
       "trop_large": true
+     }
+    },
+    {
+     "reading": 7,
+     "rect": {
+      "h": 3.0,
+      "w": 60.0,
+      "x": 60.0,
+      "y": 180.0
+     },
+     "role": {
+      "id": "filet-losange",
+      "index": 4,
+      "pack": "colophon",
+      "role": "ornement"
+     }
+    },
+    {
+     "angle": -46.0,
+     "reading": 8,
+     "rect": {
+      "h": 4.5,
+      "w": 70.0,
+      "x": 200.0,
+      "y": 170.0
+     },
+     "role": {
+      "id": "filet-flare",
+      "index": 5,
+      "pack": "colophon",
+      "role": "ornement"
      }
     }
    ]

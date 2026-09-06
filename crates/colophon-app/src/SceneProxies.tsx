@@ -27,6 +27,7 @@
 import { useEffect, useRef } from "react";
 import { Rect } from "./album";
 import { t } from "./i18n";
+import { ornementDe, titre } from "./ornement";
 import { angleEcran, Scene, SceneObject } from "./scene";
 
 // ---- où le clavier se tient, et pourquoi ça vit hors du composant --------
@@ -83,6 +84,14 @@ export function nomDObjet(o: SceneObject, scene: Scene): string {
       return premiere
         ? t("scene.texte.libre", { texte: premiere })
         : t("scene.texte.libre.vide");
+    }
+    // Un ornement se nomme par son titre, qui voyage dans le pack en deux
+    // langues : sa traduction arrive avec lui, dans la PR qui l'ajoute. Un
+    // identifiant qu'aucun pack ne porte se dit quand même — un objet muet
+    // dans l'ordre de lecture serait pire qu'un objet mal nommé.
+    case "ornement": {
+      const o = ornementDe(role.id);
+      return o ? t("scene.ornement", { titre: titre(o) }) : t("scene.ornement.inconnu");
     }
   }
 }

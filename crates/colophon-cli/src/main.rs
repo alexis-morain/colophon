@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "banc_gabarits", "depuis_fiches"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "banc_gabarits", "depuis_fiches"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -65,6 +65,12 @@ struct Cli {
     /// parity check against the editor's TypeScript port.
     #[arg(long)]
     dump_geometry: bool,
+
+    /// Print the ornament pack as JSON and exit: identity, provenance and
+    /// normalised drawing of every asset. The editor draws from this, so the
+    /// pack has one source and adding an ornament stays a data contribution.
+    #[arg(long)]
+    dump_ornements: bool,
 
     /// Print the adjustment LUTs over a fixed grid of settings as JSON and
     /// exit. Feeds the parity check like --dump-geometry: the committed
@@ -217,6 +223,14 @@ fn main() -> Result<()> {
         let mut album = Album::new("geometry", std::path::Path::new("."), trim);
         album.bleed_mm = cli.bleed;
         println!("{}", serde_json::to_string_pretty(&pdf::dump_geometry(&album))?);
+        return Ok(());
+    }
+
+    if cli.dump_ornements {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&colophon_core::ornement::pack())?
+        );
         return Ok(());
     }
 

@@ -99,7 +99,16 @@ export type Role =
       overflow: boolean;
       /** One word wider than the box: printed whole, past the edge. */
       tropLarge: boolean;
-    };
+    }
+  /** An ornament the reader placed, indexed into `spread.objets` exactly like
+   *  a free block.
+   *
+   *  **The scene does not know the paths.** It names the ornament and stops:
+   *  the drawing belongs to each renderer, which asks the pack for it. The
+   *  parity with the engine therefore bears on the box, the angle and the
+   *  identity — not on thousands of coordinates the two sides would each
+   *  recompute. */
+  | { role: "ornement"; index: number; pack: string; id: string };
 
 /** One visible element: where it is, how it is turned, when it is read, and
  *  what it is.
@@ -496,6 +505,17 @@ function objetLibre(
   measure: Measure,
 ): SceneObject {
   const rect: Rect = { x: objet.x, y: g.h - (objet.y + objet.h), w: objet.w, h: objet.h };
+  // An ornament is laid out by nothing: its box keeps the drawing's own
+  // aspect ratio, so the box **is** the ink. Nothing to wrap, and no face to
+  // wrap it in.
+  if (objet.type === "ornement") {
+    return {
+      rect,
+      angle: objet.angle ?? 0,
+      reading,
+      role: { role: "ornement", index, pack: objet.pack, id: objet.id },
+    };
+  }
   const tailleMm = objet.taille_pt * PT_MM;
   const interligne = interligneDe(objet);
   const align: Alignement = objet.alignement ?? "gauche";

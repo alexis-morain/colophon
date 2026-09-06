@@ -189,6 +189,30 @@ pub enum Role {
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         trop_large: bool,
     },
+    /// A typographic ornament the reader placed, indexed into `spread.objets`
+    /// exactly like [`Role::FreeText`].
+    ///
+    /// **The scene does not know the paths.** It names the ornament and stops
+    /// there: the drawing is a matter for each renderer — the PDF emits the
+    /// operators, the screen lays the pack's own path down. The Rust/TypeScript
+    /// parity therefore bears on the box, the angle and the identity, not on
+    /// thousands of coordinates the two sides would each recompute.
+    Ornement { index: usize, pack: String, id: String },
+}
+
+impl Role {
+    /// The index into `spread.objets`, whatever fills the object.
+    ///
+    /// **One accessor rather than one match per caller.** The linter and the
+    /// preflight both mean "any object the reader placed", and the day a third
+    /// content arrives, a caller that matched on `FreeText` alone would go on
+    /// compiling while it quietly stopped measuring.
+    pub fn index_libre(&self) -> Option<usize> {
+        match self {
+            Role::FreeText { index, .. } | Role::Ornement { index, .. } => Some(*index),
+            _ => None,
+        }
+    }
 }
 
 /// Cut a text into the lines it sets as, inside a box `largeur` wide.
@@ -506,7 +530,22 @@ fn objet_libre(
     mesure: &dyn Fn(&str, f64) -> f64,
 ) -> Object {
     let rect = Rect { x: objet.x, y: objet.y, w: objet.w, h: objet.h };
-    let crate::model::Contenu::Texte { texte, taille_pt, alignement, .. } = &objet.contenu;
+    let (texte, taille_pt, alignement) = match &objet.contenu {
+        crate::model::Contenu::Texte { texte, taille_pt, alignement, .. } => {
+            (texte, taille_pt, alignement)
+        }
+        // An ornament is laid out by nothing: its box is its ink, because the
+        // box keeps the drawing's own aspect ratio. Nothing to wrap, nothing
+        // to measure, and no face to measure it in.
+        crate::model::Contenu::Ornement { pack, id } => {
+            return Object {
+                rect,
+                angle: objet.angle,
+                reading,
+                role: Role::Ornement { index, pack: pack.clone(), id: id.clone() },
+            };
+        }
+    };
     let taille_pt = *taille_pt;
     let interligne = objet.interligne();
     let taille_mm = taille_pt / (72.0 / 25.4);
@@ -673,6 +712,7 @@ mod tests {
                 Role::ChapterCaption { .. } => "legende_chapitre",
                 Role::Text { .. } => "texte",
                 Role::FreeText { .. } => "libre",
+                Role::Ornement { .. } => "ornement",
             })
             .collect();
         assert_eq!(roles, ["photo", "photo", "legende_photo", "legende_chapitre"]);
@@ -930,6 +970,7 @@ mod tests {
                 Role::ChapterCaption { .. } => "legende_chapitre",
                 Role::Text { .. } => "texte",
                 Role::FreeText { .. } => "libre",
+                Role::Ornement { .. } => "ornement",
             })
             .collect();
         assert_eq!(roles, ["photo", "photo", "legende_chapitre", "libre", "libre"]);
@@ -1039,7 +1080,7 @@ mod tests {
         let mut s = spread("duo", 2);
         let pose = |a: Alignement| {
             let mut o = bloc("abc", 40.0, 20.0);
-            let Contenu::Texte { alignement, .. } = &mut o.contenu;
+            let Contenu::Texte { alignement, .. } = &mut o.contenu else { unreachable!() };
             *alignement = a;
             o
         };
@@ -1082,7 +1123,7 @@ mod tests {
     #[test]
     fn l_interligne_absent_est_celui_de_la_taille() {
         let mut o = bloc("un", 40.0, 20.0);
-        let Contenu::Texte { interligne_mm, .. } = &mut o.contenu;
+        let Contenu::Texte { interligne_mm, .. } = &mut o.contenu else { unreachable!() };
         *interligne_mm = None;
         assert!((o.interligne() - 10.0 / (72.0 / 25.4) * 1.35).abs() < 1e-12);
     }

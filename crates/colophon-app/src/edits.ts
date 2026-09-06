@@ -402,7 +402,9 @@ export function setObjetTexte(
   texte: string,
 ): Album {
   const objet = album.spreads[at]?.objets?.[index];
-  if (!objet || objet.texte === texte) return album;
+  // Un ornement n'a pas de texte, et lui en poser un est un défaut d'appelant,
+  // pas une saisie : l'éditeur n'ouvre son champ que sur un bloc.
+  if (!objet || objet.type !== "texte" || objet.texte === texte) return album;
   return setObjet(album, at, index, { ...objet, texte });
 }
 

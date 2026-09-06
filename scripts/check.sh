@@ -135,6 +135,10 @@ done
 # ailleurs le test passe son tour en le disant.
 if command -v sips >/dev/null && "$PY" -c "import PIL" 2>/dev/null; then
   "$PY" scripts/pdf-png.py
+  # L'encre d'un ornement tombe dans sa boîte, lue sur le papier. Le pli, la
+  # coupe et le prévol ne mesurent jamais que le rectangle ; pour un ornement
+  # c'est un invariant, pas une approximation, et il se vérifie au raster.
+  "$PY" scripts/ornement-encre.py
 else
   echo "pdf-png : sauté (sips ou Pillow absent)"
 fi

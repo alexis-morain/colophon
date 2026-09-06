@@ -4,6 +4,7 @@
 // the book view gets checked without rebuilding the Rust side.
 
 import { invoke } from "@tauri-apps/api/core";
+import { Ornement, setOrnements } from "./ornement";
 import { Album, Discard, OpenedAlbum, Police, Spread } from "./album";
 
 import { Dump, setGeometrie, setGeometrieFormat } from "./geometrie";
@@ -236,6 +237,28 @@ export async function openAlbum(path: string): Promise<OpenedAlbum> {
   const opened = (await res.json()) as OpenedAlbum;
   await chargeGeometrie();
   return opened;
+}
+
+/**
+ * Charger le pack d'ornements, une fois pour la vie de la fenêtre.
+ *
+ * **Il ne bloque rien.** La géométrie est refusée quand elle manque, parce
+ * qu'un album sans elle ne se dessine pas ; un pack absent laisse un album
+ * entier lisible, avec des ornements que personne ne peut poser. Un moteur
+ * qui rendrait ici serait un moteur qu'on vient de casser, et l'écran ne doit
+ * pas mourir avec lui.
+ */
+export async function chargeOrnements(): Promise<void> {
+  try {
+    if (inTauri) {
+      setOrnements(await invoke<Ornement[]>("ornements"));
+      return;
+    }
+    const res = await fetch("/__dev/ornements");
+    if (res.ok) setOrnements((await res.json()) as Ornement[]);
+  } catch {
+    // Rien : le pack reste vide, et le panneau des ornements le dira.
+  }
 }
 
 /**

@@ -981,7 +981,15 @@ mod tests {
     /// exactement le genre de fichier que personne ne relit.
     #[test]
     fn l_inventaire_des_licences_est_frais() {
-        let sur_disque = include_str!("../assets/ornements/LICENCES.md");
+        // **Les fins de ligne se normalisent des deux côtés.** Git rend ce
+        // fichier en CRLF sur Windows, `licences_md` l'écrit en LF, et sans
+        // ça le gate rougissait là-bas en accusant l'inventaire d'avoir
+        // vieilli alors que pas un caractère ne différait. Ce test porte sur
+        // le contenu ; la fin de ligne est une propriété de la plate-forme.
+        // Corrigé ici plutôt que par un `.gitattributes` : le dépôt n'en a
+        // pas, et en poser un renormaliserait tous ses fichiers texte pour
+        // une seule comparaison.
+        let sur_disque = include_str!("../assets/ornements/LICENCES.md").replace("\r\n", "\n");
         assert_eq!(
             sur_disque,
             licences_md(),

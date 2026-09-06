@@ -689,7 +689,12 @@ dans `audit.rs`, importés par `layout.rs`.
 ICC sRGB, GeoNames **CC-BY, attribution obligatoire**) ; l'écran À propos porte les trois.
 Le pack d'ornements a le sien, `assets/ornements/LICENCES.md`, **engendré** par
 `ornement::licences_md` et dont la fraîcheur est un test — un inventaire de licences tenu
-à la main est faux au premier ajout. Son entrée dans À propos arrive en 6.3 s2.
+à la main est faux au premier ajout. Son entrée dans À propos arrive en 6.3 s2. **Ce
+test compare des contenus, pas des fins de ligne** : git rend un `.md` en CRLF sur
+Windows là où le générateur écrit des `\n`, et le gate y accusait l'inventaire d'avoir
+vieilli sans qu'un caractère diffère. Le dépôt n'a pas de `.gitattributes`, et en poser
+un renormaliserait tous ses fichiers texte pour une seule comparaison ; tout autre
+`include_str!` du projet est analysé, jamais comparé, donc aucun n'a ce piège.
 
 **Le serveur de dev écrase le vrai `album.json`** (POST `/__dev/album`) : copies jetables.
 **Recharger la page après toute édition de source**, le fast refresh Vite corrompt l'état

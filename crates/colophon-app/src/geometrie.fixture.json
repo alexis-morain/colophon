@@ -40,58 +40,100 @@
     {
       "panels": [
         [
-          3.0,
+          24.0,
           210.0
         ],
         [
-          220.44,
+          251.62,
           210.0
         ]
       ],
       "profil": "cloudprinter",
+      "profil_cotes": {
+        "bas": 3.0,
+        "debord": 3.0,
+        "dos": {
+          "certitude": "confirme",
+          "constante_mm": 6.0,
+          "mm_par_feuille": 0.135,
+          "mode": "calcule"
+        },
+        "ext": 3.0,
+        "haut": 3.0,
+        "mors": 5.0,
+        "rempli": 18.0
+      },
       "sheet": [
-        433.44,
-        216.0
+        485.62,
+        258.0
       ],
-      "spine": 7.4399999999999995,
+      "spine": 7.62,
       "spreads": 12
     },
     {
       "panels": [
         [
-          3.0,
+          24.0,
           210.0
         ],
         [
-          224.76,
+          256.48,
           210.0
         ]
       ],
       "profil": "cloudprinter",
+      "profil_cotes": {
+        "bas": 3.0,
+        "debord": 3.0,
+        "dos": {
+          "certitude": "confirme",
+          "constante_mm": 6.0,
+          "mm_par_feuille": 0.135,
+          "mode": "calcule"
+        },
+        "ext": 3.0,
+        "haut": 3.0,
+        "mors": 5.0,
+        "rempli": 18.0
+      },
       "sheet": [
-        437.76,
-        216.0
+        490.48,
+        258.0
       ],
-      "spine": 11.76,
+      "spine": 12.48,
       "spreads": 48
     },
     {
       "panels": [
         [
-          3.0,
+          24.0,
           210.0
         ],
         [
-          230.52,
+          262.96,
           210.0
         ]
       ],
       "profil": "cloudprinter",
+      "profil_cotes": {
+        "bas": 3.0,
+        "debord": 3.0,
+        "dos": {
+          "certitude": "confirme",
+          "constante_mm": 6.0,
+          "mm_par_feuille": 0.135,
+          "mode": "calcule"
+        },
+        "ext": 3.0,
+        "haut": 3.0,
+        "mors": 5.0,
+        "rempli": 18.0
+      },
       "sheet": [
-        443.52,
-        216.0
+        496.96,
+        258.0
       ],
-      "spine": 17.52,
+      "spine": 18.96,
       "spreads": 96
     },
     {
@@ -106,6 +148,17 @@
         ]
       ],
       "profil": "prodigi",
+      "profil_cotes": {
+        "bas": 0.0,
+        "debord": 0.0,
+        "dos": {
+          "mode": "fourni"
+        },
+        "ext": 0.0,
+        "haut": 0.0,
+        "mors": 0.0,
+        "rempli": 0.0
+      },
       "sheet": [
         420.0,
         210.0
@@ -125,6 +178,17 @@
         ]
       ],
       "profil": "prodigi",
+      "profil_cotes": {
+        "bas": 0.0,
+        "debord": 0.0,
+        "dos": {
+          "mode": "fourni"
+        },
+        "ext": 0.0,
+        "haut": 0.0,
+        "mors": 0.0,
+        "rempli": 0.0
+      },
       "sheet": [
         420.0,
         210.0
@@ -144,6 +208,17 @@
         ]
       ],
       "profil": "prodigi",
+      "profil_cotes": {
+        "bas": 0.0,
+        "debord": 0.0,
+        "dos": {
+          "mode": "fourni"
+        },
+        "ext": 0.0,
+        "haut": 0.0,
+        "mors": 0.0,
+        "rempli": 0.0
+      },
       "sheet": [
         420.0,
         210.0
@@ -163,6 +238,20 @@
         ]
       ],
       "profil": "lulu",
+      "profil_cotes": {
+        "bas": 3.0,
+        "debord": 0.0,
+        "dos": {
+          "certitude": "provisoire",
+          "constante_mm": 0.0,
+          "mm_par_feuille": 0.2,
+          "mode": "calcule"
+        },
+        "ext": 3.0,
+        "haut": 3.0,
+        "mors": 0.0,
+        "rempli": 0.0
+      },
       "sheet": [
         428.4,
         216.0
@@ -182,6 +271,20 @@
         ]
       ],
       "profil": "lulu",
+      "profil_cotes": {
+        "bas": 3.0,
+        "debord": 0.0,
+        "dos": {
+          "certitude": "provisoire",
+          "constante_mm": 0.0,
+          "mm_par_feuille": 0.2,
+          "mode": "calcule"
+        },
+        "ext": 3.0,
+        "haut": 3.0,
+        "mors": 0.0,
+        "rempli": 0.0
+      },
       "sheet": [
         435.6,
         216.0
@@ -201,6 +304,20 @@
         ]
       ],
       "profil": "lulu",
+      "profil_cotes": {
+        "bas": 3.0,
+        "debord": 0.0,
+        "dos": {
+          "certitude": "provisoire",
+          "constante_mm": 0.0,
+          "mm_par_feuille": 0.2,
+          "mode": "calcule"
+        },
+        "ext": 3.0,
+        "haut": 3.0,
+        "mors": 0.0,
+        "rempli": 0.0
+      },
       "sheet": [
         445.2,
         216.0
@@ -220,6 +337,17 @@
         ]
       ],
       "profil": "generique",
+      "profil_cotes": {
+        "bas": 3.0,
+        "debord": 0.0,
+        "dos": {
+          "mode": "fourni"
+        },
+        "ext": 3.0,
+        "haut": 3.0,
+        "mors": 0.0,
+        "rempli": 0.0
+      },
       "sheet": [
         426.0,
         216.0
@@ -239,6 +367,17 @@
         ]
       ],
       "profil": "generique",
+      "profil_cotes": {
+        "bas": 3.0,
+        "debord": 0.0,
+        "dos": {
+          "mode": "fourni"
+        },
+        "ext": 3.0,
+        "haut": 3.0,
+        "mors": 0.0,
+        "rempli": 0.0
+      },
       "sheet": [
         426.0,
         216.0
@@ -258,6 +397,17 @@
         ]
       ],
       "profil": "generique",
+      "profil_cotes": {
+        "bas": 3.0,
+        "debord": 0.0,
+        "dos": {
+          "mode": "fourni"
+        },
+        "ext": 3.0,
+        "haut": 3.0,
+        "mors": 0.0,
+        "rempli": 0.0
+      },
       "sheet": [
         426.0,
         216.0

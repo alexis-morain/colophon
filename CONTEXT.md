@@ -148,6 +148,26 @@ The margin of print beyond the trim, cut away in binding. Photos bleed on
 purpose; text never does.
 _Avoid_: overprint, margin
 
+**Rempli**:
+The strip of cover that folds behind the board and glues to its inside. It is
+printed and then never seen, which is why a photograph must run through it:
+what stops short of the fold leaves a white band on the finished edge. A
+printer profile carries it in millimetres, and it is zero for anyone who does
+not wrap boards.
+_Avoid_: turn-in, rabat, flap, wrap
+
+**Débord**:
+How far the board stands proud of the page block, on the three cut edges. Like
+the rempli it makes the sheet bigger than the book, and like it, it is a
+number of the profile and not of the album.
+_Avoid_: overhang, chasse, dépassant
+
+**Mors**:
+The hinge groove, one on each side of the spine, where the cover bends to open.
+Ink crosses it — a white line in the groove shows on every copy — but nothing
+meant to be read may sit in it, the way nothing readable sits in the bleed.
+_Avoid_: charnière, gorge, hinge, groove
+
 **Media box**:
 The whole printed surface of a spread: two trimmed pages plus bleed all round.
 The rectangle the PDF declares, and the frame every geometry is expressed in.

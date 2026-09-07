@@ -547,6 +547,21 @@ pub fn dump_geometry(album: &Album) -> serde_json::Value {
                 serde_json::json!({
                     "profil": p.id,
                     "spreads": spreads,
+                    // The profile's own numbers travel with the expected
+                    // sheet, so the port is fed from the engine instead of
+                    // from a table someone keeps in step by hand. That table
+                    // existed, and the day the spine coefficient moved it
+                    // failed as a parity break — pointing at the port, which
+                    // was right, instead of at itself.
+                    "profil_cotes": {
+                        "dos": p.dos,
+                        "ext": p.bleed_mm.exterieur,
+                        "haut": p.bleed_mm.haut,
+                        "bas": p.bleed_mm.bas,
+                        "rempli": p.rempli_mm,
+                        "debord": p.debord_mm,
+                        "mors": p.mors_mm,
+                    },
                     "sheet": [c.media_w, c.media_h],
                     "spine": c.spine_mm(),
                     "panels": [

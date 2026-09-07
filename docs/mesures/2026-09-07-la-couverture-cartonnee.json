@@ -1,0 +1,275 @@
+{
+  "date": "2026-09-07",
+  "session": "A — le dos et la couverture cartonnée",
+  "plan": "plans/2026-09-07-plan-cloudprinter.md (hors dépôt)",
+  "album": "corse-2013, 50 planches = 100 pages, carré 21, une photo de couverture posée à la main",
+  "le_dos": {
+    "coefficient_avant": 0.12,
+    "coefficient_apres": 0.135,
+    "main_avant": "0,80 (MCG, relevée dans leur table)",
+    "main_apres": "0,90 (MCS, le papier commandé, donné par Cloudprinter le 07/09)",
+    "certitude_avant": "provisoire",
+    "certitude_apres": "confirme",
+    "contre_epreuve": {
+      "quoi": "leur gabarit annonce « sized for 100 pages of 200 gsm machine coated gloss » et dessine un dos de 14 mm",
+      "formule": "200 g × 0,80 × 50 feuilles / 1000 + 2 × 3 mm de carton",
+      "attendu_mm": 14.0,
+      "rendu_mm": 14.0,
+      "test": "printer.rs::the_formula_reproduces_the_spine_of_their_own_template"
+    },
+    "dos_de_corse_2013_mm": {
+      "avant": 12.0,
+      "apres": 12.75
+    },
+    "reserve_retiree": "main d'œuvre 0,80 relevée pour le papier MCG",
+    "reserve_gardee": "la main du papier et le format du carton varient d'un imprimeur à l'autre",
+    "consequence_au_prevol": "l'avertissement « coefficient provisoire » disparaît pour Cloudprinter (1 → 0) ; la variance entre sites voyage dans les réserves du rapport, pas dans un défaut"
+  },
+  "les_trois_cotes": {
+    "rempli_mm": 18.0,
+    "debord_mm": 3.0,
+    "mors_mm": 5.0,
+    "source": "photobook_cw_s210_s_fc_cover.pdf : COVER WRAP 18, COVER OVERLAP 3, COVER SQUEEZE 5, BLEEDS 3",
+    "a_zero_pour": [
+      "prodigi",
+      "lulu",
+      "generique"
+    ],
+    "lulu": "à zéro faute de gabarit, et une réserve le dit"
+  },
+  "la_feuille": {
+    "formule": "media_w = trim.w × 2 + dos + mors × 2 + (ext + rempli + debord) × 2",
+    "gabarit_cloudprinter_mm": [
+      492.0,
+      258.0
+    ],
+    "reconstruction": "210 × 2 + 14 + 5 × 2 + 24 × 2 = 492,00 ; 210 + 24 × 2 = 258,00",
+    "dump_carre_21": [
+      {
+        "planches": 12,
+        "dos": 7.62,
+        "feuille": [
+          485.62,
+          258.0
+        ],
+        "back": [
+          24.0,
+          210.0
+        ],
+        "dos_rect": [
+          239.0,
+          7.62
+        ],
+        "front": [
+          251.62,
+          210.0
+        ]
+      },
+      {
+        "planches": 48,
+        "dos": 12.48,
+        "feuille": [
+          490.48,
+          258.0
+        ],
+        "back": [
+          24.0,
+          210.0
+        ],
+        "dos_rect": [
+          239.0,
+          12.48
+        ],
+        "front": [
+          256.48,
+          210.0
+        ]
+      },
+      {
+        "planches": 96,
+        "dos": 18.96,
+        "feuille": [
+          496.96,
+          258.0
+        ],
+        "back": [
+          24.0,
+          210.0
+        ],
+        "dos_rect": [
+          239.0,
+          18.96
+        ],
+        "front": [
+          262.96,
+          210.0
+        ]
+      }
+    ],
+    "corse_2013_pdfinfo": {
+      "media_mm": [
+        490.75,
+        258.0
+      ],
+      "trim_mm": [
+        3.0,
+        3.0,
+        487.75,
+        255.0
+      ],
+      "trim_est_le_media_moins_3_sur_les_quatre_cotes": true
+    }
+  },
+  "la_superposition_avec_leur_gabarit": {
+    "methode": "leur PDF rasterisé par sips à 2,8354 px/mm, nos dix lignes de géométrie tracées par-dessus (dos forcé aux 14 mm pour lesquels leur fichier est dessiné), puis relevé de leurs propres guides colonne par colonne",
+    "banc": "cover.rs::banc_la_feuille_du_boitier (#[ignore])",
+    "un_pixel_mm": 0.353,
+    "lignes": [
+      {
+        "nom": "coupe gauche",
+        "nous": 3.0,
+        "eux": 2.82,
+        "ecart_mm": -0.178
+      },
+      {
+        "nom": "pli du rempli gauche",
+        "nous": 21.0,
+        "eux": 20.81,
+        "ecart_mm": -0.191
+      },
+      {
+        "nom": "panneau, débord, gauche",
+        "nous": 24.0,
+        "eux": 23.98,
+        "ecart_mm": -0.017
+      },
+      {
+        "nom": "panneau quatrième, droite",
+        "nous": 234.0,
+        "eux": 233.83,
+        "ecart_mm": -0.168
+      },
+      {
+        "nom": "dos, bord gauche",
+        "nous": 239.0,
+        "eux": 238.77,
+        "ecart_mm": -0.23
+      },
+      {
+        "nom": "dos, bord droit",
+        "nous": 253.0,
+        "eux": 252.88,
+        "ecart_mm": -0.123
+      },
+      {
+        "nom": "panneau première, gauche",
+        "nous": 258.0,
+        "eux": 257.82,
+        "ecart_mm": -0.185
+      },
+      {
+        "nom": "panneau, débord, droite",
+        "nous": 468.0,
+        "eux": 468.02,
+        "ecart_mm": 0.017
+      },
+      {
+        "nom": "pli du rempli droit",
+        "nous": 471.0,
+        "eux": 470.84,
+        "ecart_mm": -0.161
+      },
+      {
+        "nom": "coupe droite",
+        "nous": 489.0,
+        "eux": 488.83,
+        "ecart_mm": -0.174
+      }
+    ],
+    "ecart_maximal_mm": 0.23,
+    "ecart_maximal_px": 0.65,
+    "verdict": "les dix lignes tombent sur les leurs à moins d'un pixel : aucune cote n'est du mauvais côté"
+  },
+  "la_photo_de_couverture": {
+    "rect_avant_mm": [
+      213.0,
+      216.0
+    ],
+    "rect_apres_mm": [
+      239.0,
+      258.0
+    ],
+    "origine_avant": "front.x, la photo s'arrêtait au bord du mors",
+    "origine_apres": "bord droit du dos : elle saigne à travers le mors avant",
+    "mesure_au_raster": {
+      "px_par_mm": 2.834,
+      "encre_de_mm": 251.55,
+      "promis_mm": 251.75,
+      "atteint_le_bord_droit": true,
+      "atteint_le_haut_et_le_bas": true,
+      "mors_traverse_mm": 5.2,
+      "mors_du_profil_mm": 5.0
+    },
+    "le_titre_au_dos": {
+      "dessine": true,
+      "dos_mm": 12.75,
+      "plancher_mm": 9.0,
+      "encre_de_mm": 241.32,
+      "encre_a_mm": 244.14,
+      "marge_au_mors_gauche_mm": 2.32,
+      "marge_au_mors_droit_mm": 7.61,
+      "mord_sur_un_mors": false
+    }
+  },
+  "le_ppi_perdu": {
+    "question": "décision 5 du prompt : le média grandit, la photo remplit plus grand, son ppi effectif chute",
+    "facteur": {
+      "largeur": 1.1221,
+      "hauteur": 1.1944
+    },
+    "photos_distinctes_de_corse_2013": 98,
+    "sous_250_avant": 2,
+    "sous_250_apres": 36,
+    "nouvelles_sous_250": 34,
+    "photo_posee_en_couverture": {
+      "src": "2013-10-28_125233_L1110840.jpg",
+      "ppi_avant": 352.78,
+      "ppi_apres": 295.35
+    },
+    "le_gros_du_troupeau": "les 12 Mpx de 2448 px de haut passent de 287,87 à 241,00 ppi",
+    "verdict": "un tiers des photos de cet album ne peut plus être une couverture au plancher de 250 ppi. Ce n'est pas un défaut à corriger ici : c'est un fait, et le prévol le dira en session C."
+  },
+  "la_couverture_souple_n_a_rien_perdu": {
+    "methode": "même album, même SOURCE_DATE_EPOCH, couverture rendue par le binaire de `main` (53e34f8) et par celui de la branche, comparaison octet par octet",
+    "profils": {
+      "generique": {
+        "octets_avant": 2068887,
+        "octets_apres": 2068887,
+        "identique_a_l_octet": true
+      },
+      "prodigi": {
+        "octets_avant": 1985563,
+        "octets_apres": 1985563,
+        "identique_a_l_octet": true
+      },
+      "lulu": {
+        "octets_avant": 2068919,
+        "octets_apres": 2068919,
+        "identique_a_l_octet": true
+      },
+      "cloudprinter": {
+        "octets_avant": 2068919,
+        "octets_apres": 4870675,
+        "identique_a_l_octet": false
+      }
+    },
+    "verdict": "les trois profils sans carton rendent le même fichier à l'octet ; seul Cloudprinter change, et il double de poids parce que la photo couvre une feuille plus grande à 300 dpi",
+    "et_dans_le_dump": "les lignes prodigi, lulu et generique du geometrie.fixture.json ne bougent pas d'un chiffre ; seul `covers` change dans tout le dump"
+  },
+  "ce_que_la_session_n_a_pas_touche": [
+    "l'intérieur : pdf::geometry, la scène, album.json, le schéma, aucune migration",
+    "les fiches des trois jeux : la composition n'a pas changé",
+    "le prévol : la règle qui refusera une couverture aux mauvaises cotes est de la session C",
+    "la zone sûre : ni leur gabarit intérieur ni celui de la couverture n'en dessine, safe_mm 5 et CAPTION_SAFE 7 restent notre hypothèse"
+  ]
+}

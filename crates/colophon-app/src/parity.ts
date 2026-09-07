@@ -16,7 +16,6 @@ import {
   CAPTION_SIZE_MM,
   coverSheet,
   cropWindow,
-  DosProfil,
   gardeLayout,
   PHOTO_CAPTION_SIZE_MM,
   Spread,
@@ -37,26 +36,6 @@ export const PARITY_FORMATS = [
   "paysage-a4",
   "240x180",
 ];
-
-/** The spine parameters of the profiles the dump sweeps, as the engine holds
- *  them. Here rather than fetched: the parity test runs without a window, and
- *  a profile whose coefficient changes has to break this file too. */
-const PARITY_DOS: Record<string, { dos: DosProfil; ext: number; haut: number; bas: number }> = {
-  cloudprinter: {
-    dos: { mode: "calcule", mm_par_feuille: 0.12, constante_mm: 6.0 },
-    ext: 3,
-    haut: 3,
-    bas: 3,
-  },
-  prodigi: { dos: { mode: "fourni" }, ext: 0, haut: 0, bas: 0 },
-  lulu: {
-    dos: { mode: "calcule", mm_par_feuille: 0.2, constante_mm: 0 },
-    ext: 3,
-    haut: 3,
-    bas: 3,
-  },
-  generique: { dos: { mode: "fourni" }, ext: 3, haut: 3, bas: 3 },
-};
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 
@@ -222,15 +201,26 @@ export function geometryProblems(dump: Dump, label: string): string[] {
   // The cover sheet: the editor draws it and the printer receives it, from
   // one set of profile coefficients. A drift here ships a spine of the wrong
   // width, which is a reprint and not a redraw.
+  //
+  // Both sides are fed the *same* profile, the engine's, carried in the dump.
+  // A second copy of the profiles used to live in this file; the day the
+  // spine coefficient moved it failed as a parity break, which is a lie —
+  // the port was right and the copy was stale.
   for (const c of dump.covers ?? []) {
-    const p = PARITY_DOS[c.profil];
+    const p = c.profil_cotes;
     if (!p) {
-      problems.push(`cover ${c.profil}: profil inconnu du port`);
+      problems.push(`cover ${c.profil}: le dump ne porte pas ses cotes`);
       continue;
     }
     const got = coverSheet(
       { trim_mm: dump.trim_mm, spreads: new Array(c.spreads).fill(null) },
-      { dos: p.dos, bleed_mm: { haut: p.haut, bas: p.bas, exterieur: p.ext } },
+      {
+        dos: p.dos,
+        bleed_mm: { haut: p.haut, bas: p.bas, exterieur: p.ext },
+        rempli_mm: p.rempli,
+        debord_mm: p.debord,
+        mors_mm: p.mors,
+      },
     );
     const tag = `${label} couverture ${c.profil} ${c.spreads}pl`;
     if (!near(got.w, c.sheet[0])) {

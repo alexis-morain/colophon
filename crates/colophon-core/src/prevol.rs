@@ -561,9 +561,19 @@ mod tests {
         let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
         assert!(r.ok, "défauts : {:?}", r.defauts);
         assert_eq!(r.bloquants, 0);
-        // The provisional spine is still announced, as a warning.
-        assert_eq!(r.avertissements, 1);
+        // The spine is no longer announced: Cloudprinter wrote its bulk down,
+        // so the coefficient is theirs and the warning has nothing to warn
+        // about. What is still unknown about that spine — it varies between
+        // their production sites, by their own answer — is not a property of
+        // our arithmetic and travels in the profile's reserves, which the
+        // sheet carries and which the test below reads.
+        assert_eq!(r.avertissements, 0, "{:?}", r.defauts);
         assert!(r.fiche.dos_mm.unwrap() > 0.0);
+        assert!(
+            r.reserves.iter().any(|s| s.contains("varient d'un imprimeur")),
+            "la variance entre sites a quitté le rapport : {:?}",
+            r.reserves
+        );
         // And what the declaration rests on is said, not implied.
         assert!(
             r.notes.iter().any(|n| n.contains("PDF/A-2b")),

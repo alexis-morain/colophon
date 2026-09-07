@@ -496,6 +496,11 @@ export type Printer = {
   pdf_x: "x4" | "aucun";
   espace: "rgb" | "fogra39";
   bleed_mm: { haut: number; bas: number; exterieur: number; dos: number };
+  /** Case-wrap cotes: turn-in, board overhang, hinge groove. Zero for every
+   *  supplier who does not wrap boards, and the sheet is then the flat one. */
+  rempli_mm: number;
+  debord_mm: number;
+  mors_mm: number;
   safe_mm: number;
   fichiers: "un" | "deux";
   /** The supplier reads one PDF page as one book page, which our

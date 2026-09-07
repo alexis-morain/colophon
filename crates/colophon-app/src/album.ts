@@ -486,7 +486,9 @@ export function spineMm(
 }
 
 /** The flat cover sheet, in millimetres. Port of `cover.rs::geometry`: back
- *  cover, spine, front, plus the profile's bleed on the outer edges. */
+ *  cover, spine, front, plus the profile's bleed on the outer edges — and,
+ *  for a supplier who wraps boards, the turn-in, the board overhang and the
+ *  hinge groove that push the panels inland. */
 export type CoverSheet = {
   w: number;
   h: number;
@@ -496,23 +498,40 @@ export type CoverSheet = {
   front: [number, number];
 };
 
+/** The three case-wrap cotes, as `printer.rs` serialises them. Absent on a
+ *  profile that predates them, and absent is zero: a supplier who binds a
+ *  soft cover has no boards to wrap, and the sheet is then exactly what this
+ *  function returned before they existed. */
 export function coverSheet(
   album: { trim_mm: { w: number; h: number }; spreads: unknown[] },
   profil: {
     dos: DosProfil;
     bleed_mm: { haut: number; bas: number; exterieur: number };
+    rempli_mm?: number;
+    debord_mm?: number;
+    mors_mm?: number;
   },
 ): CoverSheet {
   const pages = album.spreads.length * 2;
   const spine = spineMm(profil.dos, pages);
   const s = spine ?? 0;
   const ext = profil.bleed_mm.exterieur;
+  const rempli = profil.rempli_mm ?? 0;
+  const debord = profil.debord_mm ?? 0;
+  const mors = profil.mors_mm ?? 0;
+  // Between the edge of the card and the finished panel: the bleed, then the
+  // board's overhang, then the turn-in that folds behind it.
+  const marge = ext + rempli + debord;
   return {
-    w: album.trim_mm.w * 2 + s + ext * 2,
-    h: album.trim_mm.h + profil.bleed_mm.haut + profil.bleed_mm.bas,
-    back: [ext, album.trim_mm.w],
-    spine: spine === null ? null : [ext + album.trim_mm.w, spine],
-    front: [ext + album.trim_mm.w + s, album.trim_mm.w],
+    w: album.trim_mm.w * 2 + s + mors * 2 + marge * 2,
+    h:
+      album.trim_mm.h +
+      (profil.bleed_mm.haut + rempli + debord) +
+      (profil.bleed_mm.bas + rempli + debord),
+    back: [marge, album.trim_mm.w],
+    spine:
+      spine === null ? null : [marge + album.trim_mm.w + mors, spine],
+    front: [marge + album.trim_mm.w + mors + s + mors, album.trim_mm.w],
   };
 }
 

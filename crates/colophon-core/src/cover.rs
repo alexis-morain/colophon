@@ -93,22 +93,33 @@ impl CoverGeometry {
 ///
 /// The width is the whole point of this function, and the one number the
 /// definition of done asks to measure: twice the page, plus the spine the
-/// profile computes, plus the bleed on both outer edges.
+/// profile computes, plus the hinge groove on each side of it, plus what the
+/// board takes on the outside.
+///
+/// The sheet **grows around its contents, it never moves them**. A supplier
+/// who binds a soft cover carries the three case-wrap cotes at zero, and
+/// then every number below is the one this function has always returned:
+/// the boards are a case of the same arithmetic, not a branch beside it.
 pub fn geometry(album: &Album, profil: &PrinterProfile) -> CoverGeometry {
     let pages = album.spreads.len() * 2;
     let spine_w = profil.dos_mm(pages, GRAMMAGE_DEFAUT).unwrap_or(0.0);
     let b = &profil.bleed_mm;
     let (ext, haut, bas) = (b.exterieur, b.haut, b.bas);
+    let (rempli, debord, mors) = (profil.rempli_mm, profil.debord_mm, profil.mors_mm);
 
-    let media_w = album.trim_mm.w * 2.0 + spine_w + ext * 2.0;
-    let media_h = album.trim_mm.h + haut + bas;
-    let panel = |x: f64, w: f64| Rect { x, y: bas, w, h: album.trim_mm.h };
+    // What lies between the edge of the card and the finished panel: the
+    // bleed the knife takes, then the board's overhang, then the turn-in
+    // that folds behind it. The same three on all four sides.
+    let marge = ext + rempli + debord;
+    let media_w = album.trim_mm.w * 2.0 + spine_w + mors * 2.0 + marge * 2.0;
+    let media_h = album.trim_mm.h + (haut + rempli + debord) + (bas + rempli + debord);
+    let panel = |x: f64, w: f64| Rect { x, y: bas + rempli + debord, w, h: album.trim_mm.h };
 
-    let back = panel(ext, album.trim_mm.w);
+    let back = panel(marge, album.trim_mm.w);
     let spine = profil
         .dos_mm(pages, GRAMMAGE_DEFAUT)
-        .map(|w| panel(ext + album.trim_mm.w, w));
-    let front = panel(ext + album.trim_mm.w + spine_w, album.trim_mm.w);
+        .map(|w| panel(marge + album.trim_mm.w + mors, w));
+    let front = panel(marge + album.trim_mm.w + mors + spine_w + mors, album.trim_mm.w);
 
     CoverGeometry {
         media_w,
@@ -197,13 +208,28 @@ pub fn render_cover_pdf(
     Ok(out.to_path_buf())
 }
 
-/// Where the front-cover photo goes: the front panel, bled outward on three
-/// sides, cut off at the fold.
+/// Where the front-cover photo goes: everything to the right of the spine,
+/// out to the three edges of the card.
+///
+/// Two numbers, and each is a decision. The **width** is what is left of the
+/// sheet, not the panel plus a bleed: on a case-wrap cover the card runs on
+/// past the finished page by the board's overhang and the turn-in, and a
+/// photograph that stopped at the old width would leave the last centimetres
+/// of the front white. On a sheet without boards the two are the same number,
+/// which is what lets this stay one expression.
+///
+/// The **origin** is the right edge of the spine, so the image runs *through*
+/// the hinge groove instead of starting at it. A case is assembled to a
+/// millimetre or two, and a white line in the groove would be visible on
+/// every copy; a photograph folded into the groove is not. There is nothing
+/// to read there, so nothing is lost — the rule this obeys is that the mors
+/// carries no text, not that it carries no ink.
 pub fn photo_rect(g: &CoverGeometry) -> Rect {
+    let x = g.spine.as_ref().map_or(g.front.x, |s| s.x + s.w);
     Rect {
-        x: g.front.x,
+        x,
         y: 0.0,
-        w: g.front.w + g.bleed_ext,
+        w: g.media_w - x,
         h: g.media_h,
     }
 }
@@ -535,23 +561,70 @@ mod tests {
         a
     }
 
-    /// The sheet is twice the page, plus the spine, plus the bleed. Measured
+    /// The sheet is twice the page, plus the spine, plus the two hinge
+    /// grooves, plus what the board takes on each outer edge. Measured
     /// against the profile's own numbers rather than against a constant, so a
     /// profile change moves the cover with it.
     #[test]
-    fn the_sheet_is_two_pages_plus_the_spine_plus_the_bleed() {
+    fn the_sheet_is_two_pages_plus_the_spine_plus_the_case() {
         let a = album_de(48); // 96 pages
         let cp = PrinterProfile::par_id("cloudprinter").unwrap();
         let g = geometry(&a, cp);
         let spine = cp.dos_mm(96, GRAMMAGE_DEFAUT).unwrap();
+        let marge = cp.bleed_mm.exterieur + cp.rempli_mm + cp.debord_mm;
 
-        assert!((g.media_w - (210.0 * 2.0 + spine + 3.0 * 2.0)).abs() < 1e-9, "{}", g.media_w);
-        assert!((g.media_h - (210.0 + 3.0 + 3.0)).abs() < 1e-9, "{}", g.media_h);
-        // And the panels tile the trim exactly, left to right, no gap.
-        assert!((g.back.x - g.bleed_ext).abs() < 1e-9);
-        assert!((g.spine.as_ref().unwrap().x - (g.back.x + g.back.w)).abs() < 1e-9);
-        assert!((g.front.x - (g.spine.as_ref().unwrap().x + spine)).abs() < 1e-9);
-        assert!((g.front.x + g.front.w - (g.media_w - g.bleed_ext)).abs() < 1e-9);
+        assert!(
+            (g.media_w - (210.0 * 2.0 + spine + cp.mors_mm * 2.0 + marge * 2.0)).abs() < 1e-9,
+            "{}",
+            g.media_w
+        );
+        assert!((g.media_h - (210.0 + marge * 2.0)).abs() < 1e-9, "{}", g.media_h);
+        // The panels no longer touch the bleed: on a case-wrap cover they sit
+        // inland by the board and the turn-in, and a groove separates each of
+        // them from the spine.
+        assert!((g.back.x - marge).abs() < 1e-9, "{}", g.back.x);
+        assert!(
+            (g.spine.as_ref().unwrap().x - (g.back.x + g.back.w + cp.mors_mm)).abs() < 1e-9
+        );
+        assert!(
+            (g.front.x - (g.spine.as_ref().unwrap().x + spine + cp.mors_mm)).abs() < 1e-9
+        );
+        assert!((g.front.x + g.front.w - (g.media_w - marge)).abs() < 1e-9);
+        // And the numbers their own template is drawn with: 492 × 258 at a
+        // 14 mm spine is what `photobook_cw_s210_s_fc_cover.pdf` measures.
+        assert!((g.media_h - 258.0).abs() < 1e-9, "{}", g.media_h);
+        assert!(
+            (210.0 * 2.0 + 14.0 + cp.mors_mm * 2.0 + marge * 2.0 - 492.0).abs() < 1e-9
+        );
+    }
+
+    /// A supplier who does not wrap boards gets the sheet this project has
+    /// always produced — the panels back against the bleed, the spine
+    /// between them, nothing inland. The case-wrap arithmetic has to fold
+    /// back to exactly that when the three cotes are zero, or every soft
+    /// cover ever exported has quietly changed size.
+    #[test]
+    fn the_cotes_at_zero_give_back_the_flat_sheet() {
+        let a = album_de(48);
+        for id in ["prodigi", "lulu", "generique"] {
+            let p = PrinterProfile::par_id(id).unwrap();
+            let g = geometry(&a, p);
+            let spine = p.dos_mm(96, GRAMMAGE_DEFAUT).unwrap_or(0.0);
+            let ext = p.bleed_mm.exterieur;
+            assert!((g.media_w - (210.0 * 2.0 + spine + ext * 2.0)).abs() < 1e-9, "{id}");
+            assert!(
+                (g.media_h - (210.0 + p.bleed_mm.haut + p.bleed_mm.bas)).abs() < 1e-9,
+                "{id}"
+            );
+            assert!((g.back.x - ext).abs() < 1e-9, "{id}");
+            assert!((g.back.y - p.bleed_mm.bas).abs() < 1e-9, "{id}");
+            assert!((g.front.x + g.front.w - (g.media_w - ext)).abs() < 1e-9, "{id}");
+            // And the photograph covers what it has always covered.
+            let r = photo_rect(&g);
+            assert!((r.x - g.front.x).abs() < 1e-9, "{id}");
+            assert!((r.w - (g.front.w + ext)).abs() < 1e-9, "{id}");
+            assert!((r.h - g.media_h).abs() < 1e-9, "{id}");
+        }
     }
 
     /// A supplier that builds its own spine gets a sheet without one, and the
@@ -586,18 +659,24 @@ mod tests {
         assert!((fat.media_h - thin.media_h).abs() < 1e-9, "la hauteur ne bouge pas");
     }
 
-    /// The photo bleeds on three sides and stops at the fold. Anything else
-    /// puts half a face in the binding.
+    /// The photo reaches the four edges of the card and stops at the spine.
+    /// It crosses the hinge groove on the way, deliberately: a case is
+    /// assembled to a millimetre or two, and a white line down the groove
+    /// would show on every copy. What it must never do is reach the spine,
+    /// which would fold a face in half.
     #[test]
-    fn the_front_photo_stops_at_the_fold() {
+    fn the_front_photo_crosses_the_groove_and_stops_at_the_spine() {
         let a = album_de(48);
         let cp = PrinterProfile::par_id("cloudprinter").unwrap();
         let g = geometry(&a, cp);
+        let spine = g.spine.as_ref().unwrap();
         let r = photo_rect(&g);
-        assert!((r.x - g.front.x).abs() < 1e-9, "la photo déborde sur le dos");
+        assert!((r.x - (spine.x + spine.w)).abs() < 1e-9, "la photo mord sur le dos");
+        assert!(r.x < g.front.x, "elle doit entrer dans le mors, pas s'y arrêter");
+        assert!((g.front.x - r.x - cp.mors_mm).abs() < 1e-9, "d'exactement un mors");
         assert_eq!(r.y, 0.0);
         assert!((r.x + r.w - g.media_w).abs() < 1e-9, "elle atteint le bord extérieur");
-        assert!((r.h - g.media_h).abs() < 1e-9);
+        assert!((r.h - g.media_h).abs() < 1e-9, "et le haut comme le bas");
     }
 
     /// A thin spine carries no type: the rule is a measurement, not a taste.
@@ -623,7 +702,7 @@ mod tests {
     #[test]
     fn a_thin_spine_carries_no_title() {
         let cp = PrinterProfile::par_id("cloudprinter").unwrap();
-        // 24 pages: 12 sheets at 0.22 plus 1.5 mm, under the floor.
+        // 24 pages: 12 sheets at 0.135 plus the two boards, 7.62 mm, under the floor.
         let g = geometry(&album_de(12), cp);
         assert!(g.spine_mm() < SPINE_TEXT_MIN_MM, "{}", g.spine_mm());
         let mut content = String::new();
@@ -709,10 +788,18 @@ mod tests {
         let media = mm(b"MediaBox");
         assert!((media[2] - g.media_w).abs() < 0.01, "{media:?} contre {}", g.media_w);
         assert!((media[3] - g.media_h).abs() < 0.01, "{media:?} contre {}", g.media_h);
-        // Two pages, a spine and a bleed on each side: the number a supplier
-        // checks against their own template.
+        // Two pages, a spine, two grooves and the case on each outer edge:
+        // the number a supplier checks against their own template.
+        let marge = cp.bleed_mm.exterieur + cp.rempli_mm + cp.debord_mm;
         assert!(
-            (media[2] - (210.0 * 2.0 + cp.dos_mm(96, GRAMMAGE_DEFAUT).unwrap() + 6.0)).abs() < 0.01
+            (media[2]
+                - (210.0 * 2.0
+                    + cp.dos_mm(96, GRAMMAGE_DEFAUT).unwrap()
+                    + cp.mors_mm * 2.0
+                    + marge * 2.0))
+                .abs()
+                < 0.01,
+            "{media:?}"
         );
         let trim = mm(b"TrimBox");
         assert!((trim[0] - 3.0).abs() < 0.01, "{trim:?}");
@@ -815,5 +902,158 @@ mod tests {
         assert!(cp.iter().all(|w| (w - 426.0).abs() < 0.01), "{cp:?}");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Le banc de l'œil : la feuille du boîtier, ses panneaux et ses cotes
+    /// tracés par-dessus, à côté du gabarit de Cloudprinter rasterisé au même
+    /// nombre de pixels par millimètre.
+    ///
+    /// C'est le seul contrôle qui attrape une cote posée du mauvais côté.
+    /// Aucun test ne le fait : ils vérifient tous que la somme tombe juste, et
+    /// une somme tombe juste aussi quand le rempli est à gauche et le débord à
+    /// droite. Deux images superposables, elles, ne mentent pas.
+    ///
+    /// La seconde image est la vraie épreuve : nos lignes sont dessinées sur
+    /// **leur** gabarit. Le dos y est forcé aux 14 mm pour lesquels leur
+    /// fichier est dessiné — il annonce lui-même « 100 pages of 200 gsm
+    /// machine coated gloss », dont la main 0,80 n'est plus celle du papier
+    /// commandé — de sorte que tout le reste doit tomber au pixel : la marge
+    /// de 24, les panneaux de 210, les deux mors de 5.
+    ///
+    /// ```text
+    /// COLOPHON_ALBUM=.albums/corse-2013 \
+    /// COLOPHON_GABARIT="$HOME/Downloads/photobook_cw_s210_s_fc_product (1)/photobook_cw_s210_s_fc_cover.pdf" \
+    ///   cargo test -p colophon-core --release banc_la_feuille_du_boitier -- --ignored --nocapture
+    /// ```
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore]
+    fn banc_la_feuille_du_boitier() {
+        let dir = PathBuf::from(
+            std::env::var("COLOPHON_ALBUM").expect("COLOPHON_ALBUM = dossier d'un album composé"),
+        );
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let album: Album =
+            serde_json::from_str(&fs::read_to_string(dir.join("album.json")).unwrap()).unwrap();
+        let g = geometry(&album, cp);
+        let out = dir.join("banc-boitier");
+        fs::create_dir_all(&out).unwrap();
+
+        // 1. Notre feuille, telle que la presse la reçoit, annotée.
+        let pdf = out.join("feuille.pdf");
+        render_cover_pdf(&dir, cp, &pdf).expect("rendu de la couverture");
+        let mut feuille = rasterise(&pdf, &out.join("feuille-brute.png"));
+        let ppmm = f64::from(feuille.width()) / g.media_w;
+        guides(&mut feuille, &g, cp, ppmm, g.spine_mm());
+        feuille.save(out.join("feuille.png")).unwrap();
+
+        // 2. Leur gabarit, sous nos lignes. Le dos forcé au sien.
+        let gabarit = std::env::var("COLOPHON_GABARIT").ok().map(PathBuf::from);
+        if let Some(src) = gabarit.filter(|p| p.is_file()) {
+            let mut leur = rasterise(&src, &out.join("gabarit-brut.png"));
+            const DOS_DU_GABARIT: f64 = 14.0;
+            let large = album.trim_mm.w * 2.0
+                + DOS_DU_GABARIT
+                + cp.mors_mm * 2.0
+                + (cp.bleed_mm.exterieur + cp.rempli_mm + cp.debord_mm) * 2.0;
+            let ppmm = f64::from(leur.width()) / large;
+            let mut gg = g.clone();
+            gg.media_w = large;
+            gg.spine = gg.spine.map(|r| Rect { w: DOS_DU_GABARIT, ..r });
+            gg.front.x = gg.back.x + gg.back.w + cp.mors_mm + DOS_DU_GABARIT + cp.mors_mm;
+            guides(&mut leur, &gg, cp, ppmm, DOS_DU_GABARIT);
+            leur.save(out.join("gabarit.png")).unwrap();
+            println!("gabarit  : {}", out.join("gabarit.png").display());
+        } else {
+            println!("gabarit  : absent (COLOPHON_GABARIT), la superposition n'est pas faite");
+        }
+
+        println!("feuille  : {}", out.join("feuille.png").display());
+        println!(
+            "cotes    : feuille {:.2} × {:.2} mm, dos {:.2}, rempli {}, débord {}, mors {}",
+            g.media_w, g.media_h, g.spine_mm(), cp.rempli_mm, cp.debord_mm, cp.mors_mm
+        );
+        println!("légende  : rouge = coupe de la feuille (fond perdu)");
+        println!("           vert  = panneaux finis (dos, quatrième, première)");
+        println!("           bleu  = mors, la gorge où la couverture plie");
+        println!("           jaune = pli du rempli, ce qui se replie derrière le carton");
+    }
+
+    /// Un PDF en pixels, par `sips`, la même porte que `scripts/pdf-png.py`.
+    #[cfg(target_os = "macos")]
+    fn rasterise(pdf: &Path, png: &Path) -> image::RgbImage {
+        let ok = std::process::Command::new("sips")
+            .args(["-s", "format", "png"])
+            .arg(pdf)
+            .arg("--out")
+            .arg(png)
+            .output()
+            .expect("sips");
+        assert!(ok.status.success(), "sips a refusé {}", pdf.display());
+        image::open(png).expect("relecture du PNG").to_rgb8()
+    }
+
+    /// Les lignes de notre géométrie, posées sur une image déjà rasterisée.
+    #[cfg(target_os = "macos")]
+    fn guides(
+        im: &mut image::RgbImage,
+        g: &CoverGeometry,
+        profil: &PrinterProfile,
+        ppmm: f64,
+        dos: f64,
+    ) {
+        const ROUGE: [u8; 3] = [220, 40, 40];
+        const VERT: [u8; 3] = [40, 190, 80];
+        const BLEU: [u8; 3] = [60, 120, 240];
+        const JAUNE: [u8; 3] = [240, 200, 40];
+        let (w, h) = (im.width(), im.height());
+        fn v(im: &mut image::RgbImage, x_mm: f64, ppmm: f64, c: [u8; 3]) {
+            let x = (x_mm * ppmm).round() as i64;
+            if x < 0 || x >= i64::from(im.width()) {
+                return;
+            }
+            for y in 0..im.height() {
+                im.put_pixel(x as u32, y, image::Rgb(c));
+            }
+        }
+        // L'image est en coordonnées écran, la géométrie en coordonnées PDF.
+        fn hh(im: &mut image::RgbImage, y_mm: f64, media_h: f64, ppmm: f64, c: [u8; 3]) {
+            let y = ((media_h - y_mm) * ppmm).round() as i64;
+            if y < 0 || y >= i64::from(im.height()) {
+                return;
+            }
+            for x in 0..im.width() {
+                im.put_pixel(x, y as u32, image::Rgb(c));
+            }
+        }
+        let _ = (w, h);
+        // La coupe : ce que le massicot laisse de la feuille.
+        for x in [g.bleed_ext, g.media_w - g.bleed_ext] {
+            v(im, x, ppmm, ROUGE);
+        }
+        for y in [g.bleed_bas, g.media_h - g.bleed_haut] {
+            hh(im, y, g.media_h, ppmm, ROUGE);
+        }
+        // Le pli du rempli : le carton commence là.
+        let pli = g.bleed_ext + profil.rempli_mm;
+        for x in [pli, g.media_w - pli] {
+            v(im, x, ppmm, JAUNE);
+        }
+        for y in [g.bleed_bas + profil.rempli_mm, g.media_h - g.bleed_haut - profil.rempli_mm] {
+            hh(im, y, g.media_h, ppmm, JAUNE);
+        }
+        // Les panneaux finis, et les deux mors entre eux.
+        for x in [g.back.x, g.back.x + g.back.w, g.front.x, g.front.x + g.front.w] {
+            v(im, x, ppmm, VERT);
+        }
+        for y in [g.back.y, g.back.y + g.back.h] {
+            hh(im, y, g.media_h, ppmm, VERT);
+        }
+        if dos > 0.0 {
+            let dos_x = g.back.x + g.back.w + profil.mors_mm;
+            for x in [dos_x, dos_x + dos] {
+                v(im, x, ppmm, BLEU);
+            }
+        }
     }
 }

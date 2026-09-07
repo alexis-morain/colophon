@@ -66,6 +66,19 @@ export type Dump = {
   covers?: {
     profil: string;
     spreads: number;
+    /** The profile's own numbers, so the port is fed from the engine rather
+     *  than from a copy of the profiles kept in step by hand. */
+    profil_cotes: {
+      dos:
+        | { mode: "fourni" }
+        | { mode: "calcule"; mm_par_feuille: number; constante_mm: number };
+      ext: number;
+      haut: number;
+      bas: number;
+      rempli: number;
+      debord: number;
+      mors: number;
+    };
     sheet: [number, number];
     spine: number;
     /** `[x, width]` of the back panel then the front one. */

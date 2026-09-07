@@ -1211,7 +1211,15 @@ fn focal_du_schema_1(dir: &Path, album: &mut model::Album) -> (usize, usize) {
     // seuls les fonds perdus du profil font varier son ratio, de l'ordre du
     // pour cent. N'importe quel profil répond donc au pixel près, et ne pas
     // la migrer du tout serait l'erreur bien plus grosse.
-    if let Some(profil) = crate::printer::PrinterProfile::tous().first() {
+    //
+    // Le profil est **nommé**, et c'est le boîtier qui l'a exigé : la feuille
+    // d'un imprimeur qui habille du carton est plus grande que le livre sur
+    // les quatre bords, donc son rect de couverture n'a plus le ratio d'une
+    // couverture souple, et il bougerait de six pour cent au lieu d'un. La
+    // conversion doit rendre le même point qu'hier pour un vieil album ; elle
+    // se lit donc sur un imprimeur sans carton, et non sur le premier de la
+    // liste, qui se trouvait être celui qui en a.
+    if let Some(profil) = crate::printer::PrinterProfile::par_id("generique") {
         let cg = crate::cover::geometry(&album, profil);
         let rect = crate::cover::photo_rect(&cg);
         if let Some(slot) = album.cover.as_mut().and_then(|c| c.photo.as_mut()) {
@@ -1606,6 +1614,66 @@ mod tests {
                 "slot {i} : migré deux fois"
             );
         }
+    }
+
+    /// Le focal de la couverture se convertit sur une feuille **sans
+    /// carton**, et il le faut : ce site-là ne lit pas `slots_for` mais la
+    /// géométrie de couverture, dont le ratio dépend du profil qu'on lui
+    /// donne. Tant que ce profil était « le premier de la liste », le jour où
+    /// le premier de la liste a gagné un rempli, un débord et un mors, tout
+    /// album de schéma 1 se serait converti autrement qu'il ne se convertissait
+    /// la veille — une migration se fait une fois, donc silencieusement et
+    /// définitivement.
+    ///
+    /// La sonde mord : l'écart entre les deux profils est mesuré ici, et il
+    /// n'est pas dans le bruit. Si un jour `generique` habillait du carton,
+    /// cette assertion tomberait avant que le fichier de quiconque ne bouge.
+    #[test]
+    fn le_focal_de_la_couverture_se_migre_sur_une_feuille_sans_carton() {
+        let (_photos, out) = dossier_test("migration-couverture");
+        let thumbs = out.join(".cache").join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        image::RgbImage::from_fn(120, 80, |_, _| image::Rgb([120, 40, 200]))
+            .save(thumbs.join("ta.jpg"))
+            .unwrap();
+        fs::write(out.join("thumbs.json"), r#"{"a.jpg":"ta.jpg"}"#).unwrap();
+        let avant = [0.2_f64, 0.8_f64];
+        fs::write(
+            out.join("album.json"),
+            format!(
+                r#"{{"version":1,"title":"t","root":".","trim_mm":{{"w":210.0,"h":210.0}},
+                    "bleed_mm":3.0,"spreads":[],
+                    "cover":{{"title":"t","photo":{{"src":"a.jpg","focal":[{},{}]}}}}}}"#,
+                avant[0], avant[1],
+            ),
+        )
+        .unwrap();
+
+        let m = migrate_album_folder(&out).unwrap().expect("il y avait à migrer");
+        assert_eq!(m.slots, 1, "la couverture est le seul slot");
+        assert_eq!(m.irresolus, 0);
+
+        let lu: model::Album =
+            serde_json::from_str(&fs::read_to_string(out.join("album.json")).unwrap()).unwrap();
+        let focal = lu.cover.as_ref().unwrap().photo.as_ref().unwrap().focal;
+        let ratio = 120.0 / 80.0;
+
+        let pour = |id: &str| {
+            let p = crate::printer::PrinterProfile::par_id(id).unwrap();
+            let r = crate::cover::photo_rect(&crate::cover::geometry(&lu, p));
+            model::point_from_room(r.w / r.h, ratio, avant, 1.0)
+        };
+        let souple = pour("generique");
+        let boitier = pour("cloudprinter");
+        assert!(
+            (focal[0] - souple[0]).abs() < 1e-12 && (focal[1] - souple[1]).abs() < 1e-12,
+            "{focal:?} au lieu de {souple:?}"
+        );
+        let ecart = (souple[0] - boitier[0]).abs().max((souple[1] - boitier[1]).abs());
+        assert!(
+            ecart > 1e-3,
+            "les deux profils rendent le même point : la sonde ne mord plus ({souple:?} vs {boitier:?})"
+        );
     }
 
     /// Le piège de la vague 6.4, et la raison pour laquelle la migration est

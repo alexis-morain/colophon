@@ -53,9 +53,17 @@ export function CoverView({
   const sheet = coverSheet(album, {
     dos: printer?.dos ?? { mode: "fourni" },
     bleed_mm: printer?.bleed_mm ?? { haut: 0, bas: 0, exterieur: 0 },
+    rempli_mm: printer?.rempli_mm,
+    debord_mm: printer?.debord_mm,
+    mors_mm: printer?.mors_mm,
   });
   const spine = sheet.spine?.[1] ?? 0;
-  const provisoire = printer?.certitude === "provisoire";
+  // The note beside the spine is about the spine, so it reads the spine's own
+  // certainty and not the profile's. A supplier can have written their bulk
+  // down — which makes the width theirs — while the profile stays provisional
+  // on everything else it is still waiting for.
+  const provisoire =
+    printer?.dos.mode === "calcule" && printer.dos.certitude === "provisoire";
 
   useEffect(() => {
     setForm(album.cover ?? { title: album.title });

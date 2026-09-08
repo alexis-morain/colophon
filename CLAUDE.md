@@ -186,8 +186,37 @@ illisible se dit et ne panique jamais — c'est la leçon de l'analyseur SVG de 
 **Ce que ça ne ferme pas** : un fichier juste de géométrie et vieux de contenu passe.
 Pas de contrôle de fraîcheur, et surtout pas par `mtime` — un fichier plus vieux
 qu'`album.json` n'est pas forcément faux, une géométrie se défend, une date de fichier
-non. Le vrai remède serait une empreinte du contenu écrite dans l'album à l'export, et
-c'est une autre session.
+non. Le vrai remède est une empreinte du contenu écrite à l'export, et c'est le
+manifeste ci-dessous.
+
+**Un export dit de quel album il sort, et pour quel imprimeur (08/09).**
+`core::export` pose **`export.json`** à côté d'`album.json` — une entrée par fichier
+livré, avec son profil, l'empreinte de l'album au rendu, sa taille et sa date — et le
+prévol gagne deux bloquants, **`fichier_profil`** (rendu pour un autre imprimeur) et
+**`fichier_perime`** (l'album a changé depuis, ou le fichier a été remplacé). C'est
+l'angle mort de #33 qui se ferme : une légende ne déplace aucun `MediaBox`, donc aucune
+règle de géométrie ne pouvait voir ce fichier-là. **Un manifeste à côté de l'album,
+jamais une empreinte dans le PDF** : la mettre dans `/ID` ou dans le XMP changerait les
+octets de tous les PDF exportés, casserait le banc d'octets et forcerait une remesure
+PDF/A-2b, alors que le prévol ne regarde jamais que des fichiers du dossier — un
+manifeste posé là couvre toute sa portée pour une fraction du risque. **La preuve
+inversée tient : `banc_octets_d_un_album_sans_objet_libre` rend toujours 214 808 o.**
+
+Quatre choses à ne pas défaire. **L'empreinte neutralise `version` et `root`, et rien
+d'autre** — l'estampille de schéma change à une migration sans que le livre change, et
+`root` est l'endroit où vivent les photos, pas ce que montre le livre ; tout le reste
+entre, parce que tout le reste s'imprime. **Un fichier sans entrée au manifeste ne dit
+rien**, pas même un avertissement : sinon tout export antérieur deviendrait un bloquant,
+à commencer par les deux fichiers vérifiés de `.albums/papier`, qui restent sans
+manifeste et le resteront. **Pas de second algorithme de hachage** : `export::empreinte`
+est le FNV-1a doublé que `pdfx` écrivait pour le `/ID`, sorti de son module et partagé
+par les deux appelants — le workspace n'a aucun crate de hachage et n'en gagne pas un.
+Et **on ne hache pas les photographies** : 95 Mo à chaque prévol paierait très cher un
+cas rare, donc une photo réécrite hors de Colophon n'est pas vue, et un `root` repointé
+sur un autre dossier aux mêmes noms non plus. `octets` attrape le reste pour le prix d'un
+`stat`. **C'est la CLI qui note** (`main.rs`, après `--print` et après `--cover`) :
+`export_pdf` de l'app écrit à la destination que l'utilisateur choisit, jamais dans le
+dossier de l'album, donc l'app n'a pas de manifeste à poser et n'a pas bougé.
 
 **Et l'aperçu de la couverture a cessé d'écrire sous le nom de la livraison
 (08/09).** `render_cover_preview` posait `album-cover.pdf`, au profil de
@@ -786,7 +815,7 @@ de chaque jeu. `--reprise` : part des planches corrigées à la main contre
 fiche que l'imprimeur demande au téléphone. **Bloque ce que la coupe traverse ou que la
 reliure sépare** (`resolution`, `couverture_resolution`, `imposition`, `objet_coupe`,
 `objet_pli`, `fond_perdu`, `espace`, `pagination`, `fichier_interieur`,
-`fichier_couverture`) ; **avertit de ce qu'un fournisseur
+`fichier_couverture`, `fichier_profil`, `fichier_perime`) ; **avertit de ce qu'un fournisseur
 préfère** (`zone_sure`, `dos_nu`, un coefficient de dos provisoire). Un seuil réglé pour
 faire taire une règle est le défaut que cette frontière existe pour empêcher.
 
@@ -932,7 +961,8 @@ Workspace Cargo. **`colophon-core`** : `scan` → `meta` → `thumb` → `analyz
 `heic` → `pipeline` (curation) → `layout` (Composer, `Densite`) → `scene` → `pdf` →
 `print` → `cover` → `audit` ; `build.rs` enchaîne. À côté : `font`, `icc`, `places`,
 `ornement` (les quatre actifs), `pdfx`, `reprise`, `log`, `printer`, `prevol`,
-`imposition` (la découpe en pages simples), `colophon` (la page).
+`imposition` (la découpe en pages simples), `export` (le manifeste `export.json` et
+l'empreinte d'un album), `colophon` (la page).
 **`colophon-cli`** : clap. **`colophon-app`** : React et Vite (`bridge.ts` seule porte,
 `album.ts` géométries, `scene.ts` la scène et `hitTest`, `SceneCanvas.tsx` le peintre,
 `SceneProxies.tsx` le clavier, `rendu.ts` l'interrupteur, `feuille.ts` le modèle de la

@@ -9,6 +9,7 @@ pub mod bascule;
 pub mod build;
 pub mod colophon;
 pub mod cover;
+pub mod export;
 pub mod face;
 pub mod font;
 pub mod format;

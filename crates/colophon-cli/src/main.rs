@@ -366,13 +366,22 @@ fn main() -> Result<()> {
         let out = colophon_core::cover::render_cover_pdf(
             &cli.out,
             profil,
-            &cli.out.join("album-cover.pdf"),
+            &cli.out.join(colophon_core::export::LIVRAISON_COUVERTURE),
         )?;
         // The sheet's own dimensions, printed rather than left to be guessed:
         // this is the number that gets checked against the supplier's template.
         let album: Album = serde_json::from_str(&std::fs::read_to_string(
             cli.out.join("album.json"),
         )?)?;
+        // De quel album cette feuille sort, et pour quel imprimeur. Sans cette
+        // ligne, une couverture juste de géométrie et vieille de contenu part
+        // à la presse sans que rien ne le dise.
+        colophon_core::export::noter(
+            &cli.out,
+            &album,
+            colophon_core::export::LIVRAISON_COUVERTURE,
+            profil.id,
+        )?;
         let g = colophon_core::cover::geometry(&album, profil);
         eprintln!(
             "done in {:.1?}: {} ({:.1} × {:.1} mm, dos {:.1} mm, fond perdu {:.1} mm)",
@@ -394,9 +403,21 @@ fn main() -> Result<()> {
         let out = colophon_core::render_print_pdf(
             &cli.out,
             profil,
-            &cli.out.join("album-print.pdf"),
+            &cli.out.join(colophon_core::export::LIVRAISON_INTERIEUR),
             &|line| eprintln!("{line}"),
             &|| false,
+        )?;
+        // Le manifeste, comme pour la couverture : c'est lui qui rattrape un
+        // intérieur rendu avant la dernière retouche, qu'aucune géométrie ne
+        // peut voir.
+        let album: Album = serde_json::from_str(&std::fs::read_to_string(
+            cli.out.join("album.json"),
+        )?)?;
+        colophon_core::export::noter(
+            &cli.out,
+            &album,
+            colophon_core::export::LIVRAISON_INTERIEUR,
+            profil.id,
         )?;
         eprintln!("done in {:.1?}: {} ({})", t0.elapsed(), out.display(), profil.nom);
         return Ok(());

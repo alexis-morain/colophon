@@ -9,6 +9,7 @@
 //! to do about it. A preflight that answers `ERR_RES_LOW` sends the user to a
 //! forum instead of to the crop editor.
 
+use crate::export::{Artefact, Manifeste, LIVRAISON_COUVERTURE, LIVRAISON_INTERIEUR};
 use crate::model::Album;
 use crate::printer::{Certitude, Dos, Espace, Fichiers, PdfX, PrinterProfile, GRAMMAGE_DEFAUT};
 use crate::{cover, heic, imposition, meta, pdf, print, scene};
@@ -100,15 +101,30 @@ pub enum Lecture {
     Illisible(String),
 }
 
-/// Les deux PDF que l'export pose à côté de l'album.
+/// Un fichier trouvé à côté d'`album.json` : ce qu'il porte, et ce qu'il pèse.
+///
+/// Les octets sont là pour le manifeste, qui les a notés au rendu : ils
+/// attrapent un fichier remplacé depuis, pour le prix d'un `stat`, là où
+/// rehacher 95 Mo à chaque prévol ne se justifierait pas.
+#[derive(Debug)]
+pub struct Pose {
+    pub lecture: Lecture,
+    pub octets: u64,
+}
+
+/// Ce que l'export a posé à côté de l'album : les deux PDF, et le manifeste
+/// qui dit d'où ils sortent.
 ///
 /// `None` veut dire absent, et **absent n'est pas un défaut** : la plupart des
 /// albums n'ont jamais été exportés, et le prévol tourne dans l'app à tout
 /// moment. La règle ne parle que de ce qu'elle trouve.
 #[derive(Debug, Default)]
 pub struct FichiersPoses {
-    pub interieur: Option<Lecture>,
-    pub couverture: Option<Lecture>,
+    pub interieur: Option<Pose>,
+    pub couverture: Option<Pose>,
+    /// `export.json`, vide quand il n'y en a pas. Voir [`crate::export`] : une
+    /// entrée absente ne dit rien du tout, elle ne rend rien suspect.
+    pub manifeste: Manifeste,
 }
 
 impl FichiersPoses {
@@ -121,20 +137,24 @@ impl FichiersPoses {
     /// refuserait un album pour un fichier que personne n'envoie.
     pub fn lire(dir: &Path) -> Self {
         FichiersPoses {
-            interieur: lire_pdf(&dir.join("album-print.pdf")),
-            couverture: lire_pdf(&dir.join("album-cover.pdf")),
+            interieur: lire_pdf(&dir.join(LIVRAISON_INTERIEUR)),
+            couverture: lire_pdf(&dir.join(LIVRAISON_COUVERTURE)),
+            manifeste: Manifeste::lire(dir),
         }
     }
 }
 
 /// Le fichier s'il existe, sa raison s'il ne se lit pas, rien s'il est absent.
-fn lire_pdf(path: &Path) -> Option<Lecture> {
+fn lire_pdf(path: &Path) -> Option<Pose> {
     if !path.is_file() {
         return None;
     }
-    Some(match media_boxes_mm(path) {
-        Ok(pages) => Lecture::Pages(pages),
-        Err(pourquoi) => Lecture::Illisible(pourquoi),
+    Some(Pose {
+        lecture: match media_boxes_mm(path) {
+            Ok(pages) => Lecture::Pages(pages),
+            Err(pourquoi) => Lecture::Illisible(pourquoi),
+        },
+        octets: fs::metadata(path).map(|m| m.len()).unwrap_or(0),
     })
 }
 
@@ -648,10 +668,10 @@ pub fn check(
     // la presse et revient fausse, et aucune main ne la rattrape après coup.
     // C'est la doctrine de 6.4 telle quelle — ce que la presse imprime bute,
     // ce qu'un fournisseur préfère avertit.
-    if let Some(lecture) = &poses.interieur {
+    if let Some(pose) = &poses.interieur {
         let attendues = pages_attendues(album, profil, &g);
         if let Some((cause, remede)) =
-            confronter(lecture, &attendues, "album-print.pdf", "--print", profil)
+            confronter(&pose.lecture, &attendues, LIVRAISON_INTERIEUR, "--print", profil)
         {
             defauts.push(Defaut {
                 regle: "fichier_interieur",
@@ -670,10 +690,10 @@ pub fn check(
     // n'envoie : refuser dessus refuserait un fichier dont la livraison ne
     // veut pas.
     if profil.fichiers == Fichiers::Deux {
-        if let Some(lecture) = &poses.couverture {
+        if let Some(pose) = &poses.couverture {
             let attendues = vec![[cg.media_w, cg.media_h]];
             if let Some((cause, remede)) =
-                confronter(lecture, &attendues, "album-cover.pdf", "--cover", profil)
+                confronter(&pose.lecture, &attendues, LIVRAISON_COUVERTURE, "--cover", profil)
             {
                 defauts.push(Defaut {
                     regle: "fichier_couverture",
@@ -685,6 +705,54 @@ pub fn check(
                     remede,
                 });
             }
+        }
+    }
+
+    // 10. Le manifeste : de quel album ce fichier sort, et pour quel
+    // imprimeur.
+    //
+    // La règle 9 juge une géométrie, et une géométrie ne dit pas tout : un
+    // fichier au bon format, au bon compte de pages, rendu avant la dernière
+    // légende, passait vert et la presse imprimait le livre d'hier. Une date
+    // de fichier ne le rattraperait pas — un `mtime` ne se défend pas —, mais
+    // ce que le fichier **dit de sa provenance**, si.
+    //
+    // Sans entrée au manifeste, silence complet : voir [`crate::export`].
+    // C'est ce qui laisse passer tout export antérieur à ce module, à
+    // commencer par ceux qui sont déjà vérifiés et prêts à partir.
+    let empreinte = crate::export::empreinte_album(album);
+    let manifeste = [
+        (&poses.interieur, LIVRAISON_INTERIEUR, "--print", true),
+        (
+            &poses.couverture,
+            LIVRAISON_COUVERTURE,
+            "--cover",
+            profil.fichiers == Fichiers::Deux,
+        ),
+    ];
+    for (pose, fichier, commande, livre) in manifeste {
+        // La même frontière que la règle 9, et pour la même raison : chez qui
+        // relie un seul fichier, la couverture voyage dans l'intérieur et
+        // `album-cover.pdf` est un sous-produit que personne n'envoie.
+        if !livre {
+            continue;
+        }
+        // Rien de posé : rien à envoyer, donc rien à refuser, même si le
+        // manifeste garde le souvenir d'un rendu.
+        let Some(pose) = pose else { continue };
+        let Some(note) = poses.manifeste.artefact(fichier) else { continue };
+        if let Some((regle, cause, remede)) =
+            confronter_manifeste(pose, note, &empreinte, fichier, commande, profil)
+        {
+            defauts.push(Defaut {
+                regle,
+                bloquant: true,
+                planche: None,
+                case_idx: None,
+                src: None,
+                cause,
+                remede,
+            });
         }
     }
 
@@ -848,6 +916,67 @@ fn confronter(
     ))
 }
 
+/// Ce que le manifeste a à dire d'un fichier posé, ou rien s'il est celui
+/// qu'on croit.
+///
+/// Deux bloquants, et deux seulement. `fichier_profil` : ce PDF a été rendu
+/// pour un autre imprimeur. `fichier_perime` : il ne sort pas de l'album
+/// d'aujourd'hui — soit parce que l'album a changé depuis, soit parce que le
+/// fichier lui-même a été remplacé. Ni l'un ni l'autre n'est une préférence de
+/// fournisseur : c'est envoyer le mauvais livre, donc les deux butent.
+///
+/// Le profil d'abord : un fichier rendu ailleurs est faux de toute façon, et
+/// son empreinte d'album ne dirait rien de plus.
+fn confronter_manifeste(
+    pose: &Pose,
+    note: &Artefact,
+    empreinte: &str,
+    fichier: &str,
+    commande: &str,
+    profil: &PrinterProfile,
+) -> Option<(&'static str, String, String)> {
+    let repare = || {
+        format!(
+            "relancez {commande} --profil {} pour le refaire, ou retirez-le du dossier",
+            profil.id
+        )
+    };
+    if note.profil != profil.id {
+        return Some((
+            "fichier_profil",
+            format!(
+                "{fichier} a été rendu pour le profil {}, et c'est {} ({}) qui attend le \
+                 fichier : c'est le livre d'un autre imprimeur",
+                note.profil, profil.id, profil.nom
+            ),
+            repare(),
+        ));
+    }
+    if note.album != empreinte {
+        return Some((
+            "fichier_perime",
+            format!(
+                "{fichier} a été rendu sur une autre version de l'album : empreinte {} au \
+                 rendu, {empreinte} aujourd'hui",
+                note.album
+            ),
+            repare(),
+        ));
+    }
+    if note.octets != pose.octets {
+        return Some((
+            "fichier_perime",
+            format!(
+                "{fichier} pèse {} octets, le rendu en avait écrit {} : le fichier a été \
+                 remplacé depuis",
+                pose.octets, note.octets
+            ),
+            repare(),
+        ));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -868,6 +997,12 @@ mod tests {
             });
         }
         a
+    }
+
+    /// Un fichier posé dont on ne juge que la géométrie : le manifeste des
+    /// tests de #33 est vide, donc les octets ne sont confrontés à rien.
+    fn pose(pages: Vec<[f64; 2]>) -> Option<Pose> {
+        Some(Pose { lecture: Lecture::Pages(pages), octets: 0 })
     }
 
     /// La page que l'imposition n'imprime pas doit être vide, et c'est ici que
@@ -1483,8 +1618,9 @@ mod tests {
         assert!((bonne.media_h - 258.0).abs() < 0.01, "{}", bonne.media_h);
 
         let poses = FichiersPoses {
+            manifeste: Manifeste::default(),
             interieur: None,
-            couverture: Some(Lecture::Pages(vec![[mauvaise.media_w, mauvaise.media_h]])),
+            couverture: pose(vec![[mauvaise.media_w, mauvaise.media_h]]),
         };
         let r = check(&a, cp, &dims, &poses);
         let d: Vec<&Defaut> =
@@ -1501,8 +1637,9 @@ mod tests {
 
         // La bonne feuille au même endroit : plus rien à dire.
         let poses = FichiersPoses {
+            manifeste: Manifeste::default(),
             interieur: None,
-            couverture: Some(Lecture::Pages(vec![[bonne.media_w, bonne.media_h]])),
+            couverture: pose(vec![[bonne.media_w, bonne.media_h]]),
         };
         let r = check(&a, cp, &dims, &poses);
         assert!(r.ok, "défauts : {:?}", r.defauts);
@@ -1536,8 +1673,8 @@ mod tests {
         // Une planche double de 426 × 216 : le fichier que Lulu attend.
         let g = pdf::geometry(&a);
         let doubles = FichiersPoses {
-            interieur: Some(Lecture::Pages(vec![[g.media_w, g.media_h]; 48])),
-            couverture: None,
+            interieur: pose(vec![[g.media_w, g.media_h]; 48]),
+            ..Default::default()
         };
 
         // Chez Cloudprinter, qui relie page par page, il en faut 96.
@@ -1566,8 +1703,8 @@ mod tests {
         let p = imposition::page_simple(&a, imposition::Cote::Droite, pli);
         assert!((p.media_w - 216.0).abs() < 0.01, "{}", p.media_w);
         let simples = FichiersPoses {
-            interieur: Some(Lecture::Pages(vec![[p.media_w, p.media_h]; 96])),
-            couverture: None,
+            interieur: pose(vec![[p.media_w, p.media_h]; 96]),
+            ..Default::default()
         };
         let r = check(&a, cp, &dims, &simples);
         assert!(
@@ -1583,7 +1720,7 @@ mod tests {
             &a,
             cp,
             &dims,
-            &FichiersPoses { interieur: Some(Lecture::Pages(pages)), couverture: None },
+            &FichiersPoses { interieur: pose(pages), ..Default::default() },
         );
         let d = r.defauts.iter().find(|d| d.regle == "fichier_interieur").unwrap();
         assert!(d.bloquant);
@@ -1604,8 +1741,10 @@ mod tests {
         assert_eq!(pr.fichiers, Fichiers::Un);
 
         let poses = FichiersPoses {
+            manifeste: Manifeste::default(),
             interieur: None,
-            couverture: Some(Lecture::Pages(vec![[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])),
+            couverture: pose(vec![[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]),
+            ..Default::default()
         };
         let r = check(&a, pr, &dims, &poses);
         assert!(
@@ -1626,7 +1765,7 @@ mod tests {
             &a,
             pr,
             &dims,
-            &FichiersPoses { interieur: Some(Lecture::Pages(pages)), couverture: None },
+            &FichiersPoses { interieur: pose(pages), ..Default::default() },
         );
         assert_eq!(r.fiche.pages_fichier, 50);
         assert!(
@@ -1677,7 +1816,11 @@ mod tests {
         // La même feuille sous le nom de la livraison, et la règle mord.
         fs::rename(&apercu, dir.join("album-cover.pdf")).unwrap();
         let poses = FichiersPoses::lire(&dir);
-        assert!(matches!(poses.couverture, Some(Lecture::Pages(_))), "{:?}", poses.couverture);
+        assert!(
+            matches!(&poses.couverture, Some(Pose { lecture: Lecture::Pages(_), .. })),
+            "{:?}",
+            poses.couverture
+        );
         let r = check(&a, cp, &dims, &poses);
         let d = r.defauts.iter().find(|d| d.regle == "fichier_couverture").unwrap();
         assert!(d.bloquant);
@@ -1719,6 +1862,200 @@ mod tests {
         doc.save(path).unwrap();
     }
 
+    /// Un intérieur composé pour ce profil-ci, tel que l'export le pose : la
+    /// règle de géométrie n'a rien à en dire, et c'est exactement le fichier
+    /// sur lequel le manifeste est le seul témoin.
+    fn interieur_juste(album: &Album, profil: &'static PrinterProfile) -> Vec<[f64; 2]> {
+        pages_attendues(album, profil, &pdf::geometry(album))
+    }
+
+    fn note(fichier: &str, profil: &str, album: &str, octets: u64) -> Manifeste {
+        Manifeste {
+            artefacts: vec![Artefact {
+                fichier: fichier.into(),
+                profil: profil.into(),
+                album: album.into(),
+                octets,
+                date: "2026-09-08T12:00:00+02:00".into(),
+            }],
+        }
+    }
+
+    fn dims_de(n: usize) -> HashMap<String, (u32, u32)> {
+        (0..n).map(|i| (format!("{i}.jpg"), (5000u32, 5000u32))).collect()
+    }
+
+    /// Le fichier a la bonne géométrie et sort du mauvais imprimeur.
+    ///
+    /// C'est le cas que la géométrie ne peut pas voir : deux fournisseurs
+    /// peuvent demander la même page, et alors seul le manifeste sait pour
+    /// lequel des deux ce PDF a été rendu. Bloquant, parce que ce n'est pas
+    /// une préférence de fournisseur — c'est envoyer le mauvais livre.
+    #[test]
+    fn un_fichier_rendu_pour_un_autre_imprimeur_est_bloquant() {
+        let a = album_de(24, 3.0);
+        let dims = dims_de(24);
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let empreinte = crate::export::empreinte_album(&a);
+
+        let poses = FichiersPoses {
+            interieur: Some(Pose {
+                lecture: Lecture::Pages(interieur_juste(&a, cp)),
+                octets: 4242,
+            }),
+            couverture: None,
+            manifeste: note(LIVRAISON_INTERIEUR, "generique", &empreinte, 4242),
+        };
+        let r = check(&a, cp, &dims, &poses);
+        // La géométrie, elle, n'a rien à dire de ce fichier : c'est bien le
+        // manifeste, et lui seul, qui parle.
+        assert!(
+            !r.defauts.iter().any(|d| d.regle == "fichier_interieur"),
+            "{:?}",
+            r.defauts
+        );
+        let d: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "fichier_profil").collect();
+        assert_eq!(d.len(), 1, "défauts : {:?}", r.defauts);
+        assert!(d[0].bloquant);
+        assert!(!r.ok);
+        // Les deux noms, sinon personne ne sait lequel des deux refaire.
+        assert!(d[0].cause.contains("generique"), "{}", d[0].cause);
+        assert!(d[0].cause.contains("cloudprinter"), "{}", d[0].cause);
+        assert!(d[0].remede.contains("--print --profil cloudprinter"), "{}", d[0].remede);
+
+        // Le manifeste qui dit vrai : plus rien.
+        let poses = FichiersPoses {
+            interieur: Some(Pose {
+                lecture: Lecture::Pages(interieur_juste(&a, cp)),
+                octets: 4242,
+            }),
+            couverture: None,
+            manifeste: note(LIVRAISON_INTERIEUR, "cloudprinter", &empreinte, 4242),
+        };
+        let r = check(&a, cp, &dims, &poses);
+        assert!(r.ok, "{:?}", r.defauts);
+        assert_eq!(r.defauts.len(), 0, "{:?}", r.defauts);
+
+        // Et sans manifeste, le prévol de #33 ne bouge pas d'un défaut : un
+        // export d'avant ce module ne devient pas suspect en vieillissant.
+        let poses = FichiersPoses {
+            interieur: Some(Pose {
+                lecture: Lecture::Pages(interieur_juste(&a, cp)),
+                octets: 4242,
+            }),
+            ..Default::default()
+        };
+        let r = check(&a, cp, &dims, &poses);
+        assert!(r.ok, "{:?}", r.defauts);
+        assert_eq!(r.defauts.len(), 0, "{:?}", r.defauts);
+    }
+
+    /// L'angle mort que ce module ferme : un fichier **juste de géométrie et
+    /// vieux de contenu**. Même format, mêmes pages, la légende d'avant.
+    ///
+    /// Avant le manifeste, ce fichier-là passait vert et la presse imprimait
+    /// le livre d'hier. Aucune règle de géométrie ne pouvait le voir, parce
+    /// qu'une légende ne déplace pas un `MediaBox`.
+    #[test]
+    fn un_fichier_rendu_avant_une_retouche_est_perime() {
+        let a = album_de(24, 3.0);
+        let dims = dims_de(24);
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let empreinte = crate::export::empreinte_album(&a);
+        let pages = interieur_juste(&a, cp);
+
+        // La légende qu'on vient d'écrire, après le rendu.
+        let mut apres = a.clone();
+        apres.spreads[3].slots[0].caption = Some("Bonifacio, le matin".into());
+
+        let poses = FichiersPoses {
+            interieur: Some(Pose { lecture: Lecture::Pages(pages.clone()), octets: 4242 }),
+            couverture: None,
+            manifeste: note(LIVRAISON_INTERIEUR, "cloudprinter", &empreinte, 4242),
+        };
+        let r = check(&apres, cp, &dims, &poses);
+        assert!(
+            !r.defauts.iter().any(|d| d.regle == "fichier_interieur"),
+            "une légende ne déplace aucun MediaBox : {:?}",
+            r.defauts
+        );
+        let d: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "fichier_perime").collect();
+        assert_eq!(d.len(), 1, "défauts : {:?}", r.defauts);
+        assert!(d[0].bloquant);
+        assert!(!r.ok);
+        // Les deux empreintes, celle du rendu et celle d'aujourd'hui.
+        assert!(d[0].cause.contains(&empreinte), "{}", d[0].cause);
+        assert!(
+            d[0].cause.contains(&crate::export::empreinte_album(&apres)),
+            "{}",
+            d[0].cause
+        );
+        assert!(d[0].remede.contains("--print --profil cloudprinter"), "{}", d[0].remede);
+
+        // Le même album, non retouché : le manifeste dit vrai et se tait.
+        let r = check(&a, cp, &dims, &poses);
+        assert!(r.ok, "{:?}", r.defauts);
+
+        // Un fichier remplacé depuis le rendu : la taille suffit à le dire, et
+        // c'est tout ce que `octets` est là pour attraper.
+        let poses = FichiersPoses {
+            interieur: Some(Pose { lecture: Lecture::Pages(pages), octets: 4243 }),
+            couverture: None,
+            manifeste: note(LIVRAISON_INTERIEUR, "cloudprinter", &empreinte, 4242),
+        };
+        let r = check(&a, cp, &dims, &poses);
+        let d = r.defauts.iter().find(|d| d.regle == "fichier_perime").unwrap();
+        assert!(d.bloquant);
+        assert!(d.cause.contains("4243") && d.cause.contains("4242"), "{}", d.cause);
+
+        // Une entrée au manifeste sans le fichier qu'elle décrit ne dit rien :
+        // il n'y a rien à envoyer, donc rien à refuser.
+        let poses = FichiersPoses {
+            manifeste: note(LIVRAISON_INTERIEUR, "generique", "0", 1),
+            ..Default::default()
+        };
+        let r = check(&a, cp, &dims, &poses);
+        assert!(r.ok, "{:?}", r.defauts);
+        assert_eq!(r.defauts.len(), 0, "{:?}", r.defauts);
+    }
+
+    /// La couverture est jugée là où elle est livrée, et le manifeste suit la
+    /// même frontière que la géométrie : chez qui relie un seul fichier,
+    /// `album-cover.pdf` est un sous-produit que personne n'envoie.
+    #[test]
+    fn le_manifeste_de_la_couverture_suit_la_frontiere_de_la_livraison() {
+        let a = album_de(24, 3.0);
+        let dims = dims_de(24);
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let pr = PrinterProfile::par_id("prodigi").unwrap();
+        let cg = cover::geometry(&a, cp);
+        let empreinte = crate::export::empreinte_album(&a);
+
+        let poses = || FichiersPoses {
+            interieur: None,
+            couverture: Some(Pose {
+                lecture: Lecture::Pages(vec![[cg.media_w, cg.media_h]]),
+                octets: 7,
+            }),
+            manifeste: note(LIVRAISON_COUVERTURE, "generique", &empreinte, 7),
+        };
+
+        let r = check(&a, cp, &dims, &poses());
+        let d = r.defauts.iter().find(|d| d.regle == "fichier_profil").unwrap();
+        assert!(d.bloquant);
+        assert!(d.cause.contains(LIVRAISON_COUVERTURE), "{}", d.cause);
+        assert!(d.remede.contains("--cover --profil cloudprinter"), "{}", d.remede);
+
+        // Chez Prodigi, la couverture voyage dans l'intérieur : ni la
+        // géométrie ni le manifeste ne la jugent.
+        let r = check(&a, pr, &dims, &poses());
+        assert!(
+            !r.defauts.iter().any(|d| d.regle == "fichier_profil"),
+            "{:?}",
+            r.defauts
+        );
+    }
+
     /// Un fichier tronqué se dit, et ne panique jamais. C'est la leçon de
     /// l'analyseur SVG de 6.3 s1 : la personne à qui le module doit un message
     /// clair est celle qui s'apprête à commander.
@@ -1736,7 +2073,7 @@ mod tests {
         fs::write(dir.join("album-print.pdf"), b"%PDF-1.6\n%\xe2\xe3\xcf\xd3\n1 0 obj").unwrap();
         let poses = FichiersPoses::lire(&dir);
         assert!(
-            matches!(poses.interieur, Some(Lecture::Illisible(_))),
+            matches!(&poses.interieur, Some(Pose { lecture: Lecture::Illisible(_), .. })),
             "{:?}",
             poses.interieur
         );

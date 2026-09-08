@@ -226,6 +226,12 @@ function albumDevServer(dir: string): Plugin {
       // The faithful preview reads the album's own PDF. Same closed set of
       // two names as the Tauri command: the harness must not become a file
       // reader either.
+      //
+      // Table jumelle de `nom_apercu` dans `src-tauri/src/lib.rs` : les deux
+      // traduisent les deux mêmes mots, et les deux se relisent ensemble. Ce
+      // qu'elles rendent est un **aperçu** — la livraison s'appelle
+      // `album-print.pdf` et `album-cover.pdf`, et c'est elle seule que le
+      // prévol juge.
 
       server.middlewares.use("/__dev/pdf", (req, res) => {
         try {
@@ -234,7 +240,7 @@ function albumDevServer(dir: string): Plugin {
             quoi === "album"
               ? "album.pdf"
               : quoi === "couverture"
-                ? "album-cover.pdf"
+                ? "album-cover.apercu.pdf"
                 : null;
           if (!nom) {
             res.statusCode = 404;

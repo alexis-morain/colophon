@@ -999,19 +999,48 @@ fn about_data(app: tauri::AppHandle) -> AboutData {
     }
 }
 
+/// Le nom de l'aperçu de l'intérieur, posé à côté d'`album.json`. Sa
+/// livraison s'appelle `album-print.pdf` : l'intérieur sépare les deux depuis
+/// toujours.
+const APERCU_INTERIEUR: &str = "album.pdf";
+
+/// Le nom de l'aperçu de la couverture. La couverture était le seul endroit du
+/// projet où l'aperçu écrivait sous le nom de la livraison, et ça se payait
+/// deux fois : le prévol refusait une feuille que personne n'avait demandé à
+/// exporter, et une couverture d'aperçu pouvait partir à la presse sous le nom
+/// de la commande. `album-cover.apercu.pdf` est le style de la maison pour un
+/// fichier qualifié, comme `album.origin.json` ou `album.json.bak`.
+const APERCU_COUVERTURE: &str = "album-cover.apercu.pdf";
+
+/// Le nom de la livraison de la couverture, celui que `--cover` écrit et que
+/// le prévol juge (`prevol::FichiersPoses::lire`). Il n'est nommé ici que pour
+/// une raison : interdire à l'aperçu de le reprendre, et le test le tient.
+const LIVRAISON_COUVERTURE: &str = "album-cover.pdf";
+
+/// La traduction des deux mots de l'aperçu fidèle en noms de fichiers.
+///
+/// **Sa jumelle est dans `crates/colophon-app/vite.config.ts`**, middleware
+/// `/__dev/pdf`, qui refait la même traduction pour le serveur de dev. Les
+/// deux se lisent ensemble : une seule qui bougerait ferait mentir l'aperçu du
+/// harnais sans qu'aucun test le voie.
+///
+/// `quoi` est un jeu fermé de deux mots, jamais un chemin : ni cette commande
+/// ni son harnais ne doivent pouvoir devenir un lecteur de fichiers pointé sur
+/// n'importe quoi du disque.
+fn nom_apercu(quoi: &str) -> Option<&'static str> {
+    match quoi {
+        "album" => Some(APERCU_INTERIEUR),
+        "couverture" => Some(APERCU_COUVERTURE),
+        _ => None,
+    }
+}
+
 /// Raw bytes of one of the album's own PDFs, for the faithful preview. The
 /// editor draws in the DOM and the press reads a PDF; those two can never be
 /// identical by construction, so the preview reads the PDF itself.
-///
-/// `quoi` is a closed set of two words, never a path: this command must not
-/// be able to become a file reader pointed at anything on the disk.
 #[tauri::command]
 fn album_pdf_bytes(quoi: String, state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
-    let nom = match quoi.as_str() {
-        "album" => "album.pdf",
-        "couverture" => "album-cover.pdf",
-        autre => return Err(format!("aperçu inconnu : {autre}")),
-    };
+    let nom = nom_apercu(&quoi).ok_or_else(|| format!("aperçu inconnu : {quoi}"))?;
     let dir = {
         let guard = state.open.lock().unwrap();
         guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
@@ -1024,6 +1053,10 @@ fn album_pdf_bytes(quoi: String, state: State<'_, AppState>) -> Result<tauri::ip
 /// Render the flat cover sheet into the album folder, for the faithful
 /// preview of the cover. Same renderer the export uses, same profile: what
 /// the screen shows is the sheet the supplier would receive.
+///
+/// Il écrit **l'aperçu** ([`APERCU_COUVERTURE`]), jamais la livraison : un
+/// aperçu change de profil au gré de qui regarde, et le prévol ne juge que ce
+/// qu'on envoie.
 #[tauri::command]
 async fn render_cover_preview(
     profil: String,
@@ -1035,7 +1068,7 @@ async fn render_cover_preview(
     };
     let profil = printer_profile(&profil)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let out = dir.join("album-cover.pdf");
+        let out = dir.join(APERCU_COUVERTURE);
         colophon_core::cover::render_cover_pdf(&dir, profil, &out)
     })
     .await
@@ -1542,6 +1575,39 @@ mod tests {
         let pdf = colophon_core::render_album_pdf(&dir).expect("rendu PDF");
         let bytes = std::fs::read(&pdf).unwrap();
         assert_eq!(&bytes[..5], b"%PDF-", "album.pdf n'est pas un PDF");
+    }
+
+    /// L'aperçu de la couverture n'écrit jamais sous le nom de la livraison.
+    ///
+    /// C'était le seul endroit du projet où les deux se confondaient :
+    /// l'intérieur sépare déjà `album.pdf` de `album-print.pdf`. Prévisualiser
+    /// la couverture sous un profil, en changer, puis préflighter sans
+    /// re-prévisualiser affichait un bloquant sur un fichier que personne
+    /// n'avait demandé à exporter — et le matin du 08/09 c'est une couverture
+    /// `generique` qui est partie pour la commande sous ce nom-là.
+    ///
+    /// La table jumelle est celle de `vite.config.ts`, middleware
+    /// `/__dev/pdf` : les deux mots y sont traduits une seconde fois pour le
+    /// serveur de dev, et les deux se relisent ensemble.
+    #[test]
+    fn l_apercu_de_la_couverture_ne_porte_pas_le_nom_de_la_livraison() {
+        assert_eq!(LIVRAISON_COUVERTURE, "album-cover.pdf");
+        assert_ne!(APERCU_COUVERTURE, LIVRAISON_COUVERTURE);
+        assert_eq!(APERCU_COUVERTURE, "album-cover.apercu.pdf");
+
+        // Le lecteur rend l'aperçu, jamais la livraison.
+        assert_eq!(nom_apercu("album"), Some(APERCU_INTERIEUR));
+        assert_eq!(nom_apercu("couverture"), Some(APERCU_COUVERTURE));
+        assert_eq!(nom_apercu("album-print.pdf"), None);
+        assert_eq!(nom_apercu(LIVRAISON_COUVERTURE), None);
+        assert_eq!(nom_apercu(""), None);
+
+        // Un jeu fermé de deux mots, jamais un chemin : les deux lecteurs
+        // gardent `dir.join(<constante>)` sans séparateur.
+        for nom in [APERCU_INTERIEUR, APERCU_COUVERTURE] {
+            assert!(!nom.contains('/') && !nom.contains('\\'), "{nom}");
+            assert!(!nom.contains(".."), "{nom}");
+        }
     }
 
     /// The report channel opens exactly one page: the repo's issue form.

@@ -189,6 +189,24 @@ qu'`album.json` n'est pas forcément faux, une géométrie se défend, une date 
 non. Le vrai remède serait une empreinte du contenu écrite dans l'album à l'export, et
 c'est une autre session.
 
+**Et l'aperçu de la couverture a cessé d'écrire sous le nom de la livraison
+(08/09).** `render_cover_preview` posait `album-cover.pdf`, au profil de
+l'aperçu : prévisualiser sous un profil, en changer, puis préflighter affichait
+un bloquant sur un fichier que personne n'avait demandé à exporter — et c'est la
+même collision de noms qui a fait partir une couverture `generique` pour la
+commande. L'aperçu s'appelle désormais **`album-cover.apercu.pdf`**, à côté
+d'`album.pdf` ; la livraison ne bouge pas (`--cover`, `pdfx.sh`, le mail à
+l'imprimeur la nomment), et le prévol ne juge qu'elle. L'intérieur séparait déjà
+les deux, la couverture était le seul endroit qui les confondait. **Deux tables
+de noms, et elles se nomment l'une l'autre** : `lib.rs::nom_apercu` et le
+middleware `/__dev/pdf` de `vite.config.ts` traduisent les deux mêmes mots pour
+les deux lecteurs, le TypeScript ne connaissant jamais un nom de fichier
+(`raster.ts::Quoi` vaut `"album" | "couverture"`). Un test tient les constantes
+côté Rust, un autre prouve qu'un `album-cover.apercu.pdf` d'une géométrie
+absurde ne lève rien. **Aucune suppression automatique** : un vieux
+`album-cover.pdf` laissé par un aperçu d'avant reste jugé comme une livraison,
+rien dans ses octets ne l'en distingue et le remède dit déjà de le retirer.
+
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
 et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une bascule future resterait
 un commit qui ne fait que ça. VoiceOver et le rang via le menu natif : entendus et

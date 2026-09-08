@@ -132,6 +132,12 @@ l'écran, aucun seuil existant touché, et les trois jeux de référence rendent
 verdicts qu'avant, compteur par compteur.
 
 
+**L'intérieur sort page par page chez qui relie page par page (08/09).** La session B du
+plan Cloudprinter : `core::imposition` découpe une planche composée en deux pages, à la
+sortie et nulle part ailleurs (voir « L'imposition »). Cloudprinter passe en
+`pages_simples`, Prodigi redevient livrable, et le prévol perd `planches_doubles` et gagne
+`imposition`.
+
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
 et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une bascule future resterait
 un commit qui ne fait que ça. VoiceOver et le rang via le menu natif : entendus et
@@ -660,6 +666,46 @@ l'aperçu fidèle ; `--print` = 300 dpi, rien ne court-circuite `print_scale` ; 
 la feuille à plat, une par profil. **Ce qui doit survivre au massicot se mesure depuis la
 coupe**, et il n'y a plus qu'une implémentation, `scene::distance_to_trim`.
 
+### L'imposition, quand l'imprimeur relie page par page
+
+**Le cadre change à l'export, jamais à la composition.** `core::imposition` prend une
+scène déjà bâtie et la coupe en deux ; `pdf::geometry` ne bouge pas, `album.json` ne bouge
+pas, l'éditeur ne bouge pas, **aucune fiche ne bouge**, et les deux fixtures se régénèrent
+à l'octet. C'est cette immobilité qui sert de preuve, et elle est mesurée : le même
+`--print` sous un profil qui relie des planches rend le fichier de `main` **à l'octet**,
+95 Mo de photographies comprises (`docs/mesures/2026-09-08-les-pages-simples.json`).
+
+Deux choses arrivent à un objet en chemin, et rien d'autre. **Une photo dont la case
+atteint le pli** en donne `pli_mm` de plus vers le pli, comme elle en donne déjà sur les
+trois autres bords — c'est tout le fond perdu intérieur. **Tout le reste est translaté**
+dans le repère de sa page. Ni un texte ni un objet posé à la main ne saigne : le pli est
+de la colle, et l'éditeur y bute exprès.
+
+Le fond perdu du pli est le seul endroit où un rectangle change, donc **le prévol mesure la
+résolution sur `rect_exporte`** et non sur la case composée : `s = max(w/iw, h/ih)`, donc
+élargir la case ne coûte un pixel qu'aux photos dont le recadrage est piloté par la
+largeur. Mesuré sur corse-2013 : 4 cases sur 17 perdent du ppi, 5 ppi au pire, aucune ne
+franchit le plancher de 250.
+
+**L'imposition est dans `faces`, et `ordre` en est le seul autre lecteur** : p1 = planche 1
+recto, p2k = planche k+1 gauche, p2k+1 = sa droite, p2n = blanche. La moitié gauche de la
+première planche ne s'imprime pas — c'est la page qui fait face à l'intérieur du plat — et
+c'est ce qui met le faux-titre en page un et le colophon en page 95, deux rectos. En
+échange, cette moitié doit être vide : le prévol la refuse (`imposition`) au lieu de la
+tronquer en silence.
+
+**`Bleed::dos` a enfin un sens** : une planche n'a pas de bord au pli, une page simple en a
+un, et il ne se lit que par `imposition::pli_mm`.
+
+La sonde est `scripts/pages-simples.py` (pypdfium2, venv de session, hors gate) : elle rend
+les deux formes du même album, compare chaque page à la moitié de planche dont elle sort,
+et **se vérifie mordante** avec `--mutant`, qui décale l'imposition d'une page. Deux pièges
+du raster y sont écrits, tous deux mesurés le 08/09 : pdfium étire la page sur un bitmap
+arrondi vers le haut, et deux microns d'écart de coordonnée suffisent à faire glisser un
+raster d'une colonne. **`ornement-encre.py` et `apercu-fidele.py` nomment désormais
+`--profil lulu`** : ils ont besoin d'un intérieur de planches doubles sans couverture
+dedans, et le défaut de la ligne de commande découpe.
+
 `--audit` : douze compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions
 de chaque jeu. `--reprise` : part des planches corrigées à la main contre
 `album.origin.json` ; sous 10 % bon, jusqu'à 30 % à surveiller, au-delà rédhibitoire.
@@ -761,7 +807,8 @@ succès parfait sur zéro travail.
 
 Tauri 2 et React. GPL-3.0. `album.json` état unique réparable à la main. Le PDF fait foi.
 Aucune image ne traverse le pli, **ni aucun objet libre** : le pli est dur, l'éditeur y
-bute et le prévol refuse ; la marge de sécurité est molle, on avertit et le linter compte.
+bute et le prévol refuse — et c'est ce qui rend la découpe en pages simples possible ; la
+marge de sécurité est molle, on avertit et le linter compte.
 Un `album.json` d'un schéma inconnu se refuse, jamais ne s'ouvre en perdant des champs.
 Heuristiques d'abord, IA jamais
 décisionnaire. Jamais de résolution sous 250 ppi. Jamais `imazen/heic` (AGPL). Un objet
@@ -781,7 +828,7 @@ Autres drapeaux : `--print`, `--cover`, `--prevol --profil <id>`, `--densite`,
 `--variantes`, `--reprise`, `--bascule <FORMAT> [--essai]`, `--dump-scene`,
 `--dump-geometry`, `--dump-ornements`, `--profils`. Scripts :
 `pdfx.sh full`, `install-app.sh`, `fixture-scene.sh`, `ornement-encre.py`, `notices.sh`,
-`apercu-fidele.py`,
+`apercu-fidele.py`, `pages-simples.py`,
 `banc-gabarits.sh`, `mesure-cdp.mjs`, `feuille-cdp.mjs`, `police-cdp.mjs`. App :
 `npm run tauri dev`.
 
@@ -806,7 +853,7 @@ Workspace Cargo. **`colophon-core`** : `scan` → `meta` → `thumb` → `analyz
 `heic` → `pipeline` (curation) → `layout` (Composer, `Densite`) → `scene` → `pdf` →
 `print` → `cover` → `audit` ; `build.rs` enchaîne. À côté : `font`, `icc`, `places`,
 `ornement` (les quatre actifs), `pdfx`, `reprise`, `log`, `printer`, `prevol`,
-`colophon` (la page).
+`imposition` (la découpe en pages simples), `colophon` (la page).
 **`colophon-cli`** : clap. **`colophon-app`** : React et Vite (`bridge.ts` seule porte,
 `album.ts` géométries, `scene.ts` la scène et `hitTest`, `SceneCanvas.tsx` le peintre,
 `SceneProxies.tsx` le clavier, `rendu.ts` l'interrupteur, `feuille.ts` le modèle de la

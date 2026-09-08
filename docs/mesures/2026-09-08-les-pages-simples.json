@@ -1,0 +1,102 @@
+{
+  "date": "2026-09-08",
+  "session": "Cloudprinter B — l'intérieur en pages simples",
+  "album": "corse-2013, carre-21, 50 planches, 100 pages",
+  "resume": "L'export découpe une planche composée en deux pages chez qui relie page par page. Le fichier passe de 50 planches de 426 × 216 à 100 pages de 216 × 216, la moitié gauche de la première planche ne s'imprime pas, une blanche ferme le bloc, et le même export sous un profil qui relie des planches est identique à l'octet à celui de main.",
+
+  "geometrie": {
+    "planches_doubles": { "profil": "lulu", "pages": 50, "page_mm": [426.0, 216.0], "octets": 95553955 },
+    "pages_simples": { "profil": "cloudprinter", "pages": 100, "page_mm": [216.0, 216.0], "octets": 95653883 },
+    "mesure": "pdfinfo, 1207,56 × 612,283 pt et 612,283 × 612,283 pt",
+    "gabarit_du_fournisseur": "photobook_cw_s210_s : page intérieure de 216 × 216 avec 3 mm de fond perdu sur les quatre bords"
+  },
+
+  "immobilite": {
+    "fiches": "aucune ne bouge ; check.sh rend l'identité photos/fiches sur les trois jeux",
+    "fixture_geometrie": "identique après --dump-geometry",
+    "fixture_scene": "identique après scripts/fixture-scene.sh",
+    "banc_octets_album_sans_objet_libre": {
+      "main": "1bd5131b8a613c5045866bafe69430b71c76b44dc30213b6d6b279c830cd5036",
+      "branche": "1bd5131b8a613c5045866bafe69430b71c76b44dc30213b6d6b279c830cd5036",
+      "octets": 214808
+    },
+    "tirage_en_planches_corse_2013": {
+      "commande": "SOURCE_DATE_EPOCH=1757318400 colophon --print --profil lulu",
+      "main": "061f8a5043dcbe57e9ef206613abdfd24efd5a7d4de3e4e50c74f49cbc975935",
+      "branche": "061f8a5043dcbe57e9ef206613abdfd24efd5a7d4de3e4e50c74f49cbc975935",
+      "octets": 95553955,
+      "verdict": "identique à l'octet, 95,5 Mo de photographies réelles comprises"
+    }
+  },
+
+  "sonde_raster": {
+    "script": "scripts/pages-simples.py, pypdfium2 à 8 px/mm",
+    "imposition": {
+      "pages_comparees": 99,
+      "pire_moyenne_255": 0.64,
+      "pire_millimetre_255": 22,
+      "pire_page": "planche 34 droite",
+      "pages_recalees_d_un_pixel": 49,
+      "cases_au_pli_masquees": 17
+    },
+    "mutant": {
+      "quoi": "l'imposition décalée d'une page",
+      "pire_moyenne_255": 166.46,
+      "pire_millimetre_255": 250,
+      "verdict": "refusé — la sonde mord, 260 fois l'écart du vrai"
+    },
+    "fond_perdu_du_pli": {
+      "bandes": 17,
+      "pire_ecart_a_la_photo_255": 17,
+      "seuil": 40,
+      "verdict": "la bande neuve prolonge la photo, aucune n'est restée blanche"
+    },
+    "pages_fabriquees": {
+      "moitie_gauche_de_la_planche_1": "blanche",
+      "page_100": "blanche"
+    },
+    "deux_pieges_du_raster": [
+      "pdfium arrondit la taille du bitmap vers le haut puis y étire la page : une planche demandée à 3408 px sort à 3409 et se dessine 0,03 % trop large, un demi-pixel de dérive au bout de la moitié gauche. L'échelle se déduit donc de la taille voulue.",
+      "les coordonnées d'un PDF Colophon sont écrites en points à deux décimales : la même arête vaut 613,70 dans la planche et 18,43 dans la page, soit le même millimètre à 0,002 mm près. Deux microns suffisent à faire basculer la phase du rééchantillonnage et à glisser un raster d'une colonne : on recale d'un pixel au plus, puis on moyenne au millimètre carré."
+    ]
+  },
+
+  "le_piege_du_plan": {
+    "question": "le fond perdu du pli fait-il tomber une photo sous 250 ppi",
+    "cases_qui_atteignent_le_pli": 17,
+    "cases_dont_le_ppi_baisse": 4,
+    "pourquoi": "le recadrage n'est piloté par la largeur que pour quatre d'entre elles ; pour les treize autres le cover-crop avait déjà le mou horizontal, et les trois millimètres neufs sortent de ce mou sans coûter un pixel",
+    "baisse_maximale_ppi": 5.0,
+    "exemple": "planche 12 : 291,9 ppi sur la planche, 287,9 sur la page",
+    "plus_bas_ppi_apres_le_pli": 287.9,
+    "sous_250_avant": 0,
+    "sous_250_apres": 0,
+    "verdict": "aucune photo ne franchit le plancher. Le prévol lit désormais le rectangle d'export, donc le jour où une photo le franchira, il le dira."
+  },
+
+  "conformite": {
+    "verapdf_2b": {
+      "planches.pdf": "PASS",
+      "simples.pdf": "PASS"
+    },
+    "note": "la page blanche de queue, flux de contenu vide, ne gêne pas la conformité"
+  },
+
+  "prevol_corse_2013": {
+    "cloudprinter": { "ok": false, "bloquants": 2, "regles": { "resolution": 2 }, "pages_fichier": 100, "dos_mm": 12.75 },
+    "prodigi": { "ok": false, "bloquants": 10, "regles": { "zone_sure": 8, "resolution": 2 }, "pages_fichier": 102 },
+    "lulu": { "ok": false, "bloquants": 11, "avertissements": 1, "regles": { "zone_sure": 8, "resolution": 2, "espace": 1, "dos": "avertissement" }, "pages_fichier": 100 },
+    "generique": { "ok": false, "bloquants": 2, "regles": { "resolution": 2 }, "pages_fichier": 102 },
+    "lecture": [
+      "la règle planches_doubles a disparu partout : c'est ce que la session livre.",
+      "les deux bloquants de résolution sont les mêmes photos chez cloudprinter et chez generique, à 130 ppi : ils préexistent et n'ont rien à voir avec le pli.",
+      "Prodigi est désormais bloqué par sa zone sûre de 10 mm, pas par la forme du fichier : nos légendes passent à moins. C'est un fait pour la session C, et une question de composition, pas d'export.",
+      "corse-2013 n'est donc pas commandable en l'état, pour deux photos sous 250 ppi. C'est l'album de test qui est en cause, pas la chaîne."
+    ]
+  },
+
+  "a_arbitrer": [
+    "le dos de corse-2013 vaut 12,75 mm à 100 pages, et non les 12,48 du dossier du 02/09, qui comptait 96 pages. Le dossier de commande se réécrit sur 50 planches.",
+    "Prodigi : huit légendes tombent dans ses 10 mm de zone sûre. À trancher en session C — élargir la bande des légendes coûterait un verdict de référence, choisir Cloudprinter ne coûte rien."
+  ]
+}

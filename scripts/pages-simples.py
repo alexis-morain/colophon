@@ -41,9 +41,12 @@ cacher un.
 
 **La sonde doit mordre**, sinon elle ne mesure rien : `--mutant` décale
 l'imposition d'une page, et le script doit alors échouer bruyamment.
+`--avec-mutant` fait les deux passes sur **un seul rendu** — la mesure, puis le
+mensonge — et c'est cette forme-là que le gate appelle : deux invocations
+paieraient deux fois le tirage 300 dpi pour ne rien apprendre de plus.
 
 Usage :
-    scripts/pages-simples.py <dossier d'album> [--mutant] [--px-par-mm N]
+    scripts/pages-simples.py <dossier d'album> [--mutant|--avec-mutant] [--px-par-mm N]
 
 Prérequis : pypdfium2 et Pillow (venv de session), et le binaire release. Le
 script rend les deux fichiers lui-même, dans un dossier temporaire : il ne
@@ -171,6 +174,7 @@ def cases_au_pli(scene, pli: float, cote: str):
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     mutant = "--mutant" in sys.argv
+    avec_mutant = "--avec-mutant" in sys.argv
     px_par_mm = PX_PAR_MM
     for i, a in enumerate(sys.argv):
         if a == "--px-par-mm":
@@ -203,7 +207,7 @@ def main() -> int:
         subprocess.check_output([BIN, "--dump-scene", str(album / "album.json")], text=True)
     )
 
-    echecs = 0
+
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         doubles = Fichier(
@@ -215,123 +219,140 @@ def main() -> int:
             (mm(px_par_mm, page_w), mm(px_par_mm, media_h)),
         )
 
-        # 1. La géométrie, avant toute image.
-        p0, s0 = doubles.page(0), simples.page(0)
-        for lu, veut, quoi in [
-            (len(doubles), planches, "planches doubles"),
-            (len(simples), planches * 2, "pages simples"),
-            (p0.width, mm(px_par_mm, media_w), "largeur d'une planche"),
-            (p0.height, mm(px_par_mm, media_h), "hauteur d'une planche"),
-            (s0.width, mm(px_par_mm, page_w), "largeur d'une page"),
-            (s0.height, mm(px_par_mm, media_h), "hauteur d'une page"),
-        ]:
-            etat = "ok  " if lu == veut else "ÉCART"
-            print(f"  {etat} {quoi} : {lu} (attendu {veut})")
-            echecs += lu != veut
-        if echecs:
+        def mesurer(decalage: int) -> int:
+            """Toute la mesure, pour un décalage d'imposition donné.
+
+            `decalage` vaut zéro pour la vérité et un pour le mensonge. Les deux
+            passes lisent **les mêmes rendus** : un tirage 300 dpi coûte dix
+            secondes et deux gigaoctets, et le mutant n'apprend rien de plus en
+            le repayant.
+            """
+            echecs = 0
+            p0, s0 = doubles.page(0), simples.page(0)
+            for lu, veut, quoi in [
+                (len(doubles), planches, "planches doubles"),
+                (len(simples), planches * 2, "pages simples"),
+                (p0.width, mm(px_par_mm, media_w), "largeur d'une planche"),
+                (p0.height, mm(px_par_mm, media_h), "hauteur d'une planche"),
+                (s0.width, mm(px_par_mm, page_w), "largeur d'une page"),
+                (s0.height, mm(px_par_mm, media_h), "hauteur d'une page"),
+            ]:
+                etat = "ok  " if lu == veut else "ÉCART"
+                print(f"  {etat} {quoi} : {lu} (attendu {veut})")
+                echecs += lu != veut
+            if echecs:
+                return echecs
+
+            # La moitié gauche de la première planche ne s'imprime pas : c'est
+            # ce qui met le faux-titre en page un. Elle doit donc être blanche,
+            # et le prévol le refuse quand elle ne l'est pas.
+            vide = blanche(p0.crop((0, 0, mm(px_par_mm, pli), p0.height)))
+            print(
+                f"  {'ok  ' if vide else 'ÉCART'} moitié gauche de la planche 1 : "
+                f"{'blanche' if vide else 'elle porte de l’encre'}"
+            )
+            echecs += not vide
+
+            pire_moyen, pire_mm, pire_page, glissees, masquees = 0.0, 0.0, "", 0, 0
+            bandes, pire_pli, pire_pli_page = 0, 0.0, ""
+            for s in range(planches):
+                planche = doubles.page(s)
+                for cote in ("gauche", "droite"):
+                    if s == 0 and cote == "gauche":
+                        continue  # la page qui ne s'imprime pas
+                    idx = ((2 * s - 1) if cote == "gauche" else (2 * s)) + decalage
+                    if idx >= len(simples):
+                        continue
+                    page = simples.page(idx)
+
+                    if cote == "gauche":
+                        a = planche.crop((0, 0, mm(px_par_mm, pli), planche.height))
+                        b = page.crop((0, 0, mm(px_par_mm, trim["w"] + bleed), page.height))
+                    else:
+                        a = planche.crop((mm(px_par_mm, pli), 0, planche.width, planche.height))
+                        b = page.crop((mm(px_par_mm, pli_mm), 0, page.width, page.height))
+
+                    # Le fond perdu du pli, avant de masquer les cases.
+                    for r in cases_au_pli(scenes[s], pli, cote):
+                        y0 = mm(px_par_mm, media_h - (r["y"] + r["h"]))
+                        y1 = y0 + mm(px_par_mm, r["h"])
+                        large = mm(px_par_mm, pli_mm)
+                        if cote == "gauche":  # la bande neuve est au bord droit
+                            neuf = (page.width - large, y0, page.width, y1)
+                            dedans = (page.width - 2 * large, y0, page.width - large, y1)
+                        else:
+                            neuf = (0, y0, large, y1)
+                            dedans = (large, y0, 2 * large, y1)
+                        ma = ImageStat.Stat(page.crop(neuf)).mean
+                        mb = ImageStat.Stat(page.crop(dedans)).mean
+                        d = sum(abs(x - y) for x, y in zip(ma, mb)) / 3.0
+                        bandes += 1
+                        if d > pire_pli:
+                            pire_pli, pire_pli_page = d, f"planche {s + 1} {cote}"
+
+                    # L'imposition. Une case qui atteint le pli est recadrée
+                    # pour saigner : elle change, et on vient de la mesurer.
+                    for r in cases_au_pli(scenes[s], pli, cote):
+                        masquees += 1
+                        x0 = mm(px_par_mm, r["x"] - (0 if cote == "gauche" else pli))
+                        y0 = mm(px_par_mm, media_h - (r["y"] + r["h"]))
+                        cache = (x0, y0, x0 + mm(px_par_mm, r["w"]), y0 + mm(px_par_mm, r["h"]))
+                        for im in (a, b):
+                            im.paste((255, 255, 255), cache)
+
+                    moyen, maxi, dx = compare(a, b, px_par_mm)
+                    glissees += bool(dx)
+                    if moyen > pire_moyen:
+                        pire_moyen, pire_mm, pire_page = moyen, maxi, f"planche {s + 1} {cote}"
+
+            etat = "ok  " if pire_moyen <= SEUIL_MOYEN and pire_mm <= SEUIL_PIRE_MM else "ÉCART"
+            print(
+                f"  {etat} imposition : {planches * 2 - 1} pages, pire moyenne "
+                f"{pire_moyen:.2f}/255 et pire millimètre {pire_mm:.0f}/255"
+                f"{' sur ' + pire_page if pire_page else ''} "
+                f"({masquees} cases au pli masquées, {glissees} pages recalées d'un pixel)"
+            )
+            echecs += etat != "ok  "
+
+            etat = "ok  " if bandes and pire_pli <= SEUIL_PLI else "ÉCART"
+            print(
+                f"  {etat} fond perdu du pli : {bandes} bandes, pire écart à la photo "
+                f"{pire_pli:.0f}/255{' sur ' + pire_pli_page if pire_pli_page else ''}"
+            )
+            echecs += etat != "ok  " or bandes == 0
+
+            # La blanche de queue, qui ferme le bloc.
+            vide = blanche(simples.page(len(simples) - 1))
+            print(
+                f"  {'ok  ' if vide else 'ÉCART'} page {len(simples)} : "
+                f"{'blanche' if vide else 'elle porte de l’encre'}"
+            )
+            echecs += not vide
+            return echecs
+
+        if mutant:
+            # Le mensonge doit coûter. Un mutant qui passe est une sonde qui ne
+            # mesure rien, et c'est un échec du script, pas du moteur.
+            if mesurer(1):
+                print("pages-simples : mutant refusé, la sonde mord")
+                return 0
+            print("pages-simples : LE MUTANT PASSE, la sonde ne mesure rien", file=sys.stderr)
             return 1
 
-        # 4a. La moitié gauche de la première planche ne s'imprime pas : c'est
-        # ce qui met le faux-titre en page un. Elle doit donc être blanche, et
-        # le prévol le refuse quand elle ne l'est pas.
-        vide = blanche(p0.crop((0, 0, mm(px_par_mm, pli), p0.height)))
-        print(
-            f"  {'ok  ' if vide else 'ÉCART'} moitié gauche de la planche 1 : "
-            f"{'blanche' if vide else 'elle porte de l’encre'}"
-        )
-        echecs += not vide
-
-        # 2 et 3, moitié par moitié.
-        pire_moyen, pire_mm, pire_page, glissees, masquees = 0.0, 0.0, "", 0, 0
-        bandes, pire_pli, pire_pli_page = 0, 0.0, ""
-        for s in range(planches):
-            planche = doubles.page(s)
-            for cote in ("gauche", "droite"):
-                if s == 0 and cote == "gauche":
-                    continue  # la page qui ne s'imprime pas
-                idx = (2 * s - 1) if cote == "gauche" else (2 * s)
-                if mutant:
-                    idx += 1  # le mensonge : une page plus loin
-                if idx >= len(simples):
-                    continue
-                page = simples.page(idx)
-
-                if cote == "gauche":
-                    a = planche.crop((0, 0, mm(px_par_mm, pli), planche.height))
-                    b = page.crop((0, 0, mm(px_par_mm, trim["w"] + bleed), page.height))
-                else:
-                    a = planche.crop((mm(px_par_mm, pli), 0, planche.width, planche.height))
-                    b = page.crop((mm(px_par_mm, pli_mm), 0, page.width, page.height))
-
-                # 3. Le fond perdu du pli, avant de masquer les cases.
-                for r in cases_au_pli(scenes[s], pli, cote):
-                    y0 = mm(px_par_mm, media_h - (r["y"] + r["h"]))
-                    y1 = y0 + mm(px_par_mm, r["h"])
-                    large = mm(px_par_mm, pli_mm)
-                    if cote == "gauche":  # la bande neuve est au bord droit
-                        neuf = (page.width - large, y0, page.width, y1)
-                        dedans = (page.width - 2 * large, y0, page.width - large, y1)
-                    else:
-                        neuf = (0, y0, large, y1)
-                        dedans = (large, y0, 2 * large, y1)
-                    ma = ImageStat.Stat(page.crop(neuf)).mean
-                    mb = ImageStat.Stat(page.crop(dedans)).mean
-                    d = sum(abs(x - y) for x, y in zip(ma, mb)) / 3.0
-                    bandes += 1
-                    if d > pire_pli:
-                        pire_pli, pire_pli_page = d, f"planche {s + 1} {cote}"
-
-                # 2. L'imposition. Une case qui atteint le pli est recadrée
-                # pour saigner : elle change, et on vient de la mesurer.
-                for r in cases_au_pli(scenes[s], pli, cote):
-                    masquees += 1
-                    x0 = mm(px_par_mm, r["x"] - (0 if cote == "gauche" else pli))
-                    y0 = mm(px_par_mm, media_h - (r["y"] + r["h"]))
-                    cache = (x0, y0, x0 + mm(px_par_mm, r["w"]), y0 + mm(px_par_mm, r["h"]))
-                    for im in (a, b):
-                        im.paste((255, 255, 255), cache)
-
-                moyen, maxi, dx = compare(a, b, px_par_mm)
-                glissees += bool(dx)
-                if moyen > pire_moyen:
-                    pire_moyen, pire_mm, pire_page = moyen, maxi, f"planche {s + 1} {cote}"
-
-        etat = "ok  " if pire_moyen <= SEUIL_MOYEN and pire_mm <= SEUIL_PIRE_MM else "ÉCART"
-        print(
-            f"  {etat} imposition : {planches * 2 - 1} pages, pire moyenne "
-            f"{pire_moyen:.2f}/255 et pire millimètre {pire_mm:.0f}/255"
-            f"{' sur ' + pire_page if pire_page else ''} "
-            f"({masquees} cases au pli masquées, {glissees} pages recalées d'un pixel)"
-        )
-        echecs += etat != "ok  "
-
-        etat = "ok  " if bandes and pire_pli <= SEUIL_PLI else "ÉCART"
-        print(
-            f"  {etat} fond perdu du pli : {bandes} bandes, pire écart à la photo "
-            f"{pire_pli:.0f}/255{' sur ' + pire_pli_page if pire_pli_page else ''}"
-        )
-        echecs += etat != "ok  " or bandes == 0
-
-        # 4b. La blanche de queue, qui ferme le bloc.
-        vide = blanche(simples.page(len(simples) - 1))
-        print(
-            f"  {'ok  ' if vide else 'ÉCART'} page {len(simples)} : "
-            f"{'blanche' if vide else 'elle porte de l’encre'}"
-        )
-        echecs += not vide
-
-    if mutant:
-        # Le mensonge doit coûter. Un mutant qui passe est une sonde qui ne
-        # mesure rien, et c'est un échec du script, pas du moteur.
+        echecs = mesurer(0)
         if echecs:
-            print("pages-simples : mutant refusé, la sonde mord")
-            return 0
-        print("pages-simples : LE MUTANT PASSE, la sonde ne mesure rien", file=sys.stderr)
-        return 1
+            print(f"pages-simples : {echecs} écart(s)", file=sys.stderr)
+            return 1
+        if avec_mutant:
+            print("  — et le même, l'imposition décalée d'une page :")
+            if not mesurer(1):
+                print(
+                    "pages-simples : LE MUTANT PASSE, la sonde ne mesure rien",
+                    file=sys.stderr,
+                )
+                return 1
+            print("  ok   mutant refusé, la sonde mord")
 
-    if echecs:
-        print(f"pages-simples : {echecs} écart(s)", file=sys.stderr)
-        return 1
     print(f"pages-simples : {planches} planches, {planches * 2} pages, même livre")
     return 0
 

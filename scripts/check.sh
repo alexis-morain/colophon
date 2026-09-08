@@ -52,6 +52,10 @@ for set in corse-2013 mauritanie-2019 random-2024; do
     ./target/release/colophon --depuis-fiches "$FICHES/$set.json" -o "$temoin" \
       --format carre-21 --variantes >/dev/null 2>&1
     "$PY" scripts/identite-fiches.py "$out" "$temoin" "$set"
+    # Le seul album de la boucle qui porte de vraies photographies, donc le
+    # seul dont on peut tirer un PDF 300 dpi. Le plus léger des trois est
+    # gardé pour la sonde d'imposition, plus bas.
+    if [ "$set" = "mauritanie-2019" ]; then AVEC_PHOTOS="$out"; fi
   else
     ./target/release/colophon --depuis-fiches "$FICHES/$set.json" -o "$out" \
       --format carre-21 --variantes >/dev/null 2>&1
@@ -141,6 +145,21 @@ if command -v sips >/dev/null && "$PY" -c "import PIL" 2>/dev/null; then
   "$PY" scripts/ornement-encre.py
 else
   echo "pdf-png : sauté (sips ou Pillow absent)"
+fi
+
+# L'imposition en pages simples, lue sur le papier. Le même album sort en
+# planches doubles et en pages simples, et chaque page doit coïncider avec la
+# moitié de planche dont elle vient. Le mutant tourne dans la foulée, sur le
+# même rendu : une sonde qu'on ne prouve pas mordante ne mesure rien.
+#
+# Il faut de vraies photographies — un tirage 300 dpi n'existe pas sans elles —
+# donc ce bloc ne tourne que là où les jeux de test sont posés, jamais en CI.
+if [ -n "${AVEC_PHOTOS:-}" ] && "$PY" -c "import pypdfium2, PIL" 2>/dev/null; then
+  "$PY" scripts/pages-simples.py "$AVEC_PHOTOS" --avec-mutant
+elif [ -n "${AVEC_PHOTOS:-}" ]; then
+  echo "pages-simples : sauté (pypdfium2 absent : python3 -m pip install --user --break-system-packages pypdfium2)"
+else
+  echo "pages-simples : sauté (pas de photos, un tirage 300 dpi en demande)"
 fi
 
 cd crates/colophon-app

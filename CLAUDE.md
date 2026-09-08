@@ -697,9 +697,13 @@ tronquer en silence.
 **`Bleed::dos` a enfin un sens** : une planche n'a pas de bord au pli, une page simple en a
 un, et il ne se lit que par `imposition::pli_mm`.
 
-La sonde est `scripts/pages-simples.py` (pypdfium2, venv de session, hors gate) : elle rend
-les deux formes du même album, compare chaque page à la moitié de planche dont elle sort,
-et **se vérifie mordante** avec `--mutant`, qui décale l'imposition d'une page. Deux pièges
+La sonde est `scripts/pages-simples.py` : elle rend les deux formes du même album, compare
+chaque page à la moitié de planche dont elle sort, et **se vérifie mordante** avec
+`--mutant`, qui décale l'imposition d'une page. `check.sh` l'appelle en `--avec-mutant`,
+qui fait les deux passes sur **un seul rendu**, sur `mauritanie-2019` — le plus léger des
+trois jeux, 37 s. Le bloc se saute là où il ne peut rien mesurer : sans photographies il
+n'y a pas de tirage 300 dpi, donc jamais en CI ; et il demande `pypdfium2`, que le message
+de saut nomme (`python3 -m pip install --user --break-system-packages pypdfium2`). Deux pièges
 du raster y sont écrits, tous deux mesurés le 08/09 : pdfium étire la page sur un bitmap
 arrondi vers le haut, et deux microns d'écart de coordonnée suffisent à faire glisser un
 raster d'une colonne. **`ornement-encre.py` et `apercu-fidele.py` nomment désormais

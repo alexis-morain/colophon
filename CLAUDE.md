@@ -163,6 +163,32 @@ Prodigi, avec les mêmes pixels. Le verdict à trois est refait dans
 dehors pour son CMJN, et plus un seul bloquant imputable à un profil chez Cloudprinter —
 ce qui reste est le plancher de 250 ppi de l'album, que le Composer n'a jamais garanti.
 
+**Le prévol regarde enfin les fichiers qu'on s'apprête à envoyer (08/09).** Il mesurait
+l'album contre un profil et n'avait jamais ouvert le dossier : le 08/09 la couverture
+posée pour la commande était le rendu `generique` — 426 × 216, sans dos, sans rempli —
+pendant que la fiche annonçait 490,48 × 258, et le rapport disait `ok: true`.
+**Quarante-quatre octets** séparaient les deux feuilles, sous le même nom, et ce qui a
+rattrapé l'erreur est une empreinte notée à la main dans un journal. Deux règles,
+`fichier_interieur` et `fichier_couverture` : **absent ne produit rien** — la plupart des
+albums n'ont jamais été exportés et le prévol tourne dans l'app à tout moment —, présent
+et faux **bloque**, avec les deux cotes dans le `cause` et la commande qui répare dans le
+`remede`. Trois choses à ne pas défaire. **La lecture du disque vit dans `prevol()`**, qui
+tient le `dir` ; elle entre dans `check()` en valeur (`FichiersPoses`, `Lecture::Pages` ou
+`Lecture::Illisible`) comme `dims` y entre déjà, et `check()` reste pure — aucun test de
+prévol n'a besoin d'un PDF sur le disque. **Le compte de pages attendu se calcule**, il ne
+se lit pas dans `pages_fichier`, qui est le compte *déclaré à la commande* : sur 48
+planches il vaut 96 chez Lulu pour un fichier qui en porte 48, et le brancher rougirait
+sur un fichier juste. Et **la taille s'attend page par page**, parce que chez qui relie un
+seul fichier les deux feuillets de couverture n'ont pas la taille d'une page d'intérieur.
+La couverture ne se contrôle que chez `Fichiers::Deux` : ailleurs elle voyage *dans*
+l'intérieur et `album-cover.pdf` est un sous-produit que personne n'envoie. Un fichier
+illisible se dit et ne panique jamais — c'est la leçon de l'analyseur SVG de 6.3 s1.
+**Ce que ça ne ferme pas** : un fichier juste de géométrie et vieux de contenu passe.
+Pas de contrôle de fraîcheur, et surtout pas par `mtime` — un fichier plus vieux
+qu'`album.json` n'est pas forcément faux, une géométrie se défend, une date de fichier
+non. Le vrai remède serait une empreinte du contenu écrite dans l'album à l'export, et
+c'est une autre session.
+
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
 et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une bascule future resterait
 un commit qui ne fait que ça. VoiceOver et le rang via le menu natif : entendus et
@@ -741,7 +767,8 @@ de chaque jeu. `--reprise` : part des planches corrigées à la main contre
 `--prevol --profil <id>` : bloquants et avertissements contre un `PrinterProfile`, et la
 fiche que l'imprimeur demande au téléphone. **Bloque ce que la coupe traverse ou que la
 reliure sépare** (`resolution`, `couverture_resolution`, `imposition`, `objet_coupe`,
-`objet_pli`, `fond_perdu`, `espace`, `pagination`) ; **avertit de ce qu'un fournisseur
+`objet_pli`, `fond_perdu`, `espace`, `pagination`, `fichier_interieur`,
+`fichier_couverture`) ; **avertit de ce qu'un fournisseur
 préfère** (`zone_sure`, `dos_nu`, un coefficient de dos provisoire). Un seuil réglé pour
 faire taire une règle est le défaut que cette frontière existe pour empêcher.
 

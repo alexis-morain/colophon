@@ -85,6 +85,100 @@ pub struct PrevolReport {
     pub defauts: Vec<Defaut>,
 }
 
+/// Ce qu'un PDF posé à côté d'`album.json` a rendu quand on l'a ouvert.
+///
+/// Un fichier qu'on n'a pas écrit dans la seconde se lit sans jamais paniquer :
+/// tronqué, chiffré ou dont le `MediaBox` n'est pas un tableau de nombres, il
+/// rend [`Lecture::Illisible`] avec sa raison, et c'est la règle qui décide
+/// quoi en faire. C'est la leçon de l'analyseur SVG de 6.3 s1, appliquée à
+/// quelqu'un qui s'apprête à commander.
+#[derive(Debug)]
+pub enum Lecture {
+    /// Les media box de ses pages, en millimètres, dans l'ordre du fichier.
+    Pages(Vec<[f64; 2]>),
+    /// Le fichier est là et ne se lit pas. La phrase dit pourquoi.
+    Illisible(String),
+}
+
+/// Les deux PDF que l'export pose à côté de l'album.
+///
+/// `None` veut dire absent, et **absent n'est pas un défaut** : la plupart des
+/// albums n'ont jamais été exportés, et le prévol tourne dans l'app à tout
+/// moment. La règle ne parle que de ce qu'elle trouve.
+#[derive(Debug, Default)]
+pub struct FichiersPoses {
+    pub interieur: Option<Lecture>,
+    pub couverture: Option<Lecture>,
+}
+
+impl FichiersPoses {
+    /// Ouvre ce qui est là, à côté d'`album.json`. La lecture du disque vit
+    /// ici et jamais dans [`check`], qui reste une fonction de valeurs.
+    pub fn lire(dir: &Path) -> Self {
+        FichiersPoses {
+            interieur: lire_pdf(&dir.join("album-print.pdf")),
+            couverture: lire_pdf(&dir.join("album-cover.pdf")),
+        }
+    }
+}
+
+/// Le fichier s'il existe, sa raison s'il ne se lit pas, rien s'il est absent.
+fn lire_pdf(path: &Path) -> Option<Lecture> {
+    if !path.is_file() {
+        return None;
+    }
+    Some(match media_boxes_mm(path) {
+        Ok(pages) => Lecture::Pages(pages),
+        Err(pourquoi) => Lecture::Illisible(pourquoi),
+    })
+}
+
+/// Les media box du fichier, page par page, en millimètres.
+fn media_boxes_mm(path: &Path) -> Result<Vec<[f64; 2]>, String> {
+    let doc = lopdf::Document::load(path).map_err(|e| e.to_string())?;
+    let pages = doc.get_pages();
+    if pages.is_empty() {
+        return Err("le fichier ne porte aucune page".into());
+    }
+    let mut v = Vec::with_capacity(pages.len());
+    for (n, id) in pages {
+        v.push(
+            media_box_mm(&doc, id)
+                .ok_or_else(|| format!("page {n} : le MediaBox ne se lit pas"))?,
+        );
+    }
+    Ok(v)
+}
+
+/// La media box d'une page, largeur et hauteur en millimètres.
+///
+/// Le `MediaBox` s'hérite du nœud parent : une page qui ne le porte pas prend
+/// celui de l'arbre au-dessus d'elle, et refuser là refuserait un fichier
+/// parfaitement légitime. La remontée est bornée, un `/Parent` circulaire
+/// n'étant pas un cas qu'on peut exclure d'un fichier qu'on n'a pas écrit.
+fn media_box_mm(doc: &lopdf::Document, page: lopdf::ObjectId) -> Option<[f64; 2]> {
+    const PT_MM: f64 = 25.4 / 72.0;
+    let mut courant = page;
+    for _ in 0..32 {
+        let dict = doc.get_dictionary(courant).ok()?;
+        if let Ok(o) = dict.get(b"MediaBox") {
+            let a = doc.dereference(o).ok()?.1.as_array().ok()?;
+            if a.len() != 4 {
+                return None;
+            }
+            let n = |i: usize| -> Option<f64> {
+                Some(f64::from(doc.dereference(&a[i]).ok()?.1.as_float().ok()?))
+            };
+            return Some([
+                (n(2)? - n(0)?).abs() * PT_MM,
+                (n(3)? - n(1)?).abs() * PT_MM,
+            ]);
+        }
+        courant = dict.get(b"Parent").ok()?.as_reference().ok()?;
+    }
+    None
+}
+
 /// Run the preflight over a composed album folder.
 pub fn prevol(dir: &Path, profil: &'static PrinterProfile) -> Result<PrevolReport> {
     let json = dir.join("album.json");
@@ -93,7 +187,7 @@ pub fn prevol(dir: &Path, profil: &'static PrinterProfile) -> Result<PrevolRepor
     )
     .context("album.json illisible")?;
     let dims = original_dimensions(&album);
-    Ok(check(&album, profil, &dims))
+    Ok(check(&album, profil, &dims, &FichiersPoses::lire(dir)))
 }
 
 /// The page the machine writes that the album could do without, named as the
@@ -149,6 +243,7 @@ pub fn check(
     album: &Album,
     profil: &'static PrinterProfile,
     dims: &HashMap<String, (u32, u32)>,
+    poses: &FichiersPoses,
 ) -> PrevolReport {
     let mut defauts: Vec<Defaut> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
@@ -533,6 +628,61 @@ pub fn check(
         }
     }
 
+    // 9. Les fichiers posés à côté d'`album.json`, quand il y en a.
+    //
+    // Le prévol mesurait l'album contre un profil et n'avait jamais regardé ce
+    // qui dormait dans le dossier. Le 08/09 la couverture posée pour la
+    // commande était le rendu `generique` — 426 × 216, sans dos, sans rempli —
+    // pendant que la fiche annonçait la feuille de Cloudprinter, et le rapport
+    // disait `ok: true`. Quarante-quatre octets séparaient les deux, sous le
+    // même nom, et ce qui a rattrapé l'erreur est une empreinte notée à la
+    // main dans un journal.
+    //
+    // Absent ne produit rien : la plupart des albums n'ont jamais été
+    // exportés. Présent et faux bloque : une feuille au mauvais format part à
+    // la presse et revient fausse, et aucune main ne la rattrape après coup.
+    // C'est la doctrine de 6.4 telle quelle — ce que la presse imprime bute,
+    // ce qu'un fournisseur préfère avertit.
+    if let Some(lecture) = &poses.interieur {
+        let attendues = pages_attendues(album, profil, &g);
+        if let Some((cause, remede)) =
+            confronter(lecture, &attendues, "album-print.pdf", "--print", profil)
+        {
+            defauts.push(Defaut {
+                regle: "fichier_interieur",
+                bloquant: true,
+                planche: None,
+                case_idx: None,
+                src: None,
+                cause,
+                remede,
+            });
+        }
+    }
+    // La couverture ne se contrôle que chez qui en attend une, c'est-à-dire
+    // chez qui relie deux fichiers. Chez les autres elle voyage **dans**
+    // l'intérieur, et `album-cover.pdf` n'est qu'un sous-produit que personne
+    // n'envoie : refuser dessus refuserait un fichier dont la livraison ne
+    // veut pas.
+    if profil.fichiers == Fichiers::Deux {
+        if let Some(lecture) = &poses.couverture {
+            let attendues = vec![[cg.media_w, cg.media_h]];
+            if let Some((cause, remede)) =
+                confronter(lecture, &attendues, "album-cover.pdf", "--cover", profil)
+            {
+                defauts.push(Defaut {
+                    regle: "fichier_couverture",
+                    bloquant: true,
+                    planche: None,
+                    case_idx: None,
+                    src: None,
+                    cause,
+                    remede,
+                });
+            }
+        }
+    }
+
     let bloquants = defauts.iter().filter(|d| d.bloquant).count();
     let avertissements = defauts.len() - bloquants;
 
@@ -583,6 +733,116 @@ fn distance_au_rognage(x: f64, y: f64, g: &pdf::SpreadGeometry, bleed: f64) -> f
     scene::distance_to_trim(&pdf::Rect { x, y, w: 0.0, h: 0.0 }, 0.0, g)
 }
 
+/// Tolérance de comparaison des cotes, en millimètres. Celle qu'écrivent déjà
+/// `cover.rs` et `print.rs` : le binaire rend 490,4811 pour une fiche à
+/// 490,48, et comparer strictement refuserait le bon fichier.
+const TOLERANCE_MM: f64 = 0.01;
+
+/// Les pages que l'export pose dans `album-print.pdf` pour **ce** profil, dans
+/// l'ordre du fichier, chacune par sa media box en millimètres.
+///
+/// Le compte se calcule ; il ne se lit pas dans `pages_fichier`, qui est le
+/// compte **déclaré à la commande**. Les deux se séparent dès que le
+/// fournisseur impose nos planches lui-même : Lulu déclare 96 pages pour un
+/// fichier qui en porte 48, et brancher la fiche ici rougirait sur un fichier
+/// juste.
+fn pages_attendues(
+    album: &Album,
+    profil: &PrinterProfile,
+    g: &pdf::SpreadGeometry,
+) -> Vec<[f64; 2]> {
+    let mut v = Vec::new();
+    // Chez qui relie un seul fichier, la première et la quatrième entrent
+    // dedans, et ce sont deux feuillets qui n'ont pas la taille d'une page
+    // d'intérieur : c'est pourquoi la taille s'attend page par page et non
+    // une fois pour tout le fichier.
+    let feuillet = |face| {
+        let c = cover::page_geometry(album, profil, face);
+        [c.media_w, c.media_h]
+    };
+    if profil.fichiers == Fichiers::Un {
+        v.push(feuillet(cover::Face::Premiere));
+    }
+    if profil.pages_simples {
+        let pli = imposition::pli_mm(profil);
+        let simple = |cote| {
+            let p = imposition::page_simple(album, cote, pli);
+            [p.media_w, p.media_h]
+        };
+        for i in 0..album.spreads.len() {
+            v.extend(imposition::faces(i).iter().map(|c| simple(*c)));
+        }
+        if !album.spreads.is_empty() {
+            v.push(simple(imposition::Cote::Gauche));
+        }
+    } else {
+        v.extend(std::iter::repeat([g.media_w, g.media_h]).take(album.spreads.len()));
+    }
+    if profil.fichiers == Fichiers::Un {
+        v.push(feuillet(cover::Face::Quatrieme));
+    }
+    v
+}
+
+/// Ce qu'il y a à dire d'un fichier posé, ou rien s'il est celui qu'on attend.
+///
+/// Le compte d'abord, puis la taille de chaque page : toutes ont celle du
+/// gabarit, donc une page qui sort du lot est le symptôme qu'on cherche. Une
+/// seule est nommée — la première — parce qu'un fichier rendu au mauvais
+/// profil les a toutes fausses et qu'une liste de quatre-vingt-seize lignes ne
+/// dit rien de plus que la première.
+fn confronter(
+    lecture: &Lecture,
+    attendues: &[[f64; 2]],
+    fichier: &str,
+    commande: &str,
+    profil: &PrinterProfile,
+) -> Option<(String, String)> {
+    let repare =
+        || format!("relancez {commande} --profil {} pour le refaire, ou retirez-le du dossier", profil.id);
+    let pages = match lecture {
+        Lecture::Illisible(pourquoi) => {
+            return Some((
+                format!("{fichier} est posé à côté de l'album et ne se lit pas : {pourquoi}"),
+                repare(),
+            ))
+        }
+        Lecture::Pages(pages) => pages,
+    };
+    if pages.len() != attendues.len() {
+        return Some((
+            format!(
+                "{fichier} porte {} page{}, {} en attend {}",
+                pages.len(),
+                if pages.len() > 1 { "s" } else { "" },
+                profil.nom,
+                attendues.len()
+            ),
+            repare(),
+        ));
+    }
+    let (i, page) = pages
+        .iter()
+        .zip(attendues)
+        .position(|(p, a)| {
+            (p[0] - a[0]).abs() > TOLERANCE_MM || (p[1] - a[1]).abs() > TOLERANCE_MM
+        })
+        .map(|i| (i, pages[i]))?;
+    let a = attendues[i];
+    Some((
+        format!(
+            "{fichier} : la page {} mesure {:.2} × {:.2} mm, {} en attend une de {:.2} × {:.2}",
+            i + 1,
+            page[0],
+            page[1],
+            profil.nom,
+            a[0],
+            a[1]
+        ),
+        repare(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,13 +878,13 @@ mod tests {
 
         // `solo` pose sa photo au recto : la page de gauche est blanche et
         // rien ne se perd.
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
         assert!(r.ok, "défauts : {:?}", r.defauts);
 
         // `duo` en pose une de chaque côté.
         a.spreads[0].template = "duo".into();
         a.spreads[0].slots.push(Slot::new("12.jpg".into(), [0.5, 0.5]));
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
         let refus: Vec<&Defaut> =
             r.defauts.iter().filter(|d| d.regle == "imposition").collect();
         assert_eq!(refus.len(), 1, "défauts : {:?}", r.defauts);
@@ -638,11 +898,11 @@ mod tests {
         let mut b = album_de(12, 3.0);
         b.spreads[5].template = "duo".into();
         b.spreads[5].slots.push(Slot::new("12.jpg".into(), [0.5, 0.5]));
-        assert!(check(&b, PrinterProfile::par_id("cloudprinter").unwrap(), &dims).ok);
+        assert!(check(&b, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default()).ok);
 
         // Et chez un imprimeur qui relie des planches, la question ne se pose
         // pas : il n'y a pas de découpe.
-        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims, &FichiersPoses::default());
         assert!(!r.defauts.iter().any(|d| d.regle == "imposition"), "{:?}", r.defauts);
         assert!(r.ok, "{:?}", r.defauts);
     }
@@ -664,10 +924,10 @@ mod tests {
             .map(|i| (format!("{i}.jpg"), (2110u32, 3000u32)))
             .collect();
 
-        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims, &FichiersPoses::default());
         assert!(r.ok, "sur la planche composée elle passe : {:?}", r.defauts);
 
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
         let sous: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "resolution").collect();
         assert_eq!(sous.len(), 12, "une par planche : {:?}", r.defauts);
         assert!(sous[0].cause.contains("248 ppi"), "{}", sous[0].cause);
@@ -681,8 +941,8 @@ mod tests {
         let dims: HashMap<String, (u32, u32)> = (0..12)
             .map(|i| (format!("{i}.jpg"), (2000u32, 3000u32)))
             .collect();
-        let cp = check(&b, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
-        let gen = check(&b, PrinterProfile::par_id("generique").unwrap(), &dims);
+        let cp = check(&b, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
+        let gen = check(&b, PrinterProfile::par_id("generique").unwrap(), &dims, &FichiersPoses::default());
         assert_eq!(cp.ok, gen.ok, "cp {:?} / gen {:?}", cp.defauts, gen.defauts);
     }
 
@@ -717,12 +977,12 @@ mod tests {
 
         // Bien à l'intérieur d'une page : rien à dire, l'album passe.
         a.spreads[0].objets = vec![bloc(40.0, 60.0)];
-        let r = check(&a, profil, &dims);
+        let r = check(&a, profil, &dims, &FichiersPoses::default());
         assert!(r.ok, "défauts : {:?}", r.defauts);
 
         // Le coin gauche passe sous la coupe.
         a.spreads[0].objets = vec![bloc(g.bleed - 10.0, 60.0)];
-        let r = check(&a, profil, &dims);
+        let r = check(&a, profil, &dims, &FichiersPoses::default());
         let coupe: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "objet_coupe").collect();
         assert_eq!(coupe.len(), 1, "défauts : {:?}", r.defauts);
         assert!(coupe[0].bloquant);
@@ -731,7 +991,7 @@ mod tests {
 
         // À cheval sur le pli.
         a.spreads[0].objets = vec![bloc(g.media_w / 2.0 - 20.0, 60.0)];
-        let r = check(&a, profil, &dims);
+        let r = check(&a, profil, &dims, &FichiersPoses::default());
         let pli: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "objet_pli").collect();
         assert_eq!(pli.len(), 1, "défauts : {:?}", r.defauts);
         assert!(pli[0].bloquant);
@@ -741,10 +1001,10 @@ mod tests {
         // coin le passe de 10. C'est la scène qui le dit, pas la boîte.
         let frole = Objet { w: 40.0, h: 60.0, ..bloc(g.media_w / 2.0 - 45.0, 60.0) };
         a.spreads[0].objets = vec![frole.clone()];
-        let droit = check(&a, profil, &dims);
+        let droit = check(&a, profil, &dims, &FichiersPoses::default());
         assert!(droit.ok, "droit il ne touche rien : {:?}", droit.defauts);
         a.spreads[0].objets = vec![Objet { angle: 45.0, ..frole }];
-        let r = check(&a, profil, &dims);
+        let r = check(&a, profil, &dims, &FichiersPoses::default());
         assert!(
             r.defauts.iter().any(|d| d.regle == "objet_pli"),
             "le coin tourné passe le pli : {:?}",
@@ -762,11 +1022,11 @@ mod tests {
             .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
             .collect();
 
-        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims, &FichiersPoses::default());
         assert!(r.ok, "défauts : {:?}", r.defauts);
         assert_eq!(r.bloquants, 0);
 
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
         assert!(r.ok, "défauts : {:?}", r.defauts);
         assert_eq!(r.bloquants, 0);
         // The spine is no longer announced: Cloudprinter wrote its bulk down,
@@ -805,17 +1065,17 @@ mod tests {
         // whoever binds it that way — so it now passes clean. That is the
         // profile going from unusable to deliverable without a number of its
         // own moving.
-        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims, &FichiersPoses::default());
         assert!(r.ok, "{:?}", r.defauts);
         assert_eq!(r.bloquants, 0, "{:?}", r.defauts);
 
         // Cloudprinter wants 3 mm of bleed we did not render: blocked.
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
         assert!(!r.ok);
         assert!(r.defauts.iter().any(|d| d.regle == "fond_perdu" && d.bloquant));
 
         // Lulu wants CMYK, which we do not produce, and 32 pages minimum.
-        let r = check(&a, PrinterProfile::par_id("lulu").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("lulu").unwrap(), &dims, &FichiersPoses::default());
         assert!(!r.ok);
         assert!(r.defauts.iter().any(|d| d.regle == "espace"));
         assert!(r.defauts.iter().any(|d| d.regle == "pagination"));
@@ -833,7 +1093,7 @@ mod tests {
             .collect();
         let a = album_de(11, 0.0); // 22 pages inside, 24 in the file
         let pr = PrinterProfile::par_id("prodigi").unwrap();
-        let r = check(&a, pr, &dims);
+        let r = check(&a, pr, &dims, &FichiersPoses::default());
         assert!(
             !r.defauts.iter().any(|d| d.regle == "pagination"),
             "24 pages de fichier tiennent dans les bornes : {:?}",
@@ -842,7 +1102,7 @@ mod tests {
 
         // Cloudprinter binds the cover separately, so 22 stays 22, under its
         // own minimum of 24.
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
         let d = r.defauts.iter().find(|d| d.regle == "pagination").unwrap();
         assert!(d.cause.contains("22 pages"), "{}", d.cause);
     }
@@ -852,7 +1112,7 @@ mod tests {
     fn pagination_is_named_in_words() {
         let mut a = album_de(11, 3.0); // 22 pages, under the minimum of 24
         a.bleed_mm = 3.0;
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &HashMap::new());
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &HashMap::new(), &FichiersPoses::default());
         let d = r.defauts.iter().find(|d| d.regle == "pagination").unwrap();
         assert!(d.cause.contains("22 pages"), "{}", d.cause);
         assert!(!d.cause.contains("ERR"), "aucun code dans le message");
@@ -872,7 +1132,7 @@ mod tests {
 
         // 100 spreads = 200 pages, exactly the bound: nothing to report.
         let a = album_de(100, 3.0);
-        let r = check(&a, pr, &dims);
+        let r = check(&a, pr, &dims, &FichiersPoses::default());
         assert!(!r.defauts.iter().any(|d| d.regle == "pagination"), "{:?}", r.defauts);
 
         // The colophon page makes 202, and the remedy says which page to drop.
@@ -891,7 +1151,7 @@ mod tests {
             150.0,
             "0.9.0",
         ));
-        let r = check(&avec, pr, &dims);
+        let r = check(&avec, pr, &dims, &FichiersPoses::default());
         let d = r.defauts.iter().find(|d| d.regle == "pagination").unwrap();
         assert!(d.cause.contains("202 pages"), "{}", d.cause);
         assert!(d.remede.contains("colophon"), "{}", d.remede);
@@ -909,7 +1169,7 @@ mod tests {
             compose_le: chrono::NaiveDate::from_ymd_opt(2026, 8, 17).unwrap(),
         };
         garde.spreads.insert(0, crate::garde::spread("Corse", &f, 190.0));
-        let d = check(&garde, pr, &dims)
+        let d = check(&garde, pr, &dims, &FichiersPoses::default())
             .defauts
             .into_iter()
             .find(|d| d.regle == "pagination")
@@ -918,7 +1178,7 @@ mod tests {
 
         // A count that is wrong for another reason keeps the general remedy.
         let court = album_de(4, 3.0);
-        let d = check(&court, pr, &dims)
+        let d = check(&court, pr, &dims, &FichiersPoses::default())
             .defauts
             .into_iter()
             .find(|d| d.regle == "pagination")
@@ -935,7 +1195,7 @@ mod tests {
             .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
             .collect();
         dims.insert("3.jpg".into(), (600, 600)); // far under print need
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
         let d = r.defauts.iter().find(|d| d.regle == "resolution").unwrap();
         assert_eq!(d.planche, Some(4));
         assert_eq!(d.src.as_deref(), Some("3.jpg"));
@@ -948,7 +1208,7 @@ mod tests {
     #[test]
     fn unreachable_photos_are_said_out_loud() {
         let a = album_de(12, 3.0);
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &HashMap::new());
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &HashMap::new(), &FichiersPoses::default());
         assert!(r.notes.iter().any(|n| n.contains("résolution")));
     }
 
@@ -963,13 +1223,13 @@ mod tests {
             .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
             .collect();
 
-        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims, &FichiersPoses::default());
         assert_eq!(
             r.defauts.iter().any(|d| d.regle == "conformite" && d.bloquant),
             !crate::pdf::EMITS_PDF_X
         );
 
-        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims, &FichiersPoses::default());
         assert!(!r.defauts.iter().any(|d| d.regle == "conformite"));
     }
 
@@ -998,12 +1258,12 @@ mod tests {
         dims.insert("3.jpg".into(), (600, 600));
         let profil = PrinterProfile::par_id("cloudprinter").unwrap();
 
-        let avant = check(&a, profil, &dims);
+        let avant = check(&a, profil, &dims, &FichiersPoses::default());
         assert!(!avant.ok, "le cas doit avoir quelque chose à dire");
 
         let (basculee, _) =
             crate::bascule::bascule(&a, Size { w: 280.0, h: 210.0 }, &dims, profil);
-        let apres = check(&basculee, profil, &dims);
+        let apres = check(&basculee, profil, &dims, &FichiersPoses::default());
 
         // Same defects, matched by what they are and where they are.
         let identite = |r: &PrevolReport| {
@@ -1052,7 +1312,7 @@ mod tests {
             .collect();
 
         // Prodigi garde 10 mm, la légende passe à 7 : il le dit, et il livre.
-        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims, &FichiersPoses::default());
         let zs: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "zone_sure").collect();
         assert_eq!(zs.len(), 23, "une par planche légendée : {:?}", r.defauts);
         assert!(zs.iter().all(|d| !d.bloquant));
@@ -1069,7 +1329,7 @@ mod tests {
         // Cloudprinter porte enfin son vrai chiffre, et la légende tombe
         // exactement dessus : 7,00 mm contre 7,0 demandés, sur un format dont
         // la marge fait 14. Rien à dire, et rien qui ait été tu.
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
         assert!(!r.defauts.iter().any(|d| d.regle == "zone_sure"), "{:?}", r.defauts);
     }
 
@@ -1101,15 +1361,15 @@ mod tests {
                 .find(|d| d.regle == "couverture_resolution")
                 .map(|d| d.cause.clone())
         };
-        assert!(couv(&check(&a, cp, &dims)).is_none());
-        assert!(couv(&check(&a, pr, &dims)).is_none());
+        assert!(couv(&check(&a, cp, &dims, &FichiersPoses::default())).is_none());
+        assert!(couv(&check(&a, pr, &dims, &FichiersPoses::default())).is_none());
 
         // 2100 px : 246 ppi sur le cartonné, 247 sur le feuillet. Le premier
         // refuse, le second aussi — mais pas pour la même surface.
         dims.insert("couv.jpg".into(), (2100, 2300));
-        let d = couv(&check(&a, cp, &dims)).expect("le cartonné refuse");
+        let d = couv(&check(&a, cp, &dims, &FichiersPoses::default())).expect("le cartonné refuse");
         assert!(d.contains("239 × 258"), "{d}");
-        assert!(check(&a, cp, &dims).defauts.iter().any(|d| d.regle
+        assert!(check(&a, cp, &dims, &FichiersPoses::default()).defauts.iter().any(|d| d.regle
             == "couverture_resolution"
             && d.bloquant));
 
@@ -1117,15 +1377,15 @@ mod tests {
         // 2200 px passent chez Prodigi et pas chez Cloudprinter, avec la même
         // photographie et le même album.
         dims.insert("couv.jpg".into(), (2200, 2400));
-        assert!(couv(&check(&a, cp, &dims)).is_some(), "260 ppi sur 239 mm : non");
-        assert!(couv(&check(&a, pr, &dims)).is_none(), "258 ppi sur 216 mm : oui");
+        assert!(couv(&check(&a, cp, &dims, &FichiersPoses::default())).is_some(), "260 ppi sur 239 mm : non");
+        assert!(couv(&check(&a, pr, &dims, &FichiersPoses::default())).is_none(), "258 ppi sur 216 mm : oui");
 
         // Une couverture sans photo ne se mesure pas, et un album sans
         // couverture non plus.
         a.cover.as_mut().unwrap().photo = None;
-        assert!(couv(&check(&a, cp, &dims)).is_none());
+        assert!(couv(&check(&a, cp, &dims, &FichiersPoses::default())).is_none());
         a.cover = None;
-        assert!(couv(&check(&a, cp, &dims)).is_none());
+        assert!(couv(&check(&a, cp, &dims, &FichiersPoses::default())).is_none());
     }
 
     /// Un dos trop mince ne porte pas de titre, et le prévol le dit au lieu de
@@ -1138,7 +1398,7 @@ mod tests {
             .collect();
         let cp = PrinterProfile::par_id("cloudprinter").unwrap();
         let nu = |n: usize| -> Option<Defaut> {
-            let mut r = check(&album_de(n, 3.0), cp, &dims);
+            let mut r = check(&album_de(n, 3.0), cp, &dims, &FichiersPoses::default());
             let i = r.defauts.iter().position(|d| d.regle == "dos_nu")?;
             Some(r.defauts.remove(i))
         };
@@ -1153,7 +1413,7 @@ mod tests {
 
         // Et la question ne se pose pas chez qui fabrique son dos lui-même :
         // il n'y a pas de feuille à plat à décrire.
-        let r = check(&album_de(12, 0.0), PrinterProfile::par_id("prodigi").unwrap(), &dims);
+        let r = check(&album_de(12, 0.0), PrinterProfile::par_id("prodigi").unwrap(), &dims, &FichiersPoses::default());
         assert!(!r.defauts.iter().any(|d| d.regle == "dos_nu"), "{:?}", r.defauts);
     }
 
@@ -1164,7 +1424,7 @@ mod tests {
         let dims: HashMap<String, (u32, u32)> = (0..24)
             .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
             .collect();
-        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &FichiersPoses::default());
         let f = &r.fiche;
         assert_eq!(f.format_page_mm, [210.0, 210.0]);
         assert_eq!(f.pages_interieur, 48);
@@ -1180,9 +1440,230 @@ mod tests {
             Some([210.0 * 2.0 + dos + 5.0 * 2.0 + 24.0 * 2.0, 210.0 + 24.0 * 2.0])
         );
         // Et personne ne la donne à qui fabrique la sienne.
-        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims);
+        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims, &FichiersPoses::default());
         assert_eq!(r.fiche.feuille_couverture_mm, None);
         // A provisional profile never travels without its reservations.
         assert!(!r.reserves.is_empty());
     }
+    /// L'incident du 08/09, rejoué. La couverture posée dans le dossier de
+    /// commande était le rendu `generique` — 426 × 216, sans dos, sans rempli
+    /// — pendant que la fiche annonçait la feuille de Cloudprinter. Le prévol
+    /// disait `ok: true` : il mesurait l'album contre un profil et n'avait
+    /// jamais regardé les fichiers posés à côté. Quarante-quatre octets
+    /// séparaient la bonne feuille de la mauvaise, sous le même nom.
+    #[test]
+    fn une_couverture_rendue_pour_un_autre_profil_est_bloquante() {
+        // Les 48 planches de l'album de la commande, pour que les deux
+        // feuilles soient celles du 08/09 au centième près.
+        let mut a = album_de(48, 3.0);
+        a.cover = Some(crate::model::Cover {
+            title: "Corse".into(),
+            subtitle: String::new(),
+            photo: None,
+            back_text: String::new(),
+        });
+        let dims: HashMap<String, (u32, u32)> = (0..48)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let gen = PrinterProfile::par_id("generique").unwrap();
+
+        // La feuille que `--cover --profil generique` pose : deux panneaux et
+        // rien autour, là où le cartonné habille un carton.
+        let mauvaise = cover::geometry(&a, gen);
+        let bonne = cover::geometry(&a, cp);
+        assert!((mauvaise.media_w - 426.0).abs() < 0.01, "{}", mauvaise.media_w);
+        assert!((mauvaise.media_h - 216.0).abs() < 0.01, "{}", mauvaise.media_h);
+        assert!((bonne.media_w - 490.48).abs() < 0.01, "{}", bonne.media_w);
+        assert!((bonne.media_h - 258.0).abs() < 0.01, "{}", bonne.media_h);
+
+        let poses = FichiersPoses {
+            interieur: None,
+            couverture: Some(Lecture::Pages(vec![[mauvaise.media_w, mauvaise.media_h]])),
+        };
+        let r = check(&a, cp, &dims, &poses);
+        let d: Vec<&Defaut> =
+            r.defauts.iter().filter(|d| d.regle == "fichier_couverture").collect();
+        assert_eq!(d.len(), 1, "défauts : {:?}", r.defauts);
+        assert!(d[0].bloquant);
+        assert!(!r.ok);
+        // Les deux cotes, celle du fichier et celle attendue : sans les deux,
+        // personne ne sait laquelle des deux feuilles il tient.
+        assert!(d[0].cause.contains("426.00 × 216.00"), "{}", d[0].cause);
+        assert!(d[0].cause.contains("490.48 × 258.00"), "{}", d[0].cause);
+        // Et le remède nomme la commande qui répare.
+        assert!(d[0].remede.contains("--cover --profil cloudprinter"), "{}", d[0].remede);
+
+        // La bonne feuille au même endroit : plus rien à dire.
+        let poses = FichiersPoses {
+            interieur: None,
+            couverture: Some(Lecture::Pages(vec![[bonne.media_w, bonne.media_h]])),
+        };
+        let r = check(&a, cp, &dims, &poses);
+        assert!(r.ok, "défauts : {:?}", r.defauts);
+        assert_eq!(r.defauts.len(), 0, "{:?}", r.defauts);
+
+        // Et sans aucun fichier posé, la règle se tait : la plupart des albums
+        // n'ont jamais été exportés, et le prévol tourne dans l'app à tout
+        // moment. La fiche, elle, est celle d'aujourd'hui.
+        let r = check(&a, cp, &dims, &FichiersPoses::default());
+        assert!(r.ok, "{:?}", r.defauts);
+        assert_eq!(r.defauts.len(), 0, "{:?}", r.defauts);
+        assert_eq!(
+            r.fiche.feuille_couverture_mm,
+            Some([bonne.media_w, bonne.media_h])
+        );
+    }
+
+    /// Le compte de pages attendu se **calcule**, il ne se lit pas dans
+    /// `pages_fichier` : celui-là est le compte déclaré à la commande, qui
+    /// vaut 96 chez Lulu pour un fichier de 48 planches doubles. Brancher la
+    /// fiche ici rougirait sur un fichier juste.
+    #[test]
+    fn le_compte_de_pages_attendu_se_calcule_et_non_se_declare() {
+        let a = album_de(48, 3.0);
+        let dims: HashMap<String, (u32, u32)> = (0..48)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let lu = PrinterProfile::par_id("lulu").unwrap();
+
+        // Une planche double de 426 × 216 : le fichier que Lulu attend.
+        let g = pdf::geometry(&a);
+        let doubles = FichiersPoses {
+            interieur: Some(Lecture::Pages(vec![[g.media_w, g.media_h]; 48])),
+            couverture: None,
+        };
+
+        // Chez Cloudprinter, qui relie page par page, il en faut 96.
+        let r = check(&a, cp, &dims, &doubles);
+        let d: Vec<&Defaut> =
+            r.defauts.iter().filter(|d| d.regle == "fichier_interieur").collect();
+        assert_eq!(d.len(), 1, "défauts : {:?}", r.defauts);
+        assert!(d[0].bloquant);
+        assert!(d[0].cause.contains("48 page"), "{}", d[0].cause);
+        assert!(d[0].cause.contains("96"), "{}", d[0].cause);
+        assert!(d[0].remede.contains("--print --profil cloudprinter"), "{}", d[0].remede);
+
+        // Chez Lulu, le même fichier de 48 pages est le bon, alors même que sa
+        // fiche en déclare 96 à la commande.
+        let r = check(&a, lu, &dims, &doubles);
+        assert_eq!(r.fiche.pages_fichier, 96);
+        assert!(
+            !r.defauts.iter().any(|d| d.regle == "fichier_interieur"),
+            "{:?}",
+            r.defauts
+        );
+
+        // Et le fichier de pages simples est le bon chez Cloudprinter : 96
+        // pages de 216 × 216.
+        let pli = imposition::pli_mm(cp);
+        let p = imposition::page_simple(&a, imposition::Cote::Droite, pli);
+        assert!((p.media_w - 216.0).abs() < 0.01, "{}", p.media_w);
+        let simples = FichiersPoses {
+            interieur: Some(Lecture::Pages(vec![[p.media_w, p.media_h]; 96])),
+            couverture: None,
+        };
+        let r = check(&a, cp, &dims, &simples);
+        assert!(
+            !r.defauts.iter().any(|d| d.regle == "fichier_interieur"),
+            "{:?}",
+            r.defauts
+        );
+
+        // Une page qui sort du lot est le symptôme qu'on cherche.
+        let mut pages = vec![[p.media_w, p.media_h]; 96];
+        pages[40] = [g.media_w, g.media_h];
+        let r = check(
+            &a,
+            cp,
+            &dims,
+            &FichiersPoses { interieur: Some(Lecture::Pages(pages)), couverture: None },
+        );
+        let d = r.defauts.iter().find(|d| d.regle == "fichier_interieur").unwrap();
+        assert!(d.bloquant);
+        assert!(d.cause.contains("page 41"), "{}", d.cause);
+    }
+
+    /// La couverture ne se contrôle que chez qui en attend une. Chez un
+    /// fournisseur qui relie un seul fichier, elle voyage **dans** l'intérieur
+    /// et `album-cover.pdf` n'est qu'un sous-produit que personne n'envoie :
+    /// refuser dessus refuserait un fichier dont la livraison ne veut pas.
+    #[test]
+    fn la_couverture_ne_se_controle_que_chez_qui_en_attend_une() {
+        let a = album_de(24, 3.0);
+        let dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        let pr = PrinterProfile::par_id("prodigi").unwrap();
+        assert_eq!(pr.fichiers, Fichiers::Un);
+
+        let poses = FichiersPoses {
+            interieur: None,
+            couverture: Some(Lecture::Pages(vec![[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])),
+        };
+        let r = check(&a, pr, &dims, &poses);
+        assert!(
+            !r.defauts.iter().any(|d| d.regle == "fichier_couverture"),
+            "{:?}",
+            r.defauts
+        );
+
+        // Et l'intérieur de ce fournisseur-là porte ses deux feuillets de
+        // couverture : 48 pages de livre et 50 dans le fichier.
+        let pli = imposition::pli_mm(pr);
+        let p = imposition::page_simple(&a, imposition::Cote::Droite, pli);
+        let feuillet = cover::page_geometry(&a, pr, cover::Face::Premiere);
+        let mut pages = vec![[feuillet.media_w, feuillet.media_h]];
+        pages.extend(std::iter::repeat([p.media_w, p.media_h]).take(48));
+        pages.push([feuillet.media_w, feuillet.media_h]);
+        let r = check(
+            &a,
+            pr,
+            &dims,
+            &FichiersPoses { interieur: Some(Lecture::Pages(pages)), couverture: None },
+        );
+        assert_eq!(r.fiche.pages_fichier, 50);
+        assert!(
+            !r.defauts.iter().any(|d| d.regle == "fichier_interieur"),
+            "{:?}",
+            r.defauts
+        );
+    }
+
+    /// Un fichier tronqué se dit, et ne panique jamais. C'est la leçon de
+    /// l'analyseur SVG de 6.3 s1 : la personne à qui le module doit un message
+    /// clair est celle qui s'apprête à commander.
+    #[test]
+    fn un_fichier_illisible_se_dit_au_lieu_de_paniquer() {
+        let dir = std::env::temp_dir()
+            .join(format!("colophon-prevol-fichiers-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // Rien posé : rien lu, et rien à dire.
+        let vide = FichiersPoses::lire(&dir);
+        assert!(vide.interieur.is_none() && vide.couverture.is_none());
+
+        fs::write(dir.join("album-print.pdf"), b"%PDF-1.6\n%\xe2\xe3\xcf\xd3\n1 0 obj").unwrap();
+        let poses = FichiersPoses::lire(&dir);
+        assert!(
+            matches!(poses.interieur, Some(Lecture::Illisible(_))),
+            "{:?}",
+            poses.interieur
+        );
+
+        let a = album_de(24, 3.0);
+        let dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims, &poses);
+        let d = r.defauts.iter().find(|d| d.regle == "fichier_interieur").unwrap();
+        assert!(d.bloquant);
+        assert!(!r.ok);
+        assert!(d.cause.contains("ne se lit pas"), "{}", d.cause);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
 }

@@ -281,7 +281,10 @@ _Avoid_: validator, checker
 
 **Preflight**:
 The gate between a composed album and a print order, read against one printer
-profile. A blocking defect stops the export; the line between the two is the
+profile. It reads the album, and it reads the files the export left beside it:
+a sheet rendered for another supplier is the one mistake nobody catches after
+the press, so a PDF whose geometry is not this profile's blocks — while one
+that is not there at all says nothing at all. A blocking defect stops the export; the line between the two is the
 same one the editor draws — what the guillotine cuts through or the binding
 splits blocks, and what a supplier would merely rather see further from the
 edge warns. The three safe zones on file differ by a factor of two, which is

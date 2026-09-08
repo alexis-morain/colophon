@@ -114,6 +114,11 @@ pub struct FichiersPoses {
 impl FichiersPoses {
     /// Ouvre ce qui est là, à côté d'`album.json`. La lecture du disque vit
     /// ici et jamais dans [`check`], qui reste une fonction de valeurs.
+    ///
+    /// Les deux noms sont ceux de la **livraison**. Les aperçus posés dans le
+    /// même dossier — `album.pdf` et `album-cover.apercu.pdf` — ne se lisent
+    /// pas : un aperçu change de profil au gré de qui regarde, et le juger
+    /// refuserait un album pour un fichier que personne n'envoie.
     pub fn lire(dir: &Path) -> Self {
         FichiersPoses {
             interieur: lire_pdf(&dir.join("album-print.pdf")),
@@ -1629,6 +1634,89 @@ mod tests {
             "{:?}",
             r.defauts
         );
+    }
+
+    /// L'aperçu de la couverture a son propre nom, et le prévol ne le
+    /// regarde jamais : un aperçu n'est pas ce qu'on envoie.
+    ///
+    /// `render_cover_preview` écrivait `album-cover.pdf`, le nom de la
+    /// livraison, au profil de l'aperçu. Prévisualiser sous un profil, en
+    /// changer, puis préflighter sans re-prévisualiser affichait donc un
+    /// bloquant sur un fichier que personne n'avait demandé à exporter.
+    ///
+    /// La même feuille sous le nom de la livraison bloque, et c'est elle qui
+    /// rend ce test mordant : sans elle, un lecteur qui cesserait de lire quoi
+    /// que ce soit passerait pour juste.
+    #[test]
+    fn l_apercu_de_la_couverture_n_est_jamais_juge() {
+        let dir = std::env::temp_dir()
+            .join(format!("colophon-prevol-apercu-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // Une feuille d'une géométrie qui n'est celle d'aucun profil.
+        let apercu = dir.join("album-cover.apercu.pdf");
+        pdf_d_une_page(&apercu, 999.0, 999.0);
+
+        let a = album_de(24, 3.0);
+        let dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        assert_eq!(cp.fichiers, Fichiers::Deux);
+
+        let poses = FichiersPoses::lire(&dir);
+        assert!(poses.couverture.is_none(), "{:?}", poses.couverture);
+        let r = check(&a, cp, &dims, &poses);
+        assert!(
+            !r.defauts.iter().any(|d| d.regle == "fichier_couverture"),
+            "{:?}",
+            r.defauts
+        );
+
+        // La même feuille sous le nom de la livraison, et la règle mord.
+        fs::rename(&apercu, dir.join("album-cover.pdf")).unwrap();
+        let poses = FichiersPoses::lire(&dir);
+        assert!(matches!(poses.couverture, Some(Lecture::Pages(_))), "{:?}", poses.couverture);
+        let r = check(&a, cp, &dims, &poses);
+        let d = r.defauts.iter().find(|d| d.regle == "fichier_couverture").unwrap();
+        assert!(d.bloquant);
+        assert!(d.cause.contains("999.00"), "{}", d.cause);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Un PDF d'une page, d'une géométrie choisie, écrit sur le disque : de
+    /// quoi donner au lecteur du prévol un fichier qu'il lit vraiment.
+    fn pdf_d_une_page(path: &Path, w_mm: f64, h_mm: f64) {
+        use lopdf::{dictionary, Document, Object};
+        const MM_PT: f64 = 72.0 / 25.4;
+        let mut doc = Document::with_version("1.6");
+        let pages_id = doc.new_object_id();
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => Object::Array(vec![
+                0.0f32.into(),
+                0.0f32.into(),
+                ((w_mm * MM_PT) as f32).into(),
+                ((h_mm * MM_PT) as f32).into(),
+            ]),
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => Object::Array(vec![page_id.into()]),
+                "Count" => 1,
+            }),
+        );
+        let catalog = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog);
+        doc.save(path).unwrap();
     }
 
     /// Un fichier tronqué se dit, et ne panique jamais. C'est la leçon de

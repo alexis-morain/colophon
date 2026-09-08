@@ -881,25 +881,33 @@ mod tests {
                 .collect()
         };
 
-        // Prodigi: four spreads between two cover leaves. The leaves are one
-        // page wide, the spreads two, and that difference is what says the
-        // covers are covers and not the first and last plate of the book.
+        // Prodigi: the book block between two cover leaves. It binds page by
+        // page, so four spreads make eight interior pages — the first spread's
+        // recto, then both pages of the other three, then the blank verso —
+        // and the file is ten pages long.
         let pr = largeurs(PrinterProfile::par_id("prodigi").unwrap(), "prodigi");
-        assert_eq!(pr.len(), 6, "4 planches plus les deux couvertures : {pr:?}");
+        assert_eq!(pr.len(), 10, "8 pages de livre plus les deux couvertures : {pr:?}");
         assert!((pr[0] - 210.0).abs() < 0.01, "première de couverture : {pr:?}");
-        assert!((pr[5] - 210.0).abs() < 0.01, "quatrième de couverture : {pr:?}");
-        // The spreads keep the album's own bleed, which is not yet the
-        // profile's: a leaf at 210 next to a spread at 426 is the file saying
-        // out loud that the interior does not answer to the supplier the way
-        // the cover now does.
-        for (i, w) in pr[1..5].iter().enumerate() {
-            assert!((w - 426.0).abs() < 0.01, "planche {} : {pr:?}", i + 1);
+        assert!((pr[9] - 210.0).abs() < 0.01, "quatrième de couverture : {pr:?}");
+        // A leaf is the trimmed page, an interior page is that page plus the
+        // bleed the album carries: they are close in width and the file has
+        // to keep them apart, which is what the count above says.
+        for (i, w) in pr[1..9].iter().enumerate() {
+            assert!((w - 213.0).abs() < 0.01, "page {} : {pr:?}", i + 1);
         }
 
         // Cloudprinter binds two files, so its interior stays an interior.
         let cp = largeurs(PrinterProfile::par_id("cloudprinter").unwrap(), "cloudprinter");
-        assert_eq!(cp.len(), 4, "l'intérieur seul, la couverture est son fichier : {cp:?}");
-        assert!(cp.iter().all(|w| (w - 426.0).abs() < 0.01), "{cp:?}");
+        assert_eq!(cp.len(), 8, "l'intérieur seul, la couverture est son fichier : {cp:?}");
+        // Their own inside-page template: 216 × 216, bleed on all four edges.
+        assert!(cp.iter().all(|w| (w - 216.0).abs() < 0.01), "{cp:?}");
+
+        // Lulu imposes our spreads itself, so its interior is still an
+        // interior of spreads — the shape the emitter has always written, and
+        // the one the whole file must keep producing unchanged.
+        let lu = largeurs(PrinterProfile::par_id("lulu").unwrap(), "lulu");
+        assert_eq!(lu.len(), 4, "quatre planches doubles : {lu:?}");
+        assert!(lu.iter().all(|w| (w - 426.0).abs() < 0.01), "{lu:?}");
 
         let _ = fs::remove_dir_all(&dir);
     }

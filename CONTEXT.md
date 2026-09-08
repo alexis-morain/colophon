@@ -10,9 +10,21 @@ the README; what it decided and why lives in `docs/adr/`.
 ## The book
 
 **Spread**:
-Two facing pages, the unit Colophon composes and prints. Never a single page:
-no image crosses the fold, and the PDF's interior is a run of spreads.
+Two facing pages, the unit Colophon composes. Never a single page: no image
+crosses the fold, and everything from `album.json` to the editor to the linter
+reasons on spreads. Whether the exported PDF carries them whole or cut in two
+is the printer's business, and only the export's — see **Imposition**.
 _Avoid_: page, double page
+
+**Imposition**:
+The arrangement of a composed interior into the pages of the delivered PDF,
+decided by the printer profile and nowhere else. A supplier who imposes our
+spreads gets them whole; one who binds one PDF page as one page of the book
+gets each spread cut at the fold, its photographs bled the fold's width past
+it, the first spread's recto alone at the head — a half-title belongs on page
+one — and a blank verso closing the block. It changes the file, never the book:
+the same album, the same page count, the same ink.
+_Avoid_: pagination, page order, layout, découpe
 
 **Sheet**:
 The piece of paper that turns. Its front is the right page of spread *n*, its
@@ -145,7 +157,9 @@ _Avoid_: the album font, the chosen font, embedded font
 
 **Bleed**:
 The margin of print beyond the trim, cut away in binding. Photos bleed on
-purpose; text never does.
+purpose; text never does, and neither does an object placed by hand. A spread
+has three bled edges and not four: the fold is the middle of the ink, not an
+edge, and it only becomes one for a printer who cuts the block page by page.
 _Avoid_: overprint, margin
 
 **Rempli**:

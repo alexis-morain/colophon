@@ -6,7 +6,7 @@
 
 use crate::model::Album;
 use crate::printer::{Fichiers, PrinterProfile};
-use crate::{cover, meta, pdf, scene, thumb};
+use crate::{cover, imposition, meta, pdf, scene, thumb};
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -166,6 +166,12 @@ pub type CancelFlag<'a> = &'a (dyn Fn() -> bool + Sync);
 /// who bind two files get the interior alone and their sheet from
 /// [`cover::render_cover_pdf`]; those who bind one get the front cover as the
 /// first page and the back cover as the last.
+///
+/// It also decides the shape of the interior. A supplier who imposes our
+/// spreads gets them whole; one who reads a PDF page as a page of the book
+/// gets each spread cut in two, in the order [`crate::imposition::faces`]
+/// fixes, and a blank verso closing the block. The album is composed the same
+/// way for both: what changes is the frame this function writes in.
 pub fn render_print_pdf(
     dir: &Path,
     profil: &PrinterProfile,
@@ -205,6 +211,10 @@ pub fn render_print_pdf(
         cover::add_cover_page(&mut writer, &album, profil, cover::Face::Premiere)?;
     }
 
+    // Nothing but zero for a supplier who imposes our spreads, so everything
+    // below reduces to what it was: same rectangles, same pixels, same bytes.
+    let pli = imposition::pli_mm(profil);
+
     for (i, spread) in album.spreads.iter().enumerate() {
         // How many pixels a photograph deserves is a question about the cell
         // it lands in, so it is a question about the scene.
@@ -215,22 +225,35 @@ pub fn render_print_pdf(
             anyhow::ensure!(!cancel(), "export annulé");
             let path = root.join(src);
             let orientation = meta::read(&path).orientation;
-            let asset = print_asset(
-                &path,
-                orientation,
-                &object.rect,
-                *focal,
-                *zoom,
-                album.reglages.get(src),
-            )
-            .with_context(|| format!("planche {} : {}", i + 1, src))?;
+            // The rectangle the press receives, which is the composed one
+            // widened by the fold bleed when this photograph runs to the fold.
+            // Resolving the original against the composed rectangle would
+            // downscale it to fill a cell three millimetres narrower than the
+            // one it lands in.
+            let rect = imposition::rect_exporte(object, &g, pli);
+            let asset =
+                print_asset(&path, orientation, &rect, *focal, *zoom, album.reglages.get(src))
+                    .with_context(|| format!("planche {} : {}", i + 1, src))?;
             assets.push(asset);
             done += 1;
             progress(&format!("render: {done}/{total}"));
         }
-        writer.add_spread(spread, &assets)?;
+        if profil.pages_simples {
+            for cote in imposition::faces(i) {
+                writer.add_page_simple(&album, spread, &assets, *cote, pli)?;
+            }
+        } else {
+            writer.add_spread(spread, &assets)?;
+        }
     }
     anyhow::ensure!(!cancel(), "export annulé");
+
+    // The verso of the last recto. Written here rather than folded into the
+    // loop above because it belongs to no spread: it is what makes the block
+    // come out even once the first spread has given its recto alone.
+    if profil.pages_simples && !album.spreads.is_empty() {
+        writer.add_page_blanche(&album, imposition::Cote::Gauche, pli);
+    }
 
     if couverture_incluse {
         progress("cover: quatrième de couverture");
@@ -309,6 +332,82 @@ mod tests {
         render_print_pdf(&dir, profil, &out, &|_| {}, &|| false).unwrap();
         assert!(out.exists());
         assert!(!out.with_extension("pdf.part").exists());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Ce que la découpe met sur chaque page, lu dans le fichier : le recto
+    /// seul en tête, les deux pages des planches suivantes, une blanche en
+    /// queue — et chaque photo sur la page où elle a été composée.
+    ///
+    /// La preuve tient au décompte des images par page. La planche 1 est une
+    /// pleine page au recto, la planche 2 un duo : si la découpe se trompait
+    /// de côté, une page sortirait à deux images et une autre à zéro sans que
+    /// le nombre de pages bouge d'une unité.
+    #[test]
+    fn la_decoupe_pose_une_photo_par_page_et_ferme_par_une_blanche() {
+        let dir = std::env::temp_dir().join(format!("colophon-simples-{}", std::process::id()));
+        let photos = dir.join("photos");
+        fs::create_dir_all(&photos).unwrap();
+        for n in ["a", "b", "c"] {
+            let img = image::RgbImage::from_pixel(2400, 2400, image::Rgb([80, 120, 160]));
+            image::DynamicImage::ImageRgb8(img)
+                .save_with_format(photos.join(format!("{n}.jpg")), image::ImageFormat::Jpeg)
+                .unwrap();
+        }
+        let mut album = Album::new("t", &photos, crate::model::Size { w: 210.0, h: 210.0 });
+        album.bleed_mm = 3.0;
+        let planche = |t: &str, srcs: &[&str]| crate::model::Spread {
+            template: t.into(),
+            slots: srcs
+                .iter()
+                .map(|s| crate::model::Slot::new((*s).into(), [0.5, 0.5]))
+                .collect(),
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets: Vec::new(),
+        };
+        album.spreads.push(planche("full1", &["a.jpg"])); // pleine page au recto
+        album.spreads.push(planche("duo", &["b.jpg", "c.jpg"])); // une de chaque côté
+        fs::write(dir.join("album.json"), serde_json::to_string(&album).unwrap()).unwrap();
+
+        let out = dir.join("album-print.pdf");
+        let profil = PrinterProfile::par_id("cloudprinter").unwrap();
+        render_print_pdf(&dir, profil, &out, &|_| {}, &|| false).unwrap();
+
+        let doc = lopdf::Document::load(&out).unwrap();
+        let mut pages: Vec<_> = doc.get_pages().into_iter().collect();
+        pages.sort_by_key(|(n, _)| *n);
+        assert_eq!(pages.len(), 4, "deux planches font quatre pages de livre");
+
+        let images = |id: lopdf::ObjectId| -> usize {
+            let page = doc.get_object(id).unwrap().as_dict().unwrap();
+            let res = page.get(b"Resources").unwrap().as_dict().unwrap();
+            res.get(b"XObject").unwrap().as_dict().unwrap().len()
+        };
+        // p1 : le recto de la planche 1. Sa page de gauche ne s'imprime pas.
+        assert_eq!(images(pages[0].1), 1, "p1 porte la pleine page");
+        // p2 et p3 : les deux pages de la planche 2, une photo chacune.
+        assert_eq!(images(pages[1].1), 1, "p2");
+        assert_eq!(images(pages[2].1), 1, "p3");
+        // p4 : la blanche qui ferme le bloc. Une page, sans une goutte d'encre.
+        assert_eq!(images(pages[3].1), 0, "p4 est blanche");
+        let contenu = doc.get_page_content(pages[3].1).unwrap();
+        assert!(contenu.is_empty(), "p4 porte du contenu : {contenu:?}");
+
+        // Et chaque page est la feuille du gabarit : 216 × 216 avec la page
+        // finie de 210 dedans.
+        for (n, id) in &pages {
+            let page = doc.get_object(*id).unwrap().as_dict().unwrap();
+            let mm = |o: &lopdf::Object| f64::from(o.as_float().unwrap()) * 25.4 / 72.0;
+            let media = page.get(b"MediaBox").unwrap().as_array().unwrap();
+            assert!((mm(&media[2]) - 216.0).abs() < 0.01, "p{n} : {:?}", media);
+            assert!((mm(&media[3]) - 216.0).abs() < 0.01, "p{n} : {:?}", media);
+            let trim = page.get(b"TrimBox").unwrap().as_array().unwrap();
+            assert!((mm(&trim[2]) - mm(&trim[0]) - 210.0).abs() < 0.01, "p{n} : {:?}", trim);
+        }
+
         fs::remove_dir_all(&dir).ok();
     }
 

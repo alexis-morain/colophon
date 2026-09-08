@@ -138,6 +138,31 @@ sortie et nulle part ailleurs (voir « L'imposition »). Cloudprinter passe en
 `pages_simples`, Prodigi redevient livrable, et le prévol perd `planches_doubles` et gagne
 `imposition`.
 
+**Un seuil réglé pour taire une règle ne mesure rien (08/09).** La session C, qui clôt le
+plan Cloudprinter. **`zone_sure` avertit au lieu de bloquer**, et c'est la mesure qui l'a
+décidé : la ligne de base d'une légende vaut `bleed + marge × CAPTION_SAFE`, soit la
+moitié de la marge du format — 7,00 mm sur cinq formats, 6,75 sur `portrait-20x25` —, donc
+ni la raccourcir ni changer de gabarit ne la déplace, et le remède affiché était faux quoi
+qu'on décide du reste. Bloquante, la règle refusait **tout album légendé** chez Prodigi et
+Lulu, et le seul silence de Cloudprinter venait d'un `safe_mm` de 5 que rien chez eux
+n'écrit. Molle, les trois vrais chiffres entrent : **7,0 / 10 / 12,7**, le premier étant
+le bas de la fourchette de leur mail (« at least 7-10 mm »), et la fourchette voyage en
+réserve. C'est la doctrine de 6.4 étendue d'un cran : le pli bute, la marge avertit. Le
+vrai correctif est en amont — légende à `max(0,5 × marge, plancher)` — il déplace toutes
+les légendes de tous les albums, donc c'est sa propre vague.
+
+**Et le prévol voit enfin la couverture.** La fiche porte la **feuille à plat** quand
+c'est nous qui la livrons (les trois cotes du cartonné vivaient dans le profil sans
+atteindre personne) ; `couverture_resolution` mesure la photo de couverture sur la
+surface de **ce** fournisseur — `cover::photo_rect_du_profil`, seule porte, parce qu'une
+feuille cartonnée fait 239 × 258 mm là où un feuillet volant fait 216 × 216 — et
+`dos_nu` prévient qu'un dos sous `SPINE_TEXT_MIN_MM` sortira sans titre. Mesuré sur
+`corse-2013` : une 12 Mpx tombe à **241 ppi** en couverture cartonnée et passe chez
+Prodigi, avec les mêmes pixels. Le verdict à trois est refait dans
+`docs/mesures/2026-09-08-le-verdict-a-trois.json` : **Prodigi livrable**, Lulu toujours
+dehors pour son CMJN, et plus un seul bloquant imputable à un profil chez Cloudprinter —
+ce qui reste est le plancher de 250 ppi de l'album, que le Composer n'a jamais garanti.
+
 Vagues 0 et 1 closes. **Verdict de 2.5 : le défaut reste `dom`**, gravé dans `rendu.ts`
 et `scripts/mesure-rendu.md`, dettes canvas au parking lot. Une bascule future resterait
 un commit qui ne fait que ça. VoiceOver et le rang via le menu natif : entendus et
@@ -713,7 +738,12 @@ dedans, et le défaut de la ligne de commande découpe.
 `--audit` : douze compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions
 de chaque jeu. `--reprise` : part des planches corrigées à la main contre
 `album.origin.json` ; sous 10 % bon, jusqu'à 30 % à surveiller, au-delà rédhibitoire.
-`--prevol --profil <id>` : bloquants contre un `PrinterProfile`.
+`--prevol --profil <id>` : bloquants et avertissements contre un `PrinterProfile`, et la
+fiche que l'imprimeur demande au téléphone. **Bloque ce que la coupe traverse ou que la
+reliure sépare** (`resolution`, `couverture_resolution`, `imposition`, `objet_coupe`,
+`objet_pli`, `fond_perdu`, `espace`, `pagination`) ; **avertit de ce qu'un fournisseur
+préfère** (`zone_sure`, `dos_nu`, un coefficient de dos provisoire). Un seuil réglé pour
+faire taire une règle est le défaut que cette frontière existe pour empêcher.
 
 ## Pièges connus
 

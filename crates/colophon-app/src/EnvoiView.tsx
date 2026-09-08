@@ -212,6 +212,12 @@ export function EnvoiView({
                     n: report.fiche.pages_fichier ?? 0,
                   })}
             </Ligne>
+            {report.fiche.feuille_couverture_mm !== undefined && (
+              <Ligne k={t("envoi.fiche.feuille")}>
+                {mm(report.fiche.feuille_couverture_mm[0])} ×{" "}
+                {mm(report.fiche.feuille_couverture_mm[1])} mm
+              </Ligne>
+            )}
             {report.fiche.dos_mm !== undefined && (
               <Ligne k={t("envoi.fiche.dos")}>
                 {t("envoi.fiche.dos.v", {

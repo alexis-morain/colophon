@@ -281,7 +281,11 @@ _Avoid_: validator, checker
 
 **Preflight**:
 The gate between a composed album and a print order, read against one printer
-profile. A blocking defect stops the export.
+profile. A blocking defect stops the export; the line between the two is the
+same one the editor draws — what the guillotine cuts through or the binding
+splits blocks, and what a supplier would merely rather see further from the
+edge warns. The three safe zones on file differ by a factor of two, which is
+why the second kind cannot refuse anything.
 _Avoid_: prepress check, validation
 
 **Reprise**:

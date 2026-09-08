@@ -511,6 +511,7 @@ export const FR = {
     "deux fichiers : l’intérieur et la couverture à plat",
   "envoi.fiche.livraison.un":
     "un seul fichier de {n} pages : couverture en première et en dernière page",
+  "envoi.fiche.feuille": "Feuille de couverture",
   "envoi.fiche.dos": "Dos",
   "envoi.fiche.dos.v": "{mm} mm pour {pages} pages à {g} g/m²",
   "envoi.fiche.resolution": "Résolution visée",
@@ -1217,6 +1218,7 @@ export const EN: Record<Cle, string> = {
   "envoi.fiche.livraison.deux": "two files: the interior and the flat cover",
   "envoi.fiche.livraison.un":
     "a single file of {n} pages: cover as first and last page",
+  "envoi.fiche.feuille": "Cover sheet",
   "envoi.fiche.dos": "Spine",
   "envoi.fiche.dos.v": "{mm} mm for {pages} pages at {g} g/m²",
   "envoi.fiche.resolution": "Target resolution",

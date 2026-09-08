@@ -503,8 +503,8 @@ export type Printer = {
   mors_mm: number;
   safe_mm: number;
   fichiers: "un" | "deux";
-  /** The supplier reads one PDF page as one book page, which our
-   *  spread-composed interior does not do yet. */
+  /** The supplier reads one PDF page as one book page. The album is composed
+   *  in spreads either way: the export cuts each one in two on its way out. */
   pages_simples: boolean;
   dos: { mode: "fourni" } | { mode: "calcule"; mm_par_feuille: number; constante_mm: number; certitude: Certitude };
   pages_min: number;
@@ -540,6 +540,9 @@ export type Fiche = {
   pages_fichier: number;
   fond_perdu_mm: { haut: number; bas: number; exterieur: number; dos: number };
   zone_sure_mm: number;
+  /** The flat cover sheet, when the supplier expects one from us. Absent when
+   *  they bind a single file and build their own cover. */
+  feuille_couverture_mm?: [number, number];
   espace: "rgb" | "fogra39";
   output_intent: string;
   conformite: "x4" | "aucun";

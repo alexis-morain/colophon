@@ -649,9 +649,12 @@ fn caption_candidates(g: &SpreadGeometry) -> [Point; 4] {
     // Measured from the trimmed edge, not from the media: a caption placed
     // 5 mm from the media edge comes back from the press 5 mm minus the bleed
     // from the cut, and every supplier's safe zone rejects it. Anchored here,
-    // the baseline clears 7 mm on a 210 mm page: past Cloudprinter's 5, which
-    // is the supplier the album is composed for. Prodigi wants 10 and its
-    // preflight says so; that is the fallback profile speaking, not a bug.
+    // the baseline clears half the margin — 7,00 mm on five formats, 6,75 on
+    // `portrait-20x25`, whose margin is 13,5 — which lands exactly on
+    // Cloudprinter's 7 and short of Prodigi's 10 and Lulu's 12,7. Their
+    // preflight says so, as a warning: a supplier's preference is not a defect
+    // of the file, and the number that would move all three is this one, in a
+    // wave of its own.
     let low = g.bleed + g.margin * CAPTION_SAFE;
     let high = g.media_h - g.bleed - g.margin * 0.75;
     let left = g.bleed + g.margin * 0.57;

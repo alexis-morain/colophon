@@ -11,7 +11,7 @@
 
 use crate::model::Album;
 use crate::printer::{Certitude, Dos, Espace, Fichiers, PdfX, PrinterProfile, GRAMMAGE_DEFAUT};
-use crate::{heic, imposition, meta, pdf, print, scene};
+use crate::{cover, heic, imposition, meta, pdf, print, scene};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use serde::Serialize;
@@ -53,6 +53,10 @@ pub struct Fiche {
     pub pages_fichier: usize,
     pub fond_perdu_mm: crate::printer::Bleed,
     pub zone_sure_mm: f64,
+    /// The flat cover sheet, in millimetres, when the supplier expects one
+    /// from us. Absent when they bind a single file and build their own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feuille_couverture_mm: Option<[f64; 2]>,
     pub espace: Espace,
     pub output_intent: &'static str,
     pub conformite: PdfX,
@@ -120,6 +124,13 @@ fn original_dimensions(album: &Album) -> HashMap<String, (u32, u32)> {
         .iter()
         .flat_map(|s| s.slots.iter().map(|sl| sl.src.as_str()))
         .collect();
+    // La photo de couverture est un slot de plus, et pas un slot de planche :
+    // elle n'apparaît nulle part dans `spreads`, donc sans cette ligne le
+    // prévol de la couverture n'aurait jamais de dimensions à mesurer et se
+    // tairait exactement là où il vient d'apprendre à parler.
+    if let Some(slot) = album.cover.as_ref().and_then(|c| c.photo.as_ref()) {
+        srcs.push(slot.src.as_str());
+    }
     srcs.sort_unstable();
     srcs.dedup();
     srcs.par_iter()
@@ -329,7 +340,26 @@ pub fn check(
         }
     }
 
-    // 6. Safe zone. Photos bleed on purpose; text must not.
+    // 6. Safe zone. Photos bleed on purpose; text must not — and this warns
+    // rather than refuses, which is the doctrine already written for the free
+    // objects in 6.4: the fold stops, the margin warns. What the guillotine
+    // goes through comes back mutilated and is refused; a caption a supplier
+    // would rather see further in is a preference, and preferences differ by
+    // a factor of two between the four profiles here.
+    //
+    // It had to change, and the measurement is what changed it. The caption's
+    // baseline is `bleed + margin × CAPTION_SAFE`, half the margin of the
+    // format: 7,00 mm on five formats and 6,75 on `portrait-20x25`. Blocking,
+    // it made every captioned album fail at Prodigi and at Lulu — 8 spreads of
+    // `corse-2013`, on `main`, for a rule nobody could satisfy — and the only
+    // thing keeping Cloudprinter quiet was a `safe_mm` of 5 that nobody had
+    // read off their specification. A threshold set to silence a rule measures
+    // nothing. Soft, the three real numbers can finally be carried: 7, 10 and
+    // 12,7, each the supplier's own.
+    //
+    // The real fix is upstream and is not this session's: a caption at
+    // `max(0,5 × marge, plancher)` would move every caption of every album,
+    // which is its own wave.
     for (si, spread) in album.spreads.iter().enumerate() {
         let porte_legende = spread.caption.is_some()
             || spread.slots.iter().any(|s| s.caption.is_some());
@@ -347,7 +377,7 @@ pub fn check(
         if marge + 1e-9 < profil.safe_mm {
             defauts.push(Defaut {
                 regle: "zone_sure",
-                bloquant: true,
+                bloquant: false,
                 planche: Some(si + 1),
                 case_idx: None,
                 src: None,
@@ -355,7 +385,13 @@ pub fn check(
                     "la légende passe à {marge:.1} mm du rognage, {} garde {:.1} mm libres",
                     profil.nom, profil.safe_mm
                 ),
-                remede: "raccourcissez la légende ou changez le gabarit de la planche".into(),
+                // L'ancien remède — « raccourcissez la légende ou changez le
+                // gabarit » — était faux : ni l'un ni l'autre ne déplace une
+                // ligne de base calculée depuis la marge du format.
+                remede: "retirez la légende de cette planche si le risque ne vous \
+                         convient pas : sa ligne de base vient de la marge du format, ni la \
+                         raccourcir ni changer de gabarit ne la déplace"
+                    .into(),
             });
         }
     }
@@ -409,7 +445,75 @@ pub fn check(
         }
     }
 
-    // 7. The spine. Not a defect: a number that travels, and must travel with
+    // 7. La couverture, mesurée sur la feuille que ce fournisseur reçoit.
+    //
+    // Les trois cotes du cartonné — rempli, débord, mors — n'agrandissent pas
+    // le livre, elles agrandissent le carton autour de lui : chez Cloudprinter
+    // la première passe de 213 × 216 à 239 × 258 mm. La photo qu'on y pose
+    // remplit donc une surface un huitième plus grande avec les mêmes pixels,
+    // et son ppi effectif tombe d'autant. Mesuré en session A sur les 98
+    // photographies de corse-2013 : 2 étaient sous le plancher en couverture
+    // souple, 36 le sont en cartonné. C'est la page que tout le monde regarde,
+    // et le prévol n'en disait rien du tout.
+    //
+    // Le rectangle vient de `cover`, jamais reconstruit ici : une feuille à
+    // plat et un feuillet volant ne sont pas la même surface, et le prévol qui
+    // choisirait à leur place mesurerait une couverture que personne n'imprime.
+    let cg = cover::geometry(album, profil);
+    if let Some(slot) = album.cover.as_ref().and_then(|c| c.photo.as_ref()) {
+        if let Some(&(ow, oh)) = dims.get(slot.src.as_str()) {
+            let rect = cover::photo_rect_du_profil(album, profil);
+            let scale = print::print_scale(&rect, ow, oh) * slot.zoom.max(1.0);
+            let ppi = print::PRINT_DPI / scale;
+            if ppi < profil.min_ppi {
+                defauts.push(Defaut {
+                    regle: "couverture_resolution",
+                    bloquant: true,
+                    planche: None,
+                    case_idx: None,
+                    src: Some(slot.src.clone()),
+                    cause: format!(
+                        "{} imprimerait à {ppi:.0} ppi sur la couverture de {:.0} × {:.0} mm, \
+                         {} exige {:.0}",
+                        slot.src, rect.w, rect.h, profil.nom, profil.min_ppi
+                    ),
+                    remede: "choisissez une photo plus définie pour la couverture : la \
+                             feuille est plus grande que la page, elle en demande davantage"
+                        .into(),
+                });
+            }
+        }
+    }
+
+    // Et le dos, qui est une surface ou n'en est pas une. Sous le plancher de
+    // `cover`, le titre n'est pas dessiné du tout — un titre sur un dos de
+    // 6 mm rate le pli de plus que sa propre hauteur. Un dos nu est un livre
+    // légitime, donc c'est un avertissement ; le taire serait laisser partir
+    // une tranche vide sans que personne l'ait choisi.
+    if profil.fichiers == Fichiers::Deux {
+        if let Some(spine) = &cg.spine {
+            if spine.w < cover::SPINE_TEXT_MIN_MM {
+                defauts.push(Defaut {
+                    regle: "dos_nu",
+                    bloquant: false,
+                    planche: None,
+                    case_idx: None,
+                    src: None,
+                    cause: format!(
+                        "le dos fait {:.1} mm : sous {:.0} mm il ne porte pas de titre, la tranche \
+                         sortira nue",
+                        spine.w,
+                        cover::SPINE_TEXT_MIN_MM
+                    ),
+                    remede: "ajoutez des planches : le dos s'épaissit avec le livre, et le \
+                             titre s'y pose tout seul"
+                        .into(),
+                });
+            }
+        }
+    }
+
+    // 8. The spine. Not a defect: a number that travels, and must travel with
     // its provenance attached.
     let dos_mm = profil.dos_mm(pages, GRAMMAGE_DEFAUT);
     if let Dos::Calcule { certitude: Certitude::Provisoire, .. } = profil.dos {
@@ -446,6 +550,14 @@ pub fn check(
             pages_fichier,
             fond_perdu_mm: profil.bleed_mm,
             zone_sure_mm: profil.safe_mm,
+            // La feuille à plat, quand c'est nous qui la livrons. C'est la
+            // première question d'un imprimeur qui relie du cartonné, et
+            // jusqu'ici la fiche ne savait pas y répondre : les trois cotes
+            // vivaient dans le profil et n'atteignaient aucun humain. Absente
+            // chez qui relie un seul fichier, où la couverture est deux
+            // feuillets de l'intérieur et n'a pas de feuille à elle.
+            feuille_couverture_mm: (profil.fichiers == Fichiers::Deux)
+                .then(|| [cg.media_w, cg.media_h]),
             espace: profil.espace,
             output_intent: profil.espace.output_intent(),
             conformite: profil.pdf_x,
@@ -906,14 +1018,143 @@ mod tests {
         assert_eq!(avant.ok, apres.ok);
         assert_eq!(avant.notes, apres.notes);
 
-        // The whole fiche, compared as data, with the one legitimate move
-        // asserted then masked.
+        // The whole fiche, compared as data, with the legitimate moves
+        // asserted then masked. There are two, and the second is the first:
+        // a bascule changes the page, and the cover sheet is built around the
+        // page, so a sheet that did **not** move would be the bug.
         let mut fa = serde_json::to_value(&avant.fiche).unwrap();
         let mut fp = serde_json::to_value(&apres.fiche).unwrap();
-        assert_ne!(fa["format_page_mm"], fp["format_page_mm"]);
-        fa["format_page_mm"] = serde_json::Value::Null;
-        fp["format_page_mm"] = serde_json::Value::Null;
+        for champ in ["format_page_mm", "feuille_couverture_mm"] {
+            assert_ne!(fa[champ], fp[champ], "{champ}");
+            fa[champ] = serde_json::Value::Null;
+            fp[champ] = serde_json::Value::Null;
+        }
         assert_eq!(fa, fp);
+    }
+
+    /// La zone sûre avertit et ne bloque plus, et c'est la mesure qui l'a
+    /// décidé : la ligne de base d'une légende vient de la marge du format,
+    /// aucune main ne la déplace, et la règle refusait donc tout album légendé
+    /// chez deux fournisseurs sur quatre. Ce qui bloque est ce que la coupe
+    /// traverse ; ce qu'un imprimeur préfère voir plus loin du bord s'écrit et
+    /// se lit — les trois chiffres vont du simple au double.
+    #[test]
+    fn la_zone_sure_avertit_au_lieu_de_bloquer() {
+        let mut a = album_de(24, 3.0);
+        // Toutes sauf la première, dont la page de gauche porte le faux-titre
+        // dans un vrai livre : une légende y tomberait à gauche, et c'est
+        // l'imposition qui le refuse, pas la zone sûre.
+        for s in &mut a.spreads[1..] {
+            s.caption = Some("une légende comme il y en a dans tout album".into());
+        }
+        let dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+
+        // Prodigi garde 10 mm, la légende passe à 7 : il le dit, et il livre.
+        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims);
+        let zs: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "zone_sure").collect();
+        assert_eq!(zs.len(), 23, "une par planche légendée : {:?}", r.defauts);
+        assert!(zs.iter().all(|d| !d.bloquant));
+        assert!(r.ok, "un album légendé reste livrable : {:?}", r.defauts);
+        assert_eq!(r.bloquants, 0);
+
+        // Et le remède ne promet plus ce qu'il ne peut pas tenir : ni
+        // raccourcir la légende ni changer de gabarit ne déplace sa ligne de
+        // base. C'est cette phrase-là qui était fausse quoi qu'on décide du
+        // reste, donc c'est elle que le test tient.
+        assert!(!zs[0].remede.contains("raccourcissez"), "{}", zs[0].remede);
+        assert!(zs[0].remede.contains("marge du format"), "{}", zs[0].remede);
+
+        // Cloudprinter porte enfin son vrai chiffre, et la légende tombe
+        // exactement dessus : 7,00 mm contre 7,0 demandés, sur un format dont
+        // la marge fait 14. Rien à dire, et rien qui ait été tu.
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        assert!(!r.defauts.iter().any(|d| d.regle == "zone_sure"), "{:?}", r.defauts);
+    }
+
+    /// La couverture se mesure sur la feuille que ce fournisseur reçoit, et
+    /// les deux feuilles n'ont pas la même taille : le carton habillé court
+    /// bien au-delà du livre, le feuillet volant s'arrête au fond perdu. Une
+    /// photographie peut donc être une couverture chez l'un et pas chez
+    /// l'autre, avec les mêmes pixels.
+    #[test]
+    fn la_couverture_se_mesure_sur_la_feuille_du_fournisseur() {
+        let mut a = album_de(24, 3.0);
+        // 2400 px : 282 ppi sur le feuillet de 216 mm de Prodigi, 255 sur les
+        // 239 mm de la feuille cartonnée. Les deux passent.
+        a.cover = Some(crate::model::Cover {
+            title: "t".into(),
+            subtitle: String::new(),
+            photo: Some(Slot::new("couv.jpg".into(), [0.5, 0.5])),
+            back_text: String::new(),
+        });
+        let mut dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        dims.insert("couv.jpg".into(), (2400, 2600));
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let pr = PrinterProfile::par_id("prodigi").unwrap();
+        let couv = |r: &PrevolReport| -> Option<String> {
+            r.defauts
+                .iter()
+                .find(|d| d.regle == "couverture_resolution")
+                .map(|d| d.cause.clone())
+        };
+        assert!(couv(&check(&a, cp, &dims)).is_none());
+        assert!(couv(&check(&a, pr, &dims)).is_none());
+
+        // 2100 px : 246 ppi sur le cartonné, 247 sur le feuillet. Le premier
+        // refuse, le second aussi — mais pas pour la même surface.
+        dims.insert("couv.jpg".into(), (2100, 2300));
+        let d = couv(&check(&a, cp, &dims)).expect("le cartonné refuse");
+        assert!(d.contains("239 × 258"), "{d}");
+        assert!(check(&a, cp, &dims).defauts.iter().any(|d| d.regle
+            == "couverture_resolution"
+            && d.bloquant));
+
+        // Et la surface exacte est celle du fournisseur, pas une moyenne :
+        // 2200 px passent chez Prodigi et pas chez Cloudprinter, avec la même
+        // photographie et le même album.
+        dims.insert("couv.jpg".into(), (2200, 2400));
+        assert!(couv(&check(&a, cp, &dims)).is_some(), "260 ppi sur 239 mm : non");
+        assert!(couv(&check(&a, pr, &dims)).is_none(), "258 ppi sur 216 mm : oui");
+
+        // Une couverture sans photo ne se mesure pas, et un album sans
+        // couverture non plus.
+        a.cover.as_mut().unwrap().photo = None;
+        assert!(couv(&check(&a, cp, &dims)).is_none());
+        a.cover = None;
+        assert!(couv(&check(&a, cp, &dims)).is_none());
+    }
+
+    /// Un dos trop mince ne porte pas de titre, et le prévol le dit au lieu de
+    /// laisser partir une tranche nue que personne n'a choisie. Ce n'est pas
+    /// un défaut du fichier : c'est un livre trop fin, donc un avertissement.
+    #[test]
+    fn un_dos_trop_mince_sort_nu_et_le_dit() {
+        let dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let nu = |n: usize| -> Option<Defaut> {
+            let mut r = check(&album_de(n, 3.0), cp, &dims);
+            let i = r.defauts.iter().position(|d| d.regle == "dos_nu")?;
+            Some(r.defauts.remove(i))
+        };
+
+        // 12 planches : 24 pages, leur minimum, et un dos de 7,62 mm.
+        let d = nu(12).expect("un dos de 7,6 mm ne porte rien");
+        assert!(!d.bloquant, "un dos nu est un livre légitime");
+        assert!(d.cause.contains("7.6"), "{}", d.cause);
+
+        // 24 planches : 9,24 mm, le titre tient.
+        assert!(nu(24).is_none());
+
+        // Et la question ne se pose pas chez qui fabrique son dos lui-même :
+        // il n'y a pas de feuille à plat à décrire.
+        let r = check(&album_de(12, 0.0), PrinterProfile::par_id("prodigi").unwrap(), &dims);
+        assert!(!r.defauts.iter().any(|d| d.regle == "dos_nu"), "{:?}", r.defauts);
     }
 
     /// The spec sheet carries what a printer asks on the phone.
@@ -930,6 +1171,17 @@ mod tests {
         assert_eq!(f.fichiers, Fichiers::Deux);
         assert_eq!(f.output_intent, "sRGB IEC61966-2.1");
         assert!(f.dos_mm.is_some());
+        // La première question d'un imprimeur qui relie du cartonné : de
+        // quelle taille est la feuille ? Les trois cotes vivaient dans le
+        // profil et n'atteignaient personne ; ici elles sortent en un nombre.
+        let dos = f.dos_mm.unwrap();
+        assert_eq!(
+            f.feuille_couverture_mm,
+            Some([210.0 * 2.0 + dos + 5.0 * 2.0 + 24.0 * 2.0, 210.0 + 24.0 * 2.0])
+        );
+        // Et personne ne la donne à qui fabrique la sienne.
+        let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims);
+        assert_eq!(r.fiche.feuille_couverture_mm, None);
         // A provisional profile never travels without its reservations.
         assert!(!r.reserves.is_empty());
     }

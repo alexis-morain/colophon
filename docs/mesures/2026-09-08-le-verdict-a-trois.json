@@ -1,0 +1,528 @@
+{
+  "date": "2026-09-08",
+  "session": "Cloudprinter C — le prévol, la zone sûre et le verdict à trois",
+  "plan": "plans/2026-09-07-plan-cloudprinter.md (hors dépôt)",
+  "album": "corse-2013, 50 planches, 100 pages, composé le 08/09 dans les six formats",
+  "resume": "La zone sûre avertit au lieu de bloquer, et les trois profils portent enfin leur vrai chiffre. Le prévol apprend la couverture : la feuille à plat entre dans la fiche, la photo de couverture se mesure sur la surface du fournisseur, un dos trop mince pour son titre s'annonce. Prodigi redevient livrable, Lulu reste dehors pour son CMJN, et plus aucun bloquant imputable à un profil ne reste chez Cloudprinter.",
+  "la_zone_sure": {
+    "ce_qui_change": "bloquant -> avertissement, et safe_mm passe de 5,0 à 7,0 chez Cloudprinter",
+    "pourquoi": "la ligne de base d'une légende vaut bleed + marge × CAPTION_SAFE, soit la moitié de la marge du format : aucune main ne la déplace, donc le remède affiché (« raccourcissez la légende ou changez le gabarit ») était faux quoi qu'on décide du reste",
+    "marge_mesuree_par_format_mm": {
+      "carre-21": 7.0,
+      "carre-30": "aucune planche légendée",
+      "paysage-28x21": 7.0,
+      "paysage-a4": 7.0,
+      "portrait-20x25": 6.75,
+      "portrait-a4": 7.0
+    },
+    "portrait_20x25": "marge de 13,5 mm, donc 6,75 : le seul format qui passe sous les 7,0 de Cloudprinter, pour un quart de millimètre. 8 planches sur 50 avertissent, aucune ne bloque — c'est exactement le cas que le plan avait prévu et que la sévérité rendait impossible.",
+    "safe_mm": {
+      "cloudprinter": {
+        "avant": 5.0,
+        "apres": 7.0,
+        "source": "mail du 08/09, « at least 7-10 mm away from the margins/fold line » : bas de la fourchette, et la fourchette voyage en réserve",
+        "avant_quoi": "5,0 n'était écrit nulle part chez eux : c'était la seule valeur qui faisait taire une règle bloquante"
+      },
+      "prodigi": {
+        "avant": 10.0,
+        "apres": 10.0,
+        "source": "leur guide, inchangé"
+      },
+      "lulu": {
+        "avant": 12.7,
+        "apres": 12.7,
+        "source": "le demi-pouce, inchangé"
+      },
+      "generique": {
+        "avant": 5.0,
+        "apres": 5.0,
+        "source": "l'imprimeur du coin, le plus large"
+      }
+    },
+    "le_vrai_correctif": "légende à max(0,5 × marge, plancher), dans le Composer : il déplace toutes les légendes de tous les albums, donc c'est sa propre vague, et pas celle-ci"
+  },
+  "le_prevol_de_la_couverture": {
+    "la_feuille_dans_la_fiche": {
+      "champ": "fiche.feuille_couverture_mm, absent chez qui relie un seul fichier",
+      "pourquoi": "les trois cotes du cartonné vivaient dans le profil et n'atteignaient aucun humain ; c'est la première question d'un imprimeur qui habille du carton",
+      "corse_2013_par_format": {
+        "carre-21": [
+          490.75,
+          258.0
+        ],
+        "carre-30": [
+          671.155,
+          348.0
+        ],
+        "paysage-28x21": [
+          630.885,
+          258.0
+        ],
+        "paysage-a4": [
+          664.885,
+          258.0
+        ],
+        "portrait-20x25": [
+          477.155,
+          302.0
+        ],
+        "portrait-a4": [
+          491.155,
+          345.0
+        ]
+      }
+    },
+    "couverture_resolution": {
+      "regle": "bloquant, comme la résolution d'une case",
+      "rectangle": "cover::photo_rect_du_profil, seule porte : 239 × 258 mm sur la feuille cartonnée de Cloudprinter, 216 × 216 sur le feuillet volant de Prodigi",
+      "mesure_sur_corse_2013": [
+        {
+          "src": "2013-10-28_125233_L1110840.jpg",
+          "pixels": [
+            4000,
+            3000
+          ],
+          "cloudprinter": "passe",
+          "prodigi": "passe",
+          "note": "la photo posée en couverture en session A, mesurée à 295,35 ppi"
+        },
+        {
+          "src": "2013-10-27_171056_IMG_2658.jpg",
+          "pixels": [
+            3264,
+            2448
+          ],
+          "cloudprinter": "241 ppi sur 239 × 258 mm, refusé",
+          "prodigi": "passe",
+          "note": "les 12 Mpx du troupeau : la session A avait prédit 241,00, le prévol rend 241"
+        }
+      ],
+      "ce_que_ca_dit": "un tiers des photographies de cet album ne peut plus être une couverture cartonnée, et le prévol le dit maintenant au lieu de laisser partir la page que tout le monde regarde"
+    },
+    "dos_nu": {
+      "regle": "avertissement : un dos nu est un livre légitime, mais personne ne l'a choisi",
+      "seuil": "cover::SPINE_TEXT_MIN_MM = 9 mm",
+      "atteignable": "12 planches (24 pages, leur minimum) donnent 7,62 mm ; 24 planches donnent 9,24 et le titre tient"
+    }
+  },
+  "le_verdict_a_trois": {
+    "methode": "corse-2013 composé le 08/09 dans les six formats, --prevol sur les quatre profils, avant et après la session",
+    "matrice": {
+      "carre-21": {
+        "cloudprinter": {
+          "avant": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 0,
+            "defauts": "resolution!=2"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 0,
+            "defauts": "resolution!=2"
+          }
+        },
+        "prodigi": {
+          "avant": {
+            "ok": false,
+            "bloquants": 10,
+            "avertissements": 0,
+            "defauts": "resolution!=2 zone_sure!=8"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 8,
+            "defauts": "resolution!=2 zone_sure~=8"
+          }
+        },
+        "lulu": {
+          "avant": {
+            "ok": false,
+            "bloquants": 11,
+            "avertissements": 1,
+            "defauts": "dos~=1 espace!=1 resolution!=2 zone_sure!=8"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 3,
+            "avertissements": 9,
+            "defauts": "dos~=1 espace!=1 resolution!=2 zone_sure~=8"
+          }
+        },
+        "generique": {
+          "avant": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 0,
+            "defauts": "resolution!=2"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 0,
+            "defauts": "resolution!=2"
+          }
+        }
+      },
+      "carre-30": {
+        "cloudprinter": {
+          "avant": {
+            "ok": false,
+            "bloquants": 4,
+            "avertissements": 0,
+            "defauts": "resolution!=4"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 4,
+            "avertissements": 0,
+            "defauts": "resolution!=4"
+          }
+        },
+        "prodigi": {
+          "avant": {
+            "ok": false,
+            "bloquants": 1,
+            "avertissements": 0,
+            "defauts": "resolution!=1"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 1,
+            "avertissements": 0,
+            "defauts": "resolution!=1"
+          }
+        },
+        "lulu": {
+          "avant": {
+            "ok": false,
+            "bloquants": 10,
+            "avertissements": 1,
+            "defauts": "dos~=1 espace!=1 resolution!=1 zone_sure!=8"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 9,
+            "defauts": "dos~=1 espace!=1 resolution!=1 zone_sure~=8"
+          }
+        },
+        "generique": {
+          "avant": {
+            "ok": false,
+            "bloquants": 1,
+            "avertissements": 0,
+            "defauts": "resolution!=1"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 1,
+            "avertissements": 0,
+            "defauts": "resolution!=1"
+          }
+        }
+      },
+      "paysage-28x21": {
+        "cloudprinter": {
+          "avant": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          },
+          "apres": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          }
+        },
+        "prodigi": {
+          "avant": {
+            "ok": false,
+            "bloquants": 8,
+            "avertissements": 0,
+            "defauts": "zone_sure!=8"
+          },
+          "apres": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 8,
+            "defauts": "zone_sure~=8"
+          }
+        },
+        "lulu": {
+          "avant": {
+            "ok": false,
+            "bloquants": 9,
+            "avertissements": 1,
+            "defauts": "dos~=1 espace!=1 zone_sure!=8"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 1,
+            "avertissements": 9,
+            "defauts": "dos~=1 espace!=1 zone_sure~=8"
+          }
+        },
+        "generique": {
+          "avant": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          },
+          "apres": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          }
+        }
+      },
+      "paysage-a4": {
+        "cloudprinter": {
+          "avant": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          },
+          "apres": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          }
+        },
+        "prodigi": {
+          "avant": {
+            "ok": false,
+            "bloquants": 8,
+            "avertissements": 0,
+            "defauts": "zone_sure!=8"
+          },
+          "apres": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 8,
+            "defauts": "zone_sure~=8"
+          }
+        },
+        "lulu": {
+          "avant": {
+            "ok": false,
+            "bloquants": 9,
+            "avertissements": 1,
+            "defauts": "dos~=1 espace!=1 zone_sure!=8"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 1,
+            "avertissements": 9,
+            "defauts": "dos~=1 espace!=1 zone_sure~=8"
+          }
+        },
+        "generique": {
+          "avant": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          },
+          "apres": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          }
+        }
+      },
+      "portrait-20x25": {
+        "cloudprinter": {
+          "avant": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 0,
+            "defauts": "resolution!=2"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 8,
+            "defauts": "resolution!=2 zone_sure~=8"
+          }
+        },
+        "prodigi": {
+          "avant": {
+            "ok": false,
+            "bloquants": 10,
+            "avertissements": 0,
+            "defauts": "resolution!=2 zone_sure!=8"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 8,
+            "defauts": "resolution!=2 zone_sure~=8"
+          }
+        },
+        "lulu": {
+          "avant": {
+            "ok": false,
+            "bloquants": 11,
+            "avertissements": 1,
+            "defauts": "dos~=1 espace!=1 resolution!=2 zone_sure!=8"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 3,
+            "avertissements": 9,
+            "defauts": "dos~=1 espace!=1 resolution!=2 zone_sure~=8"
+          }
+        },
+        "generique": {
+          "avant": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 0,
+            "defauts": "resolution!=2"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 2,
+            "avertissements": 0,
+            "defauts": "resolution!=2"
+          }
+        }
+      },
+      "portrait-a4": {
+        "cloudprinter": {
+          "avant": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          },
+          "apres": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          }
+        },
+        "prodigi": {
+          "avant": {
+            "ok": false,
+            "bloquants": 8,
+            "avertissements": 0,
+            "defauts": "zone_sure!=8"
+          },
+          "apres": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 8,
+            "defauts": "zone_sure~=8"
+          }
+        },
+        "lulu": {
+          "avant": {
+            "ok": false,
+            "bloquants": 9,
+            "avertissements": 1,
+            "defauts": "dos~=1 espace!=1 zone_sure!=8"
+          },
+          "apres": {
+            "ok": false,
+            "bloquants": 1,
+            "avertissements": 9,
+            "defauts": "dos~=1 espace!=1 zone_sure~=8"
+          }
+        },
+        "generique": {
+          "avant": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          },
+          "apres": {
+            "ok": true,
+            "bloquants": 0,
+            "avertissements": 0,
+            "defauts": ""
+          }
+        }
+      }
+    },
+    "lecture": {
+      "cloudprinter": "plus un seul bloquant imputable à un profil. Trois formats sur six sortent à zéro défaut ; les trois autres ne portent que `resolution`, que l'imprimeur du coin refuse aussi.",
+      "prodigi": "livrable, ce qu'il n'était pas. Les 8 zone_sure qui le bloquaient sont devenus 8 avertissements, et l'imposition lui était déjà venue en session B.",
+      "lulu": "toujours dehors, et pour sa raison à lui : `espace`, le CMJN Coated FOGRA39 que Colophon n'exporte pas. Ses 8 zone_sure ne sont plus qu'un avertissement de plus.",
+      "generique": "inchangé, ce qui est le contrôle : aucune de ses valeurs n'a bougé."
+    },
+    "ce_qui_reste_et_qui_n_est_pas_du_profil": {
+      "regle": "resolution",
+      "cause": "deux photographies d'iPhone 5 posées en grande case, 130 ppi contre 250 exigés, plus une à 234 en carre-30",
+      "preuve_que_ce_n_est_pas_un_profil": "`generique`, le profil le plus large des quatre, les refuse aussi",
+      "doctrine": "« plancher 250 ppi visé, pas garanti : l'audit en tolère trois, le prévol aucun ». Le Composer a placé des images qu'il aurait dû écarter, et c'est une correction à la main avant commande, comme le 02/09."
+    }
+  },
+  "ce_que_la_session_n_a_pas_touche": [
+    "aucune fiche : check.sh rend l'identité photos/fiches sur les trois jeux, et la décision 2 du plan tient",
+    "aucun seuil du linter, aucun compteur, aucun verdict d'audit",
+    "l'imposition, la géométrie de planche, album.json, le schéma"
+  ],
+  "ce_que_la_session_change_dans_un_pdf": {
+    "question": "safe_mm est un nombre de prévol, mais CoverGeometry.safe le porte jusqu'au dessin : la quatrième s'arrête quand sa ligne suivante passerait sous la zone sûre. Passer de 5 à 7 chez Cloudprinter peut donc coûter une ligne.",
+    "methode": "même album, même SOURCE_DATE_EPOCH, couverture rendue par le binaire de main (088e3ac) et par celui de la branche, comparaison par SHA-256",
+    "les_deux_fichiers_de_la_commande": {
+      "album": ".albums/papier, 48 planches, sans photo ni quatrième",
+      "cloudprinter": {
+        "sha12": "778e759f89c7",
+        "octets": 212037,
+        "identique": true
+      },
+      "prodigi": {
+        "sha12": "ccd4b6739d65",
+        "octets": 211976,
+        "identique": true
+      },
+      "lulu": {
+        "sha12": "11ae3ad8c1ef",
+        "octets": 212039,
+        "identique": true
+      },
+      "generique": {
+        "sha12": "7a3ce6409f67",
+        "octets": 211993,
+        "identique": true
+      },
+      "verdict": "les fichiers déjà rendus pour Cloudprinter ne bougent pas d'un octet : il n'y a rien à re-rendre avant de commander"
+    },
+    "le_seul_cas_ou_ca_bouge": {
+      "balayage": "une quatrième allongée par pas, 12 longueurs de 40 à 120 répétitions d'une phrase de 78 signes",
+      "identiques": [
+        40,
+        45,
+        50,
+        55,
+        60,
+        90,
+        100
+      ],
+      "differentes": [
+        65,
+        70,
+        75,
+        80,
+        120
+      ],
+      "ce_qui_differe": "une ligne de texte en moins (45 opérateurs Td contre 44, à 65 répétitions)",
+      "pourquoi_pas_toujours": "l'écart de 2 mm est plus petit qu'un interligne de 5,37 mm, donc il ne change de ligne que lorsque la coupure tombe dans cette bande",
+      "verdict": "une quatrième déjà trop longue pour son panneau s'arrête une ligne plus tôt chez Cloudprinter, c'est-à-dire plus loin de la coupe. C'est la conséquence correcte du fait qu'ils gardent 7 mm et non 5, et l'éditeur reste l'endroit où une quatrième démesurée se signale."
+    }
+  }
+}

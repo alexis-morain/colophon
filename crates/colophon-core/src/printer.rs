@@ -212,12 +212,22 @@ static PROFILS: &[PrinterProfile] = &[
         bleed_mm: Bleed { haut: 3.0, bas: 3.0, exterieur: 3.0, dos: 3.0 },
         // Cotes du cartonné, dessinées et nommées dans leur gabarit
         // `photobook_cw_s210_s_fc_cover` : COVER WRAP 18, COVER OVERLAP 3,
-        // COVER SQUEEZE 5. Elles reconstruisent sa feuille au centième :
-        // 210 × 2 + 14 + 5 × 2 + (3 + 18 + 3) × 2 = 492,00 mm.
+        // COVER SQUEEZE 5. Elles reconstruisent sa feuille au centième — à
+        // condition de lire le dos qu'on lui donne. Leur gabarit est dessiné
+        // pour 14 mm et mesure 492,00 ; les 96 pages de MCS qu'on commande
+        // font 12,48, et la feuille tombe alors à 490,48 × 258 mm. C'est le
+        // chiffre que Cloudprinter a écrit dans son mail du 08/09 : la feuille
+        // n'est plus notre lecture de leur gabarit, elle est confirmée.
         rempli_mm: 18.0,
         debord_mm: 3.0,
         mors_mm: 5.0,
-        safe_mm: 5.0,
+        // Le bas de leur fourchette, « at least 7-10 mm away from the
+        // margins/fold line », mail du 08/09. Les 5 mm d'avant n'étaient pas
+        // une cote relevée chez eux : c'était la seule valeur qui faisait
+        // taire une règle bloquante, et un seuil réglé pour taire une règle ne
+        // mesure plus rien. La règle est un avertissement depuis, donc ce
+        // champ peut enfin porter le vrai chiffre.
+        safe_mm: 7.0,
         fichiers: Fichiers::Deux,
         // Leur pageblock se compte en pages simples : « 96 pages » veut dire
         // 96 pages du PDF, et leur gabarit en est une. L'export découpe donc
@@ -240,6 +250,7 @@ static PROFILS: &[PrinterProfile] = &[
         reserves: &[
             "leur documentation prévient que la main du papier et le format du carton varient d'un imprimeur à l'autre : le dos calculé ici est une moyenne",
             "et ils ont répondu qu'on ne peut ni épingler un site de production, ni interroger le dos d'un produit avant commande : l'écart se mesurera au pied à coulisse sur l'album reçu",
+            "leur zone sûre est une recommandation à fourchette, « at least 7-10 mm », donnée à propos de la couverture : les 7 mm retenus en sont le bas, et aucun de leurs deux gabarits n'en dessine une",
         ],
     },
     // Second supplier, and the only one that takes a single file and builds
@@ -448,6 +459,29 @@ mod tests {
         assert!(pr.pagination_ok(500));
         assert!(!pr.pagination_ok(502), "au-dessus des 500 pages du guide");
         assert!(!pr.pagination_ok(25), "pagination impaire");
+    }
+
+    /// Les trois zones sûres sont celles des trois fournisseurs, et elles vont
+    /// du simple au double. Cloudprinter portait 5 mm, qui n'étaient écrits
+    /// nulle part chez eux : c'était la seule valeur qui faisait taire une
+    /// règle bloquante que la ligne de base d'une légende ne pouvait pas
+    /// satisfaire. La règle avertit depuis, donc le champ porte le chiffre du
+    /// mail, et un chiffre qu'on choisit pour taire une règle est exactement
+    /// ce que ce test empêche de revenir.
+    #[test]
+    fn les_zones_sures_sont_celles_des_fournisseurs() {
+        let z = |id: &str| PrinterProfile::par_id(id).unwrap().safe_mm;
+        assert_eq!(z("cloudprinter"), 7.0, "bas de leur fourchette 7-10 mm");
+        assert_eq!(z("prodigi"), 10.0, "leur guide");
+        assert_eq!(z("lulu"), 12.7, "le demi-pouce");
+        // Et la fourchette voyage avec le chiffre : une recommandation n'est
+        // pas une cote de gabarit, et la fiche doit pouvoir le dire.
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        assert!(
+            cp.reserves.iter().any(|r| r.contains("7-10")),
+            "{:?}",
+            cp.reserves
+        );
     }
 
     /// A binding refuses an odd page count and anything out of its range.

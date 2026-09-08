@@ -21,7 +21,7 @@ use crate::font;
 
 use crate::model::{Album, Cover};
 use crate::pdf::{self, Boxes, PdfWriter, Rect};
-use crate::printer::{PrinterProfile, GRAMMAGE_DEFAUT};
+use crate::printer::{Fichiers, PrinterProfile, GRAMMAGE_DEFAUT};
 use crate::{meta, print};
 use anyhow::{Context, Result};
 use std::fs;
@@ -234,6 +234,29 @@ pub fn photo_rect(g: &CoverGeometry) -> Rect {
     }
 }
 
+/// Where the front photograph goes on a single leaf: the whole card. A leaf
+/// has no fold to stop it at, so it bleeds on all four sides.
+pub fn leaf_photo_rect(g: &CoverGeometry) -> Rect {
+    Rect { x: 0.0, y: 0.0, w: g.media_w, h: g.media_h }
+}
+
+/// The rectangle the front photograph is printed into **at this supplier**,
+/// whichever shape the cover takes there.
+///
+/// One function rather than a `match` at every caller, because the two shapes
+/// are not the same surface at all: on a 210 mm book the flat case-wrap sheet
+/// prints it into 239 × 258 mm and a single leaf into 216 × 216. Anything
+/// that measures the cover — the preflight's resolution rule first of all —
+/// reads it here, or it measures a rectangle nobody prints.
+pub fn photo_rect_du_profil(album: &Album, profil: &PrinterProfile) -> Rect {
+    match profil.fichiers {
+        Fichiers::Deux => photo_rect(&geometry(album, profil)),
+        Fichiers::Un => {
+            leaf_photo_rect(&page_geometry(album, profil, Face::Premiere))
+        }
+    }
+}
+
 /// Which face of the cover a single leaf carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Face {
@@ -313,7 +336,7 @@ pub(crate) fn add_cover_page(
                     root.display()
                 );
                 let src = root.join(&slot.src);
-                let rect = Rect { x: 0.0, y: 0.0, w: g.media_w, h: g.media_h };
+                let rect = leaf_photo_rect(&g);
                 let orientation = meta::read(&src).orientation;
                 let asset = print::print_asset(
                     &src,
@@ -677,6 +700,37 @@ mod tests {
         assert_eq!(r.y, 0.0);
         assert!((r.x + r.w - g.media_w).abs() < 1e-9, "elle atteint le bord extérieur");
         assert!((r.h - g.media_h).abs() < 1e-9, "et le haut comme le bas");
+    }
+
+    /// La photographie de couverture n'a pas la même surface chez tout le
+    /// monde, et c'est une seule fonction qui le sait. Le carton habillé court
+    /// au-delà du livre sur les quatre bords ; le feuillet volant s'arrête au
+    /// fond perdu. Un prévol qui reconstruirait le rectangle lui-même
+    /// mesurerait une couverture que personne n'imprime.
+    #[test]
+    fn la_photo_de_couverture_a_la_surface_de_son_fournisseur() {
+        let a = album_de(24);
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let pr = PrinterProfile::par_id("prodigi").unwrap();
+
+        // Feuille à plat : de la droite du dos au bord du carton, sur toute
+        // sa hauteur. C'est bien le rectangle que l'émetteur y pose.
+        let boitier = photo_rect_du_profil(&a, cp);
+        let attendu = photo_rect(&geometry(&a, cp));
+        assert!(
+            (boitier.x - attendu.x).abs() < 1e-9
+                && (boitier.w - attendu.w).abs() < 1e-9
+                && (boitier.h - attendu.h).abs() < 1e-9,
+            "{boitier:?} ≠ {attendu:?}"
+        );
+        assert!((boitier.h - (210.0 + 24.0 * 2.0)).abs() < 1e-9, "{boitier:?}");
+
+        // Feuillet volant : la page plus son fond perdu, et rien de plus.
+        // Prodigi n'en demande aucun, donc c'est la page nue.
+        let feuillet = photo_rect_du_profil(&a, pr);
+        assert!((feuillet.w - 210.0).abs() < 1e-9, "{feuillet:?}");
+        assert!((feuillet.h - 210.0).abs() < 1e-9, "{feuillet:?}");
+        assert!(boitier.w * boitier.h > feuillet.w * feuillet.h * 1.3);
     }
 
     /// A thin spine carries no type: the rule is a measurement, not a taste.

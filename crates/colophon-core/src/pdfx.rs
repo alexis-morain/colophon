@@ -184,19 +184,12 @@ fn xmp_date(t: DateTime<Local>) -> String {
 /// pair exists because the format asks for one; the halves match because the
 /// file has never been revised since it was created.
 fn fingerprint(title: &str, stamp: DateTime<Local>) -> Vec<u8> {
+    // FNV-1a, twice with a different offset basis. A document identifier
+    // needs to differ between documents, not to resist an adversary — and an
+    // album's export manifest needs exactly the same thing, which is why the
+    // function itself lives in `export` and both callers share it.
     let seed = format!("{title}|{}", stamp.to_rfc3339());
-    let mut out = Vec::with_capacity(16);
-    for round in 0..2u64 {
-        // FNV-1a, twice with a different offset basis. A document identifier
-        // needs to differ between documents, not to resist an adversary.
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325 ^ round.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        for b in seed.as_bytes() {
-            h ^= u64::from(*b);
-            h = h.wrapping_mul(0x100_0000_01b3);
-        }
-        out.extend_from_slice(&h.to_be_bytes());
-    }
-    out
+    crate::export::empreinte(seed.as_bytes()).to_vec()
 }
 
 /// Escape the five characters that would otherwise end the XML element they

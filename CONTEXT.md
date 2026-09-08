@@ -284,12 +284,32 @@ The gate between a composed album and a print order, read against one printer
 profile. It reads the album, and it reads the files the export left beside it:
 a sheet rendered for another supplier is the one mistake nobody catches after
 the press, so a PDF whose geometry is not this profile's blocks — while one
-that is not there at all says nothing at all. A blocking defect stops the export; the line between the two is the
+that is not there at all says nothing at all. Geometry is not the whole of it:
+a file can be right in every dimension and still carry yesterday's captions,
+which is what the manifest is for. A blocking defect stops the export; the line between the two is the
 same one the editor draws — what the guillotine cuts through or the binding
 splits blocks, and what a supplier would merely rather see further from the
 edge warns. The three safe zones on file differ by a factor of two, which is
 why the second kind cannot refuse anything.
 _Avoid_: prepress check, validation
+
+**Manifest**:
+What the exports of one album folder wrote, listed in `export.json` beside
+`album.json`: one entry per delivered file, naming the printer profile it was
+rendered for, the fingerprint of the album at the time, its size and its date.
+Written by the command line, never by the application, which exports wherever
+the user points it. It only ever adds precision: a file it says nothing about
+is not suspect for that.
+_Avoid_: manifeste (French in a diff), receipt, index, ledger
+
+**Fingerprint**:
+Sixteen bytes that differ between two albums that would print differently, and
+match between two spellings of the same one. Every field enters but `version`,
+the schema stamp a migration moves without the book moving, and `root`, where
+the photographs live rather than what the book shows. The photographs
+themselves are never hashed: it would cost 95 MB at every preflight to catch a
+rare case.
+_Avoid_: hash, checksum, digest, signature
 
 **Reprise**:
 The share of the composer's proposal a human had to correct by hand, measured

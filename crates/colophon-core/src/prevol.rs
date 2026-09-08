@@ -11,7 +11,7 @@
 
 use crate::model::Album;
 use crate::printer::{Certitude, Dos, Espace, Fichiers, PdfX, PrinterProfile, GRAMMAGE_DEFAUT};
-use crate::{heic, meta, pdf, print, scene};
+use crate::{heic, imposition, meta, pdf, print, scene};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use serde::Serialize;
@@ -142,6 +142,9 @@ pub fn check(
     let mut defauts: Vec<Defaut> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
     let g = pdf::geometry(album);
+    // Zero unless the supplier cuts the block page by page, and then every
+    // rectangle below is the one the composition produced.
+    let pli = imposition::pli_mm(profil);
     let pages = album.spreads.len() * 2;
     // What the supplier counts is the file, not the book block. A supplier
     // who binds one file finds the cover in it, two pages the interior does
@@ -189,29 +192,36 @@ pub fn check(
         });
     }
 
-    // 1 bis. One PDF page, one book page. A supplier who binds a single file
-    // reads it that way, and our interior is composed of spreads: two book
-    // pages to the PDF page. The cover leaves now travel in the file, but
-    // between them the book still describes itself at half length, and no
-    // page count can be right for both the book and the file until the
-    // interior is emitted page by page.
+    // 1 bis. The imposition. A supplier who reads one PDF page as one page of
+    // the book gets the interior cut in two, and the cut has a price: the left
+    // half of the first spread is the page that faces the inside of the cover,
+    // and it is not printed. That is what puts the half-title on page one,
+    // where a book puts it. It only holds if that half is empty — which it is
+    // of a half-title, and is not of a spread of photographs — so a spread
+    // carrying something there is refused rather than quietly truncated.
     if profil.pages_simples {
-        defauts.push(Defaut {
-            regle: "planches_doubles",
-            bloquant: true,
-            planche: None,
-            case_idx: None,
-            src: None,
-            cause: format!(
-                "l'intérieur est rendu en {} planches doubles, or {} relie une page de PDF par page de livre : le fichier décrit un livre de {} pages au lieu de {pages}",
-                album.spreads.len(),
-                profil.nom,
-                album.spreads.len()
-            ),
-            remede: format!(
-                "choisissez un imprimeur qui relie deux fichiers, ou attendez le rendu page par page ; la couverture, elle, voyage bien en première et dernière page ({pages_fichier} pages de livre)"
-            ),
-        });
+        if let Some(premiere) = album.spreads.first() {
+            let objets = imposition::objets_a_gauche(&scene::Scene::of(premiere, &g), &g);
+            if objets > 0 {
+                defauts.push(Defaut {
+                    regle: "imposition",
+                    bloquant: true,
+                    planche: Some(1),
+                    case_idx: None,
+                    src: None,
+                    cause: format!(
+                        "{} relie une page de PDF par page de livre, et la page de gauche de la \
+                         première planche ne s'imprime pas : elle porte {objets} objet{} qui \
+                         seraient perdus",
+                        profil.nom,
+                        if objets > 1 { "s" } else { "" }
+                    ),
+                    remede: "cochez la page de garde dans l'écran Envoi : elle se pose en tête et \
+                             sa page de gauche reste blanche"
+                        .into(),
+                });
+            }
+        }
     }
 
     // 2. Bleed. The album carries one value; the profile wants a value per
@@ -293,7 +303,12 @@ pub fn check(
         for (ci, object) in scene.objects.iter().enumerate() {
             let scene::Role::Photo { src, zoom, .. } = &object.role else { continue };
             let Some(&(ow, oh)) = dims.get(src) else { continue };
-            let rect = &object.rect;
+            // The rectangle **this supplier** receives. A photograph that runs
+            // to the fold gains the fold bleed on the way out, so it is
+            // cover-cropped a little wider for the same pixels: measuring the
+            // composed rectangle would promise 250 ppi where the press gets
+            // less. Identical to `object.rect` for everyone who binds spreads.
+            let rect = &imposition::rect_exporte(object, &g, pli);
             let slot = &spread.slots[ci];
             let scale = print::print_scale(rect, ow, oh) * zoom.max(1.0);
             let ppi = print::PRINT_DPI / scale;
@@ -478,6 +493,87 @@ mod tests {
         a
     }
 
+    /// La page que l'imposition n'imprime pas doit être vide, et c'est ici que
+    /// ça se refuse. Une première planche de photos en porte une à gauche : la
+    /// découpe la perdrait sans un mot, donc elle est bloquante chez qui relie
+    /// page par page, et invisible chez qui impose nos planches lui-même.
+    #[test]
+    fn une_premiere_planche_qui_porte_a_gauche_est_refusee() {
+        let mut a = album_de(12, 3.0);
+        let dims: HashMap<String, (u32, u32)> = (0..24)
+            .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
+            .collect();
+
+        // `solo` pose sa photo au recto : la page de gauche est blanche et
+        // rien ne se perd.
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        assert!(r.ok, "défauts : {:?}", r.defauts);
+
+        // `duo` en pose une de chaque côté.
+        a.spreads[0].template = "duo".into();
+        a.spreads[0].slots.push(Slot::new("12.jpg".into(), [0.5, 0.5]));
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let refus: Vec<&Defaut> =
+            r.defauts.iter().filter(|d| d.regle == "imposition").collect();
+        assert_eq!(refus.len(), 1, "défauts : {:?}", r.defauts);
+        assert!(refus[0].bloquant);
+        assert_eq!(refus[0].planche, Some(1));
+        assert!(refus[0].remede.contains("page de garde"), "{}", refus[0].remede);
+        assert!(!r.ok);
+
+        // La même planche ailleurs dans le livre ne gêne personne : c'est la
+        // première, et seulement elle, dont la gauche ne s'imprime pas.
+        let mut b = album_de(12, 3.0);
+        b.spreads[5].template = "duo".into();
+        b.spreads[5].slots.push(Slot::new("12.jpg".into(), [0.5, 0.5]));
+        assert!(check(&b, PrinterProfile::par_id("cloudprinter").unwrap(), &dims).ok);
+
+        // Et chez un imprimeur qui relie des planches, la question ne se pose
+        // pas : il n'y a pas de découpe.
+        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims);
+        assert!(!r.defauts.iter().any(|d| d.regle == "imposition"), "{:?}", r.defauts);
+        assert!(r.ok, "{:?}", r.defauts);
+    }
+
+    /// Le piège du fond perdu intérieur, mesuré : une pleine page recadrée par
+    /// sa largeur tient les 250 ppi sur la planche composée et ne les tient
+    /// plus une fois qu'elle saigne trois millimètres de plus vers le pli. Le
+    /// prévol lit le rectangle que la presse reçoit, pas celui de la
+    /// composition, sinon il promet une résolution que personne n'imprime.
+    #[test]
+    fn le_fond_perdu_du_pli_fait_tomber_une_pleine_page_sous_le_plancher() {
+        let mut a = album_de(12, 3.0);
+        for s in &mut a.spreads {
+            s.template = "full1".into(); // page de gauche vide, pleine page à droite
+        }
+        // 2110 px de large pour 213 mm : 251 ppi. Pour 216 : 248. La hauteur
+        // ne gouverne rien ici, la photo étant nettement plus haute que large.
+        let dims: HashMap<String, (u32, u32)> = (0..12)
+            .map(|i| (format!("{i}.jpg"), (2110u32, 3000u32)))
+            .collect();
+
+        let r = check(&a, PrinterProfile::par_id("generique").unwrap(), &dims);
+        assert!(r.ok, "sur la planche composée elle passe : {:?}", r.defauts);
+
+        let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let sous: Vec<&Defaut> = r.defauts.iter().filter(|d| d.regle == "resolution").collect();
+        assert_eq!(sous.len(), 12, "une par planche : {:?}", r.defauts);
+        assert!(sous[0].cause.contains("248 ppi"), "{}", sous[0].cause);
+
+        // Une case en marge n'atteint pas le pli, donc rien ne bouge pour
+        // elle : le rectangle d'export est le rectangle composé.
+        let mut b = album_de(12, 3.0);
+        for s in &mut b.spreads {
+            s.template = "solo".into();
+        }
+        let dims: HashMap<String, (u32, u32)> = (0..12)
+            .map(|i| (format!("{i}.jpg"), (2000u32, 3000u32)))
+            .collect();
+        let cp = check(&b, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);
+        let gen = check(&b, PrinterProfile::par_id("generique").unwrap(), &dims);
+        assert_eq!(cp.ok, gen.ok, "cp {:?} / gen {:?}", cp.defauts, gen.defauts);
+    }
+
     /// Un objet libre que la coupe traverse, un autre que le pli traverse :
     /// deux bloquants, chacun nommé, et le même album sans eux passe. Ce sont
     /// les deux seules choses que le prévol refuse à un objet libre — la
@@ -592,15 +688,14 @@ mod tests {
             .collect();
 
         // Prodigi generates the bleed itself and takes 24 pages: nothing in
-        // the album's own numbers bothers it. What stops it is the shape of
-        // the interior, and that is the only thing it reports.
+        // the album's own numbers bothers it. The shape of the interior used
+        // to, and no longer does — the export cuts the block page by page for
+        // whoever binds it that way — so it now passes clean. That is the
+        // profile going from unusable to deliverable without a number of its
+        // own moving.
         let r = check(&a, PrinterProfile::par_id("prodigi").unwrap(), &dims);
-        assert_eq!(
-            r.defauts.iter().map(|d| d.regle).collect::<Vec<_>>(),
-            vec!["planches_doubles"],
-            "{:?}",
-            r.defauts
-        );
+        assert!(r.ok, "{:?}", r.defauts);
+        assert_eq!(r.bloquants, 0, "{:?}", r.defauts);
 
         // Cloudprinter wants 3 mm of bleed we did not render: blocked.
         let r = check(&a, PrinterProfile::par_id("cloudprinter").unwrap(), &dims);

@@ -117,12 +117,12 @@ Four profiles ship today: Cloudprinter, Prodigi, Lulu, and a generic one for
 the shop down the road. They disagree on bleed, on file count and on colour
 space, which is exactly why the profile is data and not a rule in the code.
 
-The export itself is tuned for one of them, Cloudprinter, and for any shop
-that imposes spreads: the interior is composed and rendered as double pages.
-Prodigi binds one PDF page to one book page, so the preflight refuses the file
-rather than let a book come back bound one page out of place. That is the
-preflight doing its job, and it is also the honest state of things: a profile
-is a set of checks, not a promise that the file suits every press.
+The album is always composed as spreads — nothing crosses the fold, and the
+editor shows two facing pages — but the export writes whatever shape the
+profile asks for. A shop that imposes spreads gets them whole. A binder that
+reads one PDF page as one page of the book gets the interior cut in two on the
+way out, with the bleed it wants at the fold, the half-title on page one, and a
+blank verso closing the block. Same album, same book, two files.
 
 ## Privacy
 

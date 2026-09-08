@@ -28,6 +28,8 @@ from PIL import Image
 
 BIN = sys.argv[1] if len(sys.argv) > 1 else "target/release/colophon"
 FORMAT = "carre-21"
+# Voir plus bas : il faut un intérieur de planches doubles, et lui seul en rend.
+PROFIL = "lulu"
 # Un demi-millimètre : la tolérance que le prompt de 6.3 s1 fixe, et elle est
 # large devant le pas du raster (0,21 mm à 300 ppi) comme devant
 # l'anticrénelage d'un bord courbe.
@@ -118,8 +120,15 @@ with tempfile.TemporaryDirectory() as td:
     os.makedirs(dossier)
     with open(os.path.join(dossier, "album.json"), "w", encoding="utf-8") as f:
         json.dump(album, f)
+    # Le profil est nommé, et il l'est pour une raison : ce qu'on mesure ici
+    # est l'encre d'un ornement dans sa boîte **sur une planche**, dans le
+    # repère que `--dump-geometry` vient de rendre. Un imprimeur qui relie page
+    # par page reçoit la même planche coupée en deux (`core::imposition`), et
+    # la première page du fichier n'est alors plus la planche entière. `lulu`
+    # est le seul profil qui rende un intérieur de planches doubles sans y
+    # glisser de couverture ; le défaut, `cloudprinter`, découpe.
     rendu = subprocess.run(
-        [BIN, "--print", "-o", dossier], capture_output=True, text=True
+        [BIN, "--print", "--profil", PROFIL, "-o", dossier], capture_output=True, text=True
     )
     if rendu.returncode != 0:
         print(f"ornement-encre : le tirage a refusé\n{rendu.stderr}", file=sys.stderr)

@@ -1106,19 +1106,48 @@ impl PdfWriter {
     /// decision, not a property of the spread, and the scene is deliberately
     /// silent about it.
     pub fn add_spread(&mut self, spread: &Spread, assets: &[JpegAsset]) -> Result<()> {
-        use crate::scene::{Role, Scene};
-        // Measured in this document's face: the half-title fits its title by
-        // shrinking it, so the scene the emitter draws from is the one laid
-        // out in the face the emitter is about to set the page in.
-        let scene = {
-            let face = &self.ecrivain;
-            Scene::of_avec(spread, &self.geom, &|s, pt| face.largeur_mm(s, pt))
-        };
+        let scene = self.scene_de(spread);
+        let (content, xobjects) = self.dessiner(&scene.objects, assets);
+        let b = self.bleed_mm;
+        self.add_page(
+            Boxes {
+                media: [self.geom.media_w, self.geom.media_h],
+                trim: [b, b, self.geom.media_w - b, self.geom.media_h - b],
+            },
+            content,
+            xobjects,
+        );
+        Ok(())
+    }
 
+    /// One spread's scene, laid out in **this document's** face.
+    ///
+    /// The half-title fits its title by shrinking it, so the scene the emitter
+    /// draws from has to be the one measured in the face the emitter is about
+    /// to set the page in.
+    fn scene_de(&self, spread: &Spread) -> crate::scene::Scene {
+        let face = &self.ecrivain;
+        crate::scene::Scene::of_avec(spread, &self.geom, &|s, pt| face.largeur_mm(s, pt))
+    }
+
+    /// Lay a run of scene objects down as a content stream.
+    ///
+    /// Every page this crate writes from a scene comes through here — the
+    /// whole spread of a supplier who imposes it, and each half of one for a
+    /// supplier who does not. The objects arrive in paint order and already in
+    /// the coordinates of the page being written, so this loop is a
+    /// translation and nothing else, exactly as it was when it lived inside
+    /// [`Self::add_spread`].
+    fn dessiner(
+        &mut self,
+        objets: &[crate::scene::Object],
+        assets: &[JpegAsset],
+    ) -> (String, lopdf::Dictionary) {
+        use crate::scene::Role;
         let mut content = String::new();
         let mut xobjects = dictionary! {};
 
-        for object in &scene.objects {
+        for object in objets {
             match &object.role {
                 Role::Photo { cell, .. } => {
                     // A spread whose thumbnails went missing is refused by the
@@ -1186,17 +1215,43 @@ impl PdfWriter {
                 }
             }
         }
+        (content, xobjects)
+    }
 
-        let b = self.bleed_mm;
-        self.add_page(
-            Boxes {
-                media: [self.geom.media_w, self.geom.media_h],
-                trim: [b, b, self.geom.media_w - b, self.geom.media_h - b],
-            },
-            content,
-            xobjects,
-        );
+    /// One page of a spread, for a supplier who binds page by page.
+    ///
+    /// The album is composed exactly as it always was: the scene is the same
+    /// scene, and [`crate::imposition`] cuts it. What lands here is the half
+    /// that belongs on this sheet, in the sheet's own coordinates, with the
+    /// fold bleed already added to whatever photograph runs to the fold.
+    pub fn add_page_simple(
+        &mut self,
+        album: &Album,
+        spread: &Spread,
+        assets: &[JpegAsset],
+        cote: crate::imposition::Cote,
+        pli_mm: f64,
+    ) -> Result<()> {
+        let scene = self.scene_de(spread);
+        let objets = crate::imposition::page(&scene, cote, &self.geom, pli_mm);
+        let (content, xobjects) = self.dessiner(&objets, assets);
+        let f = crate::imposition::page_simple(album, cote, pli_mm);
+        self.add_page(Boxes { media: [f.media_w, f.media_h], trim: f.trim }, content, xobjects);
         Ok(())
+    }
+
+    /// The blank verso that closes a page-by-page interior.
+    ///
+    /// A page with no ink, and not the absence of a page: the block has to
+    /// come out even, and a book whose last leaf is missing its back is a book
+    /// bound one page short.
+    pub fn add_page_blanche(&mut self, album: &Album, cote: crate::imposition::Cote, pli_mm: f64) {
+        let f = crate::imposition::page_simple(album, cote, pli_mm);
+        self.add_page(
+            Boxes { media: [f.media_w, f.media_h], trim: f.trim },
+            String::new(),
+            dictionary! {},
+        );
     }
 
     /// Cover-crop one image into `rect`: scale to fill (times the manual

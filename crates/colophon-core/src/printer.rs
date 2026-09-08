@@ -55,16 +55,24 @@ impl Espace {
     }
 }
 
-/// Bleed per edge, in millimetres. Asymmetric on purpose: a supplier binding
-/// the interior itself wants nothing on the spine side, and a symmetric value
-/// there would push the image into the glue.
+/// Bleed per edge, in millimetres. Asymmetric on purpose: what a supplier
+/// wants on the spine side has nothing to do with what they want on the
+/// outer edge, and one number for the four would decide it by accident.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Bleed {
     pub haut: f64,
     pub bas: f64,
     /// Outer edge, away from the binding.
     pub exterieur: f64,
-    /// Spine side. Zero when the supplier binds and trims it themselves.
+    /// Spine side, and the only edge that is not always an edge.
+    ///
+    /// A spread has none: its two pages are one surface and the fold is in
+    /// the middle of the ink, so this is zero for anyone who imposes our
+    /// spreads themselves. It becomes real the moment the supplier cuts the
+    /// block page by page ([`PrinterProfile::pages_simples`]): each page then
+    /// has a spine-side edge of its own, and Cloudprinter's template draws
+    /// the same 3 mm there as on the other three. Read through
+    /// [`crate::imposition::pli_mm`], never on its own.
     pub dos: f64,
 }
 
@@ -137,8 +145,9 @@ pub struct PrinterProfile {
     ///
     /// False is the ordinary case: the interior travels as spreads and the
     /// press imposes them. True is a supplier who binds the file as it comes,
-    /// which our spread-composed interior cannot satisfy yet, and which the
-    /// preflight has to stop rather than let a half-length book go to press.
+    /// and the export then cuts each composed spread in two on its way out —
+    /// [`crate::imposition`]. The album is composed in spreads either way:
+    /// what changes is the frame the emitter writes in, never the book.
     pub pages_simples: bool,
     pub dos: Dos,
     pub pages_min: usize,
@@ -196,7 +205,11 @@ static PROFILS: &[PrinterProfile] = &[
         nom: "Cloudprinter",
         pdf_x: PdfX::X4,
         espace: Espace::Rgb,
-        bleed_mm: Bleed { haut: 3.0, bas: 3.0, exterieur: 3.0, dos: 0.0 },
+        // Leur gabarit de page intérieure, `photobook_cw_s210_s_inside_page`,
+        // est une page simple de 216 × 216 avec BLEEDS 3 mm sur les quatre
+        // bords. Le dos en est un : ils coupent le bloc page par page, donc
+        // une pleine page saigne aussi vers la reliure.
+        bleed_mm: Bleed { haut: 3.0, bas: 3.0, exterieur: 3.0, dos: 3.0 },
         // Cotes du cartonné, dessinées et nommées dans leur gabarit
         // `photobook_cw_s210_s_fc_cover` : COVER WRAP 18, COVER OVERLAP 3,
         // COVER SQUEEZE 5. Elles reconstruisent sa feuille au centième :
@@ -206,7 +219,10 @@ static PROFILS: &[PrinterProfile] = &[
         mors_mm: 5.0,
         safe_mm: 5.0,
         fichiers: Fichiers::Deux,
-        pages_simples: false,
+        // Leur pageblock se compte en pages simples : « 96 pages » veut dire
+        // 96 pages du PDF, et leur gabarit en est une. L'export découpe donc
+        // chaque planche composée en deux à la sortie.
+        pages_simples: true,
         // Their own formula, docs.cloudprinter.com : gsm × main d'œuvre × (pages
         // / 2) / 1000 + 2 × épaisseur du carton. À 150 g/m² et main 0,90 (MCS,
         // le papier commandé), la feuille pèse 0,135 mm ; le carton fait 3 mm,
@@ -257,7 +273,8 @@ static PROFILS: &[PrinterProfile] = &[
         certitude: Certitude::Provisoire,
         reserves: &[
             "bornes du SKU carré 210 × 210 : le 294 × 294 s'arrête à 298 pages, un autre produit aura d'autres bornes",
-            "profil de repli, non livrable en l'état : notre intérieur sort en planches doubles et leur reliure lit une page de PDF par page de livre, le prévol le refuse (règle planches_doubles)",
+            "profil de repli, jamais commandé : l'intérieur sort désormais page par page, mais aucun album n'est encore passé par leur presse",
+            "ils refusent tout fond perdu et l'album en porte trois millimètres sur les bords extérieurs : leur massicot les prendra, la page finie est la même",
             "ils recommandent un contrôle X-4 en FOGRA39 tout en demandant des images RVB : notre intention de sortie reste sRGB",
         ],
     },
@@ -330,11 +347,15 @@ mod tests {
         let pr = PrinterProfile::par_id("prodigi").unwrap();
         let lu = PrinterProfile::par_id("lulu").unwrap();
 
-        // Bleed: asymmetric, absent, symmetric.
-        assert_eq!(cp.bleed_mm.dos, 0.0);
+        // Bleed: on all four edges, refused outright, symmetric.
         assert!(cp.bleed_mm.exterieur > 0.0);
         assert_eq!(pr.bleed_mm.max(), 0.0);
         assert_eq!(lu.bleed_mm.dos, lu.bleed_mm.exterieur);
+
+        // And how the interior is bound, which is what decides whether the
+        // spine-side value is an edge at all.
+        assert!(cp.pages_simples, "Cloudprinter coupe le bloc page par page");
+        assert!(!lu.pages_simples, "Lulu impose nos planches lui-même");
 
         // Files, colour space, spine: all different.
         assert_eq!(pr.fichiers, Fichiers::Un);

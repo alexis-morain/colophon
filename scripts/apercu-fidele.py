@@ -11,6 +11,14 @@ Ce que ça attrape : une case décalée, un rognage différent, une légende
 placée ailleurs, une page de colophon absente d'un côté, un fond perdu
 appliqué à l'un et pas à l'autre.
 
+L'aperçu est toujours en planches doubles : c'est ce que l'écran montre. Le
+tirage doit donc l'être aussi pour que la comparaison ait un sens, et il faut
+le rendre sous un profil qui relie des planches — `--profil lulu`, le seul qui
+en rende un intérieur sans couverture dedans. Sous `cloudprinter` ou `prodigi`
+le tirage sort page par page (`core::imposition`) et les deux fichiers n'ont ni
+le même nombre de pages ni le même format ; le script le dit plutôt que de
+comparer des grilles qui ne se regardent pas.
+
 Usage : scripts/apercu-fidele.py <dossier d'album> [écart maximal]
 Prérequis : pypdfium2 et Pillow (venv de session), et les deux PDF rendus.
 """
@@ -59,6 +67,19 @@ def main() -> int:
 
     a = pdfium.PdfDocument(apercu)
     b = pdfium.PdfDocument(imprime)
+    # Deux fichiers du même livre peuvent avoir des pages qui n'ont rien à voir :
+    # sous un profil qui relie page par page, le tirage sort en pages simples et
+    # l'aperçu reste en planches doubles. Le compte, lui, se réconcilierait tout
+    # seul (48 planches contre 96 pages ressemble à deux couvertures de chaque
+    # côté d'un bloc de 48), donc c'est la largeur qui tranche, pas le nombre.
+    la, lb = a[0].get_width(), b[0].get_width()
+    if abs(la - lb) > 1.0:
+        print(
+            f"formats inconciliables : aperçu {la:.0f} pt, impression {lb:.0f} pt. "
+            "Rendez le tirage sous un profil qui relie des planches (--profil lulu).",
+            file=sys.stderr,
+        )
+        return 1
     # Un imprimeur qui relie un seul fichier reçoit la couverture en première
     # et dernière page : on aligne sur la fin, le bloc intérieur étant commun.
     decalage = (len(b) - len(a)) // 2

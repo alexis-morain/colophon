@@ -166,6 +166,55 @@ export function corners(r: Rect, angle: number): Point[] {
   return coins.map((p) => tourner(p, c, angle));
 }
 
+/** Whether two oriented rectangles overlap, corners included. Port of
+ *  `scene.rs::recouvre`, and it lives here for the reason the fold and the
+ *  margin do: one home per rule, in both languages.
+ *
+ *  A separating-axis test on the four normals of the two rectangles. The axes
+ *  are **normalised**, and that is what makes the upright case exact: at the
+ *  angle zero they are `(1, 0)` and `(0, 1)` to the bit, the projection of a
+ *  corner is its own coordinate, and the verdict is the one a plain overlap of
+ *  two rectangles would give. A tangency does not overlap: two edges that meet
+ *  leave no square millimetre of ink one over the other. */
+export function recouvre(a: Rect, angleA: number, b: Rect, angleB: number): boolean {
+  const ca = corners(a, angleA);
+  const cb = corners(b, angleB);
+  for (const axe of [...normales(ca), ...normales(cb)]) {
+    if (!axe) continue;
+    const [amin, amax] = projeter(ca, axe);
+    const [bmin, bmax] = projeter(cb, axe);
+    if (amax <= bmin || bmax <= amin) return false;
+  }
+  return true;
+}
+
+/** The two unit axes of an oriented rectangle, or `null` for a side of zero
+ *  length: a degenerate box has no axis to project on, and dividing by its
+ *  length would answer every question with a NaN. */
+function normales(c: Point[]): (Point | null)[] {
+  return [
+    [c[0], c[1]],
+    [c[0], c[3]],
+  ].map(([o, p]) => {
+    const dx = p.x - o.x;
+    const dy = p.y - o.y;
+    const len = Math.hypot(dx, dy);
+    return len > 0 ? { x: dx / len, y: dy / len } : null;
+  });
+}
+
+/** The span the four corners cover on one axis. */
+function projeter(c: Point[], axe: Point): [number, number] {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const p of c) {
+    const d = p.x * axe.x + p.y * axe.y;
+    min = Math.min(min, d);
+    max = Math.max(max, d);
+  }
+  return [min, max];
+}
+
 /** Whether an oriented box runs across the fold. Port of
  *  `scene.rs::traverse_le_pli`: the editor stops a gesture with this, because
  *  nothing has ever crossed the fold and a free object does not start. */

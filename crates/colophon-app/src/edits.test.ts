@@ -21,6 +21,7 @@ const texteDe = (o: Objet): string => {
 };
 import {
   addObjet,
+  addOrnement,
   changeTemplate,
   duplicateSpread,
   insertSpread,
@@ -48,6 +49,7 @@ import {
   toggleLock,
   triEntries,
 } from "./edits";
+import { recouvre } from "./scene";
 
 function slot(n: number): Slot {
   return { src: `p${n}.jpg`, focal: [0.5, 0.5] };
@@ -583,5 +585,89 @@ describe("removeObjet", () => {
     // l'octet à celui d'avant que les objets libres existent.
     const a = addObjet(album(spread("duo", 2)), 0, PAGE);
     expect(removeObjet(a, 0, 0).spreads[0].objets).toBeUndefined();
+  });
+});
+
+// ---- la naissance, et ce qu'elle évite ------------------------------------
+
+describe("la naissance devant des photos", () => {
+  it("ne bouge pas d'un millimètre quand la planche n'en donne aucune", () => {
+    // C'est la preuve que rien n'a changé pour l'appelant qui n'a pas de
+    // rectangle sous la main : la liste absente et la liste vide rendent la
+    // position d'avant, exactement.
+    const a = album(spread("duo", 2));
+    const sans = addObjet(a, 0, PAGE).spreads[0].objets![0];
+    const vide = addObjet(a, 0, PAGE, []).spreads[0].objets![0];
+    expect([vide.x, vide.y]).toEqual([sans.x, sans.y]);
+  });
+
+  it("glisse à la position libre la plus proche quand une photo est au centre", () => {
+    const a = album(spread("duo", 2));
+    const sans = addObjet(a, 0, PAGE).spreads[0].objets![0];
+    const photo = { x: 40, y: 90, w: 120, h: 40 };
+    expect(recouvre(sans, 0, photo, 0)).toBe(true);
+    const pose = addObjet(a, 0, PAGE, [photo]).spreads[0].objets![0];
+    expect(recouvre(pose, 0, photo, 0)).toBe(false);
+    // Elle reste dans la boîte de page : glisser hors marge pour éviter une
+    // photo échangerait un défaut contre un autre.
+    expect(pose.x).toBeGreaterThanOrEqual(PAGE.x - 1e-9);
+    expect(pose.x + pose.w).toBeLessThanOrEqual(PAGE.x + PAGE.w + 1e-9);
+    expect(pose.y).toBeGreaterThanOrEqual(PAGE.y - 1e-9);
+    expect(pose.y + pose.h).toBeLessThanOrEqual(PAGE.y + PAGE.h + 1e-9);
+    // La plus proche, et pas la première venue : la photo fait 40 mm de haut,
+    // donc le bloc se pose juste au-dessus ou juste au-dessous d'elle.
+    const ecart = Math.min(
+      Math.abs(pose.y + pose.h - photo.y),
+      Math.abs(pose.y - (photo.y + photo.h)),
+    );
+    expect(ecart).toBeLessThan(PAGE.h / 24);
+  });
+
+  it("garde la position d'aujourd'hui quand aucune n'est libre", () => {
+    // Refuser serait un cul-de-sac : on pose quand même, au même endroit
+    // qu'avant, et c'est la ligne de statut qui le dit.
+    const a = album(spread("duo", 2));
+    const sans = addObjet(a, 0, PAGE).spreads[0].objets![0];
+    const pose = addObjet(a, 0, PAGE, [PAGE]).spreads[0].objets![0];
+    expect([pose.x, pose.y]).toEqual([sans.x, sans.y]);
+  });
+});
+
+describe("addOrnement", () => {
+  const ID = { pack: "colophon", id: "fleuron-01" };
+
+  it("naît au tiers de la page et garde le rapport de son dessin", () => {
+    const a = addOrnement(album(spread("duo", 2)), 0, PAGE, ID.pack, ID.id, 12 / 17);
+    const o = a.spreads[0].objets![0];
+    expect(o.type).toBe("ornement");
+    if (o.type !== "ornement") throw new Error("attendu un ornement");
+    expect([o.pack, o.id]).toEqual([ID.pack, ID.id]);
+    expect(o.w).toBeCloseTo(PAGE.w / 3, 9);
+    expect(o.w / o.h).toBeCloseTo(12 / 17, 4);
+    expect(a.spreads[0].edited).toBe(true);
+  });
+
+  it("laisse la hauteur commander quand le tiers ne tiendrait pas", () => {
+    // Un dessin très haut : au tiers de la largeur il déborderait la page,
+    // donc c'est la hauteur qui donne la mesure et la largeur qui suit. La
+    // boîte garde son rapport dans les deux cas — « la boîte est l'encre »
+    // n'a pas d'exception, pas même à la première image.
+    const a = addOrnement(album(spread("duo", 2)), 0, PAGE, "p", "haut", 1 / 20);
+    const o = a.spreads[0].objets![0];
+    expect(o.h).toBeCloseTo(PAGE.h, 9);
+    expect(o.w / o.h).toBeCloseTo(1 / 20, 4);
+  });
+
+  it("évite les photos comme un bloc, et cascade comme lui", () => {
+    let a: Album = album(spread("duo", 2));
+    a = addOrnement(a, 0, PAGE, "p", "un", 2);
+    a = addOrnement(a, 0, PAGE, "p", "deux", 2);
+    const [un, deux] = a.spreads[0].objets!;
+    expect(deux.x).toBeGreaterThan(un.x);
+    const photo = { x: PAGE.x, y: 80, w: PAGE.w, h: 60 };
+    const seul = addOrnement(album(spread("duo", 2)), 0, PAGE, "p", "un", 2, [
+      photo,
+    ]).spreads[0].objets![0];
+    expect(recouvre(seul, 0, photo, 0)).toBe(false);
   });
 });

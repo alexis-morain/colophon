@@ -747,6 +747,20 @@ pub fn licences_md() -> String {
 mod tests {
     use super::*;
 
+    /// Le nom du pack est écrit deux fois, ici et dans l'app, et les deux se
+    /// relisent ensemble.
+    ///
+    /// Il ne voyage pas dans `--dump-ornements` : un [`Ornement`] porte son
+    /// identifiant et pas le pack d'où il sort, parce que rien du dessin n'en
+    /// dépend. C'est la pose qui l'écrit dans `album.json`, donc le jour où ce
+    /// nom change, `ornement.ts::PACK_INTERNE` doit changer avec lui — sans
+    /// quoi l'app grave un pack qui n'existe pas dans les albums de tout le
+    /// monde. Le précédent est `lib.rs::nom_apercu` et sa table jumelle.
+    #[test]
+    fn le_nom_du_pack_est_ecrit_des_deux_cotes() {
+        assert_eq!(PACK_INTERNE, "colophon", "miroir : ornement.ts::PACK_INTERNE");
+    }
+
     /// Le pack livré se lit, et il se lit **entièrement** : trois actifs, leur
     /// provenance, leur dessin. C'est ce test qui rend légitime le `expect` de
     /// [`pack`] — la conformité est prouvée ici, pas devinée à chaud.

@@ -11,8 +11,9 @@
 import { useEffect, useState } from "react";
 import { aboutData, AboutData } from "./bridge";
 import { Cle, t } from "./i18n";
+import { ornements } from "./ornement";
 
-/** The three assets the engine embeds, each with the terms it travels under.
+/** The assets the engine embeds, each with the terms it travels under.
  *  Names and licences are proper nouns; descriptions translate, and so does
  *  the one licence line that carries a sentence. */
 const ACTIFS: [string, () => string, Cle][] = [
@@ -24,6 +25,25 @@ const ACTIFS: [string, () => string, Cle][] = [
     "apropos.geonames.quoi",
   ],
 ];
+
+/** The ornament pack is credited only when it is there.
+ *
+ *  An engine older than this window sends no pack, and that state is
+ *  reachable: crediting an absent pack would be a lie in the one screen whose
+ *  whole job is to tell the truth about what travels inside. Its per-asset
+ *  detail lives in `assets/ornements/LICENCES.md`, generated, and never
+ *  restated by hand. */
+function actifs(): [string, () => string, Cle][] {
+  if (ornements().length === 0) return ACTIFS;
+  return [
+    ...ACTIFS,
+    [
+      "Ornements typographiques",
+      () => t("apropos.ornements.licence"),
+      "apropos.ornements.quoi",
+    ],
+  ];
+}
 
 export function AProposView({ onClose }: { onClose: () => void }) {
   const [data, setData] = useState<AboutData | null>(null);
@@ -54,7 +74,7 @@ export function AProposView({ onClose }: { onClose: () => void }) {
 
         <h3>{t("apropos.actifs")}</h3>
         <ul className="apropos-actifs">
-          {ACTIFS.map(([nom, licence, quoi]) => (
+          {actifs().map(([nom, licence, quoi]) => (
             <li key={nom}>
               <span className="apropos-actif-nom">{nom}</span>
               <span className="apropos-actif-licence">{licence()}</span>

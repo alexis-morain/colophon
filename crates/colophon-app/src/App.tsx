@@ -58,6 +58,7 @@ import {
   Discard,
   Objet,
   OpenedAlbum,
+  Rect,
   Reglage,
   Slot,
   slotsFor,
@@ -69,7 +70,7 @@ import {
 import { adopterGeometrie } from "./geometrie";
 import { ReglageBloc } from "./ReglageBloc";
 import { ObjetBloc } from "./ObjetBloc";
-import { coteDe, retenirAuPli, retournerBoite } from "./scene";
+import { coteDe, recouvre, retenirAuPli, retournerBoite } from "./scene";
 import { filtreDe, poserReglages, useReglages } from "./reglages";
 import {
   changeTemplate,
@@ -96,6 +97,7 @@ import {
   setObjetTexte,
   removeObjet,
   addObjet,
+  addOrnement,
   setSpreadCaption,
   setSpreadText,
   spreadOf,
@@ -108,6 +110,8 @@ import {
 import { BilanView } from "./BilanView";
 import { SpreadView } from "./SpreadView";
 import { TemplatePicker } from "./TemplatePicker";
+import { OrnementPicker } from "./OrnementPicker";
+import { Ornement, PACK_INTERNE, rapport } from "./ornement";
 import { choixOfferts, faceFor, cleDeForme, formeDe } from "./gabarit";
 import { RevueView, TriView } from "./TriView";
 import { Drawer } from "./Drawer";
@@ -1833,6 +1837,40 @@ export default function App() {
     setStatus(t("planche.position", { n: to + 1, total }));
     return true;
   };
+  /**
+   * Poser un objet libre sur la planche courante, et le choisir.
+   *
+   * Les deux boutons de la barre passent par ici. Il rassemble ce qu'une
+   * naissance demande — la boîte de contenu de la page de gauche et les cases
+   * photo, toutes deux en repère moteur, qui est celui d'`album.json` — et
+   * laisse l'appelant dire lequel des deux contenus il pose.
+   *
+   * L'objet naît donc dans la boîte de page (jamais à cheval sur le pli,
+   * jamais hors marge, par construction) et hors des photos quand la page a
+   * de la place. Quand elle n'en a plus, il se pose quand même : refuser
+   * serait un cul-de-sac, et la ligne de statut le dit.
+   */
+  const poser = (edit: (album: Album, page: Rect, photos: Rect[]) => Album) => {
+    if (!spread) return;
+    const g = spreadGeometry(album);
+    const page = retournerBoite(boiteDePage(false, g), g);
+    // Une planche sans photo n'en a aucune à éviter, et il faut le dire :
+    // `slotsFor` rend toujours au moins une case, donc une page de garde
+    // repousserait un bloc loin d'une photo qui n'existe pas.
+    const photos = spread.slots.length
+      ? slotsFor(spread.template, spread.slots.length, g).map((r) =>
+          retournerBoite(r, g),
+        )
+      : [];
+    const rang = spread.objets?.length ?? 0;
+    const suivant = edit(album, page, photos);
+    apply(() => suivant);
+    choisirObjet(rang);
+    const pose = suivant.spreads[index]?.objets?.[rang];
+    if (pose && photos.some((p) => recouvre(pose, 0, p, 0))) {
+      setStatus(t("objet.pose.encombree"));
+    }
+  };
   const entries = triEntries(album, curation, opened?.thumb_srcs ?? []);
   const triEntry = entries.find((e) => e.src === triSelected) ?? null;
 
@@ -1995,17 +2033,23 @@ export default function App() {
           objet={objet}
           onAjouterObjet={
             spread && !onCover
-              ? () => {
-                  // Le bloc naît dans la boîte de contenu de la page de
-                  // gauche : jamais à cheval sur le pli, jamais hors marge,
-                  // par construction. La boîte vient du dump, en repère
-                  // moteur, qui est celui d'`album.json`.
-                  const g = spreadGeometry(album);
-                  const page = boiteDePage(false, g);
-                  const rang = spread.objets?.length ?? 0;
-                  apply((a) => addObjet(a, index, retournerBoite(page, g)));
-                  choisirObjet(rang);
-                }
+              ? () => poser((a, page, photos) => addObjet(a, index, page, photos))
+              : undefined
+          }
+          onAjouterOrnement={
+            spread && !onCover
+              ? (o) =>
+                  poser((a, page, photos) =>
+                    addOrnement(
+                      a,
+                      index,
+                      page,
+                      PACK_INTERNE,
+                      o.id,
+                      rapport(o.dessin),
+                      photos,
+                    ),
+                  )
               : undefined
           }
           onObjetReglage={(i, o) => apply((a) => setObjetEdit(a, index, i, o))}
@@ -2429,6 +2473,7 @@ function ContextLine({
   onFidele,
   objet,
   onAjouterObjet,
+  onAjouterOrnement,
   onObjetReglage,
 }: {
   album: Album;
@@ -2441,6 +2486,7 @@ function ContextLine({
   /** L'objet libre choisi, et de quoi en poser un. */
   objet?: number | null;
   onAjouterObjet?: () => void;
+  onAjouterOrnement?: (o: Ornement) => void;
   /** Un pas d'annulation. */
   onObjetReglage?: (index: number, o: Objet) => void;
   /** One history step through `edits.ts::setReglage`, at slider release. */
@@ -2510,6 +2556,9 @@ function ContextLine({
                 {t("objet.ajouter")}
               </button>
             )}
+            {/* Et l'ornement juste à côté : les deux contenus d'un objet
+                libre se posent du même endroit de la barre. */}
+            {onAjouterOrnement && <OrnementPicker onPick={onAjouterOrnement} />}
             {/* The three adjustments of the chosen photo, native controls in
                 a bar already tabbable: no sixth panel, no menu entry. */}
             {selected !== null && spread.slots[selected] && (

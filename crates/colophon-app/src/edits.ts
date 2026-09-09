@@ -9,6 +9,7 @@ import {
   Discard,
   GARDE_TEMPLATE,
   Objet,
+  Rect,
   Reglage,
   Slot,
   Spread,
@@ -21,6 +22,7 @@ import {
   titreDuLivre,
 } from "./album";
 import { REGLAGE_BORNE, estIdentite } from "./reglage";
+import { recouvre } from "./scene";
 
 function withSpread(album: Album, at: number, spread: Spread | null): Album {
   const spreads = album.spreads.slice();
@@ -348,31 +350,127 @@ const OBJET_CASCADE_MM = 4;
  * La boîte arrive en repère moteur — origine en bas à gauche — parce que c'est
  * ce que `album.json` stocke ; l'appelant lui passe la boîte de contenu déjà
  * convertie, comme il le fait pour tout le reste.
+ *
+ * Il évite les cases photo quand l'appelant les donne (voir `naissance`), et
+ * ne bouge pas d'un millimètre quand il n'en donne pas.
  */
 export function addObjet(
   album: Album,
   at: number,
   /** Boîte de contenu de la page de gauche, repère moteur. */
-  page: { x: number; y: number; w: number; h: number },
+  page: Rect,
+  /** Les cases photo de la planche, repère moteur. Absente ou vide, la
+   *  naissance est celle d'avant que ce paramètre existe, au millimètre. */
+  photos?: Rect[],
 ): Album {
   const spread = album.spreads[at];
   if (!spread) return album;
   const objets = spread.objets ?? [];
-  const w = page.w * OBJET_PART;
-  const h = (OBJET_TAILLE_PT / (72 / 25.4)) * 1.35 * 3;
-  const cran = objets.length * OBJET_CASCADE_MM;
-  const x = Math.min(page.x + (page.w - w) / 2 + cran, page.x + page.w - w);
-  const y = Math.max(page.y + (page.h - h) / 2 - cran, page.y);
   const objet: Objet = {
-    x,
-    y,
-    w,
-    h,
+    ...naissance(
+      page,
+      page.w * OBJET_PART,
+      (OBJET_TAILLE_PT / (72 / 25.4)) * 1.35 * 3,
+      objets.length,
+      photos,
+    ),
     type: "texte",
     texte: "",
     taille_pt: OBJET_TAILLE_PT,
   };
   return withSpread(album, at, touched({ ...spread, objets: [...objets, objet] }));
+}
+
+/** La part de la largeur de page qu'un ornement neuf occupe. Un tiers : un
+ *  filet à 20:1 naît long et fin, un fleuron à 1:1 naît à un tiers de page
+ *  dans les deux sens. Ni plancher ni plafond de plus — la main retaille. */
+export const ORNEMENT_PART = 1 / 3;
+
+/**
+ * Poser un ornement du pack sur une planche.
+ *
+ * **La boîte garde le rapport du dessin dès la naissance**, comme `tailler` le
+ * garde ensuite : la boîte *est* l'encre d'un ornement, donc le pli et la coupe
+ * mesurent exactement ce qui s'imprime, et la règle n'a pas d'exception, pas
+ * même à la première image. Le rapport arrive en nombre plutôt qu'en dessin :
+ * c'est tout ce dont la géométrie a besoin, et `edits.ts` n'a rien à apprendre
+ * du pack.
+ */
+export function addOrnement(
+  album: Album,
+  at: number,
+  page: Rect,
+  pack: string,
+  id: string,
+  /** `ornement.ts::rapport`, largeur sur hauteur du `viewBox`. */
+  rapport: number,
+  photos?: Rect[],
+): Album {
+  const spread = album.spreads[at];
+  if (!spread) return album;
+  const objets = spread.objets ?? [];
+  // Le tiers commande, sauf quand la hauteur qui en découle sortirait de la
+  // page : alors c'est la hauteur qui commande et la largeur suit.
+  let w = page.w * ORNEMENT_PART;
+  let h = w / rapport;
+  if (h > page.h) {
+    h = page.h;
+    w = h * rapport;
+  }
+  const objet: Objet = {
+    ...naissance(page, w, h, objets.length, photos),
+    type: "ornement",
+    pack,
+    id,
+  };
+  return withSpread(album, at, touched({ ...spread, objets: [...objets, objet] }));
+}
+
+/** Le côté de la grille des positions candidates. C'est une aide à la pose et
+ *  pas une mise en page : pas de plus grand rectangle vide, une grille qu'on
+ *  peut rejouer de tête. */
+const NAISSANCE_GRILLE = 24;
+
+/**
+ * Où une boîte neuve se pose : à sa place d'hier, ou à la position libre la
+ * plus proche de celle-là quand elle y recouvrirait une photo.
+ *
+ * **Aucune position libre : c'est la place d'hier qui sert**, et on pose quand
+ * même. Refuser serait un cul-de-sac, et l'appelant a la ligne de statut pour
+ * le dire.
+ */
+function naissance(
+  page: Rect,
+  w: number,
+  h: number,
+  rang: number,
+  photos?: Rect[],
+): Rect {
+  const cran = rang * OBJET_CASCADE_MM;
+  const depart: Rect = {
+    x: Math.min(page.x + (page.w - w) / 2 + cran, page.x + page.w - w),
+    y: Math.max(page.y + (page.h - h) / 2 - cran, page.y),
+    w,
+    h,
+  };
+  if (!photos?.length) return depart;
+  // Un objet neuf n'est jamais tourné, et une case ne l'est jamais : les deux
+  // angles valent zéro, et `recouvre` rend alors ce qu'un chevauchement droit
+  // rendrait, au bit. C'est la scène qui répond, comme pour le pli et la marge.
+  const libre = (r: Rect) => !photos.some((p) => recouvre(r, 0, p, 0));
+  if (libre(depart)) return depart;
+  const jeu = { x: Math.max(0, page.w - w), y: Math.max(0, page.h - h) };
+  const candidats: Rect[] = [];
+  for (let i = 0; i < NAISSANCE_GRILLE; i += 1) {
+    for (let j = 0; j < NAISSANCE_GRILLE; j += 1) {
+      const t = i / (NAISSANCE_GRILLE - 1);
+      const u = j / (NAISSANCE_GRILLE - 1);
+      candidats.push({ x: page.x + jeu.x * t, y: page.y + jeu.y * u, w, h });
+    }
+  }
+  const loin = (r: Rect) => (r.x - depart.x) ** 2 + (r.y - depart.y) ** 2;
+  candidats.sort((a, b) => loin(a) - loin(b));
+  return candidats.find(libre) ?? depart;
 }
 
 /** Remplacer un objet libre, boîte et angle compris. Le seul chemin par lequel

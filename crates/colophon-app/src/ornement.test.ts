@@ -19,9 +19,12 @@ import {
   Ornement,
   ornementDe,
   ornements,
+  PACK_INTERNE,
+  parFamille,
   rapport,
   setOrnements,
   titre,
+  titreDeFamille,
 } from "./ornement";
 
 const CARRE: Ornement = {
@@ -105,6 +108,41 @@ describe("le pack", () => {
   });
 });
 
+describe("parFamille", () => {
+  const de = (id: string, famille: Ornement["famille"]): Ornement => ({
+    ...CARRE,
+    id,
+    famille,
+  });
+
+  it("range dans l'ordre du pack, quel que soit l'ordre d'arrivée", () => {
+    // L'ordre des familles est celui du sélecteur, et il ne dépend pas de
+    // celui du manifeste : une PR de données qui ajoute un fleuron en queue
+    // de `pack.toml` ne doit pas déplacer les groupes à l'écran.
+    setOrnements([de("s", "separateur"), de("i", "filet"), de("f", "fleuron")]);
+    expect(parFamille().map(([f, os]) => [f, os.map((o) => o.id)])).toEqual([
+      ["fleuron", ["f"]],
+      ["filet", ["i"]],
+      ["separateur", ["s"]],
+    ]);
+  });
+
+  it("ne titre pas un groupe que le pack ne remplit pas", () => {
+    setOrnements([de("f", "fleuron"), de("g", "fleuron")]);
+    expect(parFamille().map(([f]) => f)).toEqual(["fleuron"]);
+    setOrnements([]);
+    expect(parFamille()).toEqual([]);
+  });
+
+  it("nomme ses familles dans la langue de l'écran", () => {
+    setLangue("fr");
+    expect(titreDeFamille("filet")).toBe("Filets");
+    setLangue("en");
+    expect(titreDeFamille("filet")).toBe("Rules");
+    setLangue("fr");
+  });
+});
+
 const BINARY = fileURLToPath(
   new URL("../../../target/release/colophon", import.meta.url),
 );
@@ -136,5 +174,16 @@ describe.skipIf(!existsSync(BINARY))("le pack du moteur", () => {
         expect(attributD(c)).not.toMatch(/[HhVvSsQqTtAa]/);
       }
     }
+  });
+});
+
+describe("le nom du pack", () => {
+  it("est celui du moteur, et les deux se relisent ensemble", () => {
+    // Il ne voyage pas dans le dump — un ornement y porte son identifiant et
+    // pas le pack d'où il sort —, donc c'est la seule chose de ce module que
+    // rien ne peut vérifier contre le moteur à l'exécution. La garde jumelle
+    // est `ornement.rs::le_nom_du_pack_est_ecrit_des_deux_cotes`, et c'est
+    // elle qui rougit d'abord le jour où ce nom change.
+    expect(PACK_INTERNE).toBe("colophon");
   });
 });

@@ -118,9 +118,11 @@ l'émission PDF, le port TypeScript et sa parité ; s2 l'éditeur (voir « Les o
 et « L'éditeur des objets libres »).
 
 **6.3 s1 est close (06/09)** : l'ornement typographique entre dans le modèle et sort
-dans le PDF (voir « Les ornements »). Reste **6.3 s2** — le sélecteur, la naissance hors
-des cases photo, le compteur `ornement_sur_photo`, l'attribution dans À propos — et la
-sélection nominative des 32 actifs, qui est un travail d'œil et appartient à Alexis.
+dans le PDF (voir « Les ornements »). **6.3 s2 est close (09/09)**, en deux PR : le
+compteur `ornement_sur_photo` avec `scene::recouvre` d'abord, puis le sélecteur, la
+naissance hors des cases photo et l'attribution dans À propos (voir « L'ornement se
+pose »). **6.3 est donc close aussi**, sauf la sélection nominative des 32 actifs, qui est
+un travail d'œil et appartient à Alexis.
 
 **6.4 est close** : ce que les objets libres obligeaient partout ailleurs. Le linter
 gagne **deux compteurs**, `objet_hors_marge` et `objet_deborde` (voir « Le linter et les
@@ -584,11 +586,57 @@ en silence. Vérifié en mutant la matrice de trois points : le losange passe à
 laisse vert, la flèche à +1,00 mm et rougit. Chiffres :
 `docs/mesures/2026-09-06-l-ornement.json`.
 
-**Ce que 6.3 s1 n'a pas fait**, et qui est s2 : le sélecteur d'ornements, la naissance
-hors des cases photo, le compteur `ornement_sur_photo`, l'entrée d'À propos. Le jeu livré
-est **trois actifs de démonstration** ; les 32 arrivent par une PR de données. Les
+**6.3 s2 est faite**, et elle est ci-dessous, moins son compteur qui vit avec les autres
+dans « Le linter, la reprise et le prévol devant un objet libre ». Le jeu
+livré est **trois actifs de démonstration** ; les 32 arrivent par une PR de données. Les
 cartouches n'ont aucun gisement libre sur Commons : trois familles, `fleuron`, `filet`,
 `separateur`, et pas de quatrième.
+
+### L'ornement se pose (6.3 s2)
+
+**Le sélecteur n'est pas un sixième panneau.** Un second bouton dans la barre contextuelle,
+juste à côté de « Bloc de texte », et le popover de `TemplatePicker` au motif près
+(`OrnementPicker.tsx`) : bouton `.link`, fermeture au clic dehors et à Échap. Pas d'entrée
+de menu, pas de raccourci — « Bloc de texte » n'en a pas non plus, et les cinq panneaux qui
+s'excluent restent cinq. **Il montre des dessins, pas des noms** : une entrée *est* le
+dessin, en SVG inline dans une case de hauteur fixe, le titre du pack la nommant pour
+VoiceOver et au survol. Les groupes sont `fleuron`, `filet`, `separateur`, et cet ordre vit
+dans `ornement.ts` et non dans le manifeste : une PR de données ne doit pas déplacer les
+groupes sous la main de quelqu'un. Un pack vide — moteur plus vieux que la fenêtre — rend
+**une phrase, jamais une grille vide**. Le nom du pack, lui, ne voyage pas dans le dump (un
+ornement y porte son identifiant, le dessin ne dépendant pas d'où il sort) :
+`ornement.ts::PACK_INTERNE` en est le miroir, et c'est la pose qui l'écrit.
+
+**Un objet libre naît hors des cases photo, et les deux contenus passent par la même
+porte.** `addObjet` et le nouvel `addOrnement` prennent **en plus** les rectangles des
+cases, en repère moteur ; `App::poser` les rassemble (`slotsFor` puis `retournerBoite`,
+comme il le fait déjà pour `boiteDePage`) et choisit l'objet posé. Le contrat, dans cet
+ordre. **Liste vide ou absente : la position d'hier, au millimètre** — c'est ce qui garde
+verts, sans y toucher, les tests de naissance d'avant. Sinon on part de cette position et,
+si la boîte y recouvre une photo, on glisse à la position libre **la plus proche de
+celle-là**, cherchée sur une grille de 24 × 24 dans la boîte de page, candidates ordonnées
+par distance : c'est une aide à la pose, pas une mise en page, et il n'y a pas d'algorithme
+de plus grand rectangle vide. **Aucune position libre : on pose quand même**, à la place
+d'hier, et la ligne de statut le dit — refuser serait un cul-de-sac. « Recouvre » est un
+chevauchement **strict** et une tangence ne recouvre pas. C'est `scene.ts::recouvre` qui
+répond, le port de `scene.rs::recouvre` : la géométrie de l'app vit dans `scene.ts` avec
+`horsMarge` et `retenirAuPli`, jamais dans le module des éditions, et une règle qui aurait
+deux maisons dans deux langues en aurait bientôt quatre. La naissance l'appelle **aux deux
+angles zéro** — un objet neuf n'est jamais tourné, une case ne l'est jamais — et il rend
+alors ce qu'un chevauchement droit rendrait, au bit.
+
+**Un ornement naît au tiers de la largeur de la page** (`ORNEMENT_PART`), **et sa boîte
+garde le rapport de son dessin dès la première image** : si la hauteur qui en découle
+dépassait la page, c'est la hauteur qui commande et la largeur qui suit. « La boîte **est**
+l'encre » n'a pas d'exception, pas même à la naissance, comme `tailler` le tient ensuite.
+Ni plancher ni plafond de plus : la main retaille.
+
+**À propos crédite le pack, et seulement quand il est là** : créditer un pack absent serait
+un mensonge dans le seul écran dont c'est tout le métier de dire ce qui voyage à
+l'intérieur, et le cas est atteignable. Le détail par actif reste dans
+`assets/ornements/LICENCES.md`, engendré et déjà testé pour sa fraîcheur. `notices.sh` et
+`NOTICES.md` ne bougent pas : ils portent les obligations des bibliothèques tierces sous
+copyleft, et un actif CC0 n'en est pas une.
 
 ### L'éditeur des objets libres (6.2 s2)
 

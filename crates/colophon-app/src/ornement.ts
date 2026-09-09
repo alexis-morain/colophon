@@ -17,7 +17,7 @@
 // travail de lecture, y compris replier `H`, `V` et le relatif ; il ne reste
 // ici aucune interprétation de SVG.
 
-import { langue } from "./i18n";
+import { langue, t } from "./i18n";
 
 export type Famille = "fleuron" | "filet" | "separateur";
 
@@ -48,6 +48,14 @@ export type Ornement = {
   dessin: Dessin;
 };
 
+/** Le nom du seul pack livré, miroir d'`ornement.rs::PACK_INTERNE`.
+ *
+ *  Il ne voyage pas dans le dump : un ornement y porte son identifiant et pas
+ *  le pack d'où il sort, parce que rien du dessin n'en dépend. C'est la pose
+ *  qui l'écrit dans `album.json`, pour qu'un second pack puisse exister un
+ *  jour sans que les identifiants aient à être uniques entre eux. */
+export const PACK_INTERNE = "colophon";
+
 let pack: Ornement[] = [];
 
 /** Poser le pack. Appelé une fois par `bridge.ts`, au démarrage. */
@@ -57,6 +65,29 @@ export function setOrnements(o: Ornement[]): void {
 
 export function ornements(): Ornement[] {
   return pack;
+}
+
+/** L'ordre des familles à l'écran. Il est ici et pas dans le manifeste : une
+ *  PR de données qui ajoute un fleuron en queue de `pack.toml` ne doit pas
+ *  déplacer les groupes sous la main de quelqu'un. */
+const FAMILLES: Famille[] = ["fleuron", "filet", "separateur"];
+
+/** Le pack rangé par famille, dans cet ordre-là, les familles vides passées.
+ *  Un groupe titré qui ne contient rien est un titre qui ment. */
+export function parFamille(): [Famille, Ornement[]][] {
+  const groupes: [Famille, Ornement[]][] = [];
+  for (const f of FAMILLES) {
+    const dedans = pack.filter((o) => o.famille === f);
+    if (dedans.length > 0) groupes.push([f, dedans]);
+  }
+  return groupes;
+}
+
+/** Le nom d'une famille dans la langue de l'écran. Contrairement au titre d'un
+ *  ornement, il ne voyage pas dans le pack : c'est un mot de l'interface, pas
+ *  une donnée qu'une contribution apporte. */
+export function titreDeFamille(f: Famille): string {
+  return t(`ornement.famille.${f}`);
 }
 
 /** Un ornement par son identifiant, ou `undefined`.

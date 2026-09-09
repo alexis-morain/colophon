@@ -22,6 +22,7 @@ import {
   distanceToTrim,
   hitTest,
   horsMarge,
+  recouvre,
   replier,
   retenirAuPli,
   SceneObject,
@@ -51,6 +52,39 @@ function planche(template: string, n: number): Spread {
     })),
   };
 }
+
+describe("two boxes one over the other", () => {
+  it("says yes to an overlap, no to a tangency", () => {
+    const a = { x: 0, y: 0, w: 10, h: 10 };
+    expect(recouvre(a, 0, { x: 9, y: 9, w: 10, h: 10 }, 0)).toBe(true);
+    // Deux boîtes qui se touchent par un bord ne se recouvrent pas : une
+    // photo posée bord à bord avec un bloc laisse les deux entiers.
+    expect(recouvre(a, 0, { x: 10, y: 0, w: 10, h: 10 }, 0)).toBe(false);
+    expect(recouvre(a, 0, { x: 0, y: 10, w: 10, h: 10 }, 0)).toBe(false);
+    expect(recouvre(a, 0, { x: 20, y: 20, w: 10, h: 10 }, 0)).toBe(false);
+  });
+
+  it("is symmetric, and sees one box entirely inside the other", () => {
+    const grande = { x: 0, y: 0, w: 100, h: 100 };
+    const petite = { x: 40, y: 40, w: 5, h: 5 };
+    expect(recouvre(grande, 0, petite, 0)).toBe(true);
+    expect(recouvre(petite, 0, grande, 0)).toBe(true);
+  });
+
+  it("reads the angle, and needs the second box's own normals", () => {
+    const photo = { x: 100, y: 100, w: 60, h: 40 };
+    // Droit il dégage la photo de deux millimètres ; tourné, son coin y entre.
+    const frole = { x: 162, y: 95, w: 40, h: 40 };
+    expect(recouvre(frole, 0, photo, 0)).toBe(false);
+    expect(recouvre(frole, 45, photo, 0)).toBe(true);
+    // Le piège de la séparation d'axes : un carré tourné posé au coin de la
+    // photo la manque, et seules ses propres normales le disent — sur celles
+    // de la photo, les deux projections se chevauchent en x comme en y.
+    const coin = { x: 160, y: 140, w: 20, h: 20 };
+    expect(recouvre(coin, 45, photo, 0)).toBe(false);
+    expect(recouvre(photo, 0, coin, 45)).toBe(false);
+  });
+});
 
 describe("what sits under a point", () => {
   it("answers nothing for bare paper", () => {

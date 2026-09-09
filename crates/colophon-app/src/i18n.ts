@@ -111,6 +111,9 @@ export const FR = {
   "apropos.icc.quoi": "Le profil couleur que le PDF embarque comme OutputIntent.",
   "apropos.geonames.quoi":
     "Les noms de villes qui titrent les chapitres, depuis le GPS des photos.",
+  "apropos.ornements.licence": "CC0 1.0 et domaine public",
+  "apropos.ornements.quoi":
+    "Les fleurons, filets et séparateurs que l’on pose sur une planche. Le détail par ornement vit dans assets/ornements/LICENCES.md.",
   "apropos.notices.voir": "Notices des licences tierces",
   "apropos.notices.masquer": "Masquer les notices des licences tierces",
   "apropos.notices.absentes":
@@ -593,6 +596,15 @@ export const FR = {
   "objet.alignement.centre": "Centré",
   "objet.alignement.droite": "À droite",
   "objet.saisir": "Texte du bloc",
+  "objet.pose.encombree":
+    "Posé sur une photo : la page n’a plus de place libre. Glissez-le où vous le voulez.",
+  "ornement.ajouter": "Ornement",
+  "ornement.ajouter.titre": "Poser un ornement sur cette planche",
+  "ornement.vide":
+    "Aucun ornement disponible. Le moteur installé est plus ancien que cette fenêtre.",
+  "ornement.famille.fleuron": "Fleurons",
+  "ornement.famille.filet": "Filets",
+  "ornement.famille.separateur": "Séparateurs",
   "contexte.objet": "Glissez pour déplacer, les coins pour la taille, la poignée du haut pour tourner. Double-clic pour écrire.",
   "contexte.ornement": "Glissez pour déplacer, les coins pour la taille : elle garde ses proportions. La poignée du haut pour tourner.",
   "scene.texte.libre": "Texte libre : {texte}",
@@ -849,6 +861,9 @@ export const EN: Record<Cle, string> = {
   "apropos.icc.quoi": "The colour profile the PDF carries as its OutputIntent.",
   "apropos.geonames.quoi":
     "The town names that title the chapters, from the GPS your cameras wrote.",
+  "apropos.ornements.licence": "CC0 1.0 and public domain",
+  "apropos.ornements.quoi":
+    "The fleurons, rules and dividers one places on a spread. The detail, ornament by ornament, lives in assets/ornements/LICENCES.md.",
   "apropos.notices.voir": "Third-party licence notices",
   "apropos.notices.masquer": "Hide the third-party licence notices",
   "apropos.notices.absentes":
@@ -1291,6 +1306,15 @@ export const EN: Record<Cle, string> = {
   "objet.alignement.centre": "Centred",
   "objet.alignement.droite": "Right",
   "objet.saisir": "Block text",
+  "objet.pose.encombree":
+    "Placed over a photo: the page has no free room left. Drag it wherever you want it.",
+  "ornement.ajouter": "Ornament",
+  "ornement.ajouter.titre": "Place an ornament on this spread",
+  "ornement.vide":
+    "No ornament available. The engine installed is older than this window.",
+  "ornement.famille.fleuron": "Fleurons",
+  "ornement.famille.filet": "Rules",
+  "ornement.famille.separateur": "Dividers",
   "contexte.objet": "Drag to move, corners to resize, the top handle to turn. Double-click to write.",
   "contexte.ornement": "Drag to move, corners to resize: it keeps its proportions. The top handle to turn.",
   "scene.texte.libre": "Free text: {texte}",

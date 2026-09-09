@@ -90,6 +90,22 @@ describe("buildReport", () => {
     expect(report).toContain("1 compteur au-dessus du seuil");
   });
 
+  it("shows a counter that only warns, and never counts it as red", () => {
+    // Un objet posé exprès à fond perdu remplit `objet_hors_marge`, qui n'a
+    // pas de seuil : le rapport doit le montrer sans dire que l'album est
+    // rouge. Le lire comme un seuil de zéro ferait mentir tous les rapports
+    // de qui compose avec des objets libres.
+    const d = data();
+    d.audit!.compteurs = {
+      visage_coupe: { count: 0, seuil: 0, dur: true },
+      objet_hors_marge: { count: 2, dur: false },
+    };
+    const report = buildReport(d, album(), 0, 1, "recadrage", false);
+    expect(report).toContain("objet_hors_marge 2");
+    expect(report).not.toContain("objet_hors_marge 2/");
+    expect(report).toContain("tous les compteurs sous leur seuil");
+  });
+
   it("stands without an album, audit marked unavailable", () => {
     const report = buildReport(
       { ...data(), audit: null },

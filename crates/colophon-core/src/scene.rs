@@ -149,6 +149,60 @@ pub fn hors_marge(r: &Rect, angle_deg: f64, g: &SpreadGeometry) -> bool {
     distance_to_trim(r, angle_deg, g) < pdf::CAPTION_SAFE * g.margin
 }
 
+/// Whether two oriented rectangles overlap, corners included.
+///
+/// One implementation for one doctrine, beside [`hors_marge`] and
+/// [`traverse_le_pli`]: the linter asks it whether an ornament sits on a
+/// photograph, and it is the only place that knows the answer.
+///
+/// **A separating-axis test on the four normals of the two rectangles.** A
+/// rectangle is convex, so a single axis on which the two projections come
+/// apart proves they do not touch; four axes are enough for two of them.
+/// The axes are **normalised**, and that is what makes the upright case
+/// exact: at the angle zero the axes are `(1, 0)` and `(0, 1)` to the bit,
+/// the projection of a corner is its own coordinate, and the verdict is the
+/// one a plain overlap of two rectangles would give.
+///
+/// **A tangency does not overlap**: two edges that meet leave no square
+/// millimetre of ink one over the other, and an ornament laid against a cell
+/// is a placement, not a defect.
+pub fn recouvre(a: &Rect, angle_a: f64, b: &Rect, angle_b: f64) -> bool {
+    let ca = corners(a, angle_a);
+    let cb = corners(b, angle_b);
+    for axe in normales(&ca).into_iter().chain(normales(&cb)) {
+        let Some(axe) = axe else { continue };
+        let (amin, amax) = projeter(&ca, axe);
+        let (bmin, bmax) = projeter(&cb, axe);
+        if amax <= bmin || bmax <= amin {
+            return false;
+        }
+    }
+    true
+}
+
+/// The two unit axes of an oriented rectangle, or `None` for a side of zero
+/// length — a degenerate box has no axis to project on, and dividing by its
+/// length would answer every question with a NaN.
+fn normales(c: &[Point; 4]) -> [Option<Point>; 2] {
+    [(c[0], c[1]), (c[0], c[3])].map(|(o, p)| {
+        let (dx, dy) = (p.x - o.x, p.y - o.y);
+        let len = dx.hypot(dy);
+        (len > 0.0).then(|| Point { x: dx / len, y: dy / len })
+    })
+}
+
+/// The span the four corners cover on one axis.
+fn projeter(c: &[Point; 4], axe: Point) -> (f64, f64) {
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for p in c {
+        let d = p.x * axe.x + p.y * axe.y;
+        min = min.min(d);
+        max = max.max(d);
+    }
+    (min, max)
+}
+
 /// What an object is, with what the interface needs to name it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
@@ -950,6 +1004,64 @@ mod tests {
         let coupe = Rect { x: g.bleed - 5.0, y: 100.0, w: 40.0, h: 20.0 };
         assert!(distance_to_trim(&coupe, 0.0, &g) < 0.0);
         assert!(hors_marge(&coupe, 0.0, &g));
+    }
+
+    /// Le recouvrement est la seule chose qu'un ornement posé sur une photo
+    /// ait à dire, et il se mesure sur les coins comme le pli et la marge :
+    /// droit, tourné, tangent, disjoint.
+    #[test]
+    fn le_recouvrement_se_mesure_sur_les_coins() {
+        let photo = Rect { x: 100.0, y: 100.0, w: 60.0, h: 40.0 };
+        let dedans = Rect { x: 110.0, y: 110.0, w: 10.0, h: 10.0 };
+        assert!(recouvre(&dedans, 0.0, &photo, 0.0));
+        let loin = Rect { x: 200.0, y: 110.0, w: 10.0, h: 10.0 };
+        assert!(!recouvre(&loin, 0.0, &photo, 0.0));
+        // Une tangence ne recouvre pas : deux bords qui se touchent ne
+        // laissent pas un millimètre carré d'encre l'un sur l'autre.
+        let tangent = Rect { x: 160.0, y: 110.0, w: 10.0, h: 10.0 };
+        assert!(!recouvre(&tangent, 0.0, &photo, 0.0));
+        // Droit il dégage la photo de deux millimètres ; tourné, son coin y
+        // entre. C'est l'angle de l'ornement qui décide, pas sa boîte.
+        let frole = Rect { x: 162.0, y: 95.0, w: 40.0, h: 40.0 };
+        assert!(!recouvre(&frole, 0.0, &photo, 0.0));
+        assert!(recouvre(&frole, 45.0, &photo, 0.0));
+        // Et la relation est symétrique : l'ordre des deux rectangles ne dit
+        // rien de plus que lequel on a écrit en premier.
+        assert!(recouvre(&photo, 0.0, &frole, 45.0));
+        // La séparation ne se lit pas toujours sur les normales du premier :
+        // un carré tourné posé au coin de la photo la manque, et seules ses
+        // propres normales le disent — sur celles de la photo, les deux
+        // projections se chevauchent en x comme en y. Les quatre normales
+        // sont donc quatre, pas deux.
+        let coin = Rect { x: 160.0, y: 140.0, w: 20.0, h: 20.0 };
+        assert!(!recouvre(&coin, 45.0, &photo, 0.0));
+        assert!(!recouvre(&photo, 0.0, &coin, 45.0));
+    }
+
+    /// À l'angle zéro, la séparation d'axes doit rendre **exactement** ce
+    /// qu'un chevauchement droit rendrait : les axes sont normalisés, donc la
+    /// projection d'un coin sur un axe est sa propre coordonnée, au bit.
+    #[test]
+    fn a_l_angle_zero_c_est_un_chevauchement_droit() {
+        let photo = Rect { x: 100.0, y: 100.0, w: 60.0, h: 40.0 };
+        let droit = |a: &Rect, b: &Rect| {
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        };
+        for i in 0..80 {
+            for j in 0..80 {
+                let r = Rect {
+                    x: 80.0 + i as f64 * 1.25,
+                    y: 80.0 + j as f64 * 1.0,
+                    w: 21.0,
+                    h: 13.0,
+                };
+                assert_eq!(
+                    recouvre(&r, 0.0, &photo, 0.0),
+                    droit(&r, &photo),
+                    "{r:?} contre {photo:?}"
+                );
+            }
+        }
     }
 
     /// A free object is stored, so it is the one thing on the scene that no

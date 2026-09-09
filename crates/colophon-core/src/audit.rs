@@ -118,10 +118,16 @@ pub struct Counters {
     /// dessinée — trop haut, ou un mot trop large. Le moteur ne coupe rien :
     /// il laisse dépasser et le dit, et c'est ce qu'on lit ici.
     pub objet_deborde: Counter,
+    /// Un ornement dont la boîte recouvre une case photo. **Les ornements
+    /// seulement** : un bloc de texte sur une image est une surimpression que
+    /// quelqu'un a voulue — un titre —, un fleuron sur une image est presque
+    /// toujours un accident, d'autant que la naissance d'un objet l'évite
+    /// désormais.
+    pub ornement_sur_photo: Counter,
 }
 
 impl Counters {
-    pub(crate) fn all(&self) -> [&Counter; 12] {
+    pub(crate) fn all(&self) -> [&Counter; 13] {
         [
             &self.visage_coupe,
             &self.orientation_trahie,
@@ -135,6 +141,7 @@ impl Counters {
             &self.repetition_gabarit,
             &self.objet_hors_marge,
             &self.objet_deborde,
+            &self.ornement_sur_photo,
         ]
     }
 }
@@ -563,11 +570,37 @@ pub(crate) fn compteurs_avec(
     // a posé, ornement compris. `objet_deborde` mesure un texte contre la
     // boîte où on l'a coupé : un ornement n'a rien à déborder, sa boîte garde
     // le rapport de son dessin et elle **est** son encre.
+    //
+    // `ornement_sur_photo` est le troisième, et il ne compte que les
+    // ornements : le recouvrement se lit sur les mêmes objets de scène,
+    // `Role::Ornement` d'un côté et `Role::Photo` de l'autre, et il tient
+    // l'angle de l'ornement parce qu'une case, elle, est toujours droite.
     let mut hors_marge = Vec::new();
     let mut deborde = Vec::new();
+    let mut sur_photo = Vec::new();
     for (si, scene) in scenes.iter().enumerate() {
+        // Les cases de la planche, celles-là mêmes que les compteurs de photo
+        // mesurent plus haut : une seconde extraction en donnerait une seconde
+        // définition de « la case d'une photo ».
+        let cases = &rects_of[si];
         for objet in &scene.objects {
             let Some(index) = objet.role.index_libre() else { continue };
+            if matches!(objet.role, crate::scene::Role::Ornement { .. }) {
+                // Une seule ligne par ornement, quel que soit le nombre de
+                // cases qu'il mord : ce qui se répare est l'ornement.
+                if let Some((cell, _)) = cases
+                    .iter()
+                    .enumerate()
+                    .find(|(_, r)| crate::scene::recouvre(&objet.rect, objet.angle, r, 0.0))
+                {
+                    sur_photo.push(Finding {
+                        planche: si + 1,
+                        case_idx: Some(cell),
+                        src: None,
+                        info: format!("l'ornement n° {} recouvre une photo", index + 1),
+                    });
+                }
+            }
             let (overflow, trop_large) = match &objet.role {
                 crate::scene::Role::FreeText { overflow, trop_large, .. } => {
                     (*overflow, *trop_large)
@@ -627,6 +660,10 @@ pub(crate) fn compteurs_avec(
         // la classe.
         objet_hors_marge: Counter::new(0, false, hors_marge),
         objet_deborde: Counter::new(0, false, deborde),
+        // Le régime de ses deux voisins, à la lettre : mou, à zéro, aucun
+        // seuil existant touché. Une PR séparée déplacera les trois ensemble
+        // le jour où un album légitime en compte un.
+        ornement_sur_photo: Counter::new(0, false, sur_photo),
     }
 }
 
@@ -1047,6 +1084,91 @@ mod tests {
             "{}",
             c.objet_deborde.details[0].info
         );
+    }
+
+    /// Le treizième compteur : un ornement posé sur une case photo. Un bloc
+    /// de texte au même endroit ne compte pas — un titre sur une image est
+    /// une surimpression que quelqu'un a voulue, un fleuron sur une image est
+    /// presque toujours un accident.
+    #[test]
+    fn un_ornement_sur_une_photo_se_compte_et_un_bloc_non() {
+        use crate::model::{Alignement, Contenu, Objet, Slot};
+
+        let mut a = crate::model::Album::new(
+            "t",
+            std::path::Path::new("/p"),
+            crate::model::Size { w: 210.0, h: 210.0 },
+        );
+        let g = pdf::geometry(&a);
+        let planche = |objets: Vec<Objet>| crate::model::Spread {
+            template: "duo".into(),
+            slots: (0..2).map(|i| Slot::new(format!("{i}.jpg"), [0.5, 0.5])).collect(),
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets,
+        };
+        // La case de la première photo, lue de la scène : le compteur mesure
+        // ce que l'émetteur dessine, donc le test pose son ornement là.
+        let case = crate::scene::Scene::of(&planche(Vec::new()), &g)
+            .objects
+            .iter()
+            .find(|o| matches!(o.role, crate::scene::Role::Photo { .. }))
+            .map(|o| o.rect.clone())
+            .expect("la planche porte deux photos");
+        let boite = |contenu: Contenu| Objet {
+            x: case.x + case.w / 2.0 - 10.0,
+            y: case.y + case.h / 2.0 - 10.0,
+            w: 20.0,
+            h: 20.0,
+            angle: 0.0,
+            contenu,
+        };
+        // Deux photos irréprochables : ce test-là ne parle que d'ornements, et
+        // un compteur de photo qui monterait le rendrait illisible.
+        let infos: HashMap<String, PhotoInfo> = (0..2u64)
+            .map(|i| {
+                (
+                    format!("{i}.jpg"),
+                    PhotoInfo {
+                        w: 6000.0,
+                        h: 4000.0,
+                        dhash: i.wrapping_mul(0x9e37_79b9_7f4a_7c15),
+                        phash: i.wrapping_mul(0xc2b2_ae3d_27d4_eb4f) | 0xf0f0,
+                        colorsig: [(i * 40) as u8; 12],
+                        score: 1.0 + i as f64,
+                        faces: Vec::new(),
+                        orig: (6000, 4000),
+                        taken: None,
+                    },
+                )
+            })
+            .collect();
+        let ornement =
+            || Contenu::Ornement { pack: "colophon".into(), id: "filet-simple".into() };
+        let texte = || Contenu::Texte {
+            texte: "un titre".into(),
+            taille_pt: 10.0,
+            interligne_mm: Some(5.0),
+            alignement: Alignement::Gauche,
+        };
+
+        a.spreads = vec![planche(vec![boite(ornement())]), planche(vec![boite(texte())])];
+        let c = compteurs(&a, &infos, &g);
+        assert_eq!(c.ornement_sur_photo.count, 1, "{:?}", c.ornement_sur_photo.details);
+        assert_eq!(c.ornement_sur_photo.details[0].planche, 1);
+
+        // Posé au pli, le même ornement ne touche plus aucune case : c'est le
+        // recouvrement qui compte, pas la présence d'un ornement.
+        let au_pli = Objet {
+            x: g.media_w / 2.0 - 3.0,
+            w: 6.0,
+            h: 6.0,
+            ..boite(ornement())
+        };
+        a.spreads = vec![planche(vec![au_pli])];
+        assert_eq!(compteurs(&a, &infos, &g).ornement_sur_photo.count, 0);
     }
 
     #[test]

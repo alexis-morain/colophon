@@ -134,7 +134,12 @@ pub fn geometry(album: &Album, profil: &PrinterProfile) -> CoverGeometry {
     }
 }
 
-/// Render `album-cover.pdf` next to the album, at print resolution.
+/// Render the flat cover sheet to `out`, at print resolution.
+///
+/// The name is the caller's, not ours: the delivery is `album-cover.pdf`
+/// (`--cover`), the app's preview `album-cover.apercu.pdf`. Only the first is
+/// judged by the preflight, so a function that named its own file would put
+/// every preview under the delivery's rules.
 ///
 /// Fails loudly on a missing original, like the interior render: a cover with
 /// a hole in it costs a reprint of the whole book.

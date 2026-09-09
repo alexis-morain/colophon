@@ -67,8 +67,14 @@ for set in corse-2013 mauritanie-2019 random-2024; do
 import json
 r = json.load(open('$out/audit.json'))
 for k, c in r['compteurs'].items():
-    if c['count'] > c['seuil']:
-        print(f\"  {k}: {c['count']} (seuil {c['seuil']})\")" >&2
+    seuil = c.get('seuil')
+    if seuil is None:
+        # Un compteur sans seuil avertit et ne décide pas : il n'est jamais
+        # la cause du rouge, mais il fait partie de ce qu'on lit ici.
+        if c['count']:
+            print(f\"  {k}: {c['count']} (avertit)\")
+    elif c['count'] > seuil:
+        print(f\"  {k}: {c['count']} (seuil {seuil})\")" >&2
     exit 1
   fi
   # What the linter measured, and on what. An audit that starts from the
@@ -125,8 +131,14 @@ if r['planches_touchees'] != 0:
 import json
 r = json.load(open('$out/audit-$v.json'))
 for k, c in r['compteurs'].items():
-    if c['count'] > c['seuil']:
-        print(f\"  {k}: {c['count']} (seuil {c['seuil']})\")" >&2
+    seuil = c.get('seuil')
+    if seuil is None:
+        # Un compteur sans seuil avertit et ne décide pas : il n'est jamais
+        # la cause du rouge, mais il fait partie de ce qu'on lit ici.
+        if c['count']:
+            print(f\"  {k}: {c['count']} (avertit)\")
+    elif c['count'] > seuil:
+        print(f\"  {k}: {c['count']} (seuil {seuil})\")" >&2
       exit 1
     fi
   done

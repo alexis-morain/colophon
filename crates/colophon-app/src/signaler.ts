@@ -104,14 +104,21 @@ function auditBlock(data: ReportData): string[] {
     return [t("rapport.audit.indisponible")];
   }
   const entries = Object.entries(data.audit.compteurs);
-  const rouges = entries.filter(([, c]) => c.count > c.seuil);
+  // Un compteur sans seuil avertit : il compte, il s'affiche, il n'est
+  // jamais rouge. Le lire comme un seuil de zéro rendrait rouge le rapport
+  // de quiconque a posé un bloc à fond perdu exprès.
+  const rouges = entries.filter(
+    ([, c]) => c.seuil !== undefined && c.count > c.seuil,
+  );
   const verdict = rouges.length
     ? rouges.length > 1
       ? t("rapport.audit.rouges", { n: rouges.length })
       : t("rapport.audit.rouge.un")
     : t("rapport.audit.verts");
   const detail = entries
-    .map(([nom, c]) => `${nom} ${c.count}/${c.seuil}`)
+    .map(([nom, c]) =>
+      c.seuil === undefined ? `${nom} ${c.count}` : `${nom} ${c.count}/${c.seuil}`,
+    )
     .join(" · ");
   const lines = [
     t("rapport.audit", { n: data.audit.planches, verdict }),

@@ -1,7 +1,8 @@
 //! Album linter: a read pass over a composed album folder that counts the
 //! defect classes a human should never have to report. `colophon --audit`
-//! prints the JSON report and exits non-zero when a counter passes son seuil;
-//! check.sh runs it on the reference sets as a non-regression gate.
+//! prints the JSON report and exits non-zero when a *deciding* counter passes
+//! son seuil; check.sh runs it on the reference sets as a non-regression gate.
+//! A counter without a `seuil` warns and never decides — see [`Counter`].
 //!
 //! The counters measure what we thought to count. Any spread that bothers
 //! the eye without tripping a counter is a missing defect class: add it here.
@@ -79,7 +80,18 @@ pub struct Finding {
 #[derive(Debug, Serialize)]
 pub struct Counter {
     pub count: usize,
-    pub seuil: usize,
+    /// Ce que le compteur tolère, et **l'absence de seuil est un régime** :
+    /// un compteur sans seuil compte, détaille, et ne décide de rien.
+    ///
+    /// Il n'y avait pas de troisième état avant, et il en fallait un. Les dix
+    /// premiers compteurs jugent le Composer, une machine qu'on tient à un
+    /// standard ; ceux des objets libres jugent une main, qui a le droit de
+    /// choisir. Poser exprès un bloc à fond perdu rendait `--audit` rouge, et
+    /// le seul remède disponible était de relever le seuil — c'est-à-dire de
+    /// régler un chiffre pour faire taire une règle, ce que ce module refuse
+    /// partout ailleurs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seuil: Option<usize>,
     /// A hard counter must be exactly zero before humans see the album.
     pub dur: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -87,12 +99,21 @@ pub struct Counter {
 }
 
 impl Counter {
+    /// Un compteur qui décide : au-dessus de son seuil, l'album est rouge.
     fn new(seuil: usize, dur: bool, details: Vec<Finding>) -> Self {
-        Self { count: details.len(), seuil, dur, details }
+        Self { count: details.len(), seuil: Some(seuil), dur, details }
+    }
+
+    /// Un compteur qui avertit : il compte et il détaille, il ne décide pas.
+    ///
+    /// C'est « le pli bute, la marge avertit » porté au linter. Le refus, lui,
+    /// reste au prévol, et seulement sur la coupe et le pli.
+    fn avertit(details: Vec<Finding>) -> Self {
+        Self { count: details.len(), seuil: None, dur: false, details }
     }
 
     pub fn passes(&self) -> bool {
-        self.count <= self.seuil
+        self.seuil.is_none_or(|s| self.count <= s)
     }
 }
 
@@ -113,10 +134,15 @@ pub struct Counters {
     /// compteurs d'avant jugent le travail du Composer ; ces deux-là jugent
     /// une main, ce qui est nouveau ici et assumé : le Composer ne pose aucun
     /// objet libre, et l'éditeur a déjà averti au moment du geste.
+    ///
+    /// **Il avertit et ne décide pas** ([`Counter::avertit`]), parce qu'une
+    /// main a le droit de poser un bloc à fond perdu.
     pub objet_hors_marge: Counter,
     /// Un objet libre dont le texte ne tient pas dans la boîte qu'on lui a
     /// dessinée — trop haut, ou un mot trop large. Le moteur ne coupe rien :
     /// il laisse dépasser et le dit, et c'est ce qu'on lit ici.
+    ///
+    /// Il avertit et ne décide pas, comme son voisin.
     pub objet_deborde: Counter,
     /// Un ornement dont la boîte recouvre une case photo. **Les ornements
     /// seulement** : un bloc de texte sur une image est une surimpression que
@@ -651,19 +677,19 @@ pub(crate) fn compteurs_avec(
         legende_manquante: Counter::new(0, true, legende_manquante),
         legende_sur_photo: Counter::new(0, true, legende_sur_photo),
         repetition_gabarit: Counter::new(1, false, repetition),
-        // Mous, et pourtant à zéro. Mous parce qu'un objet posé volontairement
-        // à fond perdu est un choix et pas un défaut : le linter est là pour
+        // Ils avertissent, ils ne décident pas. Un objet posé volontairement à
+        // fond perdu est un choix et pas un défaut : le linter est là pour
         // qu'on n'en expédie pas un par accident, pas pour interdire — le
         // refus, lui, est au prévol, et seulement sur la coupe et le pli.
-        // Zéro parce qu'aucun des trois jeux de référence n'en porte un : le
-        // jour où un album légitime en compte, c'est le seuil qui bouge, pas
-        // la classe.
-        objet_hors_marge: Counter::new(0, false, hors_marge),
-        objet_deborde: Counter::new(0, false, deborde),
-        // Le régime de ses deux voisins, à la lettre : mou, à zéro, aucun
-        // seuil existant touché. Une PR séparée déplacera les trois ensemble
-        // le jour où un album légitime en compte un.
-        ornement_sur_photo: Counter::new(0, false, sur_photo),
+        //
+        // Les trois sont nés à `seuil: 0`, ce qui les rendait durs en fait
+        // pendant qu'on les décrivait mous, `dur` n'étant lu par personne.
+        // Leur donner un seuil au-dessus de zéro aurait été pire : un chiffre
+        // choisi pour faire taire une règle ne mesure rien, et il aurait fallu
+        // le rechoisir au premier album qui le dépasse.
+        objet_hors_marge: Counter::avertit(hors_marge),
+        objet_deborde: Counter::avertit(deborde),
+        ornement_sur_photo: Counter::avertit(sur_photo),
     }
 }
 
@@ -1041,6 +1067,89 @@ mod tests {
         assert_eq!(c.objet_deborde.count, 0);
     }
 
+    /// Ce que les deux compteurs de la main font au **verdict**, sur le même
+    /// album que le test au-dessus : rien.
+    ///
+    /// C'est la frontière entière. Un bloc posé exprès à fond perdu remplit
+    /// `objet_hors_marge`, et l'album reste vert ; le jour où quelqu'un
+    /// remettrait un seuil à ces deux-là, il rougirait ici.
+    #[test]
+    fn un_objet_pose_a_la_main_ne_rougit_pas_l_album() {
+        use crate::model::{Alignement, Contenu, Objet};
+
+        let mut a = crate::model::Album::new(
+            "t",
+            std::path::Path::new("/p"),
+            crate::model::Size { w: 210.0, h: 210.0 },
+        );
+        let g = pdf::geometry(&a);
+        a.spreads = vec![crate::model::Spread {
+            template: "texte".into(),
+            slots: Vec::new(),
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets: vec![Objet {
+                // Dans la bande sûre, sans toucher la coupe : c'est un choix,
+                // pas un défaut, et c'est exactement le cas litigieux.
+                x: g.bleed + 1.0,
+                y: 100.0,
+                w: 40.0,
+                h: 20.0,
+                angle: 0.0,
+                contenu: Contenu::Texte {
+                    texte: "un mot".into(),
+                    taille_pt: 10.0,
+                    interligne_mm: Some(5.0),
+                    alignement: Alignement::Gauche,
+                },
+            }],
+        }];
+
+        let c = compteurs(&a, &HashMap::new(), &g);
+        assert_eq!(c.objet_hors_marge.count, 1, "{:?}", c.objet_hors_marge.details);
+        assert!(
+            c.all().iter().all(|c| c.passes()),
+            "un objet posé à la main ne décide pas du verdict"
+        );
+    }
+
+    /// Les deux régimes d'un compteur, isolés de tout album.
+    ///
+    /// Avant, `dur` disait « mou » pendant que `seuil: 0` rendait dur, et
+    /// personne ne lisait `dur`. Un compteur qui avertit n'a plus de seuil du
+    /// tout : il n'y a rien à dépasser, donc rien à relever pour faire taire
+    /// la règle.
+    #[test]
+    fn un_compteur_qui_avertit_ne_rougit_jamais() {
+        let trouvaille =
+            || Finding { planche: 1, case_idx: None, src: None, info: "x".into() };
+
+        let avertit = Counter::avertit(vec![trouvaille(), trouvaille(), trouvaille()]);
+        assert_eq!(avertit.count, 3);
+        assert!(avertit.seuil.is_none(), "pas de seuil : rien à dépasser");
+        assert!(avertit.passes());
+
+        // Et la tolérance des compteurs du Composer n'a pas bougé d'un cran.
+        assert!(!Counter::new(0, true, vec![trouvaille()]).passes());
+        assert!(Counter::new(3, false, vec![trouvaille(), trouvaille()]).passes());
+        assert!(!Counter::new(1, false, vec![trouvaille(), trouvaille()]).passes());
+    }
+
+    /// Le rapport ne publie pas de seuil pour un compteur qui n'en a pas.
+    ///
+    /// `check.sh` et le panneau de rapport lisent ce champ pour dire si un
+    /// compteur est passé : le laisser à zéro leur ferait afficher « 2 / 0 »,
+    /// qui veut dire rouge dans les deux.
+    #[test]
+    fn un_compteur_qui_avertit_ne_publie_pas_de_seuil() {
+        let j = serde_json::to_value(Counter::avertit(Vec::new())).unwrap();
+        assert!(j.get("seuil").is_none(), "{j}");
+        let j = serde_json::to_value(Counter::new(3, false, Vec::new())).unwrap();
+        assert_eq!(j["seuil"], 3);
+    }
+
     /// Un mot plus large que sa boîte déborde lui aussi, latéralement : le
     /// moteur le signale plutôt que de le couper, et le compteur le lit au
     /// même titre que le texte trop haut. Deux façons de ne pas tenir dans la
@@ -1158,6 +1267,12 @@ mod tests {
         let c = compteurs(&a, &infos, &g);
         assert_eq!(c.ornement_sur_photo.count, 1, "{:?}", c.ornement_sur_photo.details);
         assert_eq!(c.ornement_sur_photo.details[0].planche, 1);
+        // Et il avertit comme ses deux voisins : poser un fleuron sur une
+        // photo est un choix douteux, pas un album qu'on refuse d'imprimer.
+        // Le verdict entier ne se lit pas ici — cet album de deux planches
+        // synthétiques n'a jamais été composé et fâche des compteurs du
+        // Composer —, c'est celui de ce compteur-là qui se prouve.
+        assert!(c.ornement_sur_photo.passes(), "il compte 1 et laisse passer");
 
         // Posé au pli, le même ornement ne touche plus aucune case : c'est le
         // recouvrement qui compte, pas la présence d'un ornement.

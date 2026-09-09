@@ -641,21 +641,37 @@ retaille.
 
 ### Le linter, la reprise et le prévol devant un objet libre (6.4)
 
-**Le linter et le prévol lisent la scène, aucun des deux ne recalcule.** `hors_marge` et
-`traverse_le_pli` vivent dans `scene.rs`, avec le geste de l'éditeur et l'émetteur ; les
-deux les appellent. Une seconde implémentation de la doctrine est exactement ce que ce
+**Le linter et le prévol lisent la scène, aucun des deux ne recalcule.** `hors_marge`,
+`traverse_le_pli` et `recouvre` vivent dans `scene.rs`, avec le geste de l'éditeur et
+l'émetteur ; les deux les appellent. `recouvre` est une séparation d'axes sur les quatre
+normales des deux rectangles, et ses axes sont normalisés : à l'angle zéro la projection
+d'un coin est sa propre coordonnée, donc le verdict est celui d'un chevauchement droit,
+au bit. Une seconde implémentation de la doctrine est exactement ce que ce
 module-là existe pour supprimer, et `hors_marge` n'était écrit qu'en TypeScript jusqu'ici
 — un seuil dans une seule langue pour une règle que deux lisent. `--reprise`, lui, ne
 lit pas la scène mais le fichier : il mesure un écart entre deux `album.json`, et un
 objet libre y est un champ, pas un rectangle.
 
-**Deux compteurs de linter, mous et à zéro.** `objet_hors_marge` (la boîte entre dans la
-bande sûre, `CAPTION_SAFE` × marge à l'intérieur de la coupe) et `objet_deborde` (le
-texte est plus haut que sa boîte, `overflow`, ou un mot y est plus large, `trop_large` —
-deux façons de ne pas tenir dans la boîte qu'on a dessinée, un seul compteur). **Mous**
-parce qu'un objet posé volontairement à fond perdu est un choix et que l'éditeur a déjà
-averti ; **à zéro** parce qu'aucun des trois jeux de référence n'en porte un — le jour où
-un album légitime en compte, c'est le seuil qui bouge, pas la classe.
+**Trois compteurs de linter, et ils avertissent au lieu de décider.**
+`objet_hors_marge` (la boîte entre dans la bande sûre, `CAPTION_SAFE` × marge à
+l'intérieur de la coupe), `objet_deborde` (le texte est plus haut que sa boîte,
+`overflow`, ou un mot y est plus large, `trop_large` — deux façons de ne pas tenir dans la
+boîte qu'on a dessinée, un seul compteur) et `ornement_sur_photo` (la boîte d'un ornement
+recouvre une case, `scene::recouvre`, une ligne par ornement quel que soit le nombre de
+cases mordues — ce qui se répare est l'ornement). Un objet posé volontairement à fond
+perdu est un choix, l'éditeur a déjà averti au moment du geste, et le refus vit au prévol
+sur la coupe et le pli.
+
+**Le linter a donc trois régimes et non deux, et `seuil` les porte tous les trois**
+(`Counter::seuil: Option<usize>`). Un compteur sans seuil compte, détaille, et ne décide
+pas : `passes()` rend vrai, `--audit` ne rougit pas, et le champ est **absent** du rapport
+JSON, ce que `check.sh` et `signaler.ts` lisent tous les deux pour ne pas afficher un
+« 2 / 0 » qui veut dire rouge. Les dix compteurs du Composer gardent leurs seuils et leur
+pouvoir au chiffre près. Nés à `seuil: 0`, les trois compteurs de la main étaient durs en
+fait pendant qu'on les décrivait mous — `dur` n'est lu par personne, c'est `seuil` qui
+décide —, et la seule sortie disponible aurait été de relever un chiffre pour faire taire
+une règle, ce que la session C a justement refusé de faire au prévol. C'est « le pli bute,
+la marge avertit » porté au linter.
 
 **Les deux compteurs n'ont pas la même portée, et 6.3 s1 l'a tranché** :
 `objet_hors_marge` mesure une boîte, donc il compte tout ce qu'une main a posé, ornement
@@ -808,7 +824,7 @@ raster d'une colonne. **`ornement-encre.py` et `apercu-fidele.py` nomment désor
 `--profil lulu`** : ils ont besoin d'un intérieur de planches doubles sans couverture
 dedans, et le défaut de la ligne de commande découpe.
 
-`--audit` : douze compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions
+`--audit` : treize compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions
 de chaque jeu. `--reprise` : part des planches corrigées à la main contre
 `album.origin.json` ; sous 10 % bon, jusqu'à 30 % à surveiller, au-delà rédhibitoire.
 `--prevol --profil <id>` : bloquants et avertissements contre un `PrinterProfile`, et la

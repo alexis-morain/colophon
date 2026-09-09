@@ -577,7 +577,15 @@ export async function listPrinters(): Promise<Printer[]> {
 /** One audit counter, counts only. The engine's report also carries the
  *  finding details, which may name photos: the report panel never quotes
  *  them, the numbers alone travel. */
-export type AuditCounter = { count: number; seuil: number; dur: boolean };
+export type AuditCounter = {
+  count: number;
+  /** Absent = le compteur avertit et ne décide pas. Miroir de
+   *  `audit.rs::Counter::seuil`, dont le `None` est un régime et pas un
+   *  oubli : il n'y a rien à dépasser, donc rien à relever pour faire taire
+   *  la règle. */
+  seuil?: number;
+  dur: boolean;
+};
 
 export type AuditSummary = {
   ok: boolean;
@@ -604,6 +612,7 @@ export async function reportData(): Promise<ReportData> {
     seuil,
     dur,
   });
+  const avertit = (count: number) => ({ count, dur: false });
   return {
     version: "dev",
     os: "harnais navigateur",
@@ -628,8 +637,9 @@ export async function reportData(): Promise<ReportData> {
         legende_manquante: compteur(2, 4, false),
         legende_sur_photo: compteur(0, 0, true),
         repetition_gabarit: compteur(0, 0, true),
-        objet_hors_marge: compteur(0, 0, false),
-        objet_deborde: compteur(0, 0, false),
+        objet_hors_marge: avertit(0),
+        objet_deborde: avertit(0),
+        ornement_sur_photo: avertit(0),
       },
     },
   };

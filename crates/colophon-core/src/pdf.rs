@@ -1371,6 +1371,13 @@ mod tests {
     use super::*;
     use crate::model::{Size, Slot};
 
+    /// Un nom PDF, rendu comme du texte. lopdf rend les noms en octets, et
+    /// tous ceux que ce fichier vérifie sont de l'ASCII par construction :
+    /// ils sortent de nos propres dictionnaires, jamais d'un fichier lu.
+    fn nom(o: &Object) -> &str {
+        std::str::from_utf8(o.as_name().expect("un nom")).expect("de l'ASCII")
+    }
+
     /// Un `focal` est un point de l'image, donc la fenêtre se centre dessus
     /// quel que soit le ratio de la cellule. C'est tout 3.1 : une bascule de
     /// format ne doit pas déplacer ce que l'œil a cadré. Deux cellules de
@@ -1763,7 +1770,7 @@ mod tests {
         let intents = catalog.get(b"OutputIntents").unwrap().as_array().unwrap();
         let subtypes: Vec<&str> = intents
             .iter()
-            .map(|o| o.as_dict().unwrap().get(b"S").unwrap().as_name_str().unwrap())
+            .map(|o| nom(o.as_dict().unwrap().get(b"S").unwrap()))
             .collect();
         assert!(subtypes.contains(&"GTS_PDFX"), "{subtypes:?}");
         assert!(subtypes.contains(&"GTS_PDFA1"), "{subtypes:?}");
@@ -1851,11 +1858,11 @@ mod tests {
     fn la_police_du_fichier_est_un_composite_identity_h() {
         let (_, doc) = written();
         let f = police(&doc);
-        assert_eq!(f.get(b"Subtype").unwrap().as_name_str().unwrap(), "Type0");
-        assert_eq!(f.get(b"Encoding").unwrap().as_name_str().unwrap(), "Identity-H");
+        assert_eq!(nom(f.get(b"Subtype").unwrap()), "Type0");
+        assert_eq!(nom(f.get(b"Encoding").unwrap()), "Identity-H");
         assert!(f.get(b"ToUnicode").is_ok(), "sans ToUnicode, la page ne se copie pas");
 
-        let base = f.get(b"BaseFont").unwrap().as_name_str().unwrap().to_string();
+        let base = nom(f.get(b"BaseFont").unwrap()).to_string();
         assert_eq!(base, font::FONT_NAME, "la face se nomme elle-même");
         assert!(!base.contains('+'), "préfixe de sous-ensemble sur une face entière : {base}");
 
@@ -1863,8 +1870,8 @@ mod tests {
             Object::Reference(id) => doc.get_object(*id).unwrap().as_dict().unwrap().clone(),
             other => panic!("descendant non référencé : {other:?}"),
         };
-        assert_eq!(d.get(b"Subtype").unwrap().as_name_str().unwrap(), "CIDFontType2");
-        assert_eq!(d.get(b"CIDToGIDMap").unwrap().as_name_str().unwrap(), "Identity");
+        assert_eq!(nom(d.get(b"Subtype").unwrap()), "CIDFontType2");
+        assert_eq!(nom(d.get(b"CIDToGIDMap").unwrap()), "Identity");
         let cid = d.get(b"CIDSystemInfo").unwrap().as_dict().unwrap();
         assert_eq!(cid.get(b"Ordering").unwrap().as_str().unwrap(), b"Identity");
 
@@ -1990,8 +1997,8 @@ mod tests {
                 other => panic!("{other:?}"),
             };
             (
-                f.get(b"Encoding").unwrap().as_name_str().unwrap().to_string(),
-                f.get(b"BaseFont").unwrap().as_name_str().unwrap().to_string(),
+                nom(f.get(b"Encoding").unwrap()).to_string(),
+                nom(f.get(b"BaseFont").unwrap()).to_string(),
                 chasses_declarees(&d),
             )
         };
@@ -2103,7 +2110,7 @@ mod tests {
         assert_eq!(defaut, Some(font::REFUS_FICHIER_ABSENT));
         let f = police(&doc);
         assert_eq!(
-            f.get(b"BaseFont").unwrap().as_name_str().unwrap(),
+            nom(f.get(b"BaseFont").unwrap()),
             font::FONT_NAME,
             "la face du projet, nommée d'après elle-même"
         );
@@ -2120,7 +2127,7 @@ mod tests {
             Object::Reference(id) => doc.get_object(*id).unwrap().as_dict().unwrap(),
             other => panic!("Info non référencé : {other:?}"),
         };
-        assert_eq!(info.get(b"Trapped").unwrap().as_name_str().unwrap(), "False");
+        assert_eq!(nom(info.get(b"Trapped").unwrap()), "False");
         let created = info.get(b"CreationDate").unwrap().as_str().unwrap();
         assert!(created.starts_with(b"D:"), "{:?}", String::from_utf8_lossy(created));
         assert_eq!(info.get(b"ModDate").unwrap().as_str().unwrap(), created);

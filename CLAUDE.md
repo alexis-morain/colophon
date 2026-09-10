@@ -202,7 +202,7 @@ jamais une empreinte dans le PDF** : la mettre dans `/ID` ou dans le XMP changer
 octets de tous les PDF exportés, casserait le banc d'octets et forcerait une remesure
 PDF/A-2b, alors que le prévol ne regarde jamais que des fichiers du dossier — un
 manifeste posé là couvre toute sa portée pour une fraction du risque. **La preuve
-inversée tient : `banc_octets_d_un_album_sans_objet_libre` rend toujours 214 808 o.**
+inversée tient : `banc_octets_d_un_album_sans_objet_libre` rend toujours 214 814 o.**
 
 Quatre choses à ne pas défaire. **L'empreinte neutralise `version` et `root`, et rien
 d'autre** — l'estampille de schéma change à une migration sans que le livre change, et
@@ -486,7 +486,7 @@ Quatre choses à ne pas défaire :
   exactement ce qu'il mesurait avant que l'angle existe. C'est là-dessus que repose
   l'égalité **au bit** de `distance_to_trim` sur les 10 000 cases du balayage de parité.
 - **`Td` reste pour le texte droit, `Tm` n'arrive qu'au-dessus de zéro.** Mesuré : un
-  album sans objet libre rend le PDF de `main` à l'octet (214 808 octets, banc
+  album sans objet libre rend le PDF de `main` à l'octet (214 814 octets, banc
   `banc_octets_d_un_album_sans_objet_libre`, à lancer sur les deux arbres).
 - **Un bloc revient à la ligne dans sa boîte**, aux mots, dans la face de l'album. Rien
   n'est replié en silence : ce qui dépasse dépasse **en hauteur** (`overflow`), et un mot
@@ -570,7 +570,7 @@ clair : le contributeur. La leçon est dans le module : **refuser, jamais ignore
 **Une seule rotation dans le projet.** Un bloc tourne par `Tm`, un ornement par `cm`, et
 les quatre coefficients sortent de `pdf::coefficients_rotation`, appelée par les deux ;
 le test compare les deux flux au même angle. **`Td` reste `Td`** : un album sans ornement
-rend le PDF de `main` à l'octet, revérifié à 214 808 octets. Un ornement est noir, un seul
+rend le PDF de `main` à l'octet, revérifié à 214 814 octets. Un ornement est noir, un seul
 remplissage, et il s'écrit `0 0 0 rg` et non `0 g` — ce document déclare un espace de
 couleur et un OutputIntent, et faire entrer DeviceGray par un fleuron mettrait un second
 espace devant veraPDF sans rien acheter. **PASS PDF/A-2b** avec neuf ornements dedans.

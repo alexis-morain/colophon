@@ -14,7 +14,7 @@ chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 image_hasher = "3.1"
 kamadak-exif = "0.5"
-lopdf = "0.34"
+lopdf = "0.42"
 rayon = "1"
 rustface = "0.1.7"
 serde = { version = "1", features = ["derive"] }

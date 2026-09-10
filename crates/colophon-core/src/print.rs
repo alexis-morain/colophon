@@ -393,8 +393,15 @@ mod tests {
         assert_eq!(images(pages[2].1), 1, "p3");
         // p4 : la blanche qui ferme le bloc. Une page, sans une goutte d'encre.
         assert_eq!(images(pages[3].1), 0, "p4 est blanche");
+        // Ce qui se mesure est l'encre, pas la longueur du flux : lopdf ferme
+        // un flux vide par un saut de ligne, et un octet d'espacement n'est
+        // pas un opérateur de dessin. Un `is_empty()` ici testerait la mise en
+        // forme du writer là où la blanche est ce qui compte.
         let contenu = doc.get_page_content(pages[3].1).unwrap();
-        assert!(contenu.is_empty(), "p4 porte du contenu : {contenu:?}");
+        assert!(
+            contenu.iter().all(|o| o.is_ascii_whitespace()),
+            "p4 porte du contenu : {contenu:?}"
+        );
 
         // Et chaque page est la feuille du gabarit : 216 × 216 avec la page
         // finie de 210 dedans.

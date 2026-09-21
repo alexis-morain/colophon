@@ -201,6 +201,11 @@ export const FR = {
   "prefs.rendu.canvas": "Canvas",
   "prefs.rendu.note":
     "Les deux dessinent la même planche, à partir des mêmes objets ; ils ne diffèrent que par la façon dont elle arrive à l’écran. Le canvas est en cours d’évaluation : si votre machine peine à faire glisser un recadrage, essayez-le. Le PDF ne change jamais, quel que soit ce réglage.",
+  "prefs.maj": "Mises à jour",
+  "prefs.maj.au.lancement": "Vérifier au lancement",
+  "prefs.maj.jamais": "Ne rien vérifier",
+  "prefs.maj.note":
+    "C’est la seule chose qui sorte de votre machine. Au démarrage, Colophon demande à GitHub s’il existe une version plus récente. Ce qui part est une requête vers la page des versions ; ce que GitHub en voit est votre adresse IP et le nom de votre système, rien de vos photographies, rien de votre album, aucun identifiant que Colophon fabriquerait. Rien ne s’installe sans un clic de votre part. Coupée, l’application ne joint plus rien du tout, et les versions se téléchargent à la main depuis la page des versions.",
 
   // -- création, composition, formats
   "setup.nouvel": "Nouvel album",
@@ -946,6 +951,11 @@ export const EN: Record<Cle, string> = {
   "prefs.rendu.canvas": "Canvas",
   "prefs.rendu.note":
     "Both draw the same spread, from the same objects; they differ only in how it reaches the screen. The canvas is under evaluation: if dragging a crop feels heavy on your machine, try it. The PDF never changes, whichever this is set to.",
+  "prefs.maj": "Updates",
+  "prefs.maj.au.lancement": "Check at launch",
+  "prefs.maj.jamais": "Never check",
+  "prefs.maj.note":
+    "This is the only thing that leaves your machine. At startup, Colophon asks GitHub whether a newer version exists. What goes out is a request to the releases page; what GitHub sees of it is your IP address and the name of your system, nothing of your photographs, nothing of your album, no identifier Colophon would have made up. Nothing installs without a click from you. Turned off, the application reaches nothing at all, and versions are downloaded by hand from the releases page.",
 
   "setup.nouvel": "New album",
   "setup.changer.dossier": "Change folder",

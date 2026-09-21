@@ -44,6 +44,20 @@ sur la page des releases.
 
 ### Modifié
 
+- **La vérification des mises à jour se dit, et se coupe.** Elle existait
+  depuis la 0.9.0 et partait au lancement sans condition, pendant que
+  `SECURITY.md` promettait « no network call at runtime » et le README
+  « Fully offline » : la promesse était fausse, pas le code. Les deux textes
+  nomment désormais ce qui sort — une requête vers la page des versions, dont
+  GitHub voit l'adresse IP et le nom du système, rien des photographies, rien
+  de l'album, aucun identifiant fabriqué par Colophon — et *Préférences* (⌘,)
+  porte l'interrupteur. Le réglage agit dans la seconde : coupé, le bandeau
+  disparaît et plus rien ne sort ; rallumé, la question est posée tout de
+  suite. Il reste allumé par défaut, parce que pour une application
+  distribuée hors de toute boutique, c'est le seul chemin par lequel un
+  correctif arrive. Rien ne s'est jamais installé sans un clic, et rien ne
+  change de ce côté.
+
 - **Le sélecteur de gabarits montre des dispositions, pas des gabarits.** Une
   planche de quatre photos en proposait jusqu'à 171, et la moitié de ce
   nombre était le même dessin deux fois : une bande de légende de huit

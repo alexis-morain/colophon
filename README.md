@@ -126,12 +126,20 @@ blank verso closing the block. Same album, same book, two files.
 
 ## Privacy
 
-Fully offline. No account, no login, no sync, no telemetry, ever, not even
-anonymous, not even opt-in.
+No account, no login, no sync, no telemetry, ever, not even anonymous, not
+even opt-in.
 
-Colophon reads your photographs and never modifies them. The album lives in a
-single readable `album.json` you can repair with a text editor. Nothing leaves
-your machine unless you deliberately send a file somewhere.
+One thing leaves your machine, and you can stop it: at launch, Colophon asks
+GitHub whether a newer version exists. That request carries your IP address
+and the name of your system, and nothing else; no photograph, no album, no
+identifier. Nothing is downloaded or installed without a click, and
+Preferences turns the check off. For an application distributed outside any
+store, that question is how a fix reaches you, which is why it ships on.
+
+Everything else is offline. Colophon reads your photographs and never modifies
+them. The album lives in a single readable `album.json` you can repair with a
+text editor. Nothing else leaves your machine unless you deliberately send a
+file somewhere.
 
 ## Install
 

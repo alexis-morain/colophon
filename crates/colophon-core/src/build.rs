@@ -960,22 +960,35 @@ pub fn variantes_offertes(densite: layout::Densite, spreads: usize) -> Vec<Varia
     ]
 }
 
+/// Les identifiants des propositions que le composeur écrit, et les seuls
+/// noms que l'oubli a le droit de supprimer. `demandee` est celle qui devient
+/// l'album ; les deux autres sont les alternatives posées à côté.
+///
+/// Un appelant qui passerait un identifiant hors de cette liste garde son
+/// fichier, et c'est le bon sens de l'erreur : une proposition périmée qui
+/// traîne coûte un fichier, une sauvegarde effacée coûte une soirée. Un test
+/// tient la liste en face de `variantes_offertes`.
+pub const IDS_PROPOSITIONS: [&str; 3] = ["demandee", "autre-rythme", "resserree"];
+
 /// Delete the proposals nobody chose. Called at the first save: past a hand
 /// edit they stop being an offer and become a stale copy of somebody's work.
 /// Missing files are not an error, this runs on every save.
+///
+/// **Les noms sont construits, jamais reconnus.** Le prédicat d'avant était
+/// syntaxique — tout `album.<x>.json` à deux points sauf `album.origin.json`
+/// — donc il emportait la sauvegarde que le projet invite à faire, en
+/// annonçant `album.json` réparable à la main : `cp album.json
+/// album.sauvegarde.json` avant une édition risquée disparaissait au ⌘S
+/// suivant. Une fonction qui ne peut supprimer que des noms qu'elle a écrits
+/// elle-même ne peut plus se tromper de fichier.
 pub fn oublier_variantes(dir: &Path) -> usize {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return 0;
-    };
     let mut n = 0;
-    for e in entries.flatten() {
-        let nom = e.file_name().to_string_lossy().to_string();
-        let variante = (nom.starts_with("album.") || nom.starts_with("curation."))
-            && nom.ends_with(".json")
-            && nom.matches('.').count() == 2
-            && nom != "album.origin.json";
-        if variante && fs::remove_file(e.path()).is_ok() {
-            n += 1;
+    for id in IDS_PROPOSITIONS {
+        for prefixe in ["album", "curation"] {
+            let f = dir.join(format!("{prefixe}.{id}.json"));
+            if f.exists() && fs::remove_file(&f).is_ok() {
+                n += 1;
+            }
         }
     }
     n
@@ -2259,5 +2272,74 @@ mod tests {
             }
         }
         let _ = fs::remove_dir_all(&out);
+    }
+    /// Le projet annonce `album.json` réparable à la main, donc il invite
+    /// exactement le geste qu'il punissait : copier l'album avant une
+    /// édition risquée. `album.sauvegarde.json` mourait au ⌘S suivant, le
+    /// prédicat étant purement syntaxique.
+    #[test]
+    fn un_enregistrement_ne_supprime_que_ses_propres_propositions() {
+        let d = &std::env::temp_dir().join(format!("colophon-oubli-{}", std::process::id()));
+        let _ = fs::remove_dir_all(d);
+        fs::create_dir_all(d).unwrap();
+        let poser = |nom: &str| fs::write(d.join(nom), b"{}").unwrap();
+        // Ce que le composeur écrit.
+        for id in IDS_PROPOSITIONS {
+            poser(&format!("album.{id}.json"));
+            poser(&format!("curation.{id}.json"));
+        }
+        // Ce qui n'est pas à lui.
+        for nom in [
+            "album.json",
+            "curation.json",
+            "album.origin.json",
+            "album.sauvegarde.json",
+            "curation.mienne.json",
+            "album.avant-la-bascule.json",
+        ] {
+            poser(nom);
+        }
+
+        let n = oublier_variantes(d);
+
+        assert_eq!(n, 2 * IDS_PROPOSITIONS.len(), "les propositions partent");
+        for id in IDS_PROPOSITIONS {
+            assert!(!d.join(format!("album.{id}.json")).exists(), "album.{id}.json");
+            assert!(!d.join(format!("curation.{id}.json")).exists(), "curation.{id}.json");
+        }
+        for nom in [
+            "album.json",
+            "curation.json",
+            "album.origin.json",
+            "album.sauvegarde.json",
+            "curation.mienne.json",
+            "album.avant-la-bascule.json",
+        ] {
+            assert!(d.join(nom).exists(), "{nom} a été supprimé");
+        }
+        let _ = fs::remove_dir_all(d);
+    }
+
+    /// La liste et le composeur doivent dire la même chose : un identifiant
+    /// ajouté d'un côté laisserait un fichier orphelin de l'autre.
+    #[test]
+    fn les_identifiants_des_propositions_sont_ceux_que_le_composeur_ecrit() {
+        assert!(IDS_PROPOSITIONS.contains(&"demandee"), "celle qu'on a demandée");
+        for densite in layout::Densite::offertes() {
+            for spec in variantes_offertes(*densite, 40) {
+                assert!(
+                    IDS_PROPOSITIONS.contains(&spec.id.as_str()),
+                    "« {} » est écrit par le composeur et absent de la liste",
+                    spec.id
+                );
+            }
+        }
+    }
+
+    /// Un dossier qui n'existe pas ne coûte ni erreur ni panique : l'oubli
+    /// tourne à chaque enregistrement.
+    #[test]
+    fn oublier_dans_un_dossier_absent_ne_compte_rien() {
+        assert_eq!(oublier_variantes(&std::env::temp_dir().join("colophon-nulle-part")), 0);
     }
 }

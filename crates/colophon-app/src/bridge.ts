@@ -8,6 +8,7 @@ import { Ornement, setOrnements } from "./ornement";
 import { Album, Discard, OpenedAlbum, Police, Spread } from "./album";
 
 import { Dump, setGeometrie, setGeometrieFormat } from "./geometrie";
+import { t } from "./i18n";
 
 export const inTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -369,7 +370,52 @@ export async function fetchThumb(src: string): Promise<ArrayBuffer> {
 export async function confirmDialog(message: string): Promise<boolean> {
   if (!inTauri) return window.confirm(message);
   const { ask } = await import("@tauri-apps/plugin-dialog");
-  return ask(message, { title: "Colophon", kind: "warning" });
+  // Les libellés, parce que le greffon met « Yes » et « No » en dur : la
+  // question était en français et les deux boutons en anglais, sur les sept
+  // dialogues de l'application. Mesuré à l'écran le 21/09.
+  return ask(message, {
+    title: "Colophon",
+    kind: "warning",
+    okLabel: t("commun.oui"),
+    cancelLabel: t("commun.non"),
+  });
+}
+
+/** Quitter l'application, pour de bon. Le menu Quitter est le nôtre depuis
+ *  que le travail non enregistré doit être demandé avant d'être jeté : un
+ *  `PredefinedMenuItem` passe par `NSApplication.terminate`, qui ne déroule
+ *  rien et ne demande rien.
+ *
+ *  Deux chemins, parce qu'une app qu'on ne peut plus quitter serait pire que
+ *  le défaut corrigé : `exit` du greffon processus, et si la permission
+ *  manquait, la destruction de la fenêtre. Dans le navigateur de
+ *  développement il n'y a pas de processus à fermer. */
+export async function quitApp(): Promise<void> {
+  if (!inTauri) {
+    window.close();
+    return;
+  }
+  try {
+    const { exit } = await import("@tauri-apps/plugin-process");
+    await exit(0);
+  } catch {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().destroy();
+  }
+}
+
+/** La pastille rouge demande avant de détruire la fenêtre. `garder` retient
+ *  la fermeture ; ne rien appeler la laisse aller. Rend de quoi se
+ *  désabonner. Hors Tauri il n'y a pas de fenêtre native à écouter, et
+ *  `beforeunload` tient ce rôle. */
+export async function surFermeture(
+  demande: (garder: () => void) => Promise<void> | void,
+): Promise<() => void> {
+  if (!inTauri) return () => {};
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  return getCurrentWindow().onCloseRequested(async (e) => {
+    await demande(() => e.preventDefault());
+  });
 }
 
 /** Recompose the open album from its photo folder. Edited and locked

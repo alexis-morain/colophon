@@ -18,6 +18,8 @@ import {
   cancelBuild,
   cancelExport,
   confirmDialog,
+  quitApp,
+  surFermeture,
   exportPdf,
   fetchCuration,
   FormatPreset,
@@ -421,9 +423,12 @@ export default function App() {
     }
   }, []);
 
-  /** Open one of the recent albums, by its remembered path. */
+  /** Open one of the recent albums, by its remembered path. Unsaved work
+   *  asks first: `adopt` vide la pile d'annulation et les éditions avec
+   *  elle, et les récents sont à deux endroits, le menu et l'accueil. */
   const openRecent = useCallback(
     async (dir: string) => {
+      if (dirty && !(await confirmDialog(t("ouvrir.confirme")))) return;
       try {
         const result = await openAlbumAt(dir);
         adopt(result);
@@ -434,10 +439,11 @@ export default function App() {
         );
       }
     },
-    [adopt],
+    [adopt, dirty],
   );
 
   const openAlbum = useCallback(async () => {
+    if (dirty && !(await confirmDialog(t("ouvrir.confirme")))) return;
     const picked = await pickAlbumFolder();
     if (picked === null) return;
     try {
@@ -447,7 +453,7 @@ export default function App() {
     } catch (e) {
       setError(fault(t("erreur.ouverture"), e));
     }
-  }, [adopt]);
+  }, [adopt, dirty]);
 
   /** Push an edited album onto the history. No-op edits stay off the stack. */
   /** Choisir une case, et lâcher l'objet libre s'il y en avait un. C'est ici
@@ -878,6 +884,16 @@ export default function App() {
     setStatus(t("bascule.faite", { w: album.trim_mm.w, h: album.trim_mm.h }));
   }, [basculeApercu, apply]);
 
+  /** Quitter l'application. Le seul geste de fin de séance qui ne demandait
+   *  rien, alors que fermer et recomposer demandent tous les deux : le menu
+   *  Quitter prédéfini passait par `NSApplication.terminate`, qui ne laisse
+   *  aucun endroit où poser la question. Il est à nous depuis, ⌘Q compris,
+   *  et la pastille rouge passe par la même question. */
+  const quitterApp = useCallback(async () => {
+    if (dirty && !(await confirmDialog(t("quitter.confirme")))) return;
+    await quitApp();
+  }, [dirty]);
+
   /** Back to the creation screen. Unsaved work asks before dying. */
   const closeAlbum = useCallback(async () => {
     if (
@@ -1016,6 +1032,7 @@ export default function App() {
       if (album) gotoView("envoi");
     },
     fermerAlbum: () => void closeAlbum(),
+    quitter: () => void quitterApp(),
     annuler: () => {
       if (inField()) document.execCommand("undo");
       else undo();
@@ -1234,6 +1251,7 @@ export default function App() {
       enregistrer: () => fire("menu", "enregistrer"),
       exporter: () => fire("menu", "exporter"),
       fermerAlbum: () => fire("menu", "fermerAlbum"),
+      quitter: () => fire("menu", "quitter"),
       stockage: () => fire("menu", "stockage"),
       apropos: () => fire("menu", "apropos"),
       preferences: () => fire("menu", "preferences"),
@@ -1279,13 +1297,44 @@ export default function App() {
     setObjet(null);
   }, [index]);
 
-  // Unsaved work guards the window, in the app and in the dev browser alike.
+  // Le travail non enregistré garde la fenêtre. Deux gardes, parce qu'il y a
+  // deux fenêtres : dans le navigateur de développement, `beforeunload` (avec
+  // son `returnValue`, que WebKit veut encore, et sans lequel le garde ne
+  // faisait rien) ; dans l'application, la pastille rouge, qui détruit une
+  // fenêtre native sans jamais décharger le webview. Le second est le seul
+  // qui compte pour quelqu'un qui n'a pas le dépôt.
   useEffect(() => {
     if (!dirty) return;
-    const guard = (e: BeforeUnloadEvent) => e.preventDefault();
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty]);
+
+  // Un seul abonnement, pour toute la vie de la fenêtre, et l'état lu par une
+  // ref plutôt que par la fermeture. Se réabonner à chaque frappe laisserait,
+  // entre le désabonnement et l'abonnement suivant, une poignée de
+  // millisecondes où la pastille rouge détruit sans demander : c'est
+  // exactement le défaut qu'on corrige, en plus rare et donc en pire.
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  useEffect(() => {
+    let partie = false;
+    let desabonne: (() => void) | null = null;
+    void surFermeture(async (garder) => {
+      if (dirtyRef.current && !(await confirmDialog(t("quitter.confirme"))))
+        garder();
+    }).then((f) => {
+      if (partie) f();
+      else desabonne = f;
+    });
+    return () => {
+      partie = true;
+      desabonne?.();
+    };
+  }, []);
 
   // Transient status line: every message expires the same way; errors have
   // their own banner and never travel through here.

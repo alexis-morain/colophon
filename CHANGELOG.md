@@ -72,6 +72,17 @@ sur la page des releases.
 
 ### Corrigé
 
+- **Quitter et fermer la fenêtre demandent, comme tout le reste.** ⌘Q et la
+  pastille rouge jetaient un album modifié sans un mot, alors que *Fermer*
+  et *Recomposer* demandaient tous les deux : le menu *Quitter* était celui
+  du système, qui passe par une terminaison native et ne laisse aucun endroit
+  où poser la question. Il est à nous désormais, ⌘Q compris, et la fermeture
+  de fenêtre passe par la même question. Le garde du navigateur de
+  développement, qui ne faisait rien faute de `returnValue`, en profite.
+- **Ouvrir un autre album ne jette plus le travail en cours.** ⌘O et la liste
+  des albums récents, dans le menu comme sur l'écran d'accueil, remplaçaient
+  l'album ouvert sans rien demander, pile d'annulation comprise. Ils
+  demandent, avec la même phrase que fermer.
 - **Un titre imprime les caractères qu'il porte, et plus des points
   d'interrogation.** L'éditeur affichait « Zażółć », le PDF imprimait
   « Za?ó??? » : le texte du fichier était limité à 224 caractères, un jeu

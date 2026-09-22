@@ -22,6 +22,7 @@ export type MenuActions = {
   enregistrer(): void;
   exporter(): void;
   fermerAlbum(): void;
+  quitter(): void;
   stockage(): void;
   apropos(): void;
   preferences(): void;
@@ -99,7 +100,14 @@ export async function installMenu(
       await PredefinedMenuItem.new({ item: "HideOthers", text: t("menu.masquer.autres") }),
       await PredefinedMenuItem.new({ item: "ShowAll", text: t("menu.tout.afficher") }),
       await sep(),
-      await PredefinedMenuItem.new({ item: "Quit", text: t("menu.quitter") }),
+      // Le nôtre, et pas le prédéfini : « Quit » passe par
+      // `NSApplication.terminate`, qui ne déroule aucune séquence de
+      // déchargement et ne laisse donc aucun endroit où demander. Un album
+      // modifié mourait là sans un mot, alors que fermer et recomposer
+      // demandent tous les deux.
+      await item("quitter", t("menu.quitter"), {
+        accelerator: "CmdOrCtrl+Q",
+      }),
     ],
   });
 

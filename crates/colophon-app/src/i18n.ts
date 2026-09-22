@@ -74,6 +74,8 @@ export const FR = {
 
   // -- commun aux panneaux
   "commun.fermer": "Fermer (Échap)",
+  "commun.oui": "Oui",
+  "commun.non": "Non",
 
   // -- le panneau de stockage
   "stockage.titre": "Stockage",
@@ -247,6 +249,10 @@ export const FR = {
   "recomp.annulee": "Recomposition annulée",
   "erreur.recomp": "La recomposition a échoué.",
   "fermer.confirme": "Des modifications ne sont pas enregistrées. Fermer quand même ?",
+  "ouvrir.confirme":
+    "Des modifications ne sont pas enregistrées. Ouvrir un autre album quand même ?",
+  "quitter.confirme":
+    "Des modifications ne sont pas enregistrées. Quitter quand même ?",
   "stage.lecture": "lecture du dossier",
   "stage.scan": "inventaire du dossier",
   "stage.analyse.n": "analyse des photos, {i} sur {n}",
@@ -831,6 +837,8 @@ export const EN: Record<Cle, string> = {
   "photos.continuer": "Compose the book",
 
   "commun.fermer": "Close (Esc)",
+  "commun.oui": "Yes",
+  "commun.non": "No",
 
   "stockage.titre": "Storage",
   "stockage.mesure": "Measuring the data folder…",
@@ -996,6 +1004,9 @@ export const EN: Record<Cle, string> = {
   "recomp.annulee": "Recomposition cancelled",
   "erreur.recomp": "The recomposition failed.",
   "fermer.confirme": "Some changes are not saved. Close anyway?",
+  "ouvrir.confirme":
+    "Some changes are not saved. Open another album anyway?",
+  "quitter.confirme": "Some changes are not saved. Quit anyway?",
   "stage.lecture": "reading the folder",
   "stage.scan": "folder inventory",
   "stage.analyse.n": "analysing the photos, {i} of {n}",

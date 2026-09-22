@@ -83,6 +83,14 @@ sur la page des releases.
   des albums récents, dans le menu comme sur l'écran d'accueil, remplaçaient
   l'album ouvert sans rien demander, pile d'annulation comprise. Ils
   demandent, avec la même phrase que fermer.
+- **Enregistrer ne supprime plus les sauvegardes faites à la main.** Le projet
+  annonce `album.json` réparable dans un éditeur de texte, donc il invite
+  exactement le geste qu'il punissait : copier l'album avant une édition
+  risquée. `album.sauvegarde.json` mourait au ⌘S suivant, le ménage des
+  propositions non choisies reconnaissant tout fichier `album.quelquechose.json`
+  au lieu des seuls noms qu'il avait lui-même écrits. Il ne supprime plus que
+  ceux-là. Une proposition périmée qui traînerait coûte un fichier ; une
+  sauvegarde effacée coûtait une soirée.
 - **Un titre imprime les caractères qu'il porte, et plus des points
   d'interrogation.** L'éditeur affichait « Zażółć », le PDF imprimait
   « Za?ó??? » : le texte du fichier était limité à 224 caractères, un jeu

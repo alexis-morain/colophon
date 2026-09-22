@@ -124,6 +124,7 @@ import { RaccourcisView } from "./Raccourcis";
 import { BasculeView } from "./BasculeView";
 import { chargerFace } from "./font";
 import { nomLisible } from "./police";
+import { useVeille } from "./maj";
 
 
 import { SignalerView } from "./SignalerView";
@@ -262,6 +263,8 @@ export default function App() {
   // toute seule : le bandeau attend un clic, et se referme sans en attendre.
   const [maj, setMaj] = useState<Awaited<ReturnType<typeof checkUpdate>>>(null);
   const [majEnCours, setMajEnCours] = useState(false);
+  // Est-ce qu'on regarde. Réglage, donc il survit à la fermeture.
+  const veilleMaj = useVeille();
   const [pdfCle, setPdfCle] = useState(0);
   // La feuille de l'aperçu fidèle, quand il y en a une à l'écran. Le clavier
   // lui propose le tour avant de changer la planche sèchement : le geste n'est
@@ -281,13 +284,27 @@ export default function App() {
     void chargeOrnements();
   }, []);
 
-  // Une seule interrogation, au lancement, en arrière-plan. Hors ligne, feed
-  // injoignable, signature refusée : tout cela rend null, et l'app ne dit
-  // rien. Personne n'a demandé, et une app qui ne joint pas GitHub est une
-  // app qui marche.
+  // Une seule interrogation, au lancement, en arrière-plan, et seulement si
+  // la veille est allumée : c'est la seule chose qui sorte de la machine, et
+  // elle se coupe dans les Préférences. Hors ligne, feed injoignable,
+  // signature refusée : tout cela rend null, et l'app ne dit rien. Une app
+  // qui ne joint pas GitHub est une app qui marche.
+  //
+  // L'effet suit le réglage plutôt que le seul montage : rallumer la veille
+  // regarde tout de suite au lieu d'attendre le prochain lancement. Un
+  // réglage qui ne se voit pas agir est un réglage dont personne ne croit
+  // qu'il agit.
   useEffect(() => {
+    if (veilleMaj === "jamais") return;
     checkUpdate().then(setMaj, () => {});
-  }, []);
+  }, [veilleMaj]);
+
+  // Le bandeau suit la veille, à une exception près : une installation que
+  // quelqu'un a demandée d'un clic va jusqu'au bout, et continue de le dire.
+  // Couper la veille arrête de regarder, ça n'annule pas ce qui est lancé.
+  // La version trouvée, elle, reste en mémoire : rallumer la veille la
+  // remontre sans attendre la réponse d'une seconde question.
+  const bandeauMaj = veilleMaj === "au-lancement" || majEnCours;
 
   const album = hist?.album ?? null;
   const total = album?.spreads.length ?? 0;
@@ -1745,7 +1762,7 @@ export default function App() {
             onClose={() => setStockage(false)}
           />
         )}
-      {maj && (
+      {maj && bandeauMaj && (
         <MajBandeau
           version={maj.version}
           enCours={majEnCours}
@@ -2197,7 +2214,7 @@ export default function App() {
           onClose={() => setStockage(false)}
         />
       )}
-      {maj && (
+      {maj && bandeauMaj && (
         <MajBandeau
           version={maj.version}
           enCours={majEnCours}

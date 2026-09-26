@@ -226,6 +226,15 @@ sur la page des releases.
 
 ### Corrigé
 
+- **Un JPEG tronqué ne part plus tel quel chez l'imprimeur.** Quand une
+  photo était déjà à la bonne définition, le PDF d'impression recopiait ses
+  octets sans les décoder, et seul l'en-tête était lu : une copie
+  interrompue, un fichier iCloud à moitié synchronisé partaient à la presse
+  avec le tiers haut de l'image sur un aplat gris, prévol vert. Le fichier est
+  désormais parcouru jusqu'à son marqueur de fin d'image avant de partir,
+  une milliseconde par photo, et un fichier tronqué arrête l'export en
+  nommant le fichier.
+
 - **Un export bloqué par une photo trop petite a maintenant une sortie.**
   Envoi refusait l'export et disait seulement quoi faire, alors qu'un
   original vraiment petit peut ne tenir dans aucune case. Chaque photo sous

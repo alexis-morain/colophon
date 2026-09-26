@@ -833,6 +833,14 @@ glyphes n'étant connus qu'à la dernière planche ; et l'écrivain **descend ju
 appelants**, `cover.rs` écrivant son flux hors du writer — un accumulateur logé dans le
 writer perdrait tout le texte du dos sans que rien le voie.
 
+**Le passe-plat JPEG vérifie le fichier entier avant de le recopier** (`print::jpeg_entier`) :
+une marche des segments jusqu'à `FFD9`, en-têtes sautés par leur longueur (la vignette EXIF
+a son propre EOI, qui ne compte pas), données de scan sautées au marqueur suivant. Mesuré le
+26/09 (`docs/mesures/2026-09-26-le-passe-plat-jpeg.json`) : 1 ms par photo, zéro refus sur
+les 572 de corse ; le décodage complet coûtait 29 ms et n'attrapait rien de plus, le
+décodeur tolérant une soupe de marqueurs. Piège : un fichier réel du jeu finit par soixante
+espaces après son EOI, une recherche en queue de fichier le refusait à tort.
+
 **Trois PDF** : `album.pdf` = aperçu vignettes, jamais imprimé, mais c'est lui que lit
 l'aperçu fidèle ; `--print` = 300 dpi, rien ne court-circuite `print_scale` ; `--cover` =
 la feuille à plat, une par profil. **Ce qui doit survivre au massicot se mesure depuis la

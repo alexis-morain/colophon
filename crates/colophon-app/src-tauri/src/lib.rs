@@ -120,7 +120,10 @@ fn read_thumb(dir: &Path, thumbs: &ThumbIndex, src: &str) -> Result<Vec<u8>, Str
     let name = thumbs
         .get(src)
         .ok_or_else(|| format!("{src} absent de thumbs.json"))?;
-    let file = dir.join(".cache").join("thumbs").join(name);
+    // `thumbs.json` is data from a folder people share: a value is a bare
+    // file name or the entry is refused, never joined.
+    let file = colophon_core::thumb::chemin(dir, name)
+        .ok_or_else(|| format!("{src} : nom de vignette refusé dans thumbs.json ({name})"))?;
     std::fs::read(&file).map_err(|e| format!("vignette {} illisible : {e}", file.display()))
 }
 
@@ -957,19 +960,48 @@ async fn report_data(
 /// able to become a generic link-opener.
 #[tauri::command]
 fn open_report_url(url: String) -> Result<(), String> {
-    if !url.starts_with("https://github.com/alexis-morain/colophon/issues/new") {
-        return Err(format!("URL hors du dépôt : {url}"));
-    }
+    url_de_rapport(&url)?;
     #[cfg(target_os = "macos")]
     let run = std::process::Command::new("open").arg(&url).spawn();
+    // Never through `cmd /C start`: cmd reads `&` as a command separator,
+    // and `std` only quotes an argument that carries a space or is empty —
+    // so an issue URL, which is nothing but `&`-separated parameters, was
+    // cut at its first one (the form opened empty on Windows, the whole
+    // diagnostic gone) and anything after it would have run. rundll32 takes
+    // the URL as one argument and hands it to the default browser, no shell
+    // in between.
     #[cfg(target_os = "windows")]
-    let run = std::process::Command::new("cmd")
-        .args(["/C", "start", "", &url])
+    let run = std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", &url])
         .spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let run = std::process::Command::new("xdg-open").arg(&url).spawn();
     run.map(|_| ())
         .map_err(|e| format!("ouverture du navigateur : {e}"))
+}
+
+/// The one shape of URL the report channel may open: the repo's issue form,
+/// followed by a query string made only of what `URLSearchParams` writes.
+/// A closed set rather than a prefix — the prefix let the whole suffix
+/// through, and the suffix is exactly what reaches a process spawn.
+fn url_de_rapport(url: &str) -> Result<(), String> {
+    const BASE: &str = "https://github.com/alexis-morain/colophon/issues/new";
+    let reste = url
+        .strip_prefix(BASE)
+        .ok_or_else(|| format!("URL hors du dépôt : {url}"))?;
+    let requete = match reste {
+        "" => return Ok(()),
+        r => r
+            .strip_prefix('?')
+            .ok_or_else(|| format!("URL hors du formulaire : {url}"))?,
+    };
+    // `URLSearchParams` : lettres, chiffres, `*-._`, `%XX`, `+`, et `&`/`=`
+    // entre les paires. Rien d'autre n'a de raison d'être là.
+    let permis = |c: char| c.is_ascii_alphanumeric() || "*-._%+&=".contains(c);
+    if let Some(c) = requete.chars().find(|c| !permis(*c)) {
+        return Err(format!("caractère refusé dans l'URL du rapport : {c:?}"));
+    }
+    Ok(())
 }
 
 /// What the About screen shows: the version, the licence, and the three
@@ -1623,6 +1655,39 @@ mod tests {
             "https://github.com/autre/depot/issues/new".into()
         )
         .is_err());
+    }
+
+    /// The guard is a closed set, not a prefix. What `signaler.ts` writes
+    /// passes; a shell metacharacter, a fragment, a space or a quote does
+    /// not — whatever the platform does with the URL afterwards.
+    #[test]
+    fn l_url_du_rapport_est_un_jeu_ferme() {
+        assert!(url_de_rapport("https://github.com/alexis-morain/colophon/issues/new").is_ok());
+        assert!(url_de_rapport(
+            "https://github.com/alexis-morain/colophon/issues/new?template=1-bug.yml&title=Rat%C3%A9e+%C2%B7+planche+3&body=x"
+        )
+        .is_ok());
+        for mauvaise in [
+            "https://github.com/alexis-morain/colophon/issues/new?a=1&calc.exe|x",
+            "https://github.com/alexis-morain/colophon/issues/new?a=1 &b=2",
+            "https://github.com/alexis-morain/colophon/issues/new?a=\"1\"",
+            "https://github.com/alexis-morain/colophon/issues/new#frag",
+            "https://github.com/alexis-morain/colophon/issues/new/../../../autre",
+            "https://github.com/alexis-morain/colophon/issues/newer?x=1",
+            "https://github.com/alexis-morain/colophon/issues/new?a=1;b",
+        ] {
+            assert!(url_de_rapport(mauvaise).is_err(), "{mauvaise} a passé");
+        }
+    }
+
+    /// A `thumbs.json` value that is not a file name is refused before any
+    /// read: the album folder is shared data.
+    #[test]
+    fn une_vignette_hors_du_cache_est_refusee() {
+        let mut thumbs = ThumbIndex::default();
+        thumbs.insert("photo.jpg".into(), "../../../../etc/passwd".into());
+        let err = read_thumb(Path::new("/nulle/part"), &thumbs, "photo.jpg").unwrap_err();
+        assert!(err.contains("refusé"), "{err}");
     }
 
     /// A scratch `albums` root with one album folder inside, plus a decoy

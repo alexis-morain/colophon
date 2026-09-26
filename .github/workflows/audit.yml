@@ -1,0 +1,27 @@
+# Les avis de sécurité des crates, lus chaque semaine et à chaque changement
+# du Cargo.lock. La seule vulnérabilité du 10/09 (lopdf, 7,5) est restée
+# invisible jusqu'à ce qu'on lance l'outil à la main. Ce workflow n'est pas
+# sur le chemin de fusion : il prévient, le gate décide.
+
+name: audit
+
+on:
+  push:
+    paths: ["Cargo.lock", ".github/workflows/audit.yml"]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

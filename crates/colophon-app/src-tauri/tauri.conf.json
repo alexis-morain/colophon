@@ -39,7 +39,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg", "msi"],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
     "category": "Photography",
     "shortDescription": "Libre photo book creator",
     "icon": [

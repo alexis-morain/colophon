@@ -1053,7 +1053,16 @@ les octets de l'album, `police.ts` les noms et les refus d'une face,
 
 Chaîne de distribution : `NOTICES.md` généré et embarqué, CSP réelle, CHANGELOG, README,
 modèles d'issue, `check.yml` et `release.yml` (binaires, SHA-256, `latest.json`), updater
-branché. Reste le parcours de correction.
+branché, `audit.yml` (avis RustSec, hebdomadaire, hors chemin de fusion). **La version vit
+à quatre endroits et `scripts/versions.py` est le seul à les comparer** : dans le gate sans
+argument, dans `release.yml` avec `--attendue <tag>`, qui refuse aussi un CHANGELOG sans
+section `## [<tag>]`, et qui ne construit rien avant un `check.sh` vert. Le gate construit
+le bundle Vite et garde le petit dossier (`scripts/petit-dossier.py`, 24/25/30/2 photos
+depuis la fiche de corse). Windows ne sort que le MSI (`bundle.targets`), pour une seule
+forme d'artefact de mise à jour. **`thumb::chemin` est la seule porte vers une vignette
+du cache**, six lecteurs y passent, un nom qui n'est pas un nom de fichier est refusé.
+**`url_de_rapport` est un jeu fermé**, et Windows ouvre par `rundll32`, jamais `cmd`.
+Reste le parcours de correction.
 
 Le prompt de la session en cours, quand il y en a un : `docs/prompts/en-cours.md`.
 Mesures : `docs/mesures/`. Glossaire : `CONTEXT.md`.

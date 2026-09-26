@@ -10,6 +10,21 @@ use std::path::{Path, PathBuf};
 
 pub const THUMB_SIZE: u32 = 1600;
 
+/// The cache file a `thumbs.json` entry names, or `None` when the entry is
+/// not a bare file name. `thumbs.json` is data from an album folder, and an
+/// album folder is what people share: a value of `../../etc/passwd` used to
+/// be joined as-is by six readers, none of which had the closed-set guard
+/// the police file and the album id already have. A name is a name — no
+/// separator, no `.`, no `..`, nothing empty — or it is nothing.
+pub fn chemin(dir: &Path, name: &str) -> Option<PathBuf> {
+    let propre = !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', '\\'])
+        && !name.contains('\0');
+    propre.then(|| dir.join(".cache").join("thumbs").join(name))
+}
+
 pub struct ThumbCache {
     dir: PathBuf,
 }
@@ -88,5 +103,25 @@ pub fn apply_orientation(img: DynamicImage, orientation: u32) -> DynamicImage {
         7 => img.rotate270().fliph(),
         8 => img.rotate270(),
         _ => img,
+    }
+}
+
+#[cfg(test)]
+mod tests_chemin {
+    use super::*;
+
+    /// A `thumbs.json` value is a file name or it is nothing: the six
+    /// readers of the cache go through here, and here is the only place
+    /// that knows what a name is.
+    #[test]
+    fn un_nom_de_vignette_est_un_nom_ou_rien() {
+        let dir = Path::new("/albums/x");
+        assert_eq!(
+            chemin(dir, "0123456789abcdef.jpg"),
+            Some(dir.join(".cache").join("thumbs").join("0123456789abcdef.jpg"))
+        );
+        for mauvais in ["../../../../etc/passwd", "a/b.jpg", "a\\b.jpg", "..", ".", "", "/etc/passwd", "a\0b"] {
+            assert!(chemin(dir, mauvais).is_none(), "{mauvais:?} a passé");
+        }
     }
 }

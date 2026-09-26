@@ -135,6 +135,27 @@ sur la page des releases.
   message brut passant derrière un « Détail technique » comme partout
   ailleurs. Et le panneau *Signaler* ne meurt plus quand le diagnostic de la
   machine est illisible : le rapport part sans lui et le dit.
+- **Le rapport de bug partait vide sous Windows.** L'URL de l'issue
+  pré-remplie passait par `cmd /C start`, qui coupe au premier `&` : le
+  formulaire s'ouvrait sans version, sans système, sans journal — et tout ce
+  qui suivait un `&` aurait été exécuté. L'URL est désormais remise au
+  navigateur sans interpréteur de commandes entre les deux, et le canal
+  n'accepte plus qu'une forme fermée : le formulaire du dépôt suivi d'une
+  requête faite de ce que l'application écrit, et rien d'autre.
+- **Une vignette ne se lit que dans le cache.** `thumbs.json` est un fichier
+  du dossier de l'album, donc un fichier qui se partage ; une valeur
+  `../../…` y était suivie telle quelle par six lecteurs. Un nom de vignette
+  est un nom de fichier, ou il est refusé.
+
+### Sécurité
+
+- La chaîne de release refuse un tag dont la version ne serait pas celle des
+  quatre fichiers qui la portent, et un CHANGELOG sans section pour elle ;
+  elle passe le gate avant de construire quoi que ce soit. Le gate construit
+  désormais le bundle de l'interface, garde le Composer sous et sur le seuil
+  du petit dossier, et un workflow hebdomadaire lit les avis de sécurité des
+  crates. Windows ne sort plus qu'un installeur MSI, donc une seule forme de
+  mise à jour ; macOS exige 11.0, ce que la photothèque exigeait déjà.
 
 ## [0.9.0] - 2026-08-17
 

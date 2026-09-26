@@ -1,6 +1,5 @@
 // Preferences (⌘,): the application language, whether Colophon looks for a
-// new version at launch, a note about appearance, and which renderer draws a
-// spread. Every one of them is a React render, never a restart; the native
+// new version at launch, and a note about appearance. Every one of them is a React render, never a restart; the native
 // menu is rebuilt by App the moment the language moves.
 //
 // The update switch sits second, right under the language, because it is the
@@ -8,14 +7,13 @@
 // note names what goes out rather than reassuring: somebody who opens this
 // panel to check that claim must find the answer, not a slogan.
 //
-// The renderer belongs here rather than in a build flag because wave 2.5 has
-// to measure the two against each other in an installed bundle, on one
-// machine, without recompiling between the two readings.
+// Le choix Éléments / Canvas n'est plus ici : il ne servait à personne qui
+// fabrique un album. `rendu.ts` et sa clé `colophon.rendu` restent pour les
+// mesures de `scripts/mesure-rendu.md`.
 
 import { Dialogue } from "./Dialogue";
 import { Lang, setLangue, t, useLangue } from "./i18n";
 import { Veille, setVeille, useVeille } from "./maj";
-import { Rendu, setRendu, useRendu } from "./rendu";
 
 const LANGES: [Lang, string][] = [
   ["fr", "Français"],
@@ -24,15 +22,10 @@ const LANGES: [Lang, string][] = [
 
 export function PrefsView({ onClose }: { onClose: () => void }) {
   const lang = useLangue();
-  const dessin = useRendu();
   const regarde = useVeille();
   const VEILLES: [Veille, string][] = [
     ["au-lancement", t("prefs.maj.au.lancement")],
     ["jamais", t("prefs.maj.jamais")],
-  ];
-  const RENDUS: [Rendu, string][] = [
-    ["dom", t("prefs.rendu.dom")],
-    ["canvas", t("prefs.rendu.canvas")],
   ];
   return (
     <Dialogue titre={t("prefs.titre")} onClose={onClose} panelClassName="prefs-panel">
@@ -71,22 +64,6 @@ export function PrefsView({ onClose }: { onClose: () => void }) {
 
         <h3>{t("prefs.theme")}</h3>
         <p className="signaler-note">{t("prefs.theme.note")}</p>
-
-        <h3>{t("prefs.rendu")}</h3>
-        <div className="prefs-langues" role="radiogroup" aria-label={t("prefs.rendu")}>
-          {RENDUS.map(([id, nom]) => (
-            <button
-              key={id}
-              role="radio"
-              aria-checked={dessin === id}
-              className={"prefs-langue" + (dessin === id ? " active" : "")}
-              onClick={() => setRendu(id)}
-            >
-              {nom}
-            </button>
-          ))}
-        </div>
-        <p className="signaler-note">{t("prefs.rendu.note")}</p>
     </Dialogue>
   );
 }

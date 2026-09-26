@@ -4,6 +4,14 @@
 // happens here, nearly for free. Images only load when their cell scrolls
 // into view; the blob pool stays bounded.
 //
+// **Le glisser passe par le pointeur, jamais par le glisser HTML5.** Celui-ci
+// dépend de ce que le webview veut bien livrer, et ne se vérifie pas au
+// harnais. Un appui devient un glisser au-delà de six pixels (en deçà, c'est
+// le clic d'avant) ; la figure suit la main par `transform`, jamais par le
+// layout, et la cible est la cellule dont le rectangle contient le pointeur
+// (`planches.ts::cibleSous`). Rien ne s'écrit avant le relâchement, et Échap
+// annule sans rien écrire.
+//
 // **Et elle se parcourt au clavier**, parce que c'est un écran de
 // navigation : c'est ici qu'on cherche une planche, et une grille qu'on ne
 // peut atteindre qu'à la souris n'est pas une grille, c'est une image. Un
@@ -18,6 +26,19 @@ import { Album, Spread, spreadGeometry, slotsFor } from "./album";
 import { useReglages } from "./reglages";
 import { thumbCropStyle } from "./SpreadView";
 import { cachedThumb, loadThumb } from "./thumbs";
+import { cibleSous, RectCellule, seuilFranchi } from "./planches";
+
+/** Un appui sur une planche, qui deviendra peut-être un glisser. */
+type Appui = {
+  from: number;
+  pointeur: number;
+  x0: number;
+  y0: number;
+  /** Les cellules mesurées au début du glisser : seule la figure tenue
+   *  bouge, par `transform`, donc la grille ne change pas sous la main. */
+  rects: RectCellule[] | null;
+  cible: number | null;
+};
 
 export function PlanchesView({
   album,
@@ -37,7 +58,82 @@ export function PlanchesView({
   onLock: (at: number) => void;
 }) {
   const [dropAt, setDropAt] = useState<number | null>(null);
+  const [tenue, setTenue] = useState<{ at: number; dx: number; dy: number } | null>(null);
+  const appui = useRef<Appui | null>(null);
+  // Le clic qui suit le relâchement d'un glisser n'est pas une sélection.
+  const avaleClic = useRef(false);
   const grille = useRef<HTMLDivElement>(null);
+
+  const lacher = () => {
+    appui.current = null;
+    setTenue(null);
+    setDropAt(null);
+  };
+
+  // Échap pendant un glisser annule sans rien écrire. En capture, et arrêtée
+  // là : la table clavier d'App ne doit pas la lire une seconde fois.
+  const glisse = tenue !== null;
+  useEffect(() => {
+    if (!glisse) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      avaleClic.current = true;
+      lacher();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [glisse]);
+
+  const surAppui = (e: React.PointerEvent<HTMLElement>, at: number) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+    avaleClic.current = false;
+    appui.current = {
+      from: at,
+      pointeur: e.pointerId,
+      x0: e.clientX,
+      y0: e.clientY,
+      rects: null,
+      cible: null,
+    };
+  };
+
+  const surMouvement = (e: React.PointerEvent<HTMLElement>) => {
+    const a = appui.current;
+    if (!a || a.pointeur !== e.pointerId) return;
+    const dx = e.clientX - a.x0;
+    const dy = e.clientY - a.y0;
+    if (!a.rects) {
+      if (!seuilFranchi(dx, dy)) return;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      a.rects = [...(grille.current?.querySelectorAll<HTMLElement>("[data-at]") ?? [])]
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return {
+            at: Number(el.dataset.at),
+            left: r.left,
+            top: r.top,
+            right: r.right,
+            bottom: r.bottom,
+          };
+        })
+        .filter((r) => r.at !== a.from);
+    }
+    a.cible = cibleSous(a.rects, e.clientX, e.clientY);
+    setTenue({ at: a.from, dx, dy });
+    setDropAt(a.cible);
+  };
+
+  const surRelache = (e: React.PointerEvent<HTMLElement>) => {
+    const a = appui.current;
+    if (!a || a.pointeur !== e.pointerId) return;
+    if (a.rects) {
+      avaleClic.current = true;
+      if (a.cible !== null && a.cible !== a.from) onMove(a.from, a.cible);
+    }
+    lacher();
+  };
 
   /** Combien de cellules par rangée, tel que la grille les pose vraiment :
    *  une flèche verticale doit sauter une rangée, pas un nombre inventé. */
@@ -136,22 +232,15 @@ export function PlanchesView({
           onOpen={() => onOpen(i)}
           onLock={() => onLock(i)}
           onKey={(e) => surTouche(e, i)}
-          onDragStartCell={(e) => {
-            e.dataTransfer.setData("text/colophon-spread", String(i));
-            e.dataTransfer.effectAllowed = "move";
-          }}
-          onDragOverCell={(e) => {
-            if (!e.dataTransfer.types.includes("text/colophon-spread")) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            setDropAt(i);
-          }}
-          onDragLeaveCell={() => setDropAt((d) => (d === i ? null : d))}
-          onDropCell={(e) => {
-            e.preventDefault();
-            setDropAt(null);
-            const from = Number(e.dataTransfer.getData("text/colophon-spread"));
-            if (Number.isInteger(from) && from !== i) onMove(from, i);
+          tenue={tenue?.at === i ? tenue : null}
+          onAppui={(e) => surAppui(e, i)}
+          onMouvement={surMouvement}
+          onRelache={surRelache}
+          onAnnule={lacher}
+          avaleClic={() => {
+            const avale = avaleClic.current;
+            avaleClic.current = false;
+            return avale;
           }}
         />
       ))}
@@ -169,10 +258,12 @@ function PlancheCell({
   onOpen,
   onLock,
   onKey,
-  onDragStartCell,
-  onDragOverCell,
-  onDragLeaveCell,
-  onDropCell,
+  tenue,
+  onAppui,
+  onMouvement,
+  onRelache,
+  onAnnule,
+  avaleClic,
 }: {
   album: Album;
   spread: Spread;
@@ -183,10 +274,14 @@ function PlancheCell({
   onOpen: () => void;
   onLock: () => void;
   onKey: (e: React.KeyboardEvent) => void;
-  onDragStartCell: (e: React.DragEvent) => void;
-  onDragOverCell: (e: React.DragEvent) => void;
-  onDragLeaveCell: () => void;
-  onDropCell: (e: React.DragEvent) => void;
+  /** Le décalage de la figure quand c'est elle qu'on glisse. */
+  tenue: { dx: number; dy: number } | null;
+  onAppui: (e: React.PointerEvent<HTMLElement>) => void;
+  onMouvement: (e: React.PointerEvent<HTMLElement>) => void;
+  onRelache: (e: React.PointerEvent<HTMLElement>) => void;
+  onAnnule: () => void;
+  /** Vrai une fois si le clic qui arrive suit un glisser. */
+  avaleClic: () => boolean;
 }) {
   return (
     <figure
@@ -195,21 +290,26 @@ function PlancheCell({
       className={
         "planche-cell" +
         (current ? " current" : "") +
-        (dropping ? " dropping" : "")
+        (dropping ? " dropping" : "") +
+        (tenue ? " tenue" : "")
       }
-      draggable
+      style={tenue ? { transform: `translate(${tenue.dx}px, ${tenue.dy}px)` } : undefined}
+      onPointerDown={onAppui}
+      onPointerMove={onMouvement}
+      onPointerUp={onRelache}
+      onPointerCancel={onAnnule}
+      // Une vignette se glisserait d'elle-même, en HTML5, et le navigateur
+      // annulerait alors le pointeur au milieu du geste.
+      onDragStart={(e) => e.preventDefault()}
       onClick={(e) => {
         e.stopPropagation();
+        if (avaleClic()) return;
         onSelect();
       }}
       onDoubleClick={(e) => {
         e.stopPropagation();
         onOpen();
       }}
-      onDragStart={onDragStartCell}
-      onDragOver={onDragOverCell}
-      onDragLeave={onDragLeaveCell}
-      onDrop={onDropCell}
       title={
         (spread.caption ? `${spread.caption} · ` : "") +
         t("table.cellule.titre", { n: index + 1 })

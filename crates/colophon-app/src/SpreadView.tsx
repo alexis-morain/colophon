@@ -25,6 +25,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Album,
   CAPTION_SIZE_MM,
+  Objet,
   PHOTO_CAPTION_SIZE_MM,
   PT_MM,
   Rect,
@@ -59,6 +60,7 @@ import { jusquAuRendu } from "./mesure";
 import {
   angleEcran,
   avecRecadrage,
+  corners,
   hitTest,
   retournerBoite,
   Point,
@@ -69,6 +71,8 @@ import {
 import { attributD, attributViewBox, ornementDe, rapport } from "./ornement";
 import { cachedThumb, loadThumb } from "./thumbs";
 import { ObjetLibreCalque, PoseObjet } from "./ObjetLibreCalque";
+import { ObjetBloc } from "./ObjetBloc";
+import { enveloppe, largeurLegende, placerSous } from "./popover";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
 type CropDraft = { slot: number; focal: [number, number]; zoom: number };
@@ -94,6 +98,7 @@ export function SpreadView({
   onObjet,
   onObjetTexte,
   onObjetSupprimer,
+  onObjetReglage,
 }: {
   album: Album;
   spread: Spread;
@@ -133,6 +138,8 @@ export function SpreadView({
   onObjet?: (index: number, rect: Rect, angle: number) => void;
   onObjetTexte?: (index: number, texte: string) => void;
   onObjetSupprimer?: (index: number) => void;
+  /** Un réglage de l'objet choisi, depuis son popover : un pas d'annulation. */
+  onObjetReglage?: (index: number, o: Objet) => void;
 }) {
   const paper = useRef<HTMLDivElement>(null);
   const [mm, setMm] = useState(1);
@@ -282,6 +289,18 @@ export function SpreadView({
   const selectedSlot = hasSelection ? (spread.slots[selected] ?? null) : null;
   const selectedRect = hasSelection ? (cellRects.get(selected) ?? null) : null;
   const paperBox = paper.current?.getBoundingClientRect() ?? null;
+  // Les deux popovers se placent d'après la feuille à l'écran, et la feuille
+  // glisse encore pendant l'entrée de la planche (`.turn`) : un popover
+  // ouvert à ce moment-là resterait décalé de dix pixels. On remesure à la
+  // fin de l'animation.
+  const [, remesurer] = useState(0);
+  useEffect(() => {
+    const tour = paper.current?.closest(".turn");
+    if (!tour) return;
+    const fin = (e: Event) => e.target === tour && remesurer((n) => n + 1);
+    tour.addEventListener("animationend", fin);
+    return () => tour.removeEventListener("animationend", fin);
+  }, []);
 
   /**
    * The chapter caption, whether it exists yet or not. Given an object's
@@ -1200,6 +1219,37 @@ export function SpreadView({
           onCaption={(text) => onCaption(selected!, text)}
         />
       )}
+      {/* Les réglages de l'objet choisi, sous lui. Pas pendant qu'on écrit
+          dedans : le champ de saisie est à sa place. */}
+      {onObjetReglage &&
+        paperBox &&
+        objet !== null &&
+        objet !== undefined &&
+        ecrit !== objet &&
+        (() => {
+          const stocke = spread.objets?.[objet];
+          const cible = scene.objects.find(
+            (o) =>
+              (o.role.role === "free_text" || o.role.role === "ornement") &&
+              o.role.index === objet,
+          );
+          if (!stocke || !cible) return null;
+          const emprise = enveloppe(corners(cible.rect, cible.angle));
+          const x = (v: number) => paperBox.left + (v - album.bleed_mm) * mm;
+          const y = (v: number) => paperBox.top + (v - album.bleed_mm) * mm;
+          return (
+            <ObjetBloc
+              objet={stocke}
+              ancre={{
+                left: x(emprise.left),
+                top: y(emprise.top),
+                right: x(emprise.right),
+                bottom: y(emprise.bottom),
+              }}
+              onCommit={(o) => onObjetReglage(objet, o)}
+            />
+          );
+        })()}
     </div>
   );
 }
@@ -1240,24 +1290,25 @@ function CaptionPopover({
     };
   }, [slot]);
 
+  // La largeur de la case à l'écran, bornée : le popover reste sous sa
+  // photo au lieu de déborder sur la voisine ou hors de la fenêtre.
   const HEIGHT = 46;
-  const left = Math.max(
-    8,
-    Math.min(
-      paperBox.left + (rect.x - bleed) * mm,
-      window.innerWidth - 328,
-    ),
+  const width = largeurLegende(rect.w * mm);
+  const { left, top } = placerSous(
+    {
+      left: paperBox.left + (rect.x - bleed) * mm,
+      top: paperBox.top + (rect.y - bleed) * mm,
+      right: paperBox.left + (rect.x + rect.w - bleed) * mm,
+      bottom: paperBox.top + (rect.y + rect.h - bleed) * mm,
+    },
+    { w: width, h: HEIGHT },
+    { w: window.innerWidth, h: window.innerHeight },
   );
-  const below = paperBox.top + (rect.y + rect.h - bleed) * mm + 8;
-  const top =
-    below + HEIGHT + 8 > window.innerHeight
-      ? paperBox.top + (rect.y - bleed) * mm - HEIGHT - 8
-      : below;
 
   return (
     <div
       className="caption-popover"
-      style={{ left, top }}
+      style={{ left, top, width }}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -1290,7 +1341,7 @@ function CaptionPopover({
             setValue(suggestion);
             onCaption(suggestion);
           }}
-          title={t("planche.legende.exif")}
+          title={`${t("planche.legende.proposer", { texte: suggestion })} · ${t("planche.legende.exif")}`}
         >
           {t("planche.legende.proposer", { texte: suggestion })}
         </button>

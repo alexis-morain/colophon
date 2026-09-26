@@ -955,6 +955,15 @@ bascule. `geometrie.test.ts` tient les quatre cas.
 **Installer le bundle après chaque push** (TCC pour le pilotage à l'écran), 19 Mo.
 **Les artefacts de mise à jour n'existent qu'en release** (`tauri.release.conf.json`).
 
+**Les six panneaux passent par `Dialogue.tsx`, et par rien d'autre** : rôle, `aria-modal`,
+nom par le titre, focus dedans à l'ouverture et rendu à la fermeture, Tab qui cycle, et
+`inert` posé sur tous les frères de l'overlay le temps qu'il vit (un second panneau ne
+réveille pas l'éditeur en se fermant : chacun ne retire que ce qu'il a posé). Échap reste
+dans la table clavier d'App, où chaque panneau a sa ligne, `bascule` comprise. **La
+frontière d'erreur est `Frontiere.tsx`**, montée dans `main.tsx` : elle dit, elle ne
+sauve pas — un album dont le rendu vient de lever n'est pas un album à réécrire par-dessus
+le fichier qui s'ouvre encore.
+
 **Un canvas casse l'accessibilité par nature** : les proxies DOM sont posés, et
 `SceneProxies` doit rester une fonction de la scène. Le jour où il lit le gabarit ou une
 chaîne du moteur, il cesse de servir les deux rendus.

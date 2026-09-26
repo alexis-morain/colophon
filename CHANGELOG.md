@@ -156,6 +156,15 @@ sur la page des releases.
   du petit dossier, et un workflow hebdomadaire lit les avis de sécurité des
   crates. Windows ne sort plus qu'un installeur MSI, donc une seule forme de
   mise à jour ; macOS exige 11.0, ce que la photothèque exigeait déjà.
+- **Composer un dossier déjà composé n'écrase plus l'album.** Le même
+  dossier de photos résolvait le même dossier de sortie, et la nouvelle
+  composition réécrivait l'album qu'on avait édité à la main — titre,
+  légendes, recadrages — avec pour seul filet une sauvegarde d'un pas. Un
+  album ne s'écrit plus jamais là où un album est : le second se pose à
+  côté. Et l'écran de création le demande avant : « Un album a déjà été
+  composé depuis ce dossier. Le rouvrir ? ». Le nom du dossier de sortie
+  ne dépend plus d'un algorithme que Rust ne garantit pas stable d'une
+  version à l'autre.
 
 ## [0.9.0] - 2026-08-17
 

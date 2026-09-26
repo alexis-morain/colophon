@@ -147,6 +147,14 @@ export async function buildAlbum(
   return built;
 }
 
+/** The album already composed from this photo folder, if any: its folder,
+ *  for the creation screen to offer reopening it rather than composing a
+ *  second one beside it. Null in the browser harness, which has one album. */
+export async function albumExistant(photosDir: string): Promise<string | null> {
+  if (!inTauri) return null;
+  return invoke<string | null>("album_existant", { photosDir });
+}
+
 /** Subscribe to the engine's progress lines. Returns the unsubscribe. */
 export async function onBuildProgress(
   cb: (line: string) => void,

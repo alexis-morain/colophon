@@ -240,6 +240,8 @@ export const FR = {
   "compo.details": "Détails techniques",
   "compo.lecture": "lecture du dossier…",
   "compo.annulee": "Composition annulée",
+  "compo.existe":
+    "Un album a déjà été composé depuis ce dossier. Le rouvrir ? Sinon, un second album sera composé à côté, sans toucher au premier.",
   "compo.vide":
     "Ce dossier n’a donné aucune photo exploitable, rien n’a été créé. Choisissez un autre dossier, ou rouvrez celui-ci après y avoir ajouté des photos.",
   "erreur.compo": "La composition a échoué.",
@@ -1016,6 +1018,8 @@ export const EN: Record<Cle, string> = {
   "compo.details": "Technical details",
   "compo.lecture": "reading the folder…",
   "compo.annulee": "Composition cancelled",
+  "compo.existe":
+    "An album has already been composed from this folder. Reopen it? Otherwise a second album is composed beside it, and the first one is left untouched.",
   "compo.vide":
     "This folder yielded no usable photo, nothing was created. Choose another folder, or reopen this one after adding photos to it.",
   "erreur.compo": "The composition failed.",

@@ -80,3 +80,31 @@ describe("la mesure de l'écran", () => {
     expect(measureMm("", 10)).toBe(0);
   });
 });
+
+/** L'écran dessine « ? » là où le moteur imprime « ? » : la même règle,
+ *  caractère par caractère, sur le texte comme sur la mesure. */
+describe("la substitution", () => {
+  it("remplace exactement les caractères que le moteur a nommés", async () => {
+    const { afficher, setAbsents, substituer, measureMm } = await import("./font");
+    setAbsents([]);
+    expect(afficher("Zażółć gęślą jaźń")).toBe("Zażółć gęślą jaźń");
+    setAbsents(["ż", "ę"]);
+    expect(afficher("Zażółć gęślą jaźń")).toBe("Za?ółć g?ślą jaźń");
+    // La mesure suit : un « ? » de large là où l'autre police aurait prêté
+    // un glyphe d'une autre chasse.
+    expect(measureMm("ż", 10)).toBe(measureMm("?", 10));
+    const scene = {
+      objects: [
+        { rect: { x: 0, y: 0, w: 1, h: 1 }, role: { role: "photo_caption", cell: 0, text: "gęślą", at: { x: 0, y: 0 } } },
+        { rect: { x: 0, y: 0, w: 1, h: 1 }, role: { role: "text", at: { x: 0, y: 0 }, lines: [{ text: "jaźń ż", sizeMm: 3, dyMm: 0, dxMm: 0 }] } },
+        { rect: { x: 0, y: 0, w: 1, h: 1 }, role: { role: "photo", cell: 0, src: "ż.jpg", focal: [0, 0], zoom: 1 } },
+      ],
+    };
+    const vue = substituer(scene);
+    expect((vue.objects[0].role as { text: string }).text).toBe("g?ślą");
+    expect((vue.objects[1].role as { lines: { text: string }[] }).lines[0].text).toBe("jaźń ?");
+    expect((vue.objects[2].role as { src: string }).src).toBe("ż.jpg");
+    setAbsents([]);
+    expect(substituer(scene)).toBe(scene);
+  });
+});

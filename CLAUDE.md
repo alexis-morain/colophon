@@ -336,6 +336,14 @@ face du projet : le linter, le prévol et le dump raisonnent sur une planche, pa
 rendu. **Une recomposition détruit tout champ que `BuildOptions` ne porte pas** :
 `police` y est, comme `reglages` et `densite`.
 
+**Ce que la face ne dessine pas se compte et se montre** : `Embarquee::absents` nomme les
+caractères qu'`glyphes` imprimera « ? » ; le linter les compte par texte, couverture
+comprise (`caractere_absent`, quatorzième compteur, sans seuil), dans la face de l'album
+(`compteurs_avec_face`) ; la commande `police_absents` les rend à l'app, qui les dessine
+« ? » (`font.ts::afficher`, `substituer` sur la scène de `SpreadView`, `measureMm` mesure
+le texte substitué) et les liste dans *Format* et *Envoi*. Jamais un glyphe de repli à
+l'écran pour un caractère que le papier n'aura pas.
+
 **L'app mesure les octets de l'album, jamais une police installée** (`font.ts`). La
 commande `police_octets` rend les octets que l'émetteur embarquera, `chargerFace` les
 enregistre en `FontFace` sous la famille interne **`colophon-album`**, et `--font-book`
@@ -872,7 +880,7 @@ raster d'une colonne. **`ornement-encre.py` et `apercu-fidele.py` nomment désor
 `--profil lulu`** : ils ont besoin d'un intérieur de planches doubles sans couverture
 dedans, et le défaut de la ligne de commande découpe.
 
-`--audit` : treize compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions
+`--audit` : quatorze compteurs, 18/18 verts (3 jeux × 6 formats), sur les trois propositions
 de chaque jeu. `--reprise` : part des planches corrigées à la main contre
 `album.origin.json` ; sous 10 % bon, jusqu'à 30 % à surveiller, au-delà rédhibitoire.
 `--prevol --profil <id>` : bloquants et avertissements contre un `PrinterProfile`, et la

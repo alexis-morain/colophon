@@ -805,6 +805,10 @@ export const FR = {
     "Si ça se reproduit, collez ce détail dans un signalement (Aide → Signaler un problème).",
   "racc.k.alt.fleches": "⌥ flèches (Planches)",
   "racc.deplacer.planche": "Déplacer la planche dans le livre",
+  "police.absents":
+    "Cette police ne dessine pas {n} caractères de l’album, imprimés « ? » : {liste}",
+  "police.absents.un":
+    "Cette police ne dessine pas un caractère de l’album, imprimé « ? » : {liste}",
   "erreur.reouverture": "Cet album n’a pas pu être rouvert. A-t-il été déplacé ?",
   "erreur.auto": "Cette planche n’a pas pu être rendue à l’automatique.",
   "erreur.colophon": "La page de colophon n’a pas pu être changée.",
@@ -1552,6 +1556,10 @@ export const EN: Record<Cle, string> = {
     "If it happens again, paste this detail into a report (Help → Report a problem).",
   "racc.k.alt.fleches": "⌥ arrows (Spreads)",
   "racc.deplacer.planche": "Move the spread through the book",
+  "police.absents":
+    "This typeface cannot draw {n} characters of the album; they print as “?”: {liste}",
+  "police.absents.un":
+    "This typeface cannot draw one character of the album; it prints as “?”: {liste}",
   "erreur.reouverture": "This album could not be reopened. Has it moved?",
   "erreur.auto": "This spread could not be given back to the machine.",
   "erreur.colophon": "The colophon page could not be changed.",

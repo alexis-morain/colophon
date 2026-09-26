@@ -434,6 +434,44 @@ fn police_octets(
     Ok(tauri::ipc::Response::new(choix.face.octets().to_vec()))
 }
 
+/// The characters of the album — its title, cover, captions, text pages and
+/// free blocks — that the album's face cannot draw, each once. The engine
+/// prints them as `?`; the screen used to fall back to another font and show
+/// them perfect, which is the one thing it must not do. The album comes from
+/// the front, unsaved edits included: a caption typed a second ago has to
+/// read on screen the way it will print.
+#[tauri::command]
+fn police_absents(album: Album, state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let face = colophon_core::font::face_album(&dir, album.police.as_ref().map(|p| p.fichier.as_str()));
+    let mut textes: Vec<&str> = vec![album.title.as_str()];
+    if let Some(c) = &album.cover {
+        textes.extend([c.title.as_str(), c.subtitle.as_str(), c.back_text.as_str()]);
+    }
+    for s in &album.spreads {
+        textes.extend(s.caption.as_deref());
+        textes.extend(s.text.as_deref());
+        textes.extend(s.slots.iter().filter_map(|sl| sl.caption.as_deref()));
+        for o in &s.objets {
+            if let colophon_core::model::Contenu::Texte { texte, .. } = &o.contenu {
+                textes.push(texte);
+            }
+        }
+    }
+    let mut vus: Vec<char> = Vec::new();
+    for t in textes {
+        for c in face.face.absents(t) {
+            if !vus.contains(&c) {
+                vus.push(c);
+            }
+        }
+    }
+    Ok(vus.into_iter().map(String::from).collect())
+}
+
 /// The bytes of a face the picker is *offering*, so the screen can set its
 /// name in it before anybody chooses it.
 ///
@@ -1579,6 +1617,7 @@ pub fn run() {
             report_data,
             open_report_url,
             album_existant,
+            police_absents,
             origin_spread,
             choose_variante,
             album_pdf_bytes,

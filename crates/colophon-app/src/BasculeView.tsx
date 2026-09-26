@@ -36,6 +36,7 @@ export function BasculeView({
   polices,
   policeAlbum,
   policeInfo,
+  absents,
   filtre,
   onFiltre,
   onPolice,
@@ -52,6 +53,8 @@ export function BasculeView({
   polices: PoliceOfferte[];
   policeAlbum: Police | null;
   policeInfo: PoliceEtat | null;
+  /** The album's characters this face cannot draw, from the engine. */
+  absents: string[];
   filtre: string;
   onFiltre: (v: string) => void;
   onPolice: (p: PoliceOfferte) => void;
@@ -225,6 +228,9 @@ export function BasculeView({
         </p>
         {policeInfo?.manquante && (
           <p className="bascule-alerte">{t("police.manquante")}</p>
+        )}
+        {absents.length > 0 && (
+          <p className="bascule-alerte">{phraseAbsents(absents)}</p>
         )}
 
         {polices.length > 0 && (
@@ -425,4 +431,15 @@ function Specimen({
       {texte}
     </span>
   );
+}
+
+/** « Cette police ne dessine pas N caractères… », la liste entre guillemets,
+ *  coupée à douze : au-delà, le nombre dit tout. */
+export function phraseAbsents(absents: readonly string[]): string {
+  const liste =
+    absents.slice(0, 12).map((c) => `« ${c} »`).join(", ") +
+    (absents.length > 12 ? "…" : "");
+  return absents.length === 1
+    ? t("police.absents.un", { liste })
+    : t("police.absents", { n: absents.length, liste });
 }

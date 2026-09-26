@@ -517,6 +517,26 @@ impl Embarquee {
         out
     }
 
+    /// The characters of a string the face cannot draw, each once, in the
+    /// order they first appear. These are the ones [`Self::glyphes`] prints
+    /// as `?`: the rule was written and tested, but nothing counted it, and
+    /// the screen — falling back to another font — was the one place that
+    /// could not show it. Whitespace and controls are never reported: a face
+    /// without a space glyph is refused elsewhere, and a newline is not a
+    /// character anybody expected to see.
+    pub fn absents(&self, s: &str) -> Vec<char> {
+        let mut out: Vec<char> = Vec::new();
+        for c in s.chars() {
+            if c.is_whitespace() || c.is_control() || out.contains(&c) {
+                continue;
+            }
+            if self.glyphe(c).is_none() {
+                out.push(c);
+            }
+        }
+        out
+    }
+
     /// The glyph a character maps to, or `None` when the face has none. Glyph
     /// zero is `.notdef` and counts as none: some maps say "missing" that way
     /// rather than by leaving the character out.
@@ -1381,6 +1401,15 @@ mod tests {
         for c in ['ł', 'ș', 'ğ', 'Ω', 'д'] {
             assert!(w(c) > 0, "{c} hors WinAnsi, mais la face le dessine");
         }
+    }
+
+    /// What `glyphes` will print as `?`, named before it does: each absent
+    /// character once, in order, never a space or a newline.
+    #[test]
+    fn les_caracteres_absents_se_nomment_une_fois_chacun() {
+        let face = Embarquee::depuis(fichier(&[Fonte::neuve()]), 0).expect("face ouverte");
+        assert!(face.absents("Le vif zéphyr").is_empty(), "la fixture couvre 0x20..0xFF");
+        assert_eq!(face.absents("a → b → c\n日本"), vec!['→', '日', '本']);
     }
 
     /// The substitution rule, both halves. A character the face cannot draw

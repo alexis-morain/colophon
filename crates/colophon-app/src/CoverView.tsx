@@ -9,6 +9,7 @@
 // arithmetic as `cover.rs`, and the parity check compares the two.
 
 import { useEffect, useRef, useState } from "react";
+import { afficher } from "./font";
 import {
   Album,
   Cover,
@@ -133,7 +134,7 @@ export function CoverView({
             }
           >
             {spine >= SPINE_TEXT_MIN_MM && (
-              <span className="cover-spine-title">{form.title || album.title}</span>
+              <span className="cover-spine-title">{afficher(form.title || album.title)}</span>
             )}
           </div>
         )}

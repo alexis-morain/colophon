@@ -10,6 +10,7 @@
 // second thing to keep true.
 
 import { useEffect, useState } from "react";
+import { phraseAbsents } from "./BasculeView";
 import { Album } from "./album";
 import { Defaut, Printer, PrevolReport, openReportUrl, preflight } from "./bridge";
 import { t } from "./i18n";
@@ -33,6 +34,7 @@ export function EnvoiView({
   gardeActif,
   onGarde,
   policeManquante,
+  absents,
 }: {
   album: Album;
 
@@ -62,6 +64,8 @@ export function EnvoiView({
    *  ça se dit ici : c'est le dernier écran avant l'imprimeur, et un livre
    *  composé dans une police que personne n'a choisie se découvre au colis. */
   policeManquante: boolean;
+  /** The album's characters its face cannot draw: printed as « ? ». */
+  absents: string[];
 }) {
 
   const [report, setReport] = useState<PrevolReport | null>(null);
@@ -94,6 +98,9 @@ export function EnvoiView({
       <section className="envoi-verdict">
         {policeManquante && (
           <p className="envoi-dirty">{t("police.manquante")}</p>
+        )}
+        {absents.length > 0 && (
+          <p className="envoi-dirty">{phraseAbsents(absents)}</p>
         )}
         {dirty && (
           <p className="envoi-dirty">{t("envoi.dirty")}</p>

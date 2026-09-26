@@ -165,6 +165,14 @@ sur la page des releases.
   composé depuis ce dossier. Le rouvrir ? ». Le nom du dossier de sortie
   ne dépend plus d'un algorithme que Rust ne garantit pas stable d'une
   version à l'autre.
+- **L'écran montre ce que le livre imprime.** Un caractère que la police du
+  livre ne dessine pas s'imprime « ? » ; l'écran, lui, retombait sur une
+  autre police et montrait la légende parfaite. Le moteur nomme désormais ces
+  caractères (quatorzième compteur du linter, `caractere_absent`, qui
+  avertit et ne décide pas), l'éditeur les dessine « ? » comme le PDF, dans
+  les deux rendus et dans les coupures de ligne, et le panneau *Format*
+  comme *Envoi* les listent : « Cette police ne dessine pas 3 caractères de
+  l'album, imprimés « ? » : « ż », « ę », « ź » ».
 
 ## [0.9.0] - 2026-08-17
 

@@ -26,6 +26,7 @@ import {
   inTauri,
   chargeGeometrieFormat,
   albumExistant,
+  policeAbsents,
   legendeProposee,
   listDensities,
   DensitePreset,
@@ -125,7 +126,7 @@ import { Cle, FR, langue, t, useLangue } from "./i18n";
 import { jusquAuRendu } from "./mesure";
 import { RaccourcisView } from "./Raccourcis";
 import { BasculeView } from "./BasculeView";
-import { chargerFace } from "./font";
+import { chargerFace, setAbsents } from "./font";
 import { nomLisible } from "./police";
 import { useVeille } from "./maj";
 
@@ -331,6 +332,34 @@ export default function App() {
       () => {},
     );
   }, [album]);
+
+  // Les caractères de l'album que sa police ne dessine pas, tels que le
+  // moteur les nomme : l'écran les dessine « ? » comme le PDF (font.ts), le
+  // panneau Format et Envoi les listent. Recalculé à chaque changement de
+  // l'album — une légende tapée à l'instant doit se lire comme elle
+  // s'imprimera — et c'est une recherche dans une table, pas un décodage.
+  const [absents, setAbsentsEtat] = useState<string[]>([]);
+  useEffect(() => {
+    if (!opened || !album) {
+      setAbsents([]);
+      setAbsentsEtat([]);
+      return;
+    }
+    let vivant = true;
+    policeAbsents(album).then(
+      (liste) => {
+        if (!vivant) return;
+        setAbsents(liste);
+        setAbsentsEtat((avant) =>
+          avant.length === liste.length && avant.every((c, i) => c === liste[i]) ? avant : liste,
+        );
+      },
+      () => {},
+    );
+    return () => {
+      vivant = false;
+    };
+  }, [opened, album]);
 
   // The adjustments store is a reading mirror, and App is its single truth:
   // after any album change — opening, an edit, ⌘Z, a bascule, a
@@ -2027,6 +2056,7 @@ export default function App() {
           gardeActif={hasGarde(album)}
           onGarde={(on) => void toggleGarde(on)}
           policeManquante={policeInfo?.manquante ?? false}
+          absents={absents}
         />
 
       ) : view === "planches" ? (
@@ -2265,6 +2295,7 @@ export default function App() {
           polices={polices}
           policeAlbum={hist.album.police ?? null}
           policeInfo={policeInfo}
+          absents={absents}
           filtre={policeFiltre}
           onFiltre={setPoliceFiltre}
           onPolice={(p) => void choisirLaPolice(p)}

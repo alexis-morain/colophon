@@ -70,6 +70,12 @@ sur la page des releases.
   photos-là cadrent le mieux, jugée par le moteur et non choisie à la main.
   G et ⇧G parcourent la même liste.
 
+- **Envoi ne laisse plus deux cents pixels de vide** entre le verdict et les
+  défauts qu'il annonce : les deux colonnes ne partagent plus leurs lignes.
+  Et plus rien dans l'interface ne se lit sous douze pixels : les pastilles
+  sur les photos, les noms de groupes des sélecteurs, les licences d'À propos
+  et la mention « fiche provisoire » montent d'un pixel.
+
 ### Corrigé
 
 - **Quitter et fermer la fenêtre demandent, comme tout le reste.** ⌘Q et la

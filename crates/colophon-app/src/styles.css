@@ -67,8 +67,9 @@
   --case-fill: #cfc6b6;
   --case-fill-active: #b9ad98;
 
-  /* The type scale: seven sizes, no half-pixels; three leadings. */
-  --fs-11: 11px;
+  /* The type scale: six sizes, no half-pixels, nothing under 12 — a chip
+     on a photo and a licence line are read by the same eyes; three
+     leadings. */
   --fs-12: 12px;
   --fs-13: 13px;
   --fs-15: 15px;
@@ -361,7 +362,7 @@ input[type="radio"] {
   z-index: 1;
   margin: 0 0 4px;
   padding: 2px 0;
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -398,7 +399,7 @@ input[type="radio"] {
 }
 
 .tpl-option-name {
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   line-height: 1.25;
   color: var(--text);
   text-align: center;
@@ -468,7 +469,7 @@ input[type="radio"] {
   z-index: 1;
   margin: 0 0 4px;
   padding: 2px 0;
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -617,7 +618,7 @@ input[type="radio"] {
   background: rgb(var(--ink-rgb) / 0.72);
   color: var(--chip-texte);
   font-family: var(--font-mono);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   pointer-events: none;
 }
 
@@ -638,7 +639,7 @@ input[type="radio"] {
   background: rgb(var(--ink-rgb) / 0.72);
   color: var(--chip-accent);
   font-family: var(--font-ui);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   letter-spacing: 0.02em;
   cursor: help;
 }
@@ -881,7 +882,7 @@ input[type="radio"] {
   background: rgb(var(--ink-rgb) / 0.72);
   color: var(--chip-accent);
   font-family: var(--font-ui);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   cursor: help;
 }
 
@@ -2118,7 +2119,7 @@ input[type="radio"] {
 
 .apropos-actif-licence {
   font-family: var(--font-mono);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   color: var(--accent);
 }
 
@@ -2148,7 +2149,7 @@ input[type="radio"] {
   max-height: 40vh;
   overflow: auto;
   font-family: var(--font-mono);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -2450,7 +2451,7 @@ input[type="radio"] {
 .stockage-ouvert {
   margin-left: 8px;
   font-style: normal;
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   color: var(--accent);
 }
 
@@ -2714,7 +2715,7 @@ input[type="radio"] {
 
 .bilan-carte-chiffres {
   font-family: var(--font-mono);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   color: var(--accent);
 }
 
@@ -2782,7 +2783,7 @@ input[type="radio"] {
 }
 
 .format-dims {
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   color: var(--muted);
   font-family: var(--font-mono);
   white-space: nowrap;
@@ -2799,7 +2800,7 @@ input[type="radio"] {
 
 .format-large-cote {
   color: var(--muted);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   font-family: var(--font-mono);
   justify-self: center;
 }
@@ -2968,7 +2969,7 @@ kbd {
 .fault-detail pre {
   margin: 6px 0 0;
   font-family: var(--font-mono);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -3243,7 +3244,7 @@ kbd {
   gap: 8px;
   height: 22px;
   padding-top: 3px;
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   color: var(--muted);
 }
 
@@ -3670,12 +3671,19 @@ kbd {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  /* Two columns that do not share their rows: the printer list spans the
+     verdict and its defects, the fiche spans the rest. With one area per
+     row, the verdict row stretched to the printer list's height and left
+     two hundred pixels of nothing between the sentence and the defects it
+     announced — measured at 1440 × 900, verdict 326 px tall for 80 px of
+     text. */
   grid-template-areas:
     "verdict imprimeurs"
-    "defauts fiche"
+    "defauts imprimeurs"
     "colophon fiche"
     "actions fiche"
     "appel fiche";
+  align-items: start;
   gap: 0 44px;
   align-content: start;
 }
@@ -3831,7 +3839,7 @@ button.envoi-defaut:focus-visible {
   display: inline-block;
   margin-top: 3px;
   color: var(--accent);
-  font-size: var(--fs-11);
+  font-size: var(--fs-12);
   border-bottom: 1px dotted currentColor;
   cursor: help;
 }

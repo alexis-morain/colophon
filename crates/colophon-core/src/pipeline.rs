@@ -124,11 +124,27 @@ pub fn split_rejected(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
 /// rated is not a parasite whatever its EXIF says. Returns the junk itself:
 /// the sorting view shows it.
 pub fn split_junk(photos: Vec<Photo>) -> (Vec<Photo>, Vec<Photo>) {
-    photos.into_iter().partition(|p| {
-        p.meta.taken_reliable
-            || (p.meta.gps.is_some() && p.meta.model.is_some())
-            || p.meta.rating.is_some_and(|r| r >= 1)
-    })
+    photos.into_iter().partition(a_une_empreinte)
+}
+
+/// The camera fingerprint the junk filter reads: a reliable capture date,
+/// or GPS together with a camera model, or a star.
+pub fn a_une_empreinte(p: &Photo) -> bool {
+    p.meta.taken_reliable
+        || (p.meta.gps.is_some() && p.meta.model.is_some())
+        || p.meta.rating.is_some_and(|r| r >= 1)
+}
+
+/// Whether the fingerprint tells anything about *this* folder. The junk
+/// filter was tuned on phone dumps, where a handful of screenshots sit among
+/// hundreds of photographs; in a folder of scanned prints nobody carries a
+/// fingerprint, and the same rule would set aside the whole family archive
+/// and call it strays. The fingerprint is a signal only when the photos
+/// that carry one are the strict majority: below that, the rule is measuring
+/// the folder's origin, not its parasites, and it switches itself off.
+pub fn empreinte_est_un_signal(photos: &[Photo]) -> bool {
+    let avec = photos.iter().filter(|p| a_une_empreinte(p)).count();
+    avec * 2 > photos.len()
 }
 
 /// Below this many decodable photos, the statistical curation loses its
@@ -479,6 +495,27 @@ mod tests {
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].path, PathBuf::from("notee.jpg"));
         assert_eq!(junk.len(), 1);
+    }
+
+    /// The fingerprint is a signal only when it is the majority's: three
+    /// photographs against two strays, the filter reads; two against three,
+    /// or a tie, the folder has no fingerprint to speak of and nothing is
+    /// set aside on that ground.
+    #[test]
+    fn l_empreinte_n_est_un_signal_que_majoritaire() {
+        let avec = photo("avec.jpg", 40.0, None);
+        let mut sans = photo("sans.jpg", 40.0, None);
+        sans.meta.taken_reliable = false;
+        sans.meta.model = None;
+        let n = |a: usize, s: usize| {
+            let mut v: Vec<Photo> = std::iter::repeat_n(avec.clone(), a).collect();
+            v.extend(std::iter::repeat_n(sans.clone(), s));
+            v
+        };
+        assert!(empreinte_est_un_signal(&n(3, 2)));
+        assert!(!empreinte_est_un_signal(&n(2, 3)));
+        assert!(!empreinte_est_un_signal(&n(2, 2)), "l'égalité ne décide pas");
+        assert!(!empreinte_est_un_signal(&n(0, 0)));
     }
 
     /// The chapter cap ranks on the same score, so a starred photo is not

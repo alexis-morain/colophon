@@ -889,7 +889,11 @@ faire taire une règle est le défaut que cette frontière existe pour empêcher
 prévol, fiches, rythmes, formats, variantes) : le jour où ça compte, des codes côté
 moteur et le libellé côté app. **Vitest tourne sans `navigator`**, langue par défaut
 anglaise : un test qui affirme du français pose `setLangue("fr")`. Sous
-`pipeline::PETIT_DOSSIER` (25 photos), la curation se limite aux rejets certains.
+`pipeline::PETIT_DOSSIER` (25 photos), la curation se limite aux rejets certains. **Et
+le filtre parasite ne s'arme que si l'empreinte d'appareil est majoritaire**
+(`pipeline::empreinte_est_un_signal`, majorité stricte) : un dossier de scans ou un
+Takeout sans sidecars n'a personne d'empreint, la règle y mesurerait l'origine du dossier
+et non ses parasites, elle se coupe et le dit (`note:`), le livre suit les dates de fichier.
 
 **Une migration de schéma est étagée, jamais « tout ce qui est sous `SCHEMA` ».** Le
 jour où une deuxième étape arrive, la première se remettrait à tourner sur des albums

@@ -553,6 +553,7 @@ export const FR = {
   // -- la table lumineuse
   "table.liste": "Planches de l’album",
   "table.cellule.nom": "Planche {n}",
+  "table.cellule.role": "planche, Entrée pour l’ouvrir, ⌥ flèches pour la déplacer",
   "table.cellule.titre":
     "planche {n} · glisser pour déplacer, double-clic pour ouvrir",
   "table.editee": "Éditée à la main : survit à toute recomposition",
@@ -782,6 +783,26 @@ export const FR = {
 
   "erreur.enregistrement": "L’enregistrement a échoué : rien n’a été écrit.",
   "erreur.ouverture": "L’album n’a pas pu être ouvert.",
+  "vide.titre": "L’album est vide",
+  "vide.lede":
+    "La dernière planche vient d’être supprimée. Rien n’est perdu : chaque suppression s’annule.",
+  "vide.ramener": "Ramener la dernière planche (⌘Z)",
+  "vide.autre": "Composer un autre album",
+  "racine.introuvable":
+    "Dossier photo introuvable ({dossier}). L’aperçu tourne sur le cache de vignettes, l’export pleine résolution ne marchera pas.",
+  "envoi.prevol.echec": "Le contrôle avant impression n’a pas pu tourner.",
+  "signaler.diagnostic.absent":
+    "Le diagnostic de la machine n’a pas pu être lu : le rapport part sans lui, décrivez ce qui s’est passé.",
+  "frontiere.titre": "Colophon a rencontré une erreur qu’il ne sait pas rattraper.",
+  "frontiere.lede":
+    "Rien n’est perdu de ce qui a été enregistré : l’album est sur le disque, dans son dossier. Les modifications non enregistrées depuis le dernier ⌘S ne le sont pas.",
+  "frontiere.recharger": "Relancer l’écran",
+  "frontiere.copier": "Copier le détail",
+  "frontiere.copie": "Détail copié",
+  "frontiere.signaler":
+    "Si ça se reproduit, collez ce détail dans un signalement (Aide → Signaler un problème).",
+  "racc.k.alt.fleches": "⌥ flèches (Planches)",
+  "racc.deplacer.planche": "Déplacer la planche dans le livre",
   "erreur.reouverture": "Cet album n’a pas pu être rouvert. A-t-il été déplacé ?",
   "erreur.auto": "Cette planche n’a pas pu être rendue à l’automatique.",
   "erreur.colophon": "La page de colophon n’a pas pu être changée.",
@@ -1280,6 +1301,7 @@ export const EN: Record<Cle, string> = {
 
   "table.liste": "The album’s spreads",
   "table.cellule.nom": "Spread {n}",
+  "table.cellule.role": "spread, Enter opens it, ⌥ arrows move it",
   "table.cellule.titre":
     "spread {n} · drag to move, double-click to open",
   "table.editee": "Edited by hand: survives any recomposition",
@@ -1506,6 +1528,26 @@ export const EN: Record<Cle, string> = {
 
   "erreur.enregistrement": "Saving failed: nothing was written.",
   "erreur.ouverture": "The album could not be opened.",
+  "vide.titre": "The album is empty",
+  "vide.lede":
+    "The last spread has just been deleted. Nothing is lost: every deletion can be undone.",
+  "vide.ramener": "Bring the last spread back (⌘Z)",
+  "vide.autre": "Compose another album",
+  "racine.introuvable":
+    "Photo folder not found ({dossier}). The preview runs on the thumbnail cache; the full-resolution export will not work.",
+  "envoi.prevol.echec": "The preflight could not run.",
+  "signaler.diagnostic.absent":
+    "The machine’s diagnostic could not be read: the report goes without it, describe what happened.",
+  "frontiere.titre": "Colophon hit an error it cannot recover from.",
+  "frontiere.lede":
+    "Nothing saved is lost: the album is on disk, in its folder. Changes made since the last ⌘S are not.",
+  "frontiere.recharger": "Restart the screen",
+  "frontiere.copier": "Copy the detail",
+  "frontiere.copie": "Detail copied",
+  "frontiere.signaler":
+    "If it happens again, paste this detail into a report (Help → Report a problem).",
+  "racc.k.alt.fleches": "⌥ arrows (Spreads)",
+  "racc.deplacer.planche": "Move the spread through the book",
   "erreur.reouverture": "This album could not be reopened. Has it moved?",
   "erreur.auto": "This spread could not be given back to the machine.",
   "erreur.colophon": "The colophon page could not be changed.",

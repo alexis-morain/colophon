@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Police } from "./album";
 import { BasculeBilan, FormatPreset, PoliceEtat, PoliceOfferte } from "./bridge";
+import { Dialogue } from "./Dialogue";
 import { Cle, t } from "./i18n";
 import { nomLisible, parFamille, refusLibelle, selection, voixDe } from "./police";
 import { chargerApercu, familleDeja, oublierApercus } from "./specimen";
@@ -87,14 +88,7 @@ export function BasculeView({
 
 
   return (
-    <div className="bascule" onClick={onClose}>
-      <div className="bascule-panel" onClick={(e) => e.stopPropagation()}>
-        <header className="bascule-head">
-          <h2>{t("bascule.titre")}</h2>
-          <button className="link" onClick={onClose}>
-            {t("commun.fermer")}
-          </button>
-        </header>
+    <Dialogue titre={t("bascule.titre")} onClose={onClose} className="bascule" panelClassName="bascule-panel">
 
         <h3 className="bascule-section">{t("bascule.section.format")}</h3>
         <p className="bascule-intro">{t("bascule.intro")}</p>
@@ -377,8 +371,7 @@ export function BasculeView({
             )}
           </>
         )}
-      </div>
-    </div>
+    </Dialogue>
   );
 }
 

@@ -170,7 +170,7 @@ function FaultBlock({
         {fault.quoi}
         {onDismiss && (
           <button className="link" onClick={onDismiss}>
-            Fermer
+            {t("commun.fermer")}
           </button>
         )}
       </p>
@@ -318,9 +318,17 @@ export default function App() {
   // recherche retombant sur le cache par format, mais `geometrieCourante`
   // rendrait l'autre page. Le dump est forcément déjà là — l'album affiché
   // a été dessiné une fois —, donc rien ne se charge ici, on repointe.
+  // Et si le dump n'y est pas — un album dont le format a été édité à la
+  // main dans le fichier —, on le charge plutôt que de laisser le prochain
+  // rendu lever : la frontière d'erreur attraperait la levée, mais une
+  // fenêtre qui se répare vaut mieux qu'une fenêtre qui s'explique.
   useEffect(() => {
     if (!album) return;
-    adopterGeometrie(album.trim_mm, album.bleed_mm);
+    if (adopterGeometrie(album.trim_mm, album.bleed_mm)) return;
+    void chargeGeometrieFormat(album.trim_mm.w, album.trim_mm.h, album.bleed_mm).then(
+      () => adopterGeometrie(album.trim_mm, album.bleed_mm),
+      () => {},
+    );
   }, [album]);
 
   // The adjustments store is a reading mirror, and App is its single truth:
@@ -1441,6 +1449,16 @@ export default function App() {
         }
         return;
       }
+      // The Format panel holds the keyboard like the panels below it. It was
+      // the one panel Escape did not close — and the heaviest, the one that
+      // lists every face of the machine, so the one to dismiss fastest.
+      if (bascule) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setBascule(false);
+        }
+        return;
+      }
       // Preferences hold the keyboard like the panels below them.
       if (prefs) {
         if (e.key === "Escape") {
@@ -1700,8 +1718,12 @@ export default function App() {
         setStatus(t("legende.posee", { texte: p }));
         return;
       }
+      // Escape lets go of whatever is held: the cell, or the free object —
+      // without the second, the arrows kept nudging a block by a millimetre
+      // while one believed to be turning pages.
       if (e.key === "Escape") {
         setSelected(null);
+        setObjet(null);
         return;
       }
       if (key === "p" && !e.metaKey) {
@@ -1843,11 +1865,8 @@ export default function App() {
         <div className="empty-block">
           <p className="kicker">Colophon</p>
           <div className="setup">
-            <h1 className="setup-heading">L’album est vide</h1>
-            <p className="lede">
-              La dernière planche vient d’être supprimée. Rien n’est perdu :
-              chaque suppression s’annule.
-            </p>
+            <h1 className="setup-heading">{t("vide.titre")}</h1>
+            <p className="lede">{t("vide.lede")}</p>
             <p className="setup-actions">
               <button
                 className="cta"
@@ -1855,10 +1874,10 @@ export default function App() {
                 disabled={(hist?.past.length ?? 0) === 0}
                 onClick={undo}
               >
-                Ramener la dernière planche (⌘Z)
+                {t("vide.ramener")}
               </button>
               <button className="link" onClick={() => void closeAlbum()}>
-                Composer un autre album
+                {t("vide.autre")}
               </button>
             </p>
           </div>
@@ -2220,10 +2239,7 @@ export default function App() {
         />
       )}
       {opened && !opened.root_present && (
-        <p className="warn">
-          Dossier photo introuvable ({album.root}). L’aperçu tourne sur le cache
-          de vignettes, l’export pleine résolution ne marchera pas.
-        </p>
+        <p className="warn">{t("racine.introuvable", { dossier: album.root })}</p>
       )}
       {error && <FaultBlock fault={error} onDismiss={() => setError(null)} />}
       {shortcuts && <RaccourcisView onClose={() => setShortcuts(false)} />}

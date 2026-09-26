@@ -113,6 +113,28 @@ sur la page des releases.
   empreinte d'appareil : sinon il se coupe, le dit, et le livre suit les
   dates de fichier. Et la raison affichée dans le tri ne dit plus
   « parasites » mais « sans empreinte d'appareil ».
+- **Une erreur ne laisse plus une fenêtre blanche.** Une levée pendant un
+  rendu démontait tout l'écran sans un mot ni un journal. Une frontière
+  d'erreur l'attrape désormais : elle dit ce qui s'est passé, ce qui est sur
+  le disque et ce qui ne l'est pas, offre le détail à copier pour un
+  signalement, et un bouton relance l'écran.
+- **Les panneaux sont des dialogues.** Préférences, À propos, Stockage,
+  Signaler, Raccourcis et Format s'annoncent comme tels au lecteur d'écran,
+  prennent le focus à l'ouverture, le rendent à la fermeture, et tout ce qui
+  est derrière eux est inerte le temps qu'ils sont ouverts : Tab n'atteint
+  plus les boutons de l'éditeur caché. Le panneau *Format* était le seul
+  qu'Échap ne fermait pas ; il le ferme. Et Échap lâche l'objet libre choisi
+  en même temps que la case, au lieu de laisser les flèches le déplacer
+  pendant qu'on croit tourner les pages.
+- **Le livre se réordonne au clavier.** Dans *Planches*, ⌥ flèche déplace la
+  planche courante ; Entrée et Espace l'ouvrent. L'ordre des planches ne se
+  changeait qu'à la souris.
+- **L'écran « album vide » et l'alerte de dossier photo introuvable parlent
+  anglais** sur l'interface anglaise ; ils étaient restés en français.
+- **Un contrôle avant impression qui ne tourne pas le dit en français**, le
+  message brut passant derrière un « Détail technique » comme partout
+  ailleurs. Et le panneau *Signaler* ne meurt plus quand le diagnostic de la
+  machine est illisible : le rapport part sans lui et le dit.
 
 ## [0.9.0] - 2026-08-17
 

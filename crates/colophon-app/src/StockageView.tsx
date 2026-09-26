@@ -16,6 +16,7 @@ import {
   revealDataDir,
   StorageReport,
 } from "./bridge";
+import { Dialogue } from "./Dialogue";
 import { langue, t } from "./i18n";
 
 /** Base 1024, one decimal past a megabyte: the figure has to be comparable
@@ -120,17 +121,7 @@ export function StockageView({
   const caches = albums.reduce((n, a) => n + a.bytes_thumbs, 0);
 
   return (
-    <div className="raccourcis" onClick={onClose}>
-      <div
-        className="raccourcis-panel stockage-panel"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="raccourcis-head">
-          <h2>{t("stockage.titre")}</h2>
-          <button className="link" onClick={onClose}>
-            {t("commun.fermer")}
-          </button>
-        </header>
+    <Dialogue titre={t("stockage.titre")} onClose={onClose} panelClassName="stockage-panel">
 
         <p className="stockage-total">
           {rapport ? (
@@ -194,7 +185,6 @@ export function StockageView({
           </button>
         </div>
         <p className="signaler-note">{t("stockage.note")}</p>
-      </div>
-    </div>
+    </Dialogue>
   );
 }

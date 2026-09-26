@@ -3,6 +3,7 @@
 // chord itself; Échap or a click puts it away. Built at render time so a
 // language change redraws it.
 
+import { Dialogue } from "./Dialogue";
 import { Cle, t } from "./i18n";
 
 const GROUPES: [Cle, [string | Cle, Cle][]][] = [
@@ -23,6 +24,7 @@ const GROUPES: [Cle, [string | Cle, Cle][]][] = [
       ["⌘D", "racc.dupliquer"],
       ["⌘L", "racc.figer"],
       ["racc.k.suppr.planches", "racc.supprimer"],
+      ["racc.k.alt.fleches", "racc.deplacer.planche"],
       ["⇧⌘← ⇧⌘→", "racc.envoyer.photo"],
       ["racc.k.suppr.livre", "racc.retirer.photo"],
       ["Tab", "racc.tab.legende"],
@@ -66,14 +68,7 @@ function cap(touches: string): string {
 
 export function RaccourcisView({ onClose }: { onClose: () => void }) {
   return (
-    <div className="raccourcis" onClick={onClose}>
-      <div className="raccourcis-panel" onClick={(e) => e.stopPropagation()}>
-        <header className="raccourcis-head">
-          <h2>{t("racc.titre")}</h2>
-          <button className="link" onClick={onClose}>
-            {t("commun.fermer")}
-          </button>
-        </header>
+    <Dialogue titre={t("racc.titre")} onClose={onClose}>
         <div className="raccourcis-groupes">
           {GROUPES.map(([titre, lignes]) => (
             <section key={titre} className="raccourcis-groupe">
@@ -89,7 +84,6 @@ export function RaccourcisView({ onClose }: { onClose: () => void }) {
             </section>
           ))}
         </div>
-      </div>
-    </div>
+    </Dialogue>
   );
 }

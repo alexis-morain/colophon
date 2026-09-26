@@ -100,7 +100,13 @@ export function EnvoiView({
 
         )}
         {error ? (
-          <h2 className="envoi-ko">{error}</h2>
+          <>
+            <h2 className="envoi-ko">{t("envoi.prevol.echec")}</h2>
+            <details className="fault-detail">
+              <summary>{t("erreur.detail")}</summary>
+              <pre>{error}</pre>
+            </details>
+          </>
         ) : running || !report ? (
           <h2 className="envoi-wait">{t("envoi.controle")}</h2>
         ) : report.ok ? (

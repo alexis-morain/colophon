@@ -806,7 +806,9 @@ rapport entier visible avant envoi, jamais un chemin ni une légende.
 
 **DA** : piste A, chrome clair sur blanc, plus un mode sombre qui suit le système, un
 bloc de tokens, contraste vérifié. Neutres froids, terracotta `#b04a1f` / `#e07a4a`, zéro
-serif. `--ink-rgb` = encre du papier, `--chip-*` = pastilles sur photo, `--salle-*` = la
+serif, radius zéro partout, **six tailles et rien sous 12 px** (`--fs-12` à `--fs-28`).
+Vérifié le 26/09 dans le harnais : aucun texte sous 4,5:1 en sombre, aucun débordement
+horizontal. Les deux colonnes d'*Envoi* ne partagent pas leurs lignes de grille. `--ink-rgb` = encre du papier, `--chip-*` = pastilles sur photo, `--salle-*` = la
 salle sombre.
 
 ## Le PDF

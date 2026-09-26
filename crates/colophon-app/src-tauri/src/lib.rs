@@ -1810,7 +1810,8 @@ mod tests {
         assert_eq!(album_deja_compose(&base, &photos), Some(premier.clone()));
         std::thread::sleep(std::time::Duration::from_millis(20));
         let second = ecrit("photos-de-la-famille-22222222-2", &photos);
-        let f = std::fs::File::open(second.join("album.json")).unwrap();
+        // En écriture : Windows refuse de dater un fichier ouvert en lecture.
+        let f = std::fs::OpenOptions::new().write(true).open(second.join("album.json")).unwrap();
         f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
         assert_eq!(album_deja_compose(&base, &photos), Some(second));
         std::fs::remove_dir_all(&racine).ok();

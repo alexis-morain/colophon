@@ -3127,6 +3127,10 @@ kbd {
   border: 1px solid transparent;
   padding: 6px 6px 4px;
   transition: border-color var(--turn), background var(--turn);
+  /* Le glisser est au pointeur : ni défilement tactile, ni sélection de
+     texte ne doivent lui prendre le geste. */
+  touch-action: none;
+  user-select: none;
 }
 
 .planche-cell:hover {
@@ -3140,6 +3144,17 @@ kbd {
 
 .planche-cell.dropping {
   border: 1px dashed var(--accent);
+}
+
+/* La figure qu'on glisse suit la main par transform, au-dessus des autres,
+   sans que la grille bouge. */
+.planche-cell.tenue {
+  position: relative;
+  z-index: 2;
+  cursor: grabbing;
+  opacity: 0.85;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
 }
 
 /* La cellule courante porte déjà une bordure d'accent ; l'anneau dit autre
@@ -3557,7 +3572,17 @@ kbd {
   font-size: var(--fs-12);
 }
 
+/* Les contrôles gardent leur largeur et leur ligne : c'est la phrase d'aide
+   qui cède, jamais un bouton qui passe sur trois lignes. */
+.context-line > :not(.context-hint) {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* La phrase d'aide cède la place aux contrôles : elle se coupe d'une
+   ellipse, et son texte entier reste dans l'infobulle. */
 .context-hint {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3609,6 +3634,80 @@ kbd {
   font-size: var(--fs-12);
 }
 
+/* ---- les réglages d'un objet libre --------------------------------------- */
+
+/* Sous l'objet choisi, au motif du popover de légende : deux rangées, la
+   première pour les nombres, la seconde pour l'alignement. */
+.objet-popover {
+  position: fixed;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow-pop);
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+
+.objet-popover-rangee {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.objet-popover input[type="number"] {
+  width: 64px;
+  font: inherit;
+  color: var(--text);
+  background: var(--fond);
+  border: 1px solid var(--rule);
+  padding: 2px 6px;
+}
+
+.objet-popover input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.objet-popover-rangee[role="group"] {
+  gap: 0;
+}
+
+.objet-aligner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  margin-left: -1px;
+}
+
+.objet-aligner:first-child {
+  margin-left: 0;
+}
+
+.objet-aligner:hover {
+  color: var(--text);
+}
+
+.objet-aligner.actif {
+  position: relative;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.objet-aligner:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ---- the caption popover ------------------------------------------------- */
 
 /* Anchored under the selected case (above it near the window's bottom):
@@ -3619,7 +3718,6 @@ kbd {
   display: flex;
   gap: 12px;
   align-items: baseline;
-  width: 320px;
   padding: 8px 12px;
   background: var(--surface);
   border: 1px solid var(--rule);
@@ -3628,6 +3726,7 @@ kbd {
 
 .caption-popover-label {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -3651,7 +3750,14 @@ kbd {
   border-color: var(--accent);
 }
 
+/* La proposition se coupe d'une ellipse plutôt que de pousser le champ hors
+   du popover ; son texte entier est dans l'infobulle. */
 .caption-popover .link {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

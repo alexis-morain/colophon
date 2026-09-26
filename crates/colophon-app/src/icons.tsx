@@ -41,3 +41,26 @@ export function CoverGlyph() {
     </svg>
   );
 }
+
+/** L'alignement d'un bloc : quatre lignes de longueurs inégales, calées à
+ *  gauche, au centre ou à droite. */
+export function AlignGlyph({ cote }: { cote: "gauche" | "centre" | "droite" }) {
+  const longueurs = [9, 6, 9, 5];
+  const x = (l: number) =>
+    cote === "gauche" ? 1.5 : cote === "droite" ? 10.5 - l : 6 - l / 2;
+  return (
+    <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+      {longueurs.map((l, i) => (
+        <line
+          key={i}
+          x1={x(l)}
+          y1={2 + i * 2.7}
+          x2={x(l) + l}
+          y2={2 + i * 2.7}
+          stroke="currentColor"
+          strokeWidth="1.3"
+        />
+      ))}
+    </svg>
+  );
+}

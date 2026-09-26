@@ -44,6 +44,20 @@ sur la page des releases.
 
 ### Modifié
 
+- **Les réglages d'un bloc de texte s'ouvrent sous le bloc.** Corps,
+  interligne, angle et alignement vivaient dans la barre sous la planche, où
+  ils s'empilaient faute de place dès que la fenêtre rétrécissait. Ils
+  s'ouvrent désormais juste sous le bloc choisi (au-dessus quand le bas de
+  la fenêtre est proche), sur deux rangées. L'alignement se
+  choisit par trois boutons à icône au lieu d'un menu. Un ornement n'y montre
+  que son angle. Échap abandonne une valeur en cours de saisie, et chaque
+  réglage reste un seul pas d'annulation.
+
+- **Le choix Éléments / Canvas quitte les Préférences.** Il ne changeait
+  rien au livre ni au PDF, et ne servait qu'à mesurer deux façons de dessiner
+  la planche à l'écran. Les Préférences ne gardent que la langue, les mises à
+  jour et l'apparence.
+
 - **La vérification des mises à jour se dit, et se coupe.** Elle existait
   depuis la 0.9.0 et partait au lancement sans condition, pendant que
   `SECURITY.md` promettait « no network call at runtime » et le README
@@ -77,6 +91,21 @@ sur la page des releases.
   et la mention « fiche provisoire » montent d'un pixel.
 
 ### Corrigé
+
+- **Les planches se réordonnent à la souris.** Glisser une planche sur une
+  autre dans *Planches* ne faisait rien dans l'application installée. Le
+  glisser est réécrit : la planche suit la souris, la planche visée se marque
+  d'un pointillé, et le déplacement se fait au relâchement. Un simple clic
+  choisit toujours la planche, Échap pendant le glisser annule sans rien
+  changer, et ⌘Z ramène la planche à sa place. ⌥ flèches marche comme avant.
+
+- **La légende d'une photo ne déborde plus.** Son champ prend la largeur de
+  la photo, entre 240 et 420 pixels, au lieu d'une largeur fixe qui pouvait
+  mordre sur la voisine ; une date proposée trop longue se coupe d'une
+  ellipse, entière au survol. La phrase d'aide sous la planche ne recouvre
+  plus rien quand la fenêtre est étroite : elle se coupe elle aussi, et se lit
+  en entier au survol. Les boutons de la barre ne passent plus sur plusieurs
+  lignes.
 
 - **Le cache de vignettes s'élague.** Une photo retouchée, renommée ou
   retirée du dossier laissait son ancienne vignette pour toujours, 227 Ko

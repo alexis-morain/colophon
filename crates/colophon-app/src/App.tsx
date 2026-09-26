@@ -60,7 +60,6 @@ import {
   Album,
   boiteDePage,
   Discard,
-  Objet,
   OpenedAlbum,
   Rect,
   Reglage,
@@ -73,7 +72,6 @@ import {
 } from "./album";
 import { adopterGeometrie } from "./geometrie";
 import { ReglageBloc } from "./ReglageBloc";
-import { ObjetBloc } from "./ObjetBloc";
 import { coteDe, recouvre, retenirAuPli, retournerBoite } from "./scene";
 import { filtreDe, poserReglages, useReglages } from "./reglages";
 import {
@@ -2127,6 +2125,7 @@ export default function App() {
                     apply((a) => setObjetTexte(a, index, i, texte))
                   }
                   onObjetSupprimer={(i) => apply((a) => removeObjet(a, index, i))}
+                  onObjetReglage={(i, o) => apply((a) => setObjetEdit(a, index, i, o))}
                   onSwap={(a, b) => apply((al) => swapPhotos(al, index, a, b))}
                   onPlace={place}
                   onCrop={(slot, focal, zoom) =>
@@ -2177,7 +2176,6 @@ export default function App() {
                   )
               : undefined
           }
-          onObjetReglage={(i, o) => apply((a) => setObjetEdit(a, index, i, o))}
           onTemplate={(t) => apply((a) => changeTemplate(a, index, t))}
           onReglage={(src, r) => apply((a) => setReglage(a, src, r))}
           spreadIndex={index}
@@ -2597,7 +2595,6 @@ function ContextLine({
   objet,
   onAjouterObjet,
   onAjouterOrnement,
-  onObjetReglage,
 }: {
   album: Album;
   spread: Spread | null;
@@ -2610,8 +2607,6 @@ function ContextLine({
   objet?: number | null;
   onAjouterObjet?: () => void;
   onAjouterOrnement?: (o: Ornement) => void;
-  /** Un pas d'annulation. */
-  onObjetReglage?: (index: number, o: Objet) => void;
   /** One history step through `edits.ts::setReglage`, at slider release. */
   onReglage: (src: string, reglage: Reglage) => void;
   /** The faithful preview is on, and the toggle that turns it off. */
@@ -2690,28 +2685,27 @@ function ContextLine({
                 onCommit={onReglage}
               />
             )}
-            {objet !== null &&
-              objet !== undefined &&
-              onObjetReglage &&
-              spread.objets?.[objet] && (
-                <ObjetBloc
-                  objet={spread.objets[objet]}
-                  onCommit={(o) => onObjetReglage(objet, o)}
-                />
-              )}
-            <span className="context-hint">
-              {objet !== null && objet !== undefined
-                ? // Un ornement n'a pas de champ : lui proposer le double-clic
-                  // serait promettre un geste qui ne fait rien. Sa boîte, elle,
-                  // garde ses proportions, et c'est la seule chose que la
-                  // phrase doit apprendre.
-                  spread.objets?.[objet]?.type === "ornement"
-                  ? t("contexte.ornement")
-                  : t("contexte.objet")
-                : selected !== null
-                  ? t("contexte.recadrage")
-                  : ""}
-            </span>
+            {(() => {
+              const aide =
+                objet !== null && objet !== undefined
+                  ? // Un ornement n'a pas de champ : lui proposer le double-clic
+                    // serait promettre un geste qui ne fait rien. Sa boîte, elle,
+                    // garde ses proportions, et c'est la seule chose que la
+                    // phrase doit apprendre.
+                    spread.objets?.[objet]?.type === "ornement"
+                    ? t("contexte.ornement")
+                    : t("contexte.objet")
+                  : selected !== null
+                    ? t("contexte.recadrage")
+                    : "";
+              // Coupée d'une ellipse quand la barre est étroite : la phrase
+              // entière reste au survol.
+              return (
+                <span className="context-hint" title={aide || undefined}>
+                  {aide}
+                </span>
+              );
+            })()}
           </>
         )
       )}

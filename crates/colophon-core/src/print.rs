@@ -64,6 +64,83 @@ fn jpeg_sof(data: &[u8]) -> Option<(u32, u32, u8)> {
     None
 }
 
+/// Whether a JPEG about to travel **as-is** into the print file is whole.
+///
+/// The passthrough copies the bytes without decoding, and `jpeg_sof` stops
+/// at the header: a file with an intact header and a destroyed body — an
+/// interrupted copy, an iCloud or Drive file half synchronised — used to go
+/// to the printer as it was, the page rendering the top third of the image
+/// over a grey slab, with the preflight green. Measured on corse-2013: 14
+/// photos out of 106, 13 %, took that branch. The promise written under the
+/// render — « this fails loudly on any missing or unreadable original » —
+/// did not hold for this class of file.
+///
+/// The check walks the file's segments to its end-of-image marker, the way
+/// a reader would: header segments skipped by their length (an EXIF
+/// thumbnail carries its own EOI, which must not count), then each scan's
+/// entropy data skipped to the next marker, until `FFD9`. A truncation
+/// removes it; padding after it — a real camera file of the reference set
+/// ends with sixty spaces past its EOI — does not matter, since the walk
+/// stops there. Measured before choosing: a full decode costs 29 ms per
+/// 24 Mpx photo **and catches nothing this walk does not** — the decoder
+/// `image` ships tolerates a marker soup in the middle of a scan and returns
+/// pixels — so the walk alone is kept.
+pub(crate) fn jpeg_entier(data: &[u8]) -> Result<()> {
+    let tronque = || anyhow::anyhow!("JPEG tronqué : le fichier n'atteint pas son marqueur de fin d'image");
+    if data.len() < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+        anyhow::bail!("JPEG illisible : pas de marqueur de début d'image");
+    }
+    let mut i = 2usize;
+    loop {
+        // Au marqueur suivant. Des 0xFF de remplissage peuvent le précéder.
+        while i < data.len() && data[i] == 0xFF {
+            i += 1;
+        }
+        if i >= data.len() {
+            return Err(tronque());
+        }
+        let marker = data[i];
+        i += 1;
+        match marker {
+            0xD9 => return Ok(()),
+            // Sans charge utile : RSTn, SOI, TEM.
+            0x01 | 0xD0..=0xD8 => continue,
+            0xDA => {
+                // L'en-tête du scan, puis les données entropiques jusqu'au
+                // prochain marqueur qui n'est ni un octet bourré (FF00) ni
+                // une reprise (FFD0..D7).
+                if i + 2 > data.len() {
+                    return Err(tronque());
+                }
+                let len = usize::from(data[i]) << 8 | usize::from(data[i + 1]);
+                i += len;
+                loop {
+                    let Some(pos) = data.get(i..).and_then(|r| r.iter().position(|b| *b == 0xFF)) else {
+                        return Err(tronque());
+                    };
+                    i += pos;
+                    match data.get(i + 1) {
+                        None => return Err(tronque()),
+                        Some(0x00) | Some(0xD0..=0xD7) => i += 2,
+                        Some(0xFF) => i += 1,
+                        Some(_) => break,
+                    }
+                }
+            }
+            _ => {
+                if i + 2 > data.len() {
+                    return Err(tronque());
+                }
+                let len = usize::from(data[i]) << 8 | usize::from(data[i + 1]);
+                i += len;
+                if i > data.len() {
+                    return Err(tronque());
+                }
+            }
+        }
+    }
+}
+
 /// Whether a RAW's embedded preview, cover-cropped into `rect` and zoomed,
 /// still meets the resolution floor — the one the linter tolerates three
 /// misses of and the preflight none. At or above it the preview prints;
@@ -103,6 +180,15 @@ pub(crate) fn print_asset(
             // A zoomed slot shows fewer source pixels, so it needs more of
             // them: the passthrough bar rises with the zoom.
             if print_scale(rect, w, h) * zoom >= 1.0 {
+                // The one branch that ships bytes nobody decoded: they are
+                // checked whole before they go, and a broken file is a
+                // named refusal of the whole export, never a grey page.
+                jpeg_entier(&data).with_context(|| {
+                    format!(
+                        "{} ne part pas à l'impression : remplacez ou réparez le fichier",
+                        src.display()
+                    )
+                })?;
                 return Ok(pdf::JpegAsset { data, width: w, height: h, focal, zoom });
             }
         }
@@ -456,6 +542,109 @@ mod tests {
         assert_eq!((a.width, a.height), (300, 400));
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A JPEG with an intact header and a destroyed body used to travel
+    /// as-is into the print file. Truncated to 35 % of its bytes it passes
+    /// `jpeg_sof`, meets the passthrough bar, and is now refused by name;
+    /// the whole file still passes byte for byte. The same truncation on the
+    /// decode path (tiny slot) was already a refusal: `image` cannot decode
+    /// it either, and the message says which file.
+    #[test]
+    fn un_jpeg_tronque_ne_part_jamais_a_l_impression() {
+        let dir = std::env::temp_dir().join(format!("colophon-tronque-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let entier = dir.join("entier.jpg");
+        let img = image::RgbImage::from_fn(400, 300, |x, y| {
+            image::Rgb([(x % 256) as u8, (y % 256) as u8, ((x * y) % 256) as u8])
+        });
+        image::DynamicImage::ImageRgb8(img)
+            .save_with_format(&entier, image::ImageFormat::Jpeg)
+            .unwrap();
+        let octets = fs::read(&entier).unwrap();
+        let tronque = dir.join("tronque.jpg");
+        fs::write(&tronque, &octets[..octets.len() * 35 / 100]).unwrap();
+        assert_eq!(jpeg_sof(&fs::read(&tronque).unwrap()), Some((400, 300, 3)), "l'en-tête est intact");
+
+        // Passthrough slot: the whole file goes as-is, the truncated one is refused by name.
+        let a = print_asset(&entier, 1, &rect(200.0, 150.0), [0.5, 0.5], 1.0, None).unwrap();
+        assert_eq!(a.data, octets, "le passe-plat reste identique à l'octet");
+        let err = print_asset(&tronque, 1, &rect(200.0, 150.0), [0.5, 0.5], 1.0, None)
+            .err()
+            .expect("un JPEG tronqué ne part pas");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("tronque.jpg"), "{msg}");
+        assert!(msg.contains("tronqué"), "{msg}");
+
+        // Padding past the EOI, as a real camera file of the reference set
+        // has: still whole. And an EXIF thumbnail carries its own EOI: a
+        // file cut right after its APP1 must not pass on that account.
+        let mut rembourre = octets.clone();
+        rembourre.extend(std::iter::repeat_n(b' ', 60));
+        assert!(jpeg_entier(&rembourre).is_ok(), "le rembourrage après EOI est légal");
+        let mut avec_vignette = vec![0xFF, 0xD8, 0xFF, 0xE1];
+        let app1 = [b"Exif\0\0".to_vec(), octets.clone()].concat();
+        let len = (app1.len() + 2) as u16;
+        avec_vignette.extend(len.to_be_bytes());
+        avec_vignette.extend(&app1);
+        assert!(jpeg_entier(&avec_vignette).is_err(), "l'EOI de la vignette EXIF ne compte pas");
+        avec_vignette.extend(&octets[2..]);
+        assert!(jpeg_entier(&avec_vignette).is_ok(), "le même fichier entier passe");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The cost of checking a JPEG whole before it travels as-is, on the
+    /// heaviest reference set (corse-2013, 24 Mpx). Run by hand:
+    /// `cargo test -p colophon-core --release banc_validation_jpeg -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn banc_validation_jpeg() {
+        let dossier = dirs_photos().join("corse-2013");
+        let Ok(entrees) = fs::read_dir(&dossier) else {
+            eprintln!("pas de jeu de test dans {}", dossier.display());
+            return;
+        };
+        let mut fichiers: Vec<PathBuf> = entrees
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("jpg")))
+            .collect();
+        fichiers.sort();
+        let debut = std::time::Instant::now();
+        let mut octets = 0usize;
+        for f in &fichiers {
+            octets += fs::read(f).unwrap().len();
+        }
+        let lecture = debut.elapsed();
+        let debut = std::time::Instant::now();
+        let mut refus = 0;
+        for f in &fichiers {
+            let data = fs::read(f).unwrap();
+            if let Err(e) = jpeg_entier(&data) {
+                refus += 1;
+                let queue: Vec<String> = data[data.len().saturating_sub(16)..].iter().map(|b| format!("{b:02x}")).collect();
+                eprintln!("  refusé : {} ({e}) queue {}", f.display(), queue.join(" "));
+            }
+        }
+        let validation = debut.elapsed();
+        eprintln!(
+            "{} JPEG, {:.1} Mo : lecture seule {:.2} s, lecture + validation {:.2} s ({:.0} ms par photo), {refus} refusés",
+            fichiers.len(),
+            octets as f64 / 1e6,
+            lecture.as_secs_f64(),
+            validation.as_secs_f64(),
+            validation.as_secs_f64() * 1000.0 / fichiers.len().max(1) as f64
+        );
+    }
+
+    fn dirs_photos() -> PathBuf {
+        std::env::var_os("COLOPHON_TESTSETS")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+                    .join("Pictures")
+                    .join("colophon-testsets")
+            })
     }
 
     /// An adjustment reaches the printed pixels: the passthrough is refused,

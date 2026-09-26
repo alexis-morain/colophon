@@ -1,0 +1,25 @@
+{
+  "quoi": "Le passe-plat JPEG de print.rs vérifié entier avant de partir tel quel dans le PDF de livraison",
+  "quand": "2026-09-26",
+  "machine": "Mac 10 cœurs, jeu corse-2013 (572 JPEG, 24 Mpx, 1945 Mo)",
+  "banc": "cargo test -p colophon-core --release banc_validation_jpeg -- --ignored --nocapture",
+  "decodage_complet": {
+    "cout_ms_par_photo": 29,
+    "total_s": 16.6,
+    "ce_qu_il_attrape_de_plus_que_la_marche": "rien : le décodeur d'image (zune-jpeg, mode tolérant) rend des pixels sur un corps rempli d'une soupe de marqueurs FF D8 00 C4",
+    "decision": "écarté"
+  },
+  "marche_des_segments_jusqu_a_EOI": {
+    "cout_ms_par_photo": 1,
+    "total_s": 0.6,
+    "lecture_seule_s": 0.38,
+    "refuses_sur_le_jeu": 0,
+    "piege_mesure": "2013-10-26_224700_IMG_2193.jpg finit par soixante espaces après son EOI : une recherche du marqueur dans les 32 derniers octets le refusait à tort",
+    "decision": "retenue"
+  },
+  "preuve_inversee": {
+    "banc_octets_d_un_album_sans_objet_libre": 214808,
+    "attendu": 214808
+  },
+  "part_du_passe_plat": "14 photos sur 106 posées de corse-2013 (13 %), audit du 10/09"
+}

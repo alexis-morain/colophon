@@ -6,7 +6,9 @@ a file you own, and you print it wherever you like.
 
 What Darktable is to Lightroom, Colophon is to Blurb.
 
-> **Status:** pre-1.0, in active development. macOS today, Windows next.
+> **Status:** pre-1.0, in active development. The release chain builds
+> installers for macOS and Windows; the Windows build has not yet been tried
+> on real hardware. HEIC, RAW and the Apple Photos import work on macOS only.
 
 <!-- CAPTURES, à insérer avant de rendre le dépôt public. Ordre imposé par
      l'audit UX. Ne pas committer ce README avec des images manquantes.
@@ -28,35 +30,76 @@ Point it at a folder. It reads the files, throws out what would weaken the
 book, lays out every spread, and hands you a finished draft you can argue
 with.
 
-- **Reads** JPEG, PNG, HEIC and camera RAW (CR2, CR3, NEF, ARW, DNG, RAF,
-  ORF, RW2 and friends), straight from the folder. No import step, no
-  library, no catalogue.
+- **Reads** JPEG and PNG everywhere, straight from the folder. No import
+  step, no library, no catalogue. On macOS it also reads HEIC and camera RAW
+  (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2 and friends) through the system
+  decoder, ImageIO. On Windows and Linux, HEIC and RAW files are counted and
+  named on screen, not decoded: never silently dropped.
+- **Imports from Apple Photos** (macOS only): pick an album in your photo
+  library and Colophon copies its photographs into a visible folder, then
+  composes that folder like any other. It never writes to the library. The
+  import refuses the network: photographs that stayed in iCloud are counted
+  and named, and downloaded only if you ask.
 - **Respects your culling**: star ratings and rejects from XMP sidecars, from
   embedded XMP, or from the Windows rating tag enter the score. A photo you
   rejected in Lightroom never beats one you kept, a starred one gets a boost.
+  A Google Takeout keeps its dates and places: its `.json` sidecars fill in
+  what the EXIF lost.
 - **Curates** the take: blurry frames, near-duplicates, repeated shots of the
   same scene, panoramas that do not fit the page, photos too small to print at
-  the size you chose.
+  the size you chose. A folder of scanned prints, with no camera data at all,
+  still makes an album: the filter that needs camera data switches itself
+  off, says so, and the book follows the file dates.
 - **Composes** spreads under hard constraints, not vibes. See below.
 - **Proposes three albums**, not one: the same photographs at two different
   paces and at two different lengths, composed from a single analysis. You
   pick one; the other two wait on disk until your first edit.
-- **Exports** a 300 dpi print-ready PDF with the fonts embedded, plus a light
-  preview PDF for the screen.
+- **Exports** a 300 dpi print-ready PDF with its typeface embedded, plus a
+  light preview PDF for the screen.
 - **Shows you the file, not a drawing of it.** The editor draws in the DOM,
   the press reads a PDF, and those two can never agree by construction. So
   ⇧⌘P stops drawing and renders the PDF itself, page by page.
+- **Opens like a book.** A half-title on page one: the album's title, the
+  dates of the trip, the towns crossed. Three lines, nothing else, taken
+  from what the composition measured, never a sentence written for you. On
+  by default, one click to remove in Send.
 - **Signs its own work.** A last, quiet page says what only the machine
   knows: how many photographs were kept out of how many read, over what
   span, in which towns, with which cameras. On by default, one click to
   remove, never a file path or a coordinate on it.
 - **Lets you fix anything**: crop by hand inside any cell, swap or replace a
-  photo, rescue a discarded one, reorder or duplicate a spread, write captions,
-  rename chapters, edit the cover. Undo covers all of it.
+  photo, rescue a discarded one, reorder or duplicate a spread, change a
+  spread's layout from at most 23 named dispositions, write captions, rename
+  chapters, edit the cover. Adjust exposure and contrast, or turn a photo
+  black and white, without a byte of the original changing. Undo covers all
+  of it.
+- **Places free text and ornaments.** A text block goes anywhere on a
+  spread: you move it, resize it by a corner, turn it to any angle, and set
+  its size, leading and alignment. Its text wraps inside its box; what does
+  not fit runs past the bottom and the editor says so, and nothing is ever
+  cut. Typographic ornaments (fleurons, rules, dividers) come from a pack
+  shipped with the app, CC0 or public domain, and move, resize and turn the
+  same way, keeping their proportions. The pack holds three rules today. A
+  new block or ornament is placed clear of the photographs when the page has
+  room. The editor stops an object at the fold and warns when one enters the
+  safe area.
+- **Sets the book in the typeface you choose.** In Format & type: a
+  shortlist of ten families, one per voice, each name written in its own
+  face, and every typeface installed on the computer one click behind it.
+  One typeface for the whole book: captions, chapter titles, half-title,
+  colophon, cover and spine. It is copied into the album's folder, so the
+  album opens and prints the same on a machine that does not have it. A
+  typeface whose licence forbids embedding stays in the list, greyed out,
+  with the reason. Nothing is recomposed; only the line breaks follow. A
+  title prints every character the typeface draws, Zażółć included.
 
 Six page formats out of the box (21×21, 30×30, A4 portrait and landscape,
 28×21, 20×25 cm). The command line also takes any size you type in
-millimetres; the app sticks to the six.
+millimetres; the app sticks to the six. A composed album can switch to
+another format without being recomposed: same spreads, same order, same
+photos, same crops. Only the layouts whose photos would no longer fit their
+cells are replaced, the change is listed before you apply it, and ⌘Z undoes
+it.
 
 ## What it guarantees
 
@@ -73,14 +116,33 @@ intentions. The composer will never:
 
 And it never, under any circumstance, retouches a pixel of your photograph.
 
+Nor does the editor lose your work behind your back. Quitting, closing the
+window and opening another album all ask before discarding unsaved changes.
+Saving never deletes a file it did not write itself, so a copy of
+`album.json` you made by hand survives. Composing a folder a second time
+never overwrites the album already made from it: the new one is written next
+to it, and the app offers to reopen the old one first.
+
 ## The linter
 
-`colophon --audit` runs ten counters over a finished album and exits non-zero
-when one goes past its tolerance: cropped face, betrayed orientation,
-duplicate spread, under-resolution, orphan chapter, weak opening, flat rhythm,
-missing caption, caption over a face, template repetition. Most counters
-tolerate nothing; under-resolution allows three cells before it trips, and the
-print preflight allows none.
+`colophon --audit` runs fourteen counters over a finished album.
+
+Ten of them judge the composer, and each has a tolerance: cropped face,
+betrayed orientation, duplicate spread, under-resolution, orphan chapter,
+weak opening, flat rhythm, missing caption, caption over a face, template
+repetition. When one goes past its tolerance, the audit exits non-zero. Six
+tolerate nothing; orphan chapter, flat rhythm and template repetition allow
+one; under-resolution allows three cells before it trips. The print
+preflight allows none.
+
+Four count without deciding. Three judge what a hand placed: a free object
+inside the safe area, a text block whose text does not fit its box, an
+ornament over a photo. The fourth names the characters of the book its
+typeface cannot draw, which print as `?`, and which the editor shows as `?`
+too. They are listed in the report and never turn it red, because a hand has
+the right to set a block to the edge on purpose, and a typeface chosen for a
+Japanese album is a choice. What the guillotine cuts through or the binding
+splits is stopped at the preflight instead.
 
 That is the quality bar, and it is the same bar in CI. The machine judges the
 draft before you have to, and every counter has an obvious manual escape hatch
@@ -105,9 +167,18 @@ printer's preflight, and the tool says so instead of pretending.
 
 A preflight check runs against a printer profile before you send anything:
 pagination, bleed on each edge, colour space, embedded fonts, effective
-resolution cell by cell, safe zone. Every message names the spread and the
-cause in plain language, never a code, and tells you the gesture that fixes
-it. Nothing ever fails silently.
+resolution cell by cell, the cover, the safe zone. What the guillotine cuts
+through or the binding splits blocks the export; what a supplier would
+merely rather see further from the edge, like the safe zone, warns. Every
+message names the spread and the cause in plain language, never a code, and
+tells you the gesture that fixes it. Nothing ever fails silently.
+
+The preflight also opens the files already exported into the album folder.
+A PDF whose dimensions belong to another profile blocks. The command line
+records every export in `export.json`, next to `album.json`: the profile it
+was rendered for and a fingerprint of the album at that moment. A file
+rendered for another printer, or older than the album's last change, blocks
+too. A file that is not there says nothing.
 
 ```bash
 colophon --prevol --profil cloudprinter -o my-album
@@ -120,9 +191,10 @@ space, which is exactly why the profile is data and not a rule in the code.
 The album is always composed as spreads — nothing crosses the fold, and the
 editor shows two facing pages — but the export writes whatever shape the
 profile asks for. A shop that imposes spreads gets them whole. A binder that
-reads one PDF page as one page of the book gets the interior cut in two on the
-way out, with the bleed it wants at the fold, the half-title on page one, and a
-blank verso closing the block. Same album, same book, two files.
+reads one PDF page as one page of the book, as Cloudprinter and Prodigi do,
+gets the interior cut in two on the way out, with the bleed it wants at the
+fold, the half-title on page one, and a blank verso closing the block. Same
+album, same book, two files.
 
 ## Privacy
 
@@ -139,14 +211,14 @@ store, that question is how a fix reaches you, which is why it ships on.
 Everything else is offline. Colophon reads your photographs and never modifies
 them. The album lives in a single readable `album.json` you can repair with a
 text editor. Nothing else leaves your machine unless you deliberately send a
-file somewhere.
+file somewhere, or ask the Photos import to fetch what stayed in iCloud.
 
 ## Install
 
 Download the latest release from the
 [Releases page](https://github.com/alexis-morain/colophon/releases): a `.dmg`
-for macOS today, Windows next. Every file ships with its SHA-256 sum, and the
-app updates itself from the same place.
+for macOS, a `.msi` for Windows. Every file ships with its SHA-256 sum, and
+the app updates itself from the same place.
 
 **macOS will refuse to open it the first time.** The app is not signed with an
 Apple certificate yet, so Gatekeeper shows "cannot be opened" or "damaged". It
@@ -216,8 +288,9 @@ No. There is no server. Colophon works with the network switched off, and it
 will still work the day this repository stops being maintained.
 
 **Do I keep my file?**
-Yes. The album is a folder on your disk with a readable `album.json` in it.
-Nothing is captive, nothing expires, no project is locked behind a login.
+Yes. The album is a folder on your disk with a readable `album.json` in it,
+and the typeface it is set in sits beside it. Nothing is captive, nothing
+expires, no project is locked behind a login.
 
 **Is this AI?**
 No model, no prompt, no cloud inference. Local heuristics: perceptual hashes,
@@ -233,16 +306,17 @@ placing them so the book reads. If you want to design each spread by hand,
 those tools are better than this one.
 
 **What about my HEIC files?**
-Read natively through the system decoder: ImageIO on macOS. The Windows port
-will go through WIC, the system decoder there. No AGPL library in the way.
+On macOS, read natively through the system decoder, ImageIO. No AGPL library
+in the way. On Windows and Linux they are not decoded yet: counted and named
+on screen, never silently dropped.
 
 **And RAW?**
 Same door: the system decoder, which on macOS knows thirty RAW families, CR3
 included. Everything up to the print reads the JPEG preview your camera stored
 inside the file — its colours, its exposure — and the print itself uses that
 preview whenever it holds the resolution floor for its cell; only a cell the
-preview cannot fill asks for the sensor. On Windows, RAW waits for the port
-like HEIC does: counted and named, never silently dropped.
+preview cannot fill asks for the sensor. On Windows and Linux, RAW is where
+HEIC is: counted and named, never silently dropped.
 
 **How do you make money?**
 Not from this. The software is free and stays free, and the full-resolution
@@ -251,21 +325,31 @@ happens next. An optional ordering feature may come later for people who would
 rather click once than deal with a print shop. It will always be optional.
 
 **Windows? Linux?**
-Windows is next in line. Linux is untested: it should build from source, but
-nobody has verified it yet, and a report either way would be a welcome
-contribution.
+The release chain builds a Windows installer, and the test suite runs on
+Windows, macOS and Linux for every pull request; nobody has yet run the app
+on a real Windows machine, so a report from one would be the first. On Windows, HEIC, RAW and the Photos
+import are missing, as said above. Linux has no installer: it should build
+from source, but nobody has verified the app there yet, and a report either
+way would be a welcome contribution.
 
 **Can it do CMYK, layflat, hard covers?**
-Not yet. Colour space and binding options live in the printer profile, so they
-arrive one profile at a time, when a real print shop demands them.
+Not CMYK, not layflat. Colour space and binding options live in the printer
+profile, so they arrive one profile at a time, when a real print shop demands
+them. The Cloudprinter profile renders the flat cover sheet of its hardcover,
+spine and board wrap included.
 
 ## Reporting a problem
 
-Three issue templates: a bug, a bad spread, a bad crop. The app builds the
-report for you: the Help menu has one entry per template, the panel shows you
-the exact block before anything is sent, and one button opens the pre-filled
-issue (or copies the report, if you are offline or without an account). From
-the command line, `colophon --audit -o <album>` prints the same numbers.
+Three issue templates for a problem: a bug, a bad spread, a bad crop. The app
+builds the report for you: the Help menu has one entry per template, the
+panel shows you the exact block before anything is sent, and one button opens
+the pre-filled issue (or copies the report, if you are offline or without an
+account). From the command line, `colophon --audit -o <album>` prints the same
+numbers.
+
+A fourth asks for your verdict on the first draft: would you show the album
+as the software composed it, and which are its three worst spreads. Send
+offers it after an export.
 
 Either way the rule is the same: no photograph, no path, no GPS coordinate,
 no caption of yours ever goes in a report; a photo is only ever named by its
@@ -277,10 +361,22 @@ GitHub page, never a default: the app uploads nothing.
 See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: `./scripts/check.sh`
 has to stay green, the composer's constants and the linter's thresholds are
 one setting split across two files, and the two geometry implementations must
-be changed together.
+be changed together. Adding an ornament is an entry in
+`crates/colophon-core/assets/ornements/pack.toml` and one SVG file, no code,
+under CC0 or in the public domain.
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE). The embedded typeface is Source
-Sans 3 under the SIL Open Font License, its licence sits next to it in
-`crates/colophon-core/assets/`.
+GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+What ships inside the app, each with its licence next to it in
+`crates/colophon-core/assets/`:
+
+- the default typeface, Source Sans 3, under the SIL Open Font License;
+- the sRGB colour profile the PDF carries, published by the International
+  Color Consortium;
+- the town names used for chapter titles, from GeoNames, under CC BY 4.0;
+- the ornament pack, CC0 or public domain, credited ornament by ornament in
+  `assets/ornements/LICENCES.md`.
+
+Third-party code licences are listed in [NOTICES.md](NOTICES.md).

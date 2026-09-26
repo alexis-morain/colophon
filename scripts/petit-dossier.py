@@ -20,6 +20,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# La console Windows du runner est en cp1252 et ne sait pas écrire une flèche :
+# ce script parle UTF-8, et le dit, plutôt que de tomber sur un accent.
+for flux in (sys.stdout, sys.stderr):
+    if hasattr(flux, "reconfigure"):
+        flux.reconfigure(encoding="utf-8", errors="replace")
+
 RACINE = Path(__file__).resolve().parent.parent
 BIN = RACINE / "target" / "release" / ("colophon.exe" if sys.platform == "win32" else "colophon")
 SEUIL = 25

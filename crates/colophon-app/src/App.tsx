@@ -25,6 +25,7 @@ import {
   FormatPreset,
   inTauri,
   chargeGeometrieFormat,
+  albumExistant,
   legendeProposee,
   listDensities,
   DensitePreset,
@@ -721,6 +722,15 @@ export default function App() {
     densite: string,
     title: string | null,
   ) => {
+    // A folder already composed once has an album somewhere, maybe edited
+    // for hours. The engine never writes over it any more (a second album
+    // lands beside the first), but the first question is whether a second
+    // one is wanted at all: most of the time the answer is « reopen mine ».
+    const deja = await albumExistant(dir).catch(() => null);
+    if (deja && (await confirmDialog(t("compo.existe")))) {
+      await openRecent(deja);
+      return;
+    }
     setBuilding([]);
     setBusyTitle(null);
     setError(null);
@@ -751,7 +761,7 @@ export default function App() {
       off();
       setBuilding(null);
     }
-  }, [adopt]);
+  }, [adopt, openRecent]);
 
   /**
    * Recompose the album in place. Edited and locked spreads survive

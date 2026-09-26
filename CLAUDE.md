@@ -918,6 +918,13 @@ vieilli sans qu'un caractère diffère. Le dépôt n'a pas de `.gitattributes`, 
 un renormaliserait tous ses fichiers texte pour une seule comparaison ; tout autre
 `include_str!` du projet est analysé, jamais comparé, donc aucun n'a ce piège.
 
+**Un album ne s'écrit jamais où un album est** (`lib.rs::dossier_libre`) : composer deux
+fois le même dossier pose le second à côté (`-2`, `-3`), jamais par-dessus. L'album déjà
+composé se retrouve **par le `root` de son `album.json`** (`album_deja_compose`), jamais par
+le hachage du chemin, qui est celui du projet (`export::empreinte`) et non `DefaultHasher`,
+instable d'une version de Rust à l'autre. La question « le rouvrir ? » vit dans
+`App::createAlbum`, avant tout travail.
+
 **Le serveur de dev écrase le vrai `album.json`** (POST `/__dev/album`) : copies jetables.
 **Recharger la page après toute édition de source**, le fast refresh Vite corrompt l'état
 React. **Vignettes** : nom non devinable, tout lecteur passe par `thumbs.json` ; sous

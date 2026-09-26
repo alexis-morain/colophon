@@ -493,19 +493,83 @@ fn list_formats() -> Vec<FormatPreset> {
 /// One album folder per source folder, keyed by its absolute path so two
 /// folders sharing a name never collide, inside the app's own data dir.
 fn album_out_dir(app: &tauri::AppHandle, photos: &Path) -> Result<PathBuf, String> {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    photos.hash(&mut h);
+    // The project's own hash, not `DefaultHasher`, whose documentation says
+    // the algorithm is not stable across Rust versions: a toolchain bump
+    // would have moved every album of every user and orphaned the old ones.
+    let empreinte = colophon_core::export::empreinte(photos.to_string_lossy().as_bytes());
     let name = photos
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "album".into());
-    let base = app
+    let base = albums_base(app)?;
+    Ok(dossier_libre(
+        &base,
+        &format!("{name}-{:02x}{:02x}{:02x}{:02x}", empreinte[0], empreinte[1], empreinte[2], empreinte[3]),
+    ))
+}
+
+/// Where the app keeps its albums: `<app data>/albums`.
+fn albums_base(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app
         .path()
         .app_data_dir()
         .map_err(|e| format!("dossier de données introuvable : {e}"))?
-        .join("albums");
-    Ok(base.join(format!("{name}-{:08x}", h.finish() as u32)))
+        .join("albums"))
+}
+
+/// `base/nom` when nothing lives there yet, else the first of `base/nom-2`,
+/// `base/nom-3`, … that holds no `album.json`. Composing a folder twice used
+/// to resolve the same output folder and write `album.json` over the one
+/// that had been edited by hand: a title, a caption, a crop — gone, with
+/// `album.json.bak` as the only, one-step, best-effort net. An album is
+/// never written where an album already is.
+fn dossier_libre(base: &Path, nom: &str) -> PathBuf {
+    let occupe = |d: &Path| d.join("album.json").is_file();
+    let premier = base.join(nom);
+    if !occupe(&premier) {
+        return premier;
+    }
+    (2..)
+        .map(|n| base.join(format!("{nom}-{n}")))
+        .find(|d| !occupe(d))
+        .expect("les entiers ne s'épuisent pas")
+}
+
+/// The album already composed from this photo folder, when there is one:
+/// the folder of the most recently saved `album.json` whose `root` is this
+/// folder. Read from the files, never from a hash — the hash changed once
+/// and could change again, the `root` an album writes is what it means.
+fn album_deja_compose(base: &Path, photos: &Path) -> Option<PathBuf> {
+    let voulu = std::fs::canonicalize(photos).unwrap_or_else(|_| photos.to_path_buf());
+    let mut trouves: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(base)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let dir = e.path();
+            let fichier = dir.join("album.json");
+            let texte = std::fs::read_to_string(&fichier).ok()?;
+            let v: serde_json::Value = serde_json::from_str(&texte).ok()?;
+            let root = PathBuf::from(v.get("root")?.as_str()?);
+            let root = std::fs::canonicalize(&root).unwrap_or(root);
+            (root == voulu).then(|| {
+                let quand = std::fs::metadata(&fichier)
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                (quand, dir)
+            })
+        })
+        .collect();
+    trouves.sort();
+    trouves.pop().map(|(_, d)| d)
+}
+
+/// The album already composed from `photos_dir`, for the creation screen to
+/// offer reopening it before composing a second one beside it.
+#[tauri::command]
+fn album_existant(photos_dir: String, app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let base = albums_base(&app)?;
+    Ok(album_deja_compose(&base, Path::new(&photos_dir))
+        .map(|d| d.to_string_lossy().to_string()))
 }
 
 /// Build an album from a folder of photos, then open it. Progress lines
@@ -1514,6 +1578,7 @@ pub fn run() {
             list_densities,
             report_data,
             open_report_url,
+            album_existant,
             origin_spread,
             choose_variante,
             album_pdf_bytes,
@@ -1698,6 +1763,57 @@ mod tests {
         std::fs::create_dir_all(base.join("albums").join("corse-2013-abcd1234")).unwrap();
         std::fs::create_dir_all(base.join("photos-de-la-famille")).unwrap();
         base
+    }
+
+    /// Composing the same folder twice never lands on the same output
+    /// folder: the first is kept, the second gets a suffix, and only a
+    /// folder holding an `album.json` counts as taken.
+    #[test]
+    fn un_album_ne_s_ecrit_jamais_ou_un_album_est() {
+        let base = albums_root("libre").join("albums");
+        assert_eq!(dossier_libre(&base, "corse-2013-abcd1234"), base.join("corse-2013-abcd1234"));
+        std::fs::write(base.join("corse-2013-abcd1234").join("album.json"), "{}").unwrap();
+        assert_eq!(
+            dossier_libre(&base, "corse-2013-abcd1234"),
+            base.join("corse-2013-abcd1234-2")
+        );
+        std::fs::create_dir_all(base.join("corse-2013-abcd1234-2")).unwrap();
+        std::fs::write(base.join("corse-2013-abcd1234-2").join("album.json"), "{}").unwrap();
+        assert_eq!(
+            dossier_libre(&base, "corse-2013-abcd1234"),
+            base.join("corse-2013-abcd1234-3")
+        );
+        std::fs::remove_dir_all(base.parent().unwrap()).ok();
+    }
+
+    /// The album already composed from a folder is found by the `root` its
+    /// `album.json` declares, the most recently saved one first; a folder
+    /// nobody composed finds nothing.
+    #[test]
+    fn l_album_deja_compose_se_retrouve_par_sa_racine() {
+        let racine = albums_root("deja");
+        let base = racine.join("albums");
+        let photos = racine.join("photos-de-la-famille");
+        assert!(album_deja_compose(&base, &photos).is_none());
+        let ecrit = |nom: &str, root: &Path| {
+            let d = base.join(nom);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(
+                d.join("album.json"),
+                format!(r#"{{"root": {:?}, "spreads": []}}"#, root.to_string_lossy()),
+            )
+            .unwrap();
+            d
+        };
+        ecrit("autre-11111111", &racine.join("ailleurs"));
+        let premier = ecrit("photos-de-la-famille-22222222", &photos);
+        assert_eq!(album_deja_compose(&base, &photos), Some(premier.clone()));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let second = ecrit("photos-de-la-famille-22222222-2", &photos);
+        let f = std::fs::File::open(second.join("album.json")).unwrap();
+        f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
+        assert_eq!(album_deja_compose(&base, &photos), Some(second));
+        std::fs::remove_dir_all(&racine).ok();
     }
 
     /// The id is a folder name, nothing else. Everything that could climb out

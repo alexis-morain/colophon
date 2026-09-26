@@ -160,6 +160,11 @@ sur la page des releases.
 
 ### Sécurité
 
+- La fenêtre ne nomme plus un chemin du disque : la boîte « Enregistrer le
+  PDF » est ouverte par le moteur, qui écrit là où vous avez cliqué et nulle
+  part ailleurs, et l'import depuis Photos n'écrit que dans le dossier qu'il
+  a lui-même proposé, sous Images › Colophon.
+
 - La chaîne de release refuse un tag dont la version ne serait pas celle des
   quatre fichiers qui la portent, et un CHANGELOG sans section pour elle ;
   elle passe le gate avant de construire quoi que ce soit. Le gate construit

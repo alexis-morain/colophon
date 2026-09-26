@@ -858,6 +858,30 @@ fn photos_dossier_propose(nom: String, app: tauri::AppHandle) -> Result<String, 
         .to_string())
 }
 
+/// The file name the save dialog proposes: the album's title, with what a
+/// file system refuses replaced, `album.pdf` for an empty title.
+fn nom_de_fichier_pdf(titre: &str) -> String {
+    let propre: String = titre
+        .trim()
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\' | ':') { '-' } else { c })
+        .collect();
+    let propre = propre.trim_matches('-').trim();
+    format!("{}.pdf", if propre.is_empty() { "album" } else { propre })
+}
+
+/// Whether an import destination is one this app proposes: a direct child
+/// of `<maison>/Pictures/Colophon`, no `..` on the way. The front receives
+/// the proposal from `photos_dossier_propose` and hands it back; a folder
+/// it made up is refused before a file is created in it.
+fn dossier_d_import_valide(maison: &Path, dossier: &Path) -> bool {
+    let base = maison.join("Pictures").join("Colophon");
+    let composants_surs = dossier
+        .components()
+        .all(|c| !matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir));
+    composants_surs && dossier.parent() == Some(base.as_path())
+}
+
 /// Importe un album dans un dossier et rend son rapport.
 ///
 /// `reseau` reste faux tant que l'utilisateur n'a pas vu, chiffres en main, ce
@@ -875,6 +899,15 @@ async fn photos_importer(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<photos::RapportImport, String> {
+    let maison = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("dossier personnel introuvable : {e}"))?;
+    if !dossier_d_import_valide(&maison, Path::new(&dossier)) {
+        return Err(format!(
+            "dossier d'import refusé : {dossier} n'est pas un dossier que Colophon propose"
+        ));
+    }
     state.cancel_build.store(false, Ordering::Relaxed);
     let flag = state.cancel_build.clone();
     let emitter = app.clone();
@@ -923,10 +956,18 @@ async fn render_pdf(state: State<'_, AppState>) -> Result<String, String> {
 /// files gets the flat cover sheet written beside the interior, one who
 /// builds its own gets nothing extra. Both paths come back so the window can
 /// name what it wrote.
+///
+/// **The destination is asked here, never received from the front.** The
+/// save dialog used to live in TypeScript and the command took whatever
+/// absolute path came back over IPC: a primitive that writes a file
+/// anywhere on the disk, exposed to the webview. The dialog now runs on this
+/// side, the front sends a title and a profile, and an empty answer means
+/// the person cancelled — the same doctrine `reveal_data_dir` already
+/// states: the path is the app's, never one the front sends.
 #[tauri::command]
 async fn export_pdf(
     app: tauri::AppHandle,
-    dest: String,
+    titre: String,
     profil: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
@@ -935,6 +976,34 @@ async fn export_pdf(
         guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
     };
     let profil = printer_profile(&profil)?;
+    let nom = nom_de_fichier_pdf(&titre);
+    let telechargements = app.path().download_dir().ok();
+    let choisi = {
+        use tauri_plugin_dialog::DialogExt;
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let mut boite = app
+                .dialog()
+                .file()
+                .set_title("Enregistrer le PDF de l’album")
+                .set_file_name(&nom)
+                .add_filter("PDF", &["pdf"]);
+            if let Some(d) = telechargements {
+                boite = boite.set_directory(d);
+            }
+            boite.blocking_save_file()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    };
+    let Some(choisi) = choisi else {
+        return Ok(Vec::new());
+    };
+    let dest = choisi
+        .into_path()
+        .map_err(|e| format!("destination illisible : {e}"))?
+        .to_string_lossy()
+        .to_string();
     state.cancel_export.store(false, Ordering::Relaxed);
     let flag = state.cancel_export.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<String>, String> {
@@ -1854,6 +1923,39 @@ mod tests {
         f.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5)).unwrap();
         assert_eq!(album_deja_compose(&base, &photos), Some(second));
         std::fs::remove_dir_all(&racine).ok();
+    }
+
+    /// The import writes only where the app proposes: a child of
+    /// `Pictures/Colophon`, nothing above, beside or made up.
+    #[test]
+    fn l_import_n_ecrit_que_dans_le_dossier_propose() {
+        let maison = Path::new("/Users/qui");
+        let ok = |p: &str| dossier_d_import_valide(maison, Path::new(p));
+        assert!(ok("/Users/qui/Pictures/Colophon/Corse 2013"));
+        assert!(ok(&photos::dossier_propose(maison, "Été/2013").to_string_lossy()));
+        // A `.` in the middle is normalised away by `components()` : this is
+        // the proposed folder, spelt oddly, and it passes.
+        assert!(ok("/Users/qui/Pictures/Colophon/./x"));
+        for mauvais in [
+            "/Users/qui/Pictures/Colophon",
+            "/Users/qui/Pictures/Colophon/a/b",
+            "/Users/qui/Pictures/Colophon/../Documents",
+            "/Users/qui/Pictures/Colophon/x/..",
+            "/Users/qui/Documents/x",
+            "/tmp/x",
+            "",
+        ] {
+            assert!(!ok(mauvais), "{mauvais:?} a passé");
+        }
+    }
+
+    /// The proposed PDF name is the title, made safe, never empty.
+    #[test]
+    fn le_nom_du_pdf_vient_du_titre() {
+        assert_eq!(nom_de_fichier_pdf("Corse 2013"), "Corse 2013.pdf");
+        assert_eq!(nom_de_fichier_pdf(" Été / mer : sable "), "Été - mer - sable.pdf");
+        assert_eq!(nom_de_fichier_pdf(""), "album.pdf");
+        assert_eq!(nom_de_fichier_pdf("///"), "album.pdf");
     }
 
     /// The id is a folder name, nothing else. Everything that could climb out

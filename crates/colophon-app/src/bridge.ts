@@ -532,6 +532,14 @@ export async function fetchCuration(): Promise<Discard[]> {
 }
 
 /** Overwrite album.json, atomically on both sides of the bridge. */
+/** The characters of this album its face cannot draw, each once. The engine
+ *  prints them as `?`, and the screen must show the same. Empty in the
+ *  browser harness, whose face is the engine's own. */
+export async function policeAbsents(album: Album): Promise<string[]> {
+  if (!inTauri) return [];
+  return invoke<string[]>("police_absents", { album });
+}
+
 export async function saveAlbum(album: Album): Promise<void> {
   if (inTauri) return invoke("save_album", { album });
   const res = await fetch("/__dev/album", {

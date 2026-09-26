@@ -58,6 +58,53 @@ const contexte = (() => {
  *  faces under one family name would leave the browser to pick. */
 let posee: FontFace | null = null;
 
+/**
+ * The characters of the open album its face cannot draw, as the engine
+ * reports them (`police_absents`). The engine prints each of them as `?`,
+ * and so does everything drawn here: the stack above falls back to another
+ * font for a missing glyph, which is exactly how a book came to show
+ * « zéphyr » on screen and print « z?phyr ». Empty until the engine speaks,
+ * and in the browser harness, whose face is the engine's own.
+ */
+let absents: Set<string> = new Set();
+
+export function setAbsents(liste: readonly string[]): void {
+  absents = new Set(liste);
+}
+
+/** A string as the book will print it: every character the face cannot
+ *  draw replaced by `?`, the engine's rule, character for character. */
+export function afficher(texte: string): string {
+  if (absents.size === 0) return texte;
+  let out = "";
+  for (const c of texte) out += absents.has(c) ? "?" : c;
+  return out;
+}
+
+/** A scene as the book will print it: the same substitution on every text
+ *  the two renderers and the proxies read. The geometry is untouched — the
+ *  lines were already wrapped on the substituted widths, `measureMm`
+ *  measuring what will be drawn. */
+export function substituer<T extends { objects: unknown[] }>(scene: T): T {
+  if (absents.size === 0) return scene;
+  const objets = scene.objects.map((o) => {
+    const obj = o as { role: Record<string, unknown> };
+    const role = obj.role;
+    if (typeof role.text === "string") {
+      return { ...obj, role: { ...role, text: afficher(role.text) } };
+    }
+    if (Array.isArray(role.lines)) {
+      const lines = (role.lines as { text: string }[]).map((l) => ({
+        ...l,
+        text: afficher(l.text),
+      }));
+      return { ...obj, role: { ...role, lines } };
+    }
+    return o;
+  });
+  return { ...scene, objects: objets };
+}
+
 /** Resolves when the album's face is measurable. Replaced whole on every
  *  change, so a caller that awaited the old one is not left holding it. */
 let pret: Promise<void> = Promise.resolve();
@@ -128,7 +175,9 @@ export function measureMm(text: string, sizeMm: number): number {
   const ctx = contexte();
   if (!ctx) return 0;
   ctx.font = `100px ${PILE}`;
-  return (ctx.measureText(text).width * sizeMm) / 100;
+  // Measured as it will print: the width of `?`, not of the glyph another
+  // font would lend. Otherwise a line could break here and not on paper.
+  return (ctx.measureText(afficher(text)).width * sizeMm) / 100;
 }
 
 /**

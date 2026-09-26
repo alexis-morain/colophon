@@ -150,10 +150,17 @@ pub struct Counters {
     /// toujours un accident, d'autant que la naissance d'un objet l'évite
     /// désormais.
     pub ornement_sur_photo: Counter,
+    /// Un texte du livre porte un caractère que la police du livre ne dessine
+    /// pas : le moteur l'imprime « ? », et jusqu'ici rien ne le comptait —
+    /// l'écran, retombant sur une autre police, était précisément l'endroit
+    /// qui ne pouvait pas le montrer. Une ligne par texte, les caractères
+    /// nommés. Il avertit et ne décide pas : une face CJK choisie pour un
+    /// album japonais reste un choix, et le seul juge est celui qui lit.
+    pub caractere_absent: Counter,
 }
 
 impl Counters {
-    pub(crate) fn all(&self) -> [&Counter; 13] {
+    pub(crate) fn all(&self) -> [&Counter; 14] {
         [
             &self.visage_coupe,
             &self.orientation_trahie,
@@ -168,6 +175,7 @@ impl Counters {
             &self.objet_hors_marge,
             &self.objet_deborde,
             &self.ornement_sur_photo,
+            &self.caractere_absent,
         ]
     }
 }
@@ -233,7 +241,9 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
     // alors celle du projet, empruntée, qui est celle de `text_width_mm`.
     let face = crate::font::face_album(dir, album.police.as_ref().map(|p| p.fichier.as_str()));
     let mesure = |s: &str, pt: f64| face.face.largeur_mm(s, pt);
-    let compteurs = compteurs_avec(&album, &infos, &pdf::geometry(&album), &mesure);
+    let absents = |s: &str| face.face.absents(s);
+    let compteurs =
+        compteurs_avec_face(&album, &infos, &pdf::geometry(&album), &mesure, &absents);
     let ok = compteurs.all().iter().all(|c| c.passes());
 
     Ok(AuditReport {
@@ -385,6 +395,23 @@ pub(crate) fn compteurs_avec(
     infos: &HashMap<String, PhotoInfo>,
     g: &pdf::SpreadGeometry,
     mesure: &dyn Fn(&str, f64) -> f64,
+) -> Counters {
+    // Sans face nommée, les caractères absents sont ceux de la face du
+    // projet : c'est elle que `text_width_mm` mesure et que l'export pose.
+    let projet = crate::font::face_projet();
+    let absents = |s: &str| projet.absents(s);
+    compteurs_avec_face(album, infos, g, mesure, &absents)
+}
+
+/// [`compteurs_avec`] plus la question que seule la face peut trancher :
+/// quels caractères du livre elle ne dessine pas. `absents` rend, pour un
+/// texte, ceux que l'émetteur remplacera par « ? ».
+pub(crate) fn compteurs_avec_face(
+    album: &Album,
+    infos: &HashMap<String, PhotoInfo>,
+    g: &pdf::SpreadGeometry,
+    mesure: &dyn Fn(&str, f64) -> f64,
+    absents: &dyn Fn(&str) -> Vec<char>,
 ) -> Counters {
     // The cells the linter judges are the objects the emitter draws: one
     // derivation for both, so a counter can never grade a rectangle the PDF
@@ -667,6 +694,58 @@ pub(crate) fn compteurs_avec(
         }
     }
 
+    // -- les caractères que la police du livre ne dessine pas : par texte,
+    // sur ce que la scène porte (légendes, pages de texte, blocs libres) et
+    // sur la couverture, qui n'est pas une planche. Les pages que le moteur
+    // écrit lui-même (garde, colophon) sont dans la scène comme les autres :
+    // un nom de lieu s'y imprime aussi.
+    let mut absents_trouves = Vec::new();
+    let mut signale = |planche: usize, quoi: &str, texte: &str| {
+        let manquent = absents(texte);
+        if manquent.is_empty() {
+            return;
+        }
+        let liste: Vec<String> = manquent.iter().take(8).map(|c| format!("« {c} »")).collect();
+        let suite = if manquent.len() > 8 { format!(" et {} autres", manquent.len() - 8) } else { String::new() };
+        absents_trouves.push(Finding {
+            planche,
+            case_idx: None,
+            src: None,
+            info: format!(
+                "{quoi} : {}{suite} ne se dessinent pas dans la police du livre, imprimés « ? »",
+                liste.join(", ")
+            ),
+        });
+    };
+    if let Some(cover) = &album.cover {
+        signale(0, "titre de couverture", &cover.title);
+        signale(0, "sous-titre de couverture", &cover.subtitle);
+        signale(0, "quatrième de couverture", &cover.back_text);
+    } else {
+        signale(0, "titre de couverture", &album.title);
+    }
+    for (si, scene) in scenes.iter().enumerate() {
+        for objet in &scene.objects {
+            match &objet.role {
+                crate::scene::Role::PhotoCaption { cell, text, .. } => {
+                    signale(si + 1, &format!("légende de la case {}", cell + 1), text)
+                }
+                crate::scene::Role::ChapterCaption { text, .. } => {
+                    signale(si + 1, "titre de chapitre", text)
+                }
+                crate::scene::Role::Text { lines, .. } => {
+                    let tout: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+                    signale(si + 1, "page de texte", &tout.join("\n"))
+                }
+                crate::scene::Role::FreeText { index, lines, .. } => {
+                    let tout: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+                    signale(si + 1, &format!("objet libre n° {}", index + 1), &tout.join("\n"))
+                }
+                _ => {}
+            }
+        }
+    }
+
     Counters {
         visage_coupe: Counter::new(0, true, visage),
         orientation_trahie: Counter::new(0, true, orientation),
@@ -691,6 +770,7 @@ pub(crate) fn compteurs_avec(
         objet_hors_marge: Counter::avertit(hors_marge),
         objet_deborde: Counter::avertit(deborde),
         ornement_sur_photo: Counter::avertit(sur_photo),
+        caractere_absent: Counter::avertit(absents_trouves),
     }
 }
 
@@ -986,6 +1066,46 @@ mod tests {
                 .objet_deborde
                 .count
         );
+    }
+
+    /// Un caractère que la face du livre ne dessine pas se compte, une ligne
+    /// par texte, avec le caractère nommé : le titre de couverture et une
+    /// légende de chapitre en japonais font deux lignes dans la face du
+    /// projet, un titre en polonais n'en fait aucune (elle couvre le latin
+    /// étendu). Le compteur avertit : `ok` reste vrai.
+    #[test]
+    fn un_caractere_que_la_face_ne_dessine_pas_se_compte_et_se_nomme() {
+        let mut a = crate::model::Album::new(
+            "Zażółć gęślą jaźń",
+            std::path::Path::new("/p"),
+            crate::model::Size { w: 210.0, h: 210.0 },
+        );
+        let g = pdf::geometry(&a);
+        let planche = |caption: Option<&str>| crate::model::Spread {
+            template: "texte".into(),
+            slots: Vec::new(),
+            caption: caption.map(str::to_string),
+            text: None,
+            edited: false,
+            locked: false,
+            objets: Vec::new(),
+        };
+        a.spreads = vec![planche(None), planche(Some("Le vif zéphyr"))];
+        let c = compteurs(&a, &HashMap::new(), &g);
+        assert_eq!(c.caractere_absent.count, 0, "{:?}", c.caractere_absent.details);
+
+        a.title = "日本の旅".into();
+        a.spreads[1].caption = Some("東京 → 京都".into());
+        let c = compteurs(&a, &HashMap::new(), &g);
+        assert_eq!(c.caractere_absent.count, 2, "{:?}", c.caractere_absent.details);
+        assert_eq!(c.caractere_absent.details[0].planche, 0, "la couverture d'abord");
+        assert!(c.caractere_absent.details[0].info.contains("« 日 »"), "{}", c.caractere_absent.details[0].info);
+        assert_eq!(c.caractere_absent.details[1].planche, 2);
+        // La face du projet dessine la flèche, pas le kanji : c'est lui qui
+        // est nommé, et lui seul.
+        assert!(c.caractere_absent.details[1].info.contains("« 東 »"), "{}", c.caractere_absent.details[1].info);
+        assert!(!c.caractere_absent.details[1].info.contains("« → »"));
+        assert!(c.caractere_absent.passes(), "il avertit, il ne décide pas");
     }
 
     /// Les deux compteurs des objets libres, sur un album fabriqué pour eux :

@@ -48,7 +48,7 @@ import {
 } from "./album";
 import { captionSuggestion, detectedFocal } from "./bridge";
 import { SceneProxies } from "./SceneProxies";
-import { fontLoaded, measureMm, surLaFace, tourDeFace } from "./font";
+import { fontLoaded, measureMm, substituer, surLaFace, tourDeFace } from "./font";
 
 import { badgesDe, imageDe, ROOM_EPSILON, surImage } from "./photos";
 import { filtreDe, reglagePose, useReglages } from "./reglages";
@@ -216,7 +216,9 @@ export function SpreadView({
           ),
         }
       : spread;
-  const pose = sceneOf(dessinee, geom, measureMm);
+  // Texts as the book prints them: a character the face cannot draw is a
+  // « ? » here as in the PDF, in both renderers and in the proxies' names.
+  const pose = substituer(sceneOf(dessinee, geom, measureMm));
   const scene = draft
     ? avecRecadrage(pose, draft.slot, draft.focal, draft.zoom)
     : pose;

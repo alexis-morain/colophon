@@ -21,12 +21,16 @@ const GROUPES: [Cle, [string | Cle, Cle][]][] = [
   [
     "racc.editer",
     [
+      ["⌘C", "racc.copier"],
+      ["⌘X", "racc.couper"],
+      ["⌘V", "racc.coller"],
       ["⌘D", "racc.dupliquer"],
       ["⌘L", "racc.figer"],
       ["racc.k.suppr.planches", "racc.supprimer"],
       ["racc.k.alt.fleches", "racc.deplacer.planche"],
       ["⇧⌘← ⇧⌘→", "racc.envoyer.photo"],
       ["racc.k.suppr.livre", "racc.retirer.photo"],
+      ["racc.k.fleches.objet", "racc.pousser.objet"],
       ["Tab", "racc.tab.legende"],
       ["G · ⇧G", "racc.gabarit"],
     ],

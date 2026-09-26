@@ -72,15 +72,19 @@ import {
 } from "./album";
 import { adopterGeometrie } from "./geometrie";
 import { ReglageBloc } from "./ReglageBloc";
-import { coteDe, recouvre, retenirAuPli, retournerBoite } from "./scene";
+import { coteDe, horsMarge, recouvre, retournerBoite } from "./scene";
+import { lire, serialiser } from "./pressePapier";
 import { filtreDe, poserReglages, useReglages } from "./reglages";
 import {
   changeTemplate,
+  duplicateObjet,
   duplicateSpread,
   insertSpread,
   moveBlocker,
   movePhoto,
   moveSpread,
+  nudgeObjet,
+  pasteObjet,
   placePhoto,
   removePhoto,
   removeSpread,
@@ -186,6 +190,33 @@ type View = "livre" | "tri" | "planches" | "envoi";
 
 /** In the book view, index -1 is the cover. */
 const COVER = -1;
+
+/** Un champ de saisie garde son copier-coller et ses touches : l'objet
+ *  choisi ne les lui prend jamais. */
+function estChamp(cible: EventTarget | null): boolean {
+  return (
+    cible instanceof HTMLElement &&
+    (/^(INPUT|TEXTAREA)$/.test(cible.tagName) || cible.isContentEditable)
+  );
+}
+
+/**
+ * Ce qu'une pose doit éviter et où elle doit tenir, en repère moteur : les
+ * cases photo de la planche, et la boîte de contenu d'une de ses pages. Une
+ * planche sans photo n'en a aucune à éviter, et il faut le dire : `slotsFor`
+ * rend toujours au moins une case, donc une page de garde repousserait un
+ * objet loin d'une photo qui n'existe pas.
+ */
+function gardesDePose(album: Album, spread: Spread, droite: boolean) {
+  const g = spreadGeometry(album);
+  const page = retournerBoite(boiteDePage(droite, g), g);
+  const photos = spread.slots.length
+    ? slotsFor(spread.template, spread.slots.length, g).map((r) =>
+        retournerBoite(r, g),
+      )
+    : [];
+  return { g, page, photos };
+}
 
 export default function App() {
   const [opened, setOpened] = useState<OpenedAlbum | null>(null);
@@ -1119,6 +1150,15 @@ export default function App() {
     "gabarit-precedent": () => cycleGabarit(-1),
     dupliquer: () => {
       if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
+      // L'objet choisi d'abord : c'est lui qu'on a sous les yeux, et la
+      // planche se duplique encore depuis Planches ou sans rien de choisi.
+      const objets = album.spreads[index]?.objets;
+      if (view === "livre" && objet !== null && objets?.[objet]) {
+        apply((a) => duplicateObjet(a, index, objet, spreadGeometry(a)));
+        choisirObjet(objets.length);
+        setStatus(t("objet.duplique"));
+        return;
+      }
       apply((a) => duplicateSpread(a, index));
       setIndex(index + 1);
       setStatus(t("planche.dupliquee", { n: index + 1 }));
@@ -1258,6 +1298,91 @@ export default function App() {
     if (l.action === action && l.source !== source && now - l.t < 150) return;
     lastFire.current = { action, source, t: now };
     rawRef.current[action]?.();
+  }, []);
+
+  // Copier, couper, coller un objet libre, par le presse-papier du système.
+  // Pas de raccourci intercepté : ⌘C et le menu Édition déclenchent les
+  // mêmes événements du document, et un champ de saisie garde les siens.
+  const panneau =
+    bilan !== null || bascule || prefs || apropos || stockage || signaler !== null || shortcuts;
+  const livre = album !== null && view === "livre" && index >= 0 && !panneau;
+  const presse = {
+    /** Un objet est là à copier, hors d'un champ. */
+    copiable: (e: Event) =>
+      livre && objet !== null && !estChamp(e.target) &&
+      album!.spreads[index]?.objets?.[objet] !== undefined,
+    copier: (e: ClipboardEvent, couper: boolean) => {
+      if (!presse.copiable(e) || !e.clipboardData) return;
+      const o = album!.spreads[index].objets![objet!];
+      for (const [type, v] of Object.entries(serialiser(o, index))) {
+        e.clipboardData.setData(type, v);
+      }
+      e.preventDefault();
+      if (couper) {
+        const i = objet!;
+        setObjet(null);
+        apply((a) => removeObjet(a, index, i));
+      } else {
+        setStatus(t("objet.copie"));
+      }
+    },
+    /** Une planche est là pour recevoir, hors d'un champ. */
+    collable: (e: Event) => livre && !estChamp(e.target),
+    coller: (e: ClipboardEvent) => {
+      if (!presse.collable(e) || !e.clipboardData) return;
+      const spread = album!.spreads[index];
+      // Un texte brut seul ne crée rien : pas de bloc implicite.
+      const colle = spread ? lire(e.clipboardData) : null;
+      if (!colle) return;
+      e.preventDefault();
+      const g = spreadGeometry(album!);
+      const { page, photos } = gardesDePose(album!, spread, coteDe(colle, g) === 1);
+      const rang = spread.objets?.length ?? 0;
+      const suivant = pasteObjet(album!, index, colle, photos, page, g);
+      apply(() => suivant);
+      choisirObjet(rang);
+      const pose = suivant.spreads[index]?.objets?.[rang];
+      if (!pose) return;
+      const angle = pose.angle ?? 0;
+      if (photos.some((p) => recouvre(pose, angle, p, 0))) {
+        setStatus(t("objet.pose.encombree"));
+      } else if (horsMarge(pose, angle, g)) {
+        setStatus(t("objet.marge"));
+      } else {
+        setStatus(null);
+      }
+    },
+  };
+  const presseRef = useRef(presse);
+  presseRef.current = presse;
+  useEffect(() => {
+    const copier = (e: ClipboardEvent) => presseRef.current.copier(e, false);
+    const couper = (e: ClipboardEvent) => presseRef.current.copier(e, true);
+    const coller = (e: ClipboardEvent) => presseRef.current.coller(e);
+    // WebKit grise Copier, Couper et Coller quand rien n'est sélectionné, et
+    // ne livre alors ni l'événement ni le raccourci. Annuler `beforecopy`
+    // (et ses deux frères) est la manière documentée de lui dire que la page
+    // a de quoi répondre : c'est ce qui rallume le menu Édition sur un objet.
+    const avantCopie = (e: Event) => {
+      if (presseRef.current.copiable(e)) e.preventDefault();
+    };
+    const avantCollage = (e: Event) => {
+      if (presseRef.current.collable(e)) e.preventDefault();
+    };
+    document.addEventListener("copy", copier);
+    document.addEventListener("cut", couper);
+    document.addEventListener("paste", coller);
+    document.addEventListener("beforecopy", avantCopie);
+    document.addEventListener("beforecut", avantCopie);
+    document.addEventListener("beforepaste", avantCollage);
+    return () => {
+      document.removeEventListener("copy", copier);
+      document.removeEventListener("cut", couper);
+      document.removeEventListener("paste", coller);
+      document.removeEventListener("beforecopy", avantCopie);
+      document.removeEventListener("beforecut", avantCopie);
+      document.removeEventListener("beforepaste", avantCollage);
+    };
   }, []);
 
   // The browser harness has no native menu: a window event stands in for
@@ -1697,13 +1822,13 @@ export default function App() {
         }
       }
 
-      // Les touches de l'objet libre choisi : les flèches le déplacent d'un
-      // millimètre (⇧ pour deux dixièmes, comme ⌥ affine ailleurs), ⌫ le
-      // retire. Le pli bute ici comme il bute à la souris : une seule
-      // implémentation de la garde, appelée par les deux gestes.
+      // Les touches de l'objet libre choisi : les flèches le poussent d'un
+      // millimètre, de cinq avec ⇧, ⌫ le retire. Le pli bute ici comme il
+      // bute à la souris, par la même garde ; la marge avertit dans la ligne
+      // de statut. Un appui vaut un pas d'annulation.
       if (objet !== null && index >= 0) {
         const stocke = album?.spreads[index]?.objets?.[objet];
-        const pas = e.shiftKey ? 0.2 : 1;
+        const pas = e.shiftKey ? 5 : 1;
         const vers: Record<string, [number, number]> = {
           ArrowLeft: [-pas, 0],
           ArrowRight: [pas, 0],
@@ -1716,12 +1841,11 @@ export default function App() {
         if (stocke && d && !e.metaKey && !e.altKey) {
           e.preventDefault();
           const g = spreadGeometry(album!);
-          const bouge = { ...stocke, x: stocke.x + d[0], y: stocke.y + d[1] };
-          const ecran = retournerBoite(bouge, g);
-          const tenu = retenirAuPli(ecran, bouge.angle ?? 0, g, coteDe(ecran, g));
-          apply((a) =>
-            setObjetEdit(a, index, objet, { ...bouge, ...retournerBoite(tenu, g) }),
-          );
+          apply((a) => nudgeObjet(a, index, objet, d[0], d[1], g));
+          const apres = nudgeObjet(album!, index, objet, d[0], d[1], g).spreads[index]
+            ?.objets?.[objet];
+          const hors = apres && horsMarge(apres, apres.angle ?? 0, g);
+          setStatus(hors ? t("objet.marge") : null);
           return;
         }
         if (stocke && (e.key === "Backspace" || e.key === "Delete")) {
@@ -1974,16 +2098,7 @@ export default function App() {
    */
   const poser = (edit: (album: Album, page: Rect, photos: Rect[]) => Album) => {
     if (!spread) return;
-    const g = spreadGeometry(album);
-    const page = retournerBoite(boiteDePage(false, g), g);
-    // Une planche sans photo n'en a aucune à éviter, et il faut le dire :
-    // `slotsFor` rend toujours au moins une case, donc une page de garde
-    // repousserait un bloc loin d'une photo qui n'existe pas.
-    const photos = spread.slots.length
-      ? slotsFor(spread.template, spread.slots.length, g).map((r) =>
-          retournerBoite(r, g),
-        )
-      : [];
+    const { page, photos } = gardesDePose(album, spread, false);
     const rang = spread.objets?.length ?? 0;
     const suivant = edit(album, page, photos);
     apply(() => suivant);

@@ -11,6 +11,16 @@ sur la page des releases.
 
 ### Ajouté
 
+- **Copier, couper, coller, dupliquer et pousser un bloc de texte ou un
+  ornement au clavier.** Choisissez l'objet sur la planche : ⌘C le copie,
+  ⌘X le coupe, ⌘V le colle sur la planche affichée, et le menu Édition fait
+  la même chose. Collé sur sa propre planche, il se pose 4 mm plus bas et à
+  droite pour qu'on voie la copie ; sur une autre, à la même place, hors des
+  photos quand la page a de la place. ⌘D duplique l'objet choisi, et la
+  planche quand rien n'est choisi. Les flèches le poussent d'un millimètre,
+  de cinq avec ⇧, et il bute au pli comme à la souris. ⌫ le retire. Chaque
+  geste s'annule d'un ⌘Z. Un champ de saisie garde son copier-coller à lui.
+
 - **Choisir la police du livre.** Dans *Format*, à côté du format de page :
   dix familles, une par voix — une linéale neutre, une humaniste, une
   géométrique, un romain classique, un romain de texte, une didone, une

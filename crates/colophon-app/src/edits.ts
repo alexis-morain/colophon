@@ -13,6 +13,7 @@ import {
   Reglage,
   Slot,
   Spread,
+  SpreadGeometry,
   templates,
   ZOOM_MAX,
   ZOOM_MIN,
@@ -22,7 +23,8 @@ import {
   titreDuLivre,
 } from "./album";
 import { REGLAGE_BORNE, estIdentite } from "./reglage";
-import { recouvre } from "./scene";
+import { ObjetColle } from "./pressePapier";
+import { Cote, coteDe, recouvre, retenirAuPli } from "./scene";
 
 function withSpread(album: Album, at: number, spread: Spread | null): Album {
   const spreads = album.spreads.slice();
@@ -326,11 +328,11 @@ export function setSpreadText(album: Album, at: number, text: string): Album {
 
 // ---- les objets libres ---------------------------------------------------
 //
-// Six mutations, toutes pures, toutes un pas d'annulation. Elles ne valident
-// rien de géométrique : ce qui décide qu'une boîte a le droit d'être là est
-// dans `scene.ts` (le pli, la coupe), et c'est le geste qui l'applique avant
-// d'arriver ici. Une fonction qui referait ce contrôle en donnerait une
-// seconde version, et une seconde version diverge.
+// Des mutations toutes pures, toutes un pas d'annulation. Ce qui décide
+// qu'une boîte a le droit d'être là est dans `scene.ts` (le pli, la coupe) :
+// la souris l'applique avant d'arriver ici, et le clavier et le collage,
+// qui n'ont pas de geste, l'appellent d'ici. Aucune ne le refait : une
+// seconde version du contrôle divergerait de la première.
 
 /** La taille de corps d'un bloc neuf, et la part de la page qu'il occupe. */
 export const OBJET_TAILLE_PT = 12;
@@ -453,11 +455,26 @@ function naissance(
     w,
     h,
   };
-  if (!photos?.length) return depart;
   // Un objet neuf n'est jamais tourné, et une case ne l'est jamais : les deux
   // angles valent zéro, et `recouvre` rend alors ce qu'un chevauchement droit
   // rendrait, au bit. C'est la scène qui répond, comme pour le pli et la marge.
-  const libre = (r: Rect) => !photos.some((p) => recouvre(r, 0, p, 0));
+  return horsDesPhotos(depart, 0, page, photos);
+}
+
+/**
+ * La position libre la plus proche de `depart`, cherchée sur une grille dans
+ * la boîte de page. Sans photo ou déjà libre, `depart` tel quel ; sans place
+ * libre, `depart` aussi. La naissance et le collage passent par ici.
+ */
+function horsDesPhotos(
+  depart: Rect,
+  angle: number,
+  page: Rect,
+  photos?: Rect[],
+): Rect {
+  if (!photos?.length) return depart;
+  const { w, h } = depart;
+  const libre = (r: Rect) => !photos.some((p) => recouvre(r, angle, p, 0));
   if (libre(depart)) return depart;
   const jeu = { x: Math.max(0, page.w - w), y: Math.max(0, page.h - h) };
   const candidats: Rect[] = [];
@@ -471,6 +488,104 @@ function naissance(
   const loin = (r: Rect) => (r.x - depart.x) ** 2 + (r.y - depart.y) ** 2;
   candidats.sort((a, b) => loin(a) - loin(b));
   return candidats.find(libre) ?? depart;
+}
+
+/** Le décalage d'une copie posée sur la planche de son original : vers le
+ *  bas à droite à l'écran, comme la cascade de la naissance. */
+const COPIE_DECALAGE_MM = OBJET_CASCADE_MM;
+
+/** Poser un objet au-dessus de tout, retenu au pli du côté où il se tenait
+ *  avant de bouger. */
+function empiler(
+  album: Album,
+  at: number,
+  objet: Objet,
+  cote: Cote,
+  g: SpreadGeometry,
+): Album {
+  const spread = album.spreads[at];
+  if (!spread) return album;
+  const tenu = retenirAuPli(objet, objet.angle ?? 0, g, cote);
+  const pose: Objet = { ...objet, x: tenu.x };
+  return withSpread(
+    album,
+    at,
+    touched({ ...spread, objets: [...(spread.objets ?? []), pose] }),
+  );
+}
+
+/**
+ * Coller un objet reçu du presse-papier sur une planche.
+ *
+ * **Sur sa propre planche il est décalé de 4 mm**, pour qu'on voie la copie
+ * au lieu de la croire perdue sous l'original ; ailleurs il garde sa place.
+ * Puis il passe par les gardes de la naissance : hors des photos quand la
+ * page a de la place, et retenu au pli du côté où il se tenait. Le pli, la
+ * coupe et la marge se jugent dans le repère du fichier sans retournement :
+ * `retenirAuPli` et `coteDe` ne lisent que des x, que le retournement ne
+ * touche pas.
+ */
+export function pasteObjet(
+  album: Album,
+  at: number,
+  colle: ObjetColle,
+  /** Les cases photo de la planche, repère moteur. */
+  cases: Rect[],
+  /** La boîte de contenu de la page où l'objet se tient, repère moteur. */
+  boitePage: Rect,
+  g: SpreadGeometry,
+): Album {
+  if (!album.spreads[at]) return album;
+  const { de, ...reste } = colle;
+  const objet = reste as Objet;
+  const decale = de === at ? decaler(objet) : objet;
+  const libre = horsDesPhotos(decale, decale.angle ?? 0, boitePage, cases);
+  return empiler(album, at, { ...decale, x: libre.x, y: libre.y }, coteDe(objet, g), g);
+}
+
+/** Dupliquer un objet sur sa planche : la copie décalée de 4 mm, au-dessus de
+ *  tout, retenue au pli. Elle ne fuit pas les photos : un bloc posé sur une
+ *  photo exprès se duplique à côté de lui, pas à l'autre bout de la page. */
+export function duplicateObjet(
+  album: Album,
+  at: number,
+  index: number,
+  g: SpreadGeometry,
+): Album {
+  const objet = album.spreads[at]?.objets?.[index];
+  if (!objet) return album;
+  return empiler(album, at, decaler(objet), coteDe(objet, g), g);
+}
+
+function decaler(objet: Objet): Objet {
+  return {
+    ...objet,
+    x: objet.x + COPIE_DECALAGE_MM,
+    y: objet.y - COPIE_DECALAGE_MM,
+  };
+}
+
+/**
+ * Pousser un objet au clavier, en millimètres du repère du fichier (y vers
+ * le haut). Le pli bute comme à la souris, du côté où l'objet se tenait avant
+ * l'appui ; la marge, elle, ne fait qu'avertir, et c'est l'appelant qui le
+ * dit. Au butoir, rien ne bouge et l'album rendu est le même : un appui qui
+ * ne déplace rien n'est pas un pas d'annulation.
+ */
+export function nudgeObjet(
+  album: Album,
+  at: number,
+  index: number,
+  dx: number,
+  dy: number,
+  g: SpreadGeometry,
+): Album {
+  const objet = album.spreads[at]?.objets?.[index];
+  if (!objet) return album;
+  const bouge = { ...objet, x: objet.x + dx, y: objet.y + dy };
+  const tenu = retenirAuPli(bouge, objet.angle ?? 0, g, coteDe(objet, g));
+  if (tenu.x === objet.x && bouge.y === objet.y) return album;
+  return setObjet(album, at, index, { ...bouge, x: tenu.x });
 }
 
 /** Remplacer un objet libre, boîte et angle compris. Le seul chemin par lequel

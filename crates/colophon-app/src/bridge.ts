@@ -993,22 +993,17 @@ export async function exportPdf(
   if (!inTauri) {
     throw new Error("PDF hors application : utilisez la commande colophon");
   }
-  const { save } = await import("@tauri-apps/plugin-dialog");
-  const { downloadDir, join } = await import("@tauri-apps/api/path");
-  const name = (title.trim() || "album").replace(/[\\/:]+/g, "-");
-  const dest = await save({
-    title: "Enregistrer le PDF de l’album",
-    defaultPath: await join(await downloadDir(), `${name}.pdf`),
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
-  });
-  if (!dest) return null;
+  // The destination is asked by the engine side, never sent from here: a
+  // command that wrote at any path the webview named was a primitive this
+  // window had no business holding. An empty answer is a cancelled dialog.
   const { listen } = await import("@tauri-apps/api/event");
   const off = await listen<string>("export:progress", (e) => {
     const m = /^render: (\d+)\/(\d+)/.exec(e.payload);
     if (m && onProgress) onProgress(Number(m[1]), Number(m[2]));
   });
   try {
-    return await invoke<string[]>("export_pdf", { dest, profil });
+    const ecrits = await invoke<string[]>("export_pdf", { titre: title, profil });
+    return ecrits.length === 0 ? null : ecrits;
   } finally {
     off();
   }

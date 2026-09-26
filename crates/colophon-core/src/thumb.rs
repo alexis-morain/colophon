@@ -52,6 +52,28 @@ impl ThumbCache {
         self.dir.join(Self::key(src))
     }
 
+    /// Remove every cached file whose name is not in `gardes`, and say how
+    /// many. The key above invalidates a thumbnail the moment its photo is
+    /// touched — and never removed the old one: a photo edited, renamed or
+    /// deleted orphaned its thumbnail for good, 227 Ko each, with no bound
+    /// on age or size. `log.rs` caps its own file « so the log can never
+    /// quietly eat the disk the way the thumbnail caches did » — this is
+    /// that cache, finally pruned, right after the index that names what
+    /// the album still uses has been written.
+    pub fn elaguer(&self, gardes: &std::collections::BTreeSet<String>) -> Result<usize> {
+        let mut retires = 0;
+        for entree in fs::read_dir(&self.dir)? {
+            let entree = entree?;
+            let nom = entree.file_name().to_string_lossy().to_string();
+            if gardes.contains(&nom) || !entree.file_type()?.is_file() {
+                continue;
+            }
+            fs::remove_file(entree.path())?;
+            retires += 1;
+        }
+        Ok(retires)
+    }
+
     /// Returns the cached thumbnail, building it (orientation applied) if needed.
     pub fn get(&self, src: &Path, orientation: u32) -> Result<DynamicImage> {
         let cached = self.path_for(src);
@@ -123,5 +145,31 @@ mod tests_chemin {
         for mauvais in ["../../../../etc/passwd", "a/b.jpg", "a\\b.jpg", "..", ".", "", "/etc/passwd", "a\0b"] {
             assert!(chemin(dir, mauvais).is_none(), "{mauvais:?} a passé");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The cache keeps what the index names and nothing else: a stray file
+    /// goes, a referenced one stays, a subfolder is left alone.
+    #[test]
+    fn le_cache_ne_garde_que_ce_que_l_index_nomme() {
+        let dir = std::env::temp_dir().join(format!("colophon-elague-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let cache = ThumbCache::new(&dir).unwrap();
+        let racine = dir.join(".cache").join("thumbs");
+        fs::write(racine.join("garde.jpg"), b"a").unwrap();
+        fs::write(racine.join("orphelin.jpg"), b"b").unwrap();
+        fs::write(racine.join("orphelin-2.jpg"), b"c").unwrap();
+        fs::create_dir_all(racine.join("sous")).unwrap();
+        let gardes = std::collections::BTreeSet::from(["garde.jpg".to_string()]);
+        assert_eq!(cache.elaguer(&gardes).unwrap(), 2);
+        assert!(racine.join("garde.jpg").is_file());
+        assert!(!racine.join("orphelin.jpg").exists());
+        assert!(racine.join("sous").is_dir());
+        assert_eq!(cache.elaguer(&gardes).unwrap(), 0, "rien à retirer la seconde fois");
+        fs::remove_dir_all(&dir).ok();
     }
 }

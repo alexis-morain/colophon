@@ -78,6 +78,11 @@ sur la page des releases.
 
 ### Corrigé
 
+- **Le cache de vignettes s'élague.** Une photo retouchée, renommée ou
+  retirée du dossier laissait son ancienne vignette pour toujours, 227 Ko
+  chacune, sans limite d'âge ni de taille. À chaque composition, ce que
+  l'index ne nomme plus est retiré, et le journal dit combien.
+
 - **Quitter et fermer la fenêtre demandent, comme tout le reste.** ⌘Q et la
   pastille rouge jetaient un album modifié sans un mot, alors que *Fermer*
   et *Recomposer* demandaient tous les deux : le menu *Quitter* était celui

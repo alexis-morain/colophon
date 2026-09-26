@@ -883,7 +883,10 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
         });
     }
     let cache = thumb::ThumbCache::new(out)?;
-    write_thumb_index(&album, &discards, &root, &cache, out)?;
+    let orphelines = write_thumb_index(&album, &discards, &root, &cache, out)?;
+    if orphelines > 0 {
+        say(&format!("cache : {orphelines} vignettes orphelines retirées"));
+    }
 
     // 6. render PDF from thumbnails (preview quality in P0)
     anyhow::ensure!(!cancelled(), "composition annulée");
@@ -1337,7 +1340,7 @@ fn write_thumb_index(
     root: &Path,
     cache: &thumb::ThumbCache,
     out: &Path,
-) -> Result<()> {
+) -> Result<usize> {
     let mut index = std::collections::BTreeMap::new();
     let mut add = |src: &str| {
         let cached = cache.path_for(&root.join(src));
@@ -1354,7 +1357,11 @@ fn write_thumb_index(
         add(&d.src);
     }
     fs::write(out.join("thumbs.json"), serde_json::to_string_pretty(&index)?)?;
-    Ok(())
+    // The index is the truth of what the album still reads: everything else
+    // in the cache is an orphan — a photo touched, renamed or removed since
+    // the last composition — and it used to stay forever.
+    let gardes: std::collections::BTreeSet<String> = index.into_values().collect();
+    cache.elaguer(&gardes)
 }
 
 const MONTHS_FR: [&str; 12] = [

@@ -1614,6 +1614,11 @@ input[type="radio"] {
   background: rgb(var(--ink-rgb) / 0.6);
 }
 
+.frontiere-note {
+  color: var(--muted, inherit);
+  font-size: 0.92em;
+}
+
 .bascule-panel {
   width: min(620px, 90vw);
   max-height: 84vh;

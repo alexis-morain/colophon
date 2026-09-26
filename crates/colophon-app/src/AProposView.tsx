@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { aboutData, AboutData } from "./bridge";
+import { Dialogue } from "./Dialogue";
 import { Cle, t } from "./i18n";
 import { ornements } from "./ornement";
 
@@ -54,17 +55,7 @@ export function AProposView({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <div className="raccourcis" onClick={onClose}>
-      <div
-        className="raccourcis-panel apropos-panel"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="raccourcis-head">
-          <h2>{t("apropos.titre")}</h2>
-          <button className="link" onClick={onClose}>
-            {t("commun.fermer")}
-          </button>
-        </header>
+    <Dialogue titre={t("apropos.titre")} onClose={onClose} panelClassName="apropos-panel">
 
         <p className="apropos-version">
           {t("apropos.version", { version: data?.version ?? "…" })}{" "}
@@ -94,7 +85,6 @@ export function AProposView({ onClose }: { onClose: () => void }) {
             {data?.notices?.trim() || t("apropos.notices.absentes")}
           </pre>
         )}
-      </div>
-    </div>
+    </Dialogue>
   );
 }

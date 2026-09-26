@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Album } from "./album";
 import { openReportUrl, reportData, ReportData } from "./bridge";
+import { Dialogue } from "./Dialogue";
 import { t } from "./i18n";
 import { fitReport, signalTitle, SignalKind } from "./signaler";
 
@@ -31,10 +32,22 @@ export function SignalerView({
   const [copie, setCopie] = useState(false);
   const [ouverte, setOuverte] = useState(false);
 
+  // When the diagnostic cannot be read, the panel does not die with it:
+  // the one screen whose whole job is to carry a failure out must not be
+  // the one a failure disables. The report goes without the machine's part,
+  // the log line says what was missing, and the panel says so too.
   useEffect(() => {
     reportData()
       .then(setData)
-      .catch((e) => setErr(String(e)));
+      .catch((e) => {
+        setErr(t("signaler.diagnostic.absent"));
+        setData({
+          version: "?",
+          os: typeof navigator === "undefined" ? "?" : navigator.userAgent,
+          log: `diagnostic illisible : ${String(e)}`,
+          audit: null,
+        });
+      });
   }, []);
 
   // Displayed and sent are one string: what the panel shows is exactly what
@@ -71,17 +84,7 @@ export function SignalerView({
   };
 
   return (
-    <div className="raccourcis" onClick={onClose}>
-      <div
-        className="raccourcis-panel signaler-panel"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="raccourcis-head">
-          <h2>{signalTitle(kind)}</h2>
-          <button className="link" onClick={onClose}>
-            {t("commun.fermer")}
-          </button>
-        </header>
+    <Dialogue titre={signalTitle(kind)} onClose={onClose} panelClassName="signaler-panel">
         <p className="signaler-intro">{t("signaler.intro")}</p>
         {err && <p className="signaler-erreur">{err}</p>}
         <pre className="signaler-rapport">
@@ -106,7 +109,6 @@ export function SignalerView({
         <p className="signaler-note">
           {ouverte ? t("signaler.note.ouverte") : t("signaler.note.copie")}
         </p>
-      </div>
-    </div>
+    </Dialogue>
   );
 }

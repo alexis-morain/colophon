@@ -12,6 +12,7 @@
 // to measure the two against each other in an installed bundle, on one
 // machine, without recompiling between the two readings.
 
+import { Dialogue } from "./Dialogue";
 import { Lang, setLangue, t, useLangue } from "./i18n";
 import { Veille, setVeille, useVeille } from "./maj";
 import { Rendu, setRendu, useRendu } from "./rendu";
@@ -34,17 +35,7 @@ export function PrefsView({ onClose }: { onClose: () => void }) {
     ["canvas", t("prefs.rendu.canvas")],
   ];
   return (
-    <div className="raccourcis" onClick={onClose}>
-      <div
-        className="raccourcis-panel prefs-panel"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="raccourcis-head">
-          <h2>{t("prefs.titre")}</h2>
-          <button className="link" onClick={onClose}>
-            {t("commun.fermer")}
-          </button>
-        </header>
+    <Dialogue titre={t("prefs.titre")} onClose={onClose} panelClassName="prefs-panel">
 
         <h3>{t("prefs.langue")}</h3>
         <div className="prefs-langues" role="radiogroup" aria-label={t("prefs.langue")}>
@@ -96,7 +87,6 @@ export function PrefsView({ onClose }: { onClose: () => void }) {
           ))}
         </div>
         <p className="signaler-note">{t("prefs.rendu.note")}</p>
-      </div>
-    </div>
+    </Dialogue>
   );
 }

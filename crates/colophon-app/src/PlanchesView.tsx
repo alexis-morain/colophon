@@ -67,6 +67,24 @@ export function PlanchesView({
       e.stopPropagation();
       onSelect(Math.min(dernier, Math.max(-1, to)));
     };
+    // ⌥ flèche déplace la planche elle-même : le livre se réordonne au
+    // clavier comme à la souris, et le focus suit la planche déplacée.
+    if (e.altKey && at >= 0) {
+      const vers: Record<string, number> = {
+        ArrowRight: at + 1,
+        ArrowLeft: at - 1,
+        ArrowDown: at + colonnes(),
+        ArrowUp: at - colonnes(),
+      };
+      const to = vers[e.key];
+      if (to !== undefined) {
+        e.preventDefault();
+        e.stopPropagation();
+        const borne = Math.min(dernier, Math.max(0, to));
+        if (borne !== at) onMove(at, borne);
+        return;
+      }
+    }
     switch (e.key) {
       case "ArrowRight":
         aller(at + 1);
@@ -86,7 +104,10 @@ export function PlanchesView({
       case "End":
         aller(dernier);
         break;
+      // Entrée et Espace ouvrent : la cellule se comporte comme le bouton
+      // qu'elle est pour qui ne la voit pas.
       case "Enter":
+      case " ":
         e.preventDefault();
         e.stopPropagation();
         onOpen(at);
@@ -170,6 +191,7 @@ function PlancheCell({
   return (
     <figure
       role="listitem"
+      aria-roledescription={t("table.cellule.role")}
       className={
         "planche-cell" +
         (current ? " current" : "") +

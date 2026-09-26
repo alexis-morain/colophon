@@ -289,7 +289,8 @@ pub(crate) fn mesure_photos(
             let name = thumbs
                 .get(src)
                 .with_context(|| format!("{src} absent de thumbs.json"))?;
-            let path = dir.join(".cache").join("thumbs").join(name);
+            let path = crate::thumb::chemin(dir, name)
+                .with_context(|| format!("vignette de {src} : nom refusé dans thumbs.json"))?;
             let img = image::open(&path)
                 .with_context(|| format!("vignette illisible pour {src}, régénérez l'album"))?;
             let analysis = analyze::analyze(&img);

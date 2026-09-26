@@ -1213,7 +1213,7 @@ fn focal_du_schema_1(dir: &Path, album: &mut model::Album) -> (usize, usize) {
             return Some(*r);
         }
         let name = thumbs.get(src)?;
-        let (w, h) = image::image_dimensions(dir.join(".cache").join("thumbs").join(name)).ok()?;
+        let (w, h) = image::image_dimensions(crate::thumb::chemin(dir, name)?).ok()?;
         if w == 0 || h == 0 {
             return None;
         }
@@ -1256,8 +1256,7 @@ fn focal_du_schema_1(dir: &Path, album: &mut model::Album) -> (usize, usize) {
             slots += 1;
             match ratios.get(&slot.src).copied().or_else(|| {
                 let name = thumbs.get(&slot.src)?;
-                let (w, h) =
-                    image::image_dimensions(dir.join(".cache").join("thumbs").join(name)).ok()?;
+                let (w, h) = image::image_dimensions(crate::thumb::chemin(dir, name)?).ok()?;
                 (w > 0 && h > 0).then(|| f64::from(w) / f64::from(h))
             }) {
                 Some(r) => {
@@ -1302,7 +1301,7 @@ pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
             .iter()
             .filter_map(|slot| {
                 let name = thumbs.get(&slot.src)?;
-                let data = fs::read(dir.join(".cache").join("thumbs").join(name)).ok()?;
+                let data = fs::read(crate::thumb::chemin(dir, name)?).ok()?;
                 // The faithful preview and the page turn both read this PDF:
                 // an adjusted photo shows adjusted there too, the cache file
                 // itself staying pixel-for-pixel what the analysis measured.

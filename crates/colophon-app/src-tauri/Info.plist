@@ -10,6 +10,6 @@
        est le seul endroit où la vérité peut être rétablie, et c'est elle que
        l'utilisateur lit vraiment. Voir src/photos.m, colophon_photos_demander. -->
   <key>NSPhotoLibraryUsageDescription</key>
-  <string>Colophon copie les photos de l’album que vous choisissez dans un dossier, pour en composer un livre. Il ne modifie ni ne supprime jamais rien dans votre photothèque.</string>
+  <string>Colophon copie les photos de l’album que vous choisissez dans un dossier, pour en composer un livre. Il ne modifie ni ne supprime jamais rien dans votre photothèque. — Colophon copies the photos of the album you pick into a folder, to compose a book from them. It never changes or deletes anything in your photo library.</string>
 </dict>
 </plist>

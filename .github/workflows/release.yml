@@ -33,7 +33,37 @@ permissions:
   contents: write
 
 jobs:
+  # Le gate d'abord : un tag ne se coupe pas sur un commit rouge. C'est le
+  # même check.sh que la PR, sur Ubuntu — le vert des trois OS a déjà été
+  # exigé pour entrer dans main.
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dépendances système (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: crates/colophon-app/package-lock.json
+      - name: npm ci
+        working-directory: crates/colophon-app
+        run: npm ci
+      - name: check.sh
+        shell: bash
+        run: ./scripts/check.sh
+
   build:
+    needs: gate
     strategy:
       fail-fast: false
       matrix:
@@ -56,11 +86,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # La version du tag doit être celle des quatre fichiers, sinon le DMG
+      # porte un numéro, l'app installée un autre, et latest.json un
+      # troisième : chaque utilisateur verrait une mise à jour permanente.
+      # Et le CHANGELOG doit avoir sa section, sinon les notes diraient
+      # « Version X. » et rien d'autre.
       - id: version
         shell: bash
         run: |
           v="${{ github.event.inputs.version }}"
           [ -n "$v" ] || v="${GITHUB_REF_NAME#v}"
+          python3 scripts/versions.py --attendue "$v"
+          grep -q "^## \[$v\]" CHANGELOG.md \
+            || { echo "CHANGELOG.md n'a pas de section ## [$v]" >&2; exit 1; }
           echo "v=$v" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@stable
@@ -144,8 +182,11 @@ jobs:
             \( -name "*.app.tar.gz" -o -name "*-setup.nsis.zip" -o -name "*.msi.zip" \) \
             -type f | head -1)"
           if [ -n "$maj" ] && [ -f "$maj.sig" ]; then
-            cp "$maj" "publication/Colophon-$v-${{ matrix.suffixe }}-maj.${maj##*.tar.}gz" 2>/dev/null \
-              || cp "$maj" "publication/Colophon-$v-${{ matrix.suffixe }}-maj.zip"
+            case "$maj" in
+              *.tar.gz) ext="tar.gz" ;;
+              *) ext="zip" ;;
+            esac
+            cp "$maj" "publication/Colophon-$v-${{ matrix.suffixe }}-maj.$ext"
             cp "$maj.sig" "publication/Colophon-$v-${{ matrix.suffixe }}-maj.sig"
             echo "artefact de mise à jour signé : $(basename "$maj")"
           else
@@ -191,7 +232,9 @@ jobs:
                   print("\n".join(b.split("\n")[1:]).strip())
                   break
           else:
-              print(f"Version {v}.")
+              # Le job de version l'a déjà refusé ; ceinture et bretelles.
+              print(f"CHANGELOG.md : pas de section [{v}]", file=sys.stderr)
+              raise SystemExit(1)
           PY
           echo >> notes.md
           echo "## Empreintes SHA-256" >> notes.md

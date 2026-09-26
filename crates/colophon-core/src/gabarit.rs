@@ -772,9 +772,10 @@ pub fn compatibles_srcs(dir: &Path, srcs: &[String]) -> Result<Vec<(&'static str
             let name = thumbs
                 .get(src)
                 .with_context(|| format!("{src} absent de thumbs.json"))?;
-            let (w, h) =
-                image::image_dimensions(dir.join(".cache").join("thumbs").join(name))
-                    .with_context(|| format!("vignette illisible pour {src}"))?;
+            let chemin = crate::thumb::chemin(dir, name)
+                .with_context(|| format!("vignette de {src} : nom refusé dans thumbs.json"))?;
+            let (w, h) = image::image_dimensions(chemin)
+                .with_context(|| format!("vignette illisible pour {src}"))?;
             Ok(f64::from(w) / f64::from(h))
         })
         .collect::<Result<Vec<f64>>>()?;

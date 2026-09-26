@@ -14,6 +14,10 @@ if [ -z "$PY" ]; then
   exit 1
 fi
 
+# La version vit à quatre endroits et la release la prend du tag seul : le
+# gate refuse qu'elles divergent, avant qu'un tag ne le découvre.
+"$PY" scripts/versions.py
+
 cargo build --release
 cargo test --workspace
 
@@ -146,6 +150,11 @@ for k, c in r['compteurs'].items():
   echo "audit $set : ok (3 propositions)"
 done
 
+# Le Composer sous et sur le seuil du petit dossier (25) : les trois jeux
+# font plus de 500 photos, et ce chemin-là n'était gardé par rien. Une fiche
+# tronquée suffit, pas une photo de plus.
+"$PY" scripts/petit-dossier.py "$FICHES/corse-2013.json" .albums/check/petit-dossier
+
 # PDF → PNG : le rendu réel de chaque gabarit, rasterisé et vérifié case
 # par case sur les six formats. macOS seulement (sips) et Pillow requis ;
 # ailleurs le test passe son tour en le disant.
@@ -177,3 +186,7 @@ fi
 cd crates/colophon-app
 npx tsc --noEmit
 npx vitest run
+# Le bundle Vite, celui que `tauri build` embarque : la release était le
+# premier et le seul endroit où il se construisait, donc une panne de build
+# ne se découvrait qu'au moment de publier.
+npx vite build --logLevel warn

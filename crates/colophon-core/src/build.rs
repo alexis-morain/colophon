@@ -466,7 +466,24 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
         ));
     }
 
+    // And a folder where the fingerprint is not the majority's — scanned
+    // prints, a Takeout stripped of its sidecars — is not a phone dump with
+    // strays in it: the same filter would set the whole archive aside and
+    // refuse the album. The rule switches itself off, says so, and the book
+    // follows the file dates.
+    let sans_empreinte = photos.iter().filter(|p| !pipeline::a_une_empreinte(p)).count();
+    let signal = pipeline::empreinte_est_un_signal(&photos);
     let (photos, junk) = if petit {
+        (photos, Vec::new())
+    } else if !signal {
+        if sans_empreinte > 0 {
+            say(&format!(
+                "note: empreinte d'appareil absente sur {sans_empreinte} photos sur {} \
+                 (ni date EXIF, ni GPS avec modèle) : la majorité, donc rien n'est \
+                 écarté pour ça et l'ordre suit les dates de fichier",
+                photos.len()
+            ));
+        }
         (photos, Vec::new())
     } else {
         pipeline::split_junk(photos)
@@ -2080,14 +2097,32 @@ mod tests {
     }
 
     /// The threshold itself, tested through the refusal messages so it costs
-    /// nothing: EXIF-less tiny photos die of « definition » below 25 (the
-    /// parasite filter is off) and of « parasite » at 25 (it is back on).
+    /// nothing. Tiny photos, a strict majority of them dated by a Takeout
+    /// sidecar (so the fingerprint is a signal), the rest EXIF-less: they
+    /// all die of « definition » below 25 (the parasite filter is off), and
+    /// the undated ones die of « parasite » at 25 (it is back on).
     #[test]
     fn la_bascule_du_petit_dossier_est_a_25_photos() {
-        let (photos, out) = dossier_test("bascule24");
-        for i in 0..24 {
-            petit_jpeg(&photos.join(format!("p-{i}.jpg")), i);
-        }
+        let dossier = |nom: &str, n: u32| {
+            let (photos, out) = dossier_test(nom);
+            for i in 0..n {
+                petit_jpeg(&photos.join(format!("p-{i}.jpg")), i);
+                // Treize datées sur vingt-cinq, treize sur vingt-quatre : la
+                // majorité stricte des deux côtés du seuil.
+                if i < 13 {
+                    fs::write(
+                        photos.join(format!("p-{i}.jpg.json")),
+                        format!(
+                            r#"{{"photoTakenTime":{{"timestamp":"{}"}}}}"#,
+                            1_600_000_000 + u64::from(i) * 3_600
+                        ),
+                    )
+                    .unwrap();
+                }
+            }
+            (photos, out)
+        };
+        let (photos, out) = dossier("bascule24", 24);
         let err = build_album(&photos, &out, BuildOptions::default())
             .err()
             .expect("tout est trop petit pour imprimer");
@@ -2095,15 +2130,30 @@ mod tests {
         assert!(msg.contains("definition"), "{msg}");
         assert!(!msg.contains("parasite"), "à 24, le filtre parasite est coupé : {msg}");
 
-        let (photos, out) = dossier_test("bascule25");
+        let (photos, out) = dossier("bascule25", 25);
+        let err = build_album(&photos, &out, BuildOptions::default())
+            .err()
+            .expect("tout est écarté");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("12 parasite"), "à 25, le filtre parasite revient : {msg}");
+    }
+
+    /// The same twenty-five tiny photos with no date at all: the fingerprint
+    /// is nobody's, so the filter that came back at 25 stays off, and the
+    /// photos die of « definition » alone. This is the folder of scanned
+    /// prints, in miniature: it used to be refused as a mass of parasites.
+    #[test]
+    fn sans_aucune_empreinte_le_filtre_parasite_ne_s_arme_pas() {
+        let (photos, out) = dossier_test("bascule25-nu");
         for i in 0..25 {
             petit_jpeg(&photos.join(format!("p-{i}.jpg")), i);
         }
         let err = build_album(&photos, &out, BuildOptions::default())
             .err()
-            .expect("tout est écarté");
+            .expect("tout est trop petit pour imprimer");
         let msg = format!("{err:#}");
-        assert!(msg.contains("parasite"), "à 25, le filtre parasite revient : {msg}");
+        assert!(msg.contains("definition"), "{msg}");
+        assert!(!msg.contains("parasite"), "sans empreinte majoritaire, rien n'est parasite : {msg}");
     }
 
     /// Le Takeout de 5.1, en synthétique : des photos sans EXIF dont les
@@ -2162,21 +2212,37 @@ mod tests {
         );
     }
 
-    /// Le même dossier sans ses sidecars : aucune date fiable, une seule
-    /// masse de parasites, le refus les nomme. C'est le mordant de
-    /// l'arbitrage 3 — si la date de sidecar cessait d'être fiable, le
-    /// test au-dessus tomberait exactement ici.
+    /// Le même dossier sans ses sidecars : aucune date fiable, donc aucune
+    /// empreinte majoritaire, donc **le filtre parasite ne s'arme pas** et
+    /// les trente photographies font un livre d'un seul chapitre, dans
+    /// l'ordre des dates de fichier. C'était, jusqu'ici, un refus total sous
+    /// le mot « parasite » — le dossier de tirages scannés d'une famille
+    /// tombait exactement là. Le mordant de l'arbitrage 3 tient toujours :
+    /// si la date de sidecar cessait d'être fiable, le test au-dessus
+    /// perdrait ses trois chapitres.
     #[test]
-    fn le_meme_takeout_sans_sidecars_est_une_masse_de_parasites() {
+    fn le_meme_takeout_sans_sidecars_compose_quand_meme() {
         let (photos, out) = dossier_test("takeout-nu");
         for i in 0..30 {
             jpeg_imprimable(&photos.join(format!("photo-{i:02}.jpg")), i);
         }
-        let err = build_album(&photos, &out, BuildOptions::default())
-            .err()
-            .expect("sans dates fiables, tout est parasite");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("parasite"), "{msg}");
+        let report = build_album(&photos, &out, BuildOptions::default())
+            .expect("sans aucune empreinte, le filtre se coupe et le dossier compose");
+        assert_eq!(report.chapters, 1, "sans date fiable, un seul chapitre");
+        let srcs: std::collections::HashSet<String> = report
+            .album
+            .spreads
+            .iter()
+            .flat_map(|s| s.slots.iter().map(|sl| sl.src.clone()))
+            .collect();
+        assert_eq!(srcs.len(), 30, "les trente photographies sont dans le livre");
+        let curation: Vec<model::Discard> =
+            serde_json::from_str(&fs::read_to_string(out.join("curation.json")).unwrap())
+                .unwrap();
+        assert!(
+            curation.iter().all(|d| d.reason != "parasite"),
+            "rien n'est écarté pour une empreinte que personne n'a"
+        );
     }
 
     /// `mariage-edited.jpg` existe dans les vrais dossiers de gens qui

@@ -105,6 +105,14 @@ sur la page des releases.
   texte disparaissait sans le dire. Le déplacement est refusé et la barre
   d'état dit pourquoi. La page de respiration, elle, accepte toujours une
   photo : c'est à ça qu'elle sert.
+- **Un dossier de tirages scannés fait un album.** Au-dessus de vingt-cinq
+  photos, une photo sans date EXIF, sans GPS et sans étoile était écartée
+  comme « parasite », et un dossier où aucune n'en avait — des scans, un
+  Takeout sans ses fichiers de dates — était refusé en bloc, sous ce mot-là.
+  Le filtre ne s'arme plus que lorsque la majorité des photos porte une
+  empreinte d'appareil : sinon il se coupe, le dit, et le livre suit les
+  dates de fichier. Et la raison affichée dans le tri ne dit plus
+  « parasites » mais « sans empreinte d'appareil ».
 
 ## [0.9.0] - 2026-08-17
 

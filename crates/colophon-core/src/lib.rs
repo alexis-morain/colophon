@@ -8,6 +8,7 @@ pub mod banc;
 pub mod bascule;
 pub mod build;
 pub mod colophon;
+pub mod couleur;
 pub mod cover;
 pub mod export;
 pub mod face;

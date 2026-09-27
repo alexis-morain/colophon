@@ -223,6 +223,22 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // La face d'un bloc, sous la grammaire du moteur et rien d'autre :
+      // `font::fichier_objet_valide`, réécrite ici parce que le harnais ne
+      // doit pas devenir un lecteur de fichiers. Partie ou mal nommée, c'est
+      // le même code de refus que la commande.
+      server.middlewares.use("/__dev/police-objet", (req, res) => {
+        const fichier = new URL(req.url ?? "", "http://x").searchParams.get("fichier") ?? "";
+        try {
+          if (!/^objet-[A-Za-z0-9-]{1,64}\.(ttf|otf)$/.test(fichier)) throw new Error();
+          const octets = read(fichier);
+          res.setHeader("Content-Type", "font/ttf");
+          res.end(octets);
+        } catch {
+          res.statusCode = 404;
+          res.end("fichier_absent");
+        }
+      });
       // The faithful preview reads the album's own PDF. Same closed set of
       // two names as the Tauri command: the harness must not become a file
       // reader either.

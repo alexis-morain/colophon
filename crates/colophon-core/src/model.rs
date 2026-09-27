@@ -172,6 +172,29 @@ pub struct Objet {
     /// first free object, so an ornament costs no migration.
     #[serde(flatten)]
     pub contenu: Contenu,
+    /// L'encre du texte d'un bloc, ou de l'unique remplissage d'un ornement,
+    /// en `#rrggbb`. Une chaîne plutôt que trois nombres : le fichier se
+    /// répare à la main, et une couleur s'y lit comme on la tape partout.
+    /// Elle se lit à un seul endroit, [`crate::couleur::parse`]. Une chaîne
+    /// qui ne dit rien de sensé retombe sur le défaut, l'export ne casse pas.
+    ///
+    /// Absente, c'est l'encre d'avant le champ : l'encre de texte du livre
+    /// pour un bloc, le noir pour un ornement. Un album qui n'en porte aucune
+    /// écrit donc le PDF d'avant, à l'octet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub couleur: Option<String>,
+    /// La face propre d'un bloc, copiée à côté d'`album.json` comme celle du
+    /// livre. Absente, c'est la face de l'album. Elle ne vaut que pour un
+    /// bloc : un ornement n'en porte pas, et une police écrite là à la main
+    /// est ignorée, pas refusée.
+    ///
+    /// On stocke la face résolue, jamais un drapeau. Gras et italique sont
+    /// des faces à part entière, donc le PDF n'invente jamais un glyphe, et
+    /// l'état gras d'un bloc se relit dans la face où il est posé. Le nom de
+    /// fichier obéit à une grammaire fermée,
+    /// [`crate::font::fichier_objet_valide`], jugée avant tout chemin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub police: Option<Police>,
 }
 
 /// What fills a free object.
@@ -180,8 +203,9 @@ pub struct Objet {
 pub enum Contenu {
     /// A block of text the reader placed. Unlike the three text *pages*,
     /// which print their lines as typed, a block has a width the reader drew,
-    /// and a width is what a block means: it wraps at word boundaries, in the
-    /// album's own face. Nothing is wrapped in silence — what does not fit
+    /// and a width is what a block means: it wraps at word boundaries, in its
+    /// own face ([`Objet::police`]) or the album's. Nothing is wrapped in
+    /// silence: what does not fit
     /// runs past the bottom, the scene says so, and a single word wider than
     /// the box is reported rather than cut.
     Texte {
@@ -195,10 +219,11 @@ pub enum Contenu {
         alignement: Alignement,
     },
     /// A typographic ornament: a fleuron closing a chapter, a rule parting
-    /// two blocks. **The object carries the identity, never the drawing** —
-    /// no colour, no scale, no mirror. The box already holds the size and the
-    /// angle, and one more field would be a second source of truth for a
-    /// geometry [`Objet`] owns.
+    /// two blocks. **The content carries the identity, never the drawing**:
+    /// no scale, no mirror. The box already holds the size and the angle, and
+    /// one more field would be a second source of truth for a geometry
+    /// [`Objet`] owns. Its colour is the object's, [`Objet::couleur`], shared
+    /// with the block.
     ///
     /// `pack` travels beside `id` so a second pack can arrive one day without
     /// identifiers having to be unique across packs.
@@ -222,6 +247,22 @@ impl Alignement {
 }
 
 impl Objet {
+    /// La couleur que l'objet demande, si elle se lit. `None` pour un champ
+    /// absent comme pour un champ gâté à la main : l'appelant dessine alors
+    /// dans l'encre par défaut de l'objet.
+    pub fn rgb(&self) -> Option<[f64; 3]> {
+        self.couleur.as_deref().and_then(crate::couleur::parse)
+    }
+
+    /// La face que le bloc demande. Un ornement rend `None` quoi que dise son
+    /// champ : il ne dessine aucun glyphe, une face n'y veut rien dire.
+    pub fn police_texte(&self) -> Option<&Police> {
+        match self.contenu {
+            Contenu::Texte { .. } => self.police.as_ref(),
+            Contenu::Ornement { .. } => None,
+        }
+    }
+
     /// The natural leading of a size, in millimetres: what an absent
     /// `interligne_mm` means. One place says it, so the two renderers and the
     /// emitter cannot each pick their own.
@@ -410,6 +451,51 @@ mod tests {
         assert!(ancien.police.is_none());
     }
 
+
+    /// La couleur et la police d'un objet sont additives comme `album.police` :
+    /// absentes, rien ne s'écrit et un objet d'avant se relit tel quel. Une
+    /// couleur gâtée à la main se lit `None` sans casser la lecture, et une
+    /// police posée sur un ornement se lit mais ne vaut rien.
+    #[test]
+    fn la_couleur_et_la_police_d_un_objet_sont_additives() {
+        let ancien: Objet = serde_json::from_str(
+            r#"{ "x": 1.0, "y": 2.0, "w": 30.0, "h": 10.0,
+                 "type": "texte", "texte": "Calvi", "taille_pt": 10.0 }"#,
+        )
+        .expect("un objet d'avant s'ouvre tel quel");
+        assert!(ancien.couleur.is_none() && ancien.police.is_none());
+        let ecrit = serde_json::to_string(&ancien).unwrap();
+        assert!(!ecrit.contains("couleur") && !ecrit.contains("police"), "{ecrit}");
+
+        let police = Police {
+            fichier: "objet-Didot-Bold.ttf".into(),
+            postscript: "Didot-Bold".into(),
+            nom: "Didot Bold".into(),
+        };
+        let bloc = Objet {
+            couleur: Some("#c0604a".into()),
+            police: Some(police.clone()),
+            ..ancien.clone()
+        };
+        let relu: Objet = serde_json::from_str(&serde_json::to_string(&bloc).unwrap()).unwrap();
+        assert_eq!(relu, bloc);
+        assert_eq!(relu.police_texte(), Some(&police));
+        assert!(relu.rgb().is_some());
+
+        let gate = Objet { couleur: Some("terracotta".into()), ..ancien.clone() };
+        let relu: Objet = serde_json::from_str(&serde_json::to_string(&gate).unwrap()).unwrap();
+        assert_eq!(relu.rgb(), None, "une couleur illisible retombe, elle ne casse rien");
+
+        let ornement = Objet {
+            contenu: Contenu::Ornement { pack: "colophon".into(), id: "fleuron-1".into() },
+            police: Some(police),
+            ..ancien
+        };
+        let relu: Objet =
+            serde_json::from_str(&serde_json::to_string(&ornement).unwrap()).unwrap();
+        assert!(relu.police.is_some(), "le champ se lit");
+        assert_eq!(relu.police_texte(), None, "mais un ornement ne dessine aucun glyphe");
+    }
 
     /// The adjustments table survives the round trip, and an album without
     /// one writes no field at all: `reglages` is additive, absence means

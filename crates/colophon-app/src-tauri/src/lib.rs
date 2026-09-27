@@ -305,6 +305,9 @@ fn save_album(album: Album, state: State<'_, AppState>) -> Result<(), String> {
     // The proposals nobody chose go here: past a hand edit they stop being an
     // offer and become a stale copy of somebody's work.
     colophon_core::build::oublier_variantes(&opened.dir);
+    // Et les faces de bloc que plus aucun bloc ne nomme : le dossier porte ce
+    // dont l'album enregistré a besoin, rien de ce qu'un bloc effacé a laissé.
+    colophon_core::build::elaguer_polices_objet(&opened.dir, &album);
     Ok(())
 }
 
@@ -327,6 +330,24 @@ struct PoliceOfferte {
     /// `None` when the face may be embedded; the engine's refusal code
     /// otherwise, worded by the screen like every other code in this app.
     refus: Option<String>,
+    /// Ce que disent les tables de la face, jamais son nom : les boutons gras
+    /// et italique d'un bloc cherchent la face de la famille qui le dit.
+    gras: bool,
+    italique: bool,
+}
+
+impl PoliceOfferte {
+    fn de(rang: usize, i: &colophon_core::font::Installee) -> Self {
+        PoliceOfferte {
+            rang,
+            famille: i.face.famille.clone(),
+            nom: i.face.nom.clone(),
+            postscript: i.face.postscript.clone(),
+            refus: i.face.refus.map(str::to_string),
+            gras: i.face.gras,
+            italique: i.face.italique,
+        }
+    }
 }
 
 /// Every face installed on this machine, refused ones included.
@@ -338,19 +359,76 @@ struct PoliceOfferte {
 #[tauri::command]
 fn polices_installees(state: State<'_, AppState>) -> Vec<PoliceOfferte> {
     let faces = colophon_core::font::installed();
-    let offertes = faces
-        .iter()
-        .enumerate()
-        .map(|(rang, i)| PoliceOfferte {
-            rang,
-            famille: i.face.famille.clone(),
-            nom: i.face.nom.clone(),
-            postscript: i.face.postscript.clone(),
-            refus: i.face.refus.map(str::to_string),
-        })
-        .collect();
+    let offertes = faces.iter().enumerate().map(|(rang, i)| PoliceOfferte::de(rang, i)).collect();
     *state.polices.lock().unwrap() = faces;
     offertes
+}
+
+/// Les faces d'une famille, avec leur rang dans la dernière liste demandée :
+/// c'est là que les boutons gras et italique d'un bloc cherchent la face qui
+/// le dit. Parcourt la machine d'abord si rien n'a encore été listé, pour
+/// qu'un rang rendu ici soit un rang que [`poser_police_objet`] comprend.
+#[tauri::command]
+fn polices_de_famille(famille: String, state: State<'_, AppState>) -> Vec<PoliceOfferte> {
+    let mut polices = state.polices.lock().unwrap();
+    if polices.is_empty() {
+        *polices = colophon_core::font::installed();
+    }
+    polices
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| i.face.famille == famille)
+        .map(|(rang, i)| PoliceOfferte::de(rang, i))
+        .collect()
+}
+
+/// Copier une face à côté de l'album pour un bloc, et la décrire. Même règle
+/// que [`choisir_police`] : le fichier s'écrit ici, la fiche entre dans
+/// l'album par l'historique de l'éditeur, donc ⌘Z l'annule et ⌘S
+/// l'enregistre. Deux blocs dans une face partagent le fichier, et le
+/// redemander n'écrit rien.
+#[tauri::command]
+fn poser_police_objet(
+    rang: usize,
+    state: State<'_, AppState>,
+) -> Result<colophon_core::model::Police, String> {
+    let installee = {
+        let polices = state.polices.lock().unwrap();
+        polices
+            .get(rang)
+            .cloned()
+            .ok_or("cette police n'est plus dans la liste : rouvrez le panneau")?
+    };
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    colophon_core::build::poser_police_objet(&dir, &installee).map_err(|e| format!("{e:#}"))
+}
+
+/// Les octets de la face d'un bloc, tels que l'émetteur les embarque, pour
+/// que l'écran mesure et dessine le bloc avec.
+///
+/// Le nom vient de l'album que tient l'éditeur : il est jugé sur la grammaire
+/// avant toute lecture. Un nom hors grammaire est un chemin tapé dans
+/// `album.json`, jamais un fichier à ouvrir. Une face partie du dossier rend
+/// le code `fichier_absent`, et l'écran dessine alors le bloc dans la face du
+/// livre, comme le PDF.
+#[tauri::command]
+fn police_objet_octets(
+    fichier: String,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, String> {
+    if !colophon_core::font::fichier_objet_valide(&fichier) {
+        return Err(colophon_core::font::REFUS_FICHIER_ABSENT.into());
+    }
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let octets = std::fs::read(dir.join(&fichier))
+        .map_err(|_| colophon_core::font::REFUS_FICHIER_ABSENT.to_string())?;
+    Ok(tauri::ipc::Response::new(octets))
 }
 
 /// Copy the chosen face into the album's folder and describe it.
@@ -447,23 +525,35 @@ fn police_absents(album: Album, state: State<'_, AppState>) -> Result<Vec<String
         guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
     };
     let face = colophon_core::font::face_album(&dir, album.police.as_ref().map(|p| p.fichier.as_str()));
-    let mut textes: Vec<&str> = vec![album.title.as_str()];
+    let mut textes: Vec<(&str, Option<&colophon_core::model::Police>)> = vec![(album.title.as_str(), None)];
     if let Some(c) = &album.cover {
-        textes.extend([c.title.as_str(), c.subtitle.as_str(), c.back_text.as_str()]);
+        textes.extend([c.title.as_str(), c.subtitle.as_str(), c.back_text.as_str()].map(|t| (t, None)));
     }
     for s in &album.spreads {
-        textes.extend(s.caption.as_deref());
-        textes.extend(s.text.as_deref());
-        textes.extend(s.slots.iter().filter_map(|sl| sl.caption.as_deref()));
+        textes.extend(s.caption.as_deref().map(|t| (t, None)));
+        textes.extend(s.text.as_deref().map(|t| (t, None)));
+        textes.extend(s.slots.iter().filter_map(|sl| sl.caption.as_deref()).map(|t| (t, None)));
         for o in &s.objets {
             if let colophon_core::model::Contenu::Texte { texte, .. } = &o.contenu {
-                textes.push(texte);
+                textes.push((texte, o.police_texte()));
             }
         }
     }
+    // Un bloc qui a sa face s'y vérifie, comme le PDF le dessinera ; celui
+    // dont la face est partie retombe sur celle du livre, comme le PDF.
+    let mut propres: BTreeMap<String, colophon_core::font::FaceAlbum> = BTreeMap::new();
     let mut vus: Vec<char> = Vec::new();
-    for t in textes {
-        for c in face.face.absents(t) {
+    for (t, police) in textes {
+        let dans = match police {
+            Some(p) => {
+                let f = propres
+                    .entry(p.fichier.clone())
+                    .or_insert_with(|| colophon_core::font::face_objet(&dir, p));
+                if f.defaut.is_none() { &f.face } else { &face.face }
+            }
+            None => &face.face,
+        };
+        for c in dans.absents(t) {
             if !vus.contains(&c) {
                 vus.push(c);
             }
@@ -1687,6 +1777,9 @@ pub fn run() {
             open_report_url,
             album_existant,
             police_absents,
+            polices_de_famille,
+            poser_police_objet,
+            police_objet_octets,
             origin_spread,
             choose_variante,
             album_pdf_bytes,

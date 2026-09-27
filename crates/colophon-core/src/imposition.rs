@@ -356,6 +356,8 @@ mod tests {
         let mut a = album("duo", 2);
         let g = pdf::geometry(&a);
         a.spreads[0].objets = vec![Objet {
+            couleur: None,
+            police: None,
             x: g.media_w / 2.0 - 40.0,
             y: 60.0,
             w: 40.0,

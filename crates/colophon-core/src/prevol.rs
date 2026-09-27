@@ -1095,6 +1095,8 @@ mod tests {
         use crate::model::{Alignement, Contenu, Objet};
 
         let bloc = |x: f64, y: f64| Objet {
+            couleur: None,
+            police: None,
             x,
             y,
             w: 40.0,

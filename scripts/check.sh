@@ -18,6 +18,10 @@ fi
 # gate refuse qu'elles divergent, avant qu'un tag ne le découvre.
 "$PY" scripts/versions.py
 
+# Le normaliseur d'ornements ramène un SVG de Commons dans le sous-ensemble
+# du pack. Ses tests sont en bibliothèque standard, donc ils tournent partout.
+"$PY" scripts/ornement-normaliser.py --test
+
 cargo build --release
 cargo test --workspace
 

@@ -52,6 +52,14 @@ sur la page des releases.
   titre trop long pour la page rétrécit plutôt que de déborder, et rien n'est
   jamais coupé.
 
+- **Trente-deux ornements de plus.** Le sélecteur en montre trente-cinq,
+  rangés en trois groupes : quatorze fleurons, treize filets, huit
+  séparateurs. Tous viennent de Wikimedia Commons, tous sont dans le domaine
+  public ou sous CC0, et leur provenance est listée dans
+  `assets/ornements/LICENCES.md`. Pour en proposer un autre,
+  `scripts/ornement-normaliser.py` ramène un SVG dans ce que le PDF sait
+  tracer, et refuse en le nommant ce qu'il ne sait pas traduire.
+
 ### Modifié
 
 - **Les réglages d'un bloc de texte s'ouvrent sous le bloc.** Corps,

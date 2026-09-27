@@ -149,7 +149,8 @@ const BINARY = fileURLToPath(
 
 describe.skipIf(!existsSync(BINARY))("le pack du moteur", () => {
   const pack: Ornement[] = JSON.parse(
-    execFileSync(BINARY, ["--dump-ornements"], { encoding: "utf8" }),
+    // Le tampon par défaut (1 Mo) ne tient plus le pack de trente-cinq.
+    execFileSync(BINARY, ["--dump-ornements"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 }),
   );
 
   it("arrive dans la forme que ce module suppose", () => {

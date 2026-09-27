@@ -475,7 +475,7 @@ fn draw_back(
             // Centred on the panel, measured on the real advance widths.
             let x = g.back.x + (g.back.w - ecrivain.largeur_mm(line, size)) / 2.0;
 
-            pdf::text_op(content, ecrivain, x, y, size, pdf::TEXT_INK, line);
+            pdf::text_op(content, ecrivain, 1, x, y, size, pdf::TEXT_INK, line);
             y -= leading;
             if y < g.back.y + g.safe {
                 break; // the editor is where an overlong quatrième is signalled
@@ -502,10 +502,10 @@ fn plate(
         return;
     }
     if over_photo {
-        pdf::text_op(content, ecrivain, x + SHADOW_OFFSET, y - SHADOW_OFFSET, size, SHADOW, s);
-        pdf::text_op(content, ecrivain, x, y, size, PAPER, s);
+        pdf::text_op(content, ecrivain, 1, x + SHADOW_OFFSET, y - SHADOW_OFFSET, size, SHADOW, s);
+        pdf::text_op(content, ecrivain, 1, x, y, size, PAPER, s);
     } else {
-        pdf::text_op(content, ecrivain, x, y, size, pdf::TEXT_INK, s);
+        pdf::text_op(content, ecrivain, 1, x, y, size, pdf::TEXT_INK, s);
     }
 }
 
@@ -523,7 +523,7 @@ fn rotated(
     s: &str,
 ) {
     let mut run = String::new();
-    pdf::text_op(&mut run, ecrivain, 0.0, 0.0, size, rgb, s);
+    pdf::text_op(&mut run, ecrivain, 1, 0.0, 0.0, size, rgb, s);
     let mm_to_pt = 72.0 / 25.4;
     content.push_str(&format!(
         "q 0 1 -1 0 {:.2} {:.2} cm\n{run}Q\n",

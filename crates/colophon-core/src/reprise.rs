@@ -611,6 +611,8 @@ mod tests {
     fn un_objet_libre_pose_est_une_reprise_sans_compteur_parent() {
         use crate::model::{Alignement, Contenu, Objet};
         let bloc = |texte: &str| Objet {
+            couleur: None,
+            police: None,
             x: 30.0,
             y: 30.0,
             w: 40.0,

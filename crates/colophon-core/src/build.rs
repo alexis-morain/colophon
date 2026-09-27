@@ -1077,6 +1077,76 @@ pub fn poser_police(dir: &Path, source: &Path, index: u32) -> Result<model::Poli
     })
 }
 
+/// Copier une face installée à côté de l'album pour un bloc, et la décrire.
+///
+/// La face du livre a deux noms ; celle d'un bloc en a un par face,
+/// [`crate::font::fichier_objet`]. Deux blocs dans la même face partagent
+/// donc un fichier, et la choisir de nouveau n'écrit rien. Un fichier de ce
+/// nom qui porte **une autre** face (deux noms PostScript réduits au même
+/// slug) est refusé, pas écrasé : le bloc qui l'utilise changerait de face
+/// sans que personne n'y touche.
+///
+/// Écrit comme `album.json`, fichier temporaire puis renommage. `album.json`
+/// n'est pas touché : la fiche entre dans l'album par l'historique de
+/// l'éditeur.
+pub fn poser_police_objet(
+    dir: &Path,
+    installee: &crate::font::Installee,
+) -> Result<model::Police> {
+    let (nom_fichier, octets) = crate::font::extraire_pour_objet(installee)
+        .map_err(|c| anyhow::anyhow!("police refusée : {c}"))?;
+    let face = crate::font::Face::parse(&octets, 0)
+        .map_err(|c| anyhow::anyhow!("police illisible : {c}"))?;
+
+    let target = dir.join(&nom_fichier);
+    let deja = fs::read(&target).ok().and_then(|d| crate::font::Face::parse(&d, 0).ok());
+    match deja {
+        Some(f) if f.postscript == face.postscript => {}
+        Some(f) => anyhow::bail!(
+            "{nom_fichier} porte déjà la face {} : {} ne peut pas s'y poser",
+            f.postscript,
+            face.postscript
+        ),
+        None => {
+            let tmp = dir.join(format!("{nom_fichier}.tmp"));
+            fs::write(&tmp, &octets).with_context(|| format!("write {}", tmp.display()))?;
+            fs::rename(&tmp, &target)
+                .with_context(|| format!("rename onto {}", target.display()))?;
+        }
+    }
+    Ok(model::Police { fichier: nom_fichier, postscript: face.postscript, nom: face.nom })
+}
+
+/// Effacer les faces de bloc que plus aucun objet d'aucune planche ne nomme,
+/// et dire combien sont parties.
+///
+/// Appelé après une sauvegarde : le disque porte ce dont l'album enregistré a
+/// besoin. **Seuls les noms de la grammaire sont candidats**
+/// ([`crate::font::fichier_objet_valide`]) : le `police.ttf` du livre, un
+/// `.tmp` laissé par un plantage ou ce qu'une personne a posé dans le dossier
+/// ne sont jamais touchés. Un dossier absent n'est pas une erreur, ceci tourne
+/// à chaque sauvegarde.
+pub fn elaguer_polices_objet(dir: &Path, album: &model::Album) -> usize {
+    let nommes: std::collections::BTreeSet<&str> = album
+        .spreads
+        .iter()
+        .flat_map(|s| &s.objets)
+        .filter_map(|o| o.police.as_ref().map(|p| p.fichier.as_str()))
+        .collect();
+    let Ok(entrees) = fs::read_dir(dir) else { return 0 };
+    let mut n = 0;
+    for e in entrees.filter_map(std::result::Result::ok) {
+        let nom = e.file_name().to_string_lossy().into_owned();
+        if crate::font::fichier_objet_valide(&nom)
+            && !nommes.contains(nom.as_str())
+            && fs::remove_file(e.path()).is_ok()
+        {
+            n += 1;
+        }
+    }
+    n
+}
+
 /// An `album.json` written under a schema this build does not know.
 ///
 /// The one refusal in the whole opening path, and the only thing the schema
@@ -1754,6 +1824,8 @@ mod tests {
             edited: false,
             locked: false,
             objets: vec![model::Objet {
+                couleur: None,
+                police: None,
                 x: 30.0,
                 y: 30.0,
                 w: 40.0,
@@ -2413,5 +2485,112 @@ mod tests {
     #[test]
     fn oublier_dans_un_dossier_absent_ne_compte_rien() {
         assert_eq!(oublier_variantes(&std::env::temp_dir().join("colophon-nulle-part")), 0);
+    }
+    fn police_d_objet(fichier: &str) -> model::Police {
+        model::Police { fichier: fichier.into(), postscript: "X".into(), nom: "X".into() }
+    }
+
+    /// L'élagage à la sauvegarde : un fichier d'objet que plus rien ne nomme
+    /// part, celui qu'un objet d'une autre planche nomme reste, et ni la
+    /// police du livre ni un fichier hors grammaire ne sont jamais touchés.
+    #[test]
+    fn la_sauvegarde_elague_les_polices_d_objet_orphelines() {
+        let dir = std::env::temp_dir().join(format!("colophon-elagage-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for f in [
+            "objet-Garde-Bold.ttf",
+            "objet-Orpheline.otf",
+            crate::font::POLICE_TTF,
+            "objet-Orpheline.otf.tmp",
+            "notes.txt",
+        ] {
+            fs::write(dir.join(f), b"x").unwrap();
+        }
+        let mut album = model::Album::new("t", Path::new("/p"), model::Size { w: 210.0, h: 210.0 });
+        let planche = |objets: Vec<model::Objet>| model::Spread {
+            template: "texte".into(),
+            slots: Vec::new(),
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets,
+        };
+        let bloc = model::Objet {
+            x: 10.0,
+            y: 10.0,
+            w: 40.0,
+            h: 20.0,
+            angle: 0.0,
+            contenu: model::Contenu::Texte {
+                texte: "Calvi".into(),
+                taille_pt: 10.0,
+                interligne_mm: None,
+                alignement: model::Alignement::Gauche,
+            },
+            couleur: None,
+            police: Some(police_d_objet("objet-Garde-Bold.ttf")),
+        };
+        album.spreads = vec![planche(Vec::new()), planche(vec![bloc])];
+
+        assert_eq!(elaguer_polices_objet(&dir, &album), 1);
+        assert!(!dir.join("objet-Orpheline.otf").exists(), "l'orpheline part");
+        for reste in ["objet-Garde-Bold.ttf", crate::font::POLICE_TTF, "objet-Orpheline.otf.tmp", "notes.txt"] {
+            assert!(dir.join(reste).exists(), "{reste} reste");
+        }
+        album.spreads.clear();
+        assert_eq!(elaguer_polices_objet(&dir, &album), 1, "plus personne ne la nomme");
+        assert!(dir.join(crate::font::POLICE_TTF).exists(), "le livre n'est jamais touché");
+        assert_eq!(elaguer_polices_objet(&dir.join("absent"), &album), 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Poser deux fois la même face n'écrit qu'un fichier ; une autre face
+    /// dont le nom se réduit au même fichier est refusée, pas écrite par-dessus.
+    #[test]
+    fn une_police_d_objet_se_pose_une_fois_et_ne_s_ecrase_pas() {
+        let dir = std::env::temp_dir().join(format!("colophon-pose-objet-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("systeme")).unwrap();
+        fs::write(dir.join("systeme/source.ttf"), crate::font::FONT_DATA).unwrap();
+        let installee = crate::font::installed_in(&[dir.join("systeme")]).remove(0);
+
+        let p = poser_police_objet(&dir, &installee).expect("la face se pose");
+        assert_eq!(p.fichier, "objet-SourceSans3-Regular.ttf");
+        assert_eq!(p.postscript, crate::font::FONT_NAME);
+        let avant = fs::metadata(dir.join(&p.fichier)).unwrap().modified().unwrap();
+        let encore = poser_police_objet(&dir, &installee).expect("reposée");
+        assert_eq!(encore, p);
+        assert_eq!(fs::metadata(dir.join(&p.fichier)).unwrap().modified().unwrap(), avant);
+
+        // Une autre face dont le nom se réduit au même fichier : la même
+        // Source Sans, rebaptisée `SourceSans3_Regular` dans sa table `name`.
+        let mut jumelle = crate::font::FONT_DATA.to_vec();
+        let remplacer = |d: &mut Vec<u8>, de: &[u8], vers: &[u8]| {
+            let mut i = 0;
+            while i + de.len() <= d.len() {
+                if &d[i..i + de.len()] == de {
+                    d[i..i + de.len()].copy_from_slice(vers);
+                }
+                i += 1;
+            }
+        };
+        let utf16 = |t: &str| t.encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<u8>>();
+        remplacer(&mut jumelle, b"SourceSans3-Regular", b"SourceSans3_Regular");
+        remplacer(&mut jumelle, &utf16("SourceSans3-Regular"), &utf16("SourceSans3_Regular"));
+        fs::create_dir_all(dir.join("autre")).unwrap();
+        fs::write(dir.join("autre/jumelle.ttf"), &jumelle).unwrap();
+        let jumelle = crate::font::installed_in(&[dir.join("autre")]).remove(0);
+        assert_eq!(jumelle.face.postscript, "SourceSans3_Regular");
+        let refus = poser_police_objet(&dir, &jumelle).expect_err("même fichier, autre face");
+        assert!(refus.to_string().contains("porte déjà"), "{refus}");
+        let reste = fs::read(dir.join(&p.fichier)).unwrap();
+        assert_eq!(crate::font::Face::parse(&reste, 0).unwrap().postscript, crate::font::FONT_NAME);
+
+        // Un fichier illisible sous ce nom ne protège rien : on le réécrit.
+        fs::write(dir.join(&p.fichier), b"pas une police").unwrap();
+        assert!(poser_police_objet(&dir, &installee).is_ok());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

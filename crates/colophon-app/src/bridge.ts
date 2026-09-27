@@ -314,6 +314,9 @@ export type PoliceOfferte = {
   /** Engine code (`illisible`, `embarquement_interdit`, `bitmap_seulement`,
    *  `cmap_illisible`, `format_non_embarquable`), worded by `i18n.ts`. */
   refus: string | null;
+  /** Ce que disent les tables de la face (OS/2, `post`, `head`), jamais son nom. */
+  gras: boolean;
+  italique: boolean;
 };
 
 /** Every face installed on this machine, refused ones included: a picker
@@ -327,6 +330,31 @@ export async function polices_installees(): Promise<PoliceOfferte[]> {
  *  goes into the album through the edit history, so ⌘Z undoes the choice. */
 export async function choisirPolice(rang: number): Promise<Police> {
   return invoke<Police>("choisir_police", { rang });
+}
+
+/** Les faces d'une famille, avec leur rang dans la liste que tient le
+ *  moteur : là où les boutons gras et italique d'un bloc cherchent la face
+ *  qui le dit. Vide hors de l'application, comme la liste elle-même. */
+export async function policesDeFamille(famille: string): Promise<PoliceOfferte[]> {
+  if (!inTauri) return [];
+  return invoke<PoliceOfferte[]>("polices_de_famille", { famille });
+}
+
+/** Copier une face à côté de l'album pour un bloc. La fiche revient et se
+ *  pose sur l'objet par l'historique d'édition, donc ⌘Z l'annule. */
+export async function poserPoliceObjet(rang: number): Promise<Police> {
+  return invoke<Police>("poser_police_objet", { rang });
+}
+
+/** Les octets de la face d'un bloc, tels que l'émetteur les embarque.
+ *  Rejette avec `fichier_absent` quand le fichier est parti ou que son nom
+ *  sort de la grammaire : le bloc se dessine alors dans la face du livre,
+ *  comme au PDF. */
+export async function policeObjetOctets(fichier: string): Promise<ArrayBuffer> {
+  if (inTauri) return invoke<ArrayBuffer>("police_objet_octets", { fichier });
+  const res = await fetch(`/__dev/police-objet?fichier=${encodeURIComponent(fichier)}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.arrayBuffer();
 }
 
 /** What the album will actually be set in, resolved exactly as the emitter

@@ -36,6 +36,8 @@ describe("les faces groupées par famille", () => {
     nom,
     postscript: nom.replace(/\s/g, ""),
     refus,
+    gras: false,
+    italique: false,
   });
 
   it("range chaque face sous sa famille, refusées comprises", () => {
@@ -74,7 +76,7 @@ describe("les faces groupées par famille", () => {
 
     // Le seul refus qui coûte son nom à une face est `illisible` : elle n'a
     // ni famille ni nom ni PostScript, donc aucune ligne où se ranger.
-    expect(parFamille([{ rang: 0, famille: "", nom: "", postscript: "", refus: "illisible" }]))
+    expect(parFamille([{ rang: 0, famille: "", nom: "", postscript: "", refus: "illisible", gras: false, italique: false }]))
       .toHaveLength(0);
   });
 });
@@ -106,6 +108,8 @@ describe("les dix familles suggérées", () => {
     nom,
     postscript: nom.replace(/\s/g, ""),
     refus,
+    gras: false,
+    italique: false,
   });
 
   // Une machine de série, en désordre, avec ce qu'une vraie porte autour :

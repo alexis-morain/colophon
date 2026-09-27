@@ -47,6 +47,16 @@ export type Objet = {
    *  centre. Absent = 0. A screen turns the other way, and `scene.ts` is the
    *  one place that flips the sign. */
   angle?: number;
+  /** L'encre du texte d'un bloc ou du remplissage d'un ornement, `#rrggbb`.
+   *  Absente : l'encre de texte du livre pour un bloc, le noir pour un
+   *  ornement. Miroir de `model.rs::Objet::couleur`, lu par `couleur::parse`
+   *  côté moteur : tout ce qui n'est pas six chiffres hexadécimaux retombe
+   *  sur le défaut. */
+  couleur?: string;
+  /** La face propre d'un bloc, copiée à côté d'`album.json` sous un nom
+   *  `objet-<postscript>.ttf|otf`. Absente : la face du livre. Ignorée sur un
+   *  ornement. Miroir de `model.rs::Objet::police`. */
+  police?: Police;
 } & ObjetContenu;
 
 export type ObjetContenu =
@@ -59,9 +69,9 @@ export type ObjetContenu =
       alignement?: Alignement;
     }
   /** A typographic ornament, named by its pack and its identifier — never by
-   *  a file path, never with a drawing, a colour or a scale of its own. The
-   *  box already carries the size and the angle, and the pack carries the
-   *  paths. Mirror of `model.rs::Contenu::Ornement`. */
+   *  a file path, never with a drawing or a scale of its own. The box already
+   *  carries the size and the angle, the pack carries the paths. La couleur
+   *  est celle de l'objet. Mirror of `model.rs::Contenu::Ornement`. */
   | { type: "ornement"; pack: string; id: string };
 
 export type Alignement = "gauche" | "centre" | "droite";

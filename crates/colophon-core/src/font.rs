@@ -35,8 +35,10 @@
 //! never on a glyph: tables are copied verbatim, whole, and the ones a PDF
 //! does not need are dropped rather than rewritten.
 //!
-//! Reading and writing are all this module does. It embeds one face, the one
-//! below, and knowing about the others is not yet using them.
+//! Reading and writing are all this module does. Un document embarque la
+//! face du livre sous `/F1`, et une de plus par face qu'un bloc a demandée.
+//! Chacune est copiée à côté d'`album.json` sous un nom de grammaire fermée
+//! ([`fichier_objet_valide`]) : rien ne cherche jamais une face par son nom.
 
 use anyhow::{anyhow, Result};
 use std::io::{Read, Seek, SeekFrom};
@@ -164,6 +166,16 @@ pub struct Face {
     /// `fsType` bit 0x0100: the face may be embedded, whole only. The engine
     /// embeds faces whole anyway, so this is remembered, never refused.
     pub sous_ensemblage_interdit: bool,
+    /// La face se dit grasse : bit 5 de `OS/2.fsSelection`, poids de 600 ou
+    /// plus, ou bit 0 de `head.macStyle`. Lu dans la face, jamais simulé : le
+    /// bouton gras cherche la face de sa famille qui le dit, et reste inactif
+    /// s'il n'y en a pas. Un PDF qui épaissirait un trait imprimerait un
+    /// glyphe que personne n'a dessiné.
+    pub gras: bool,
+    /// La face se dit italique : bit 0 de `fsSelection`, `post.italicAngle`
+    /// non nul pour les obliques qui oublient le bit, ou bit 1 de
+    /// `head.macStyle`.
+    pub italique: bool,
     /// The metrics, in the 1000-unit em. `None` only when the character map
     /// could not be read, since no width can be measured without one.
     pub metrics: Option<Metrics>,
@@ -248,6 +260,8 @@ impl Face {
             .or((genre == Some(Genre::Cff2)).then_some(REFUS_FORMAT_NON_EMBARQUABLE))
             .or(metrics.is_none().then_some(REFUS_CMAP_ILLISIBLE));
 
+        let (gras, italique) = style(data, dir);
+
         Ok(Face {
             index,
             postscript,
@@ -257,6 +271,8 @@ impl Face {
 
             variable: table_range(data, dir, b"fvar").is_some(),
             sous_ensemblage_interdit: fs_type & 0x0100 != 0,
+            gras,
+            italique,
             metrics,
             refus,
         })
@@ -395,10 +411,34 @@ impl Face {
 
             variable: false,
             sous_ensemblage_interdit: false,
+            gras: false,
+            italique: false,
             metrics: None,
             refus: Some(code),
         }
     }
+}
+
+/// Gras et italique, tels que la face les déclare.
+///
+/// Les bits de `OS/2.fsSelection` d'abord (5 pour le gras, 0 pour
+/// l'italique) : c'est le champ fait pour répondre. Le poids attrape les
+/// faces lourdes dont le bit est éteint, un demi-gras à 600 est gras pour
+/// qui le choisit. L'angle de `post` attrape les obliques sans bit 0.
+/// `head.macStyle` est la dernière porte, et pas un ornement : sur un macOS
+/// de série du 26/09, Helvetica Neue Thin Italic ne se dit italique que là.
+/// Une face qui ne le dit nulle part est droite, quoi que dise son nom.
+/// Helvetica Neue Medium Italic en est une, et lire les noms serait deviner.
+fn style(data: &[u8], dir: usize) -> (bool, bool) {
+    let os2 = table(data, dir, b"OS/2");
+    let selection = os2.and_then(|o| u16b(o, 62)).unwrap_or(0);
+    let poids = os2.and_then(|o| u16b(o, 4)).unwrap_or(0);
+    let angle = table(data, dir, b"post").and_then(|p| i32b(p, 4)).unwrap_or(0);
+    let mac = table(data, dir, b"head").and_then(|h| u16b(h, 44)).unwrap_or(0);
+    (
+        selection & 0x0020 != 0 || poids >= 600 || mac & 0x0001 != 0,
+        selection & 0x0001 != 0 || angle != 0 || mac & 0x0002 != 0,
+    )
 }
 
 /// What the licence bits alone forbid.
@@ -703,6 +743,88 @@ pub fn face_projet() -> std::borrow::Cow<'static, Embarquee> {
         Embarquee::incorporee()
             .expect("police incorporée illisible ou refusée : asset corrompu"),
     )
+}
+
+// --- La face d'un objet -----------------------------------------------------
+
+/// Le début du nom de fichier de toute face d'objet. Les deux noms du livre
+/// ne commencent pas ainsi : l'élagage à la sauvegarde ne peut pas les
+/// confondre.
+pub const PREFIXE_OBJET: &str = "objet-";
+
+/// La longueur maximale d'un nom PostScript réduit dans un nom de fichier.
+/// Le format plafonne un nom PostScript à 63 caractères ; un de plus laisse
+/// la place à une face qui l'ignore.
+const SLUG_MAX: usize = 64;
+
+/// Le nom sous lequel la face d'un bloc est copiée à côté d'`album.json` :
+/// `objet-<slug>.ttf` ou `.otf`. Le slug est le nom PostScript réduit à
+/// `[A-Za-z0-9-]`, tout autre caractère devenant `-`, coupé à 64.
+///
+/// Nommé d'après la face, pas d'après l'objet : deux blocs dans la même face
+/// partagent un fichier, et choisir une face deux fois ne coûte rien la
+/// seconde. L'extension suit les contours, comme [`fichier_pour`].
+pub fn fichier_objet(postscript: &str, genre: Genre) -> String {
+    let mut slug: String = postscript
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .take(SLUG_MAX)
+        .collect();
+    if slug.is_empty() {
+        // Une face dont tous les noms sont vides. `parse` en fabrique un
+        // depuis le nom lisible avant d'arriver ici : garde, pas cas.
+        slug.push_str("face");
+    }
+    let ext = if genre == Genre::Cff { "otf" } else { "ttf" };
+    format!("{PREFIXE_OBJET}{slug}.{ext}")
+}
+
+/// Vrai si [`fichier_objet`] a pu écrire ce nom. **La seule porte entre
+/// `album.json` et `dir.join`** pour la face d'un objet : le fichier se
+/// répare à la main, donc ce qu'il dit est jugé sur la grammaire avant tout
+/// chemin. `../x.ttf`, `objet-/.ttf` et le `police.ttf` du livre échouent
+/// tous ici.
+pub fn fichier_objet_valide(nom: &str) -> bool {
+    let Some(reste) = nom.strip_prefix(PREFIXE_OBJET) else { return false };
+    let Some(slug) = reste.strip_suffix(".ttf").or_else(|| reste.strip_suffix(".otf")) else {
+        return false;
+    };
+    (1..=SLUG_MAX).contains(&slug.len())
+        && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+/// Sortir une face installée de son fichier pour un bloc : le nom sous
+/// lequel la poser, et les octets. La même extraction que pour le livre,
+/// [`Face::extraire`] : un bloc en Helvetica Neue embarque 14 % de la `.ttc`
+/// lui aussi, jamais la collection.
+///
+/// `Err` est un code de refus : [`REFUS_ILLISIBLE`] quand le fichier ne se
+/// lit plus, celui de la face sinon.
+pub fn extraire_pour_objet(
+    installee: &Installee,
+) -> std::result::Result<(String, Vec<u8>), &'static str> {
+    let data = std::fs::read(&installee.chemin).map_err(|_| REFUS_ILLISIBLE)?;
+    let index = installee.face.index;
+    let face = Face::parse(&data, index)?;
+    let genre = face.genre.ok_or(REFUS_BITMAP_SEULEMENT)?;
+    Ok((fichier_objet(&face.postscript, genre), Face::extraire(&data, index)?))
+}
+
+/// La face d'un bloc, résolue depuis le dossier de l'album, avec les deux
+/// réponses de [`face_album`] : la face, et `defaut` quand le fichier manque,
+/// ne se lit pas ou porte un nom hors grammaire. Dans ce dernier cas rien
+/// n'échoue : l'appelant pose le bloc dans la face du livre.
+pub fn face_objet(dir: &Path, police: &crate::model::Police) -> FaceAlbum {
+    if !fichier_objet_valide(&police.fichier) {
+        return FaceAlbum { face: face_projet(), defaut: Some(REFUS_FICHIER_ABSENT) };
+    }
+    let Ok(data) = std::fs::read(dir.join(&police.fichier)) else {
+        return FaceAlbum { face: face_projet(), defaut: Some(REFUS_FICHIER_ABSENT) };
+    };
+    match Embarquee::depuis(data, 0) {
+        Ok(face) => FaceAlbum { face: std::borrow::Cow::Owned(face), defaut: None },
+        Err(code) => FaceAlbum { face: face_projet(), defaut: Some(code) },
+    }
 }
 
 
@@ -1332,7 +1454,7 @@ fn somme_sfnt(data: &[u8]) -> u32 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::fs;
 
@@ -1499,6 +1621,13 @@ mod tests {
         /// layout, strikes, signature. Every one of them is real, and on a
         /// stock machine they are most of what a font file weighs.
         bagage: Vec<([u8; 4], usize)>,
+        /// `OS/2.usWeightClass`, `OS/2.fsSelection` et `post.italicAngle`
+        /// (en degrés entiers) : ce dans quoi gras et italique se lisent.
+        poids: u16,
+        selection: u16,
+        angle: i16,
+        /// `head.macStyle` : bit 0 gras, bit 1 italique.
+        mac: u16,
     }
 
     const NUM_GLYPHS: u16 = 256;
@@ -1524,6 +1653,10 @@ mod tests {
                 autre_langue: None,
                 gras: 64,
                 bagage: Vec::new(),
+                poids: 400,
+                selection: 0x0040,
+                angle: 0,
+                mac: 0,
             }
         }
 
@@ -1545,6 +1678,7 @@ mod tests {
             v[38..40].copy_from_slice(&(-500i16).to_be_bytes());
             v[40..42].copy_from_slice(&2000i16.to_be_bytes());
             v[42..44].copy_from_slice(&1800i16.to_be_bytes());
+            v[44..46].copy_from_slice(&self.mac.to_be_bytes());
             v
         }
 
@@ -1578,7 +1712,9 @@ mod tests {
         fn os2(&self) -> Vec<u8> {
             let mut v = vec![0u8; 96];
             v[0..2].copy_from_slice(&2u16.to_be_bytes());
+            v[4..6].copy_from_slice(&self.poids.to_be_bytes());
             v[8..10].copy_from_slice(&self.fs_type.to_be_bytes());
+            v[62..64].copy_from_slice(&self.selection.to_be_bytes());
             v[68..70].copy_from_slice(&1600i16.to_be_bytes());
             v[70..72].copy_from_slice(&(-400i16).to_be_bytes());
             v[88..90].copy_from_slice(&1400i16.to_be_bytes());
@@ -1588,6 +1724,7 @@ mod tests {
         fn post(&self) -> Vec<u8> {
             let mut v = vec![0u8; 32];
             v[0..4].copy_from_slice(&0x0003_0000u32.to_be_bytes());
+            v[4..8].copy_from_slice(&(i32::from(self.angle) << 16).to_be_bytes());
             v
         }
 
@@ -1749,6 +1886,14 @@ mod tests {
         v
     }
 
+    /// Une face qui n'est pas celle du projet, pour les tests des autres
+    /// modules : `ColophonTest-Regular`, qui ne dessine que 0x20..0xFF. Un
+    /// « ł » y est absent là où Source Sans 3 le porte, et c'est ce qui
+    /// permet de voir dans quelle face une chose a été comptée.
+    pub(crate) fn face_latin1() -> Vec<u8> {
+        fichier(&[Fonte::neuve()])
+    }
+
     /// Lay faces out as one file: a lone face at offset zero, or a collection
     /// whose per-face directories sit behind a `ttcf` header — **and whose
     /// table offsets stay absolute in the file**, which is the trap this
@@ -1808,6 +1953,109 @@ mod tests {
     }
 
     // --- Ce que le lecteur doit savoir faire ------------------------------
+
+    /// Gras et italique se lisent dans l'OS/2 d'une face synthétique, par
+    /// chacune des portes : le bit 5 ou un poids de 600 pour le gras, le bit 0
+    /// ou l'angle de `post` pour l'italique, et `head.macStyle` pour les deux.
+    /// 500 n'est pas gras, et la
+    /// romaine de départ n'est ni l'un ni l'autre.
+    #[test]
+    fn gras_et_italique_se_lisent_dans_l_os2() {
+        let lue = |f: Fonte| {
+            let face = Face::parse(&fichier(&[f]), 0).expect("face lisible");
+            (face.gras, face.italique)
+        };
+        assert_eq!(lue(Fonte::neuve()), (false, false), "la romaine");
+        assert_eq!(lue(Fonte { selection: 0x0020, ..Fonte::neuve() }), (true, false), "bit 5");
+        assert_eq!(lue(Fonte { poids: 600, ..Fonte::neuve() }), (true, false), "demi-gras");
+        assert_eq!(lue(Fonte { poids: 700, ..Fonte::neuve() }), (true, false), "gras");
+        assert_eq!(lue(Fonte { poids: 500, ..Fonte::neuve() }), (false, false), "medium");
+        assert_eq!(lue(Fonte { selection: 0x0001, ..Fonte::neuve() }), (false, true), "bit 0");
+        assert_eq!(lue(Fonte { angle: -12, ..Fonte::neuve() }), (false, true), "oblique sans bit");
+        assert_eq!(lue(Fonte { mac: 0x0002, ..Fonte::neuve() }), (false, true), "macStyle seul");
+        assert_eq!(lue(Fonte { mac: 0x0001, ..Fonte::neuve() }), (true, false), "macStyle seul");
+        assert_eq!(
+            lue(Fonte { selection: 0x0021, poids: 700, ..Fonte::neuve() }),
+            (true, true),
+            "gras italique"
+        );
+    }
+
+    /// La grammaire du fichier d'une police d'objet : ce que `fichier_objet`
+    /// fabrique, `fichier_objet_valide` l'accepte, et rien de ce qui pourrait
+    /// sortir du dossier ou se confondre avec la police du livre ne passe.
+    #[test]
+    fn le_nom_du_fichier_d_un_objet_obeit_a_une_grammaire_fermee() {
+        assert_eq!(fichier_objet("Didot-Bold", Genre::Glyf), "objet-Didot-Bold.ttf");
+        assert_eq!(fichier_objet("Optima-Italic", Genre::Cff), "objet-Optima-Italic.otf");
+        assert_eq!(fichier_objet("Font/Name Bold.x", Genre::Glyf), "objet-Font-Name-Bold-x.ttf");
+        assert_eq!(fichier_objet("", Genre::Glyf), "objet-face.ttf");
+        let long = fichier_objet(&"A".repeat(200), Genre::Glyf);
+        assert_eq!(long.len(), "objet-".len() + 64 + ".ttf".len());
+        for bon in [
+            fichier_objet("Didot-Bold", Genre::Glyf),
+            fichier_objet("Optima-Italic", Genre::Cff),
+            fichier_objet("Font/Name Bold.x", Genre::Glyf),
+            long,
+            "objet--.ttf".to_string(),
+        ] {
+            assert!(fichier_objet_valide(&bon), "{bon}");
+        }
+        for mauvais in [
+            "../x.ttf",
+            "objet-/.ttf",
+            "objet-../x.ttf",
+            "objet-.ttf",
+            "objet-a.ttc",
+            "objet-a.ttf.tmp",
+            "objet-é.ttf",
+            "objet-a b.ttf",
+            "police.ttf",
+            "police.otf",
+            "Objet-a.ttf",
+            "",
+        ] {
+            assert!(!fichier_objet_valide(mauvais), "{mauvais:?}");
+        }
+        assert!(!fichier_objet_valide(&format!("objet-{}.ttf", "A".repeat(65))));
+    }
+
+    /// Une face installée sort de son fichier sous son nom d'objet, se relit,
+    /// et se résout depuis le dossier ; absente ou nommée hors grammaire,
+    /// elle rend la face du projet et le dit, sans rien lire du disque dans
+    /// le second cas.
+    #[test]
+    fn la_face_d_un_objet_se_pose_et_se_resout() {
+        let systeme = dossier("objet-systeme");
+        fs::write(systeme.join("colophon.ttf"), fichier(&[Fonte::neuve()])).unwrap();
+        let installee = installed_in(&[systeme.clone()]).remove(0);
+        let (nom, octets) = extraire_pour_objet(&installee).expect("la face sort");
+        assert_eq!(nom, "objet-ColophonTest-Regular.ttf");
+
+        let album = dossier("objet-album");
+        fs::write(album.join(&nom), &octets).unwrap();
+        let police = crate::model::Police {
+            fichier: nom.clone(),
+            postscript: "ColophonTest-Regular".into(),
+            nom: "Colophon Test Regular".into(),
+        };
+        let posee = face_objet(&album, &police);
+        assert!(posee.defaut.is_none());
+        assert_eq!(posee.face.postscript(), "ColophonTest-Regular");
+
+        fs::remove_file(album.join(&nom)).unwrap();
+        let perdue = face_objet(&album, &police);
+        assert_eq!(perdue.defaut, Some(REFUS_FICHIER_ABSENT));
+        assert_eq!(perdue.face.postscript(), FONT_NAME);
+
+        // Un chemin écrit à la main dans `album.json` : refusé par la
+        // grammaire, avant qu'un `join` n'ait lieu.
+        fs::write(systeme.join("x.ttf"), fichier(&[Fonte::neuve()])).unwrap();
+        let fuite = crate::model::Police { fichier: "../x.ttf".into(), ..police };
+        assert_eq!(face_objet(&album, &fuite).defaut, Some(REFUS_FICHIER_ABSENT));
+        let _ = fs::remove_dir_all(&systeme);
+        let _ = fs::remove_dir_all(&album);
+    }
 
     /// A face written here, read back whole: the names off both name ids, the
     /// metrics converted out of a 2048-unit em, the kind off the tables.
@@ -2593,6 +2841,39 @@ mod tests {
             100.0 * lus as f64 / sur_disque.max(1) as f64,
             tampon / 1_048_576
         );
+    }
+
+    /// Le coup d'œil de A-s1 : les faces d'Helvetica Neue sur ce Mac, et ce
+    /// que l'OS/2 dit de chacune. Le gras et l'italique doivent y être vus,
+    /// sinon les deux boutons de l'éditeur ne trouveront jamais rien.
+    /// `cargo test -p colophon-core --release banc_variantes_du_mac -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn banc_variantes_du_mac() {
+        let famille: Vec<Installee> =
+            installed().into_iter().filter(|i| i.face.famille == "Helvetica Neue").collect();
+        for i in &famille {
+            println!(
+                "{:<6} {:<9} {:<34} {}",
+                if i.face.gras { "gras" } else { "" },
+                if i.face.italique { "italique" } else { "" },
+                i.face.nom,
+                i.face.postscript
+            );
+        }
+        let une = |nom: &str| famille.iter().find(|i| i.face.nom == nom).map(|i| &i.face);
+        let romaine = une("Helvetica Neue").or_else(|| une("Helvetica Neue Regular"));
+        let romaine = romaine.expect("Helvetica Neue sur ce Mac");
+        assert!(!romaine.gras && !romaine.italique, "la romaine");
+        let gras = une("Helvetica Neue Bold").expect("Helvetica Neue Bold");
+        assert!(gras.gras && !gras.italique, "le gras");
+        let italique = une("Helvetica Neue Italic").expect("Helvetica Neue Italic");
+        assert!(italique.italique && !italique.gras, "l'italique");
+        let les_deux = une("Helvetica Neue Bold Italic").expect("Helvetica Neue Bold Italic");
+        assert!(les_deux.gras && les_deux.italique, "le gras italique");
+        // Ne le dit que dans `head.macStyle` : la troisième porte de `style`.
+        let fine = une("Helvetica Neue Thin Italic").expect("Helvetica Neue Thin Italic");
+        assert!(fine.italique, "la fine italique");
     }
 
     /// La moitié moteur de la parité écran/papier : les largeurs de

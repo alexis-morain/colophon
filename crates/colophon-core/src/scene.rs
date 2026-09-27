@@ -381,7 +381,7 @@ impl Scene {
     /// A template the catalogue does not know still renders: `slots_for`
     /// falls back to one margined box, and so does this.
     pub fn of(spread: &Spread, g: &SpreadGeometry) -> Self {
-        Self::of_avec(spread, g, &crate::font::text_width_mm)
+        Self::of_avec(spread, g, &crate::font::text_width_mm, &sans_face_d_objet)
     }
 
     /// The same scene under a caller-supplied measure, which is how the
@@ -394,10 +394,17 @@ impl Scene {
     /// that reasons about a spread without rendering it — the linter, the
     /// preflight, the geometry dump — keeps [`Scene::of`] and the face this
     /// crate ships.
-    pub fn of_avec(
+    ///
+    /// `face_objet` pose la même question pour un bloc qui porte sa propre
+    /// face : `Some` est la face où il se replie, `None` le renvoie à
+    /// `mesure`. Une recherche et pas une seconde mesure, parce que
+    /// l'émetteur tient déjà la face qui dessinera le bloc, et que la scène
+    /// doit couper les lignes dans celle-là exactement.
+    pub fn of_avec<'f>(
         spread: &Spread,
         g: &SpreadGeometry,
         mesure: &dyn Fn(&str, f64) -> f64,
+        face_objet: &dyn Fn(&crate::model::Objet) -> Option<&'f crate::font::Embarquee>,
     ) -> Self {
         let rects = pdf::slots_for(&spread.template, spread.slots.len(), g);
 
@@ -463,7 +470,12 @@ impl Scene {
         // what the template produced. Their own order among themselves is the
         // order they sit in on the spread, which is the only depth they have.
         for (index, objet) in spread.objets.iter().enumerate() {
-            objects.push(objet_libre(index, objet, reading, mesure));
+            let propre = face_objet(objet);
+            let dans_sa_face = |s: &str, pt: f64| match propre {
+                Some(face) => face.largeur_mm(s, pt),
+                None => mesure(s, pt),
+            };
+            objects.push(objet_libre(index, objet, reading, &dans_sa_face));
             reading += 1;
         }
 
@@ -636,6 +648,13 @@ fn objet_libre(
     }
 }
 
+/// La réponse d'un appelant qui ne connaît aucune face de bloc : tout bloc se
+/// replie dans la face du livre. C'est ce que passent [`Scene::of`], les
+/// compteurs simples du linter et les tests.
+pub fn sans_face_d_objet(_: &crate::model::Objet) -> Option<&'static crate::font::Embarquee> {
+    None
+}
+
 /// The scene of every spread of an album, in order.
 pub fn album(album: &crate::model::Album) -> Vec<Scene> {
     let g = pdf::geometry(album);
@@ -662,6 +681,8 @@ mod tests {
 
     fn bloc(texte: &str, w: f64, h: f64) -> Objet {
         Objet {
+            couleur: None,
+            police: None,
             x: 20.0,
             y: 20.0,
             w,
@@ -1072,7 +1093,7 @@ mod tests {
         let mut s = spread("duo", 2);
         s.caption = Some("Corse, 2013".into());
         s.objets = vec![bloc("un mot", 40.0, 20.0), bloc("un autre", 40.0, 20.0)];
-        let scene = Scene::of_avec(&s, &g, &regle);
+        let scene = Scene::of_avec(&s, &g, &regle, &sans_face_d_objet);
         let roles: Vec<&str> = scene
             .objects
             .iter()
@@ -1111,7 +1132,7 @@ mod tests {
         // Six characters cost 12 mm at 10 pt under `regle`; a 30 mm box holds
         // "un deux" (7 chars, 14 mm) but not "un deux trois".
         s.objets = vec![bloc("un deux trois quatre", 30.0, 40.0)];
-        let scene = Scene::of_avec(&s, &g, &regle);
+        let scene = Scene::of_avec(&s, &g, &regle, &sans_face_d_objet);
         let Role::FreeText { lines, overflow, trop_large, .. } = &scene.objects[2].role else {
             panic!("attendu un objet libre");
         };
@@ -1129,6 +1150,43 @@ mod tests {
         assert_eq!(lines[1].dy_mm, 5.0);
     }
 
+    /// Un bloc qui porte sa propre police revient à la ligne dans **sa** face,
+    /// pas dans celle du livre : mesuré dans l'une et dessiné dans l'autre, il
+    /// déborderait de sa boîte au papier. Le bloc voisin, sans police, reste
+    /// mesuré dans la face du livre, et `Scene::of` ignore toute face d'objet.
+    #[test]
+    fn un_bloc_se_mesure_dans_sa_propre_face() {
+        let g = geom();
+        let face = crate::font::Embarquee::incorporee().expect("face ouverte");
+        let mut s = spread("duo", 2);
+        let texte = "un deux trois quatre cinq six";
+        let propre = Objet {
+            police: Some(crate::model::Police {
+                fichier: "objet-SourceSans3-Regular.ttf".into(),
+                postscript: "SourceSans3-Regular".into(),
+                nom: "Source Sans 3".into(),
+            }),
+            ..bloc(texte, 30.0, 40.0)
+        };
+        s.objets = vec![propre, bloc(texte, 30.0, 40.0)];
+        let faces = |o: &Objet| o.police.as_ref().map(|_| face);
+        let scene = Scene::of_avec(&s, &g, &regle, &faces);
+        let lignes = |i: usize| match &scene.objects[i].role {
+            Role::FreeText { lines, .. } => lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>(),
+            _ => panic!("attendu un objet libre"),
+        };
+        for l in lignes(2) {
+            assert!(face.largeur_mm(&l, 10.0) <= 30.0, "« {l} » mesurée hors de sa face");
+        }
+        let dans_la_regle = replier(texte, 30.0, 10.0, &regle).0;
+        assert_ne!(lignes(2), dans_la_regle, "la face du bloc et la règle coupent ailleurs");
+        assert_eq!(lignes(3), dans_la_regle, "le voisin reste dans la face du livre");
+
+        let sans = Scene::of_avec(&s, &g, &regle, &sans_face_d_objet);
+        assert!(matches!(&sans.objects[2].role, Role::FreeText { lines, .. }
+            if lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>() == dans_la_regle));
+    }
+
     /// Breaking a word is a decision about someone's language, and this engine
     /// does not take it. It says so instead.
     #[test]
@@ -1136,7 +1194,7 @@ mod tests {
         let g = geom();
         let mut s = spread("duo", 2);
         s.objets = vec![bloc("court anticonstitutionnellement", 30.0, 40.0)];
-        let scene = Scene::of_avec(&s, &g, &regle);
+        let scene = Scene::of_avec(&s, &g, &regle, &sans_face_d_objet);
         let Role::FreeText { lines, trop_large, .. } = &scene.objects[2].role else {
             panic!("attendu un objet libre");
         };
@@ -1157,12 +1215,13 @@ mod tests {
             &{ let mut s = s.clone(); s.objets = vec![bloc("un\ndeux", 40.0, 20.0)]; s },
             &g,
             &regle,
+            &sans_face_d_objet,
         );
         let Role::FreeText { overflow, .. } = tient.objects[2].role else { panic!() };
         assert!(!overflow, "deux lignes tiennent dans 20 mm");
 
         s.objets = vec![bloc("un\ndeux\ntrois\nquatre\ncinq", 40.0, 20.0)];
-        let deborde = Scene::of_avec(&s, &g, &regle);
+        let deborde = Scene::of_avec(&s, &g, &regle, &sans_face_d_objet);
         let Role::FreeText { overflow, lines, .. } = &deborde.objects[2].role else { panic!() };
         assert!(overflow, "cinq lignes ne tiennent pas dans 20 mm");
         assert_eq!(lines.len(), 5, "et rien n'a été retiré pour autant");
@@ -1177,7 +1236,7 @@ mod tests {
         let g = geom();
         let mut s = spread("duo", 2);
         s.objets = vec![bloc("un\n\ntrois", 40.0, 40.0)];
-        let scene = Scene::of_avec(&s, &g, &regle);
+        let scene = Scene::of_avec(&s, &g, &regle, &sans_face_d_objet);
         let Role::FreeText { lines, .. } = &scene.objects[2].role else { panic!() };
         assert_eq!(lines.len(), 3, "la ligne vide est là, pour espacer");
         assert_eq!(lines[1].text, "");
@@ -1198,7 +1257,7 @@ mod tests {
         };
         // "abc" is 6 mm wide at 10 pt: 34 mm of room in a 40 mm box.
         s.objets = vec![pose(Alignement::Gauche), pose(Alignement::Centre), pose(Alignement::Droite)];
-        let scene = Scene::of_avec(&s, &g, &regle);
+        let scene = Scene::of_avec(&s, &g, &regle, &sans_face_d_objet);
         let dx: Vec<f64> = scene
             .objects
             .iter()
@@ -1220,7 +1279,7 @@ mod tests {
         let mut o = bloc("un", 40.0, 20.0);
         o.angle = 30.0;
         s.objets = vec![o];
-        let scene = Scene::of_avec(&s, &g, &regle);
+        let scene = Scene::of_avec(&s, &g, &regle, &sans_face_d_objet);
         let libre = &scene.objects[2];
         assert_eq!(libre.angle, 30.0);
         assert_eq!(libre.rect.w, 40.0);

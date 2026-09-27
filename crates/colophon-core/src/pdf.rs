@@ -47,19 +47,41 @@ pub(crate) struct Boxes {
     pub trim: [f64; 4],
 }
 
-/// The face a document sets its type in, and the glyphs it has drawn so far.
+/// Une face où un document pose du texte, et les glyphes qu'il y a dessinés.
 ///
-/// The two travel together because they answer each other: `/W` and
-/// `/ToUnicode` describe exactly the glyphs that were drawn, and only the
-/// face that drew them can say how wide they are. Passing the pair down to
-/// every emitter is also what lets the cover — which writes its own content
-/// stream, outside the writer — be counted like everything else.
-pub(crate) struct Ecrivain {
-    /// Borrowed for the album's own face, which is opened once for the whole
-    /// process; owned the day a face comes from somewhere else. A copy per
-    /// document would be 430 kB of memcpy for every sheet rendered.
+/// Les deux voyagent ensemble parce qu'ils se répondent : `/W` et
+/// `/ToUnicode` décrivent exactement les glyphes dessinés, et seule la face
+/// qui les a dessinés sait leur chasse.
+pub(crate) struct FaceEcrite {
+    /// Ce qui l'a demandée : le nom du fichier à côté d'`album.json` pour la
+    /// face d'un bloc, vide pour celle du livre. Le même fichier demandé deux
+    /// fois est une seule face.
+    cle: String,
+    /// Empruntée pour la face du projet, ouverte une fois par processus ;
+    /// possédée pour une face lue dans le dossier de l'album. Une copie par
+    /// document coûterait 430 ko de memcpy à chaque feuille rendue.
     face: std::borrow::Cow<'static, font::Embarquee>,
     utilises: font::Utilises,
+}
+
+/// Les faces où un document pose son texte, dans l'ordre du fichier.
+///
+/// **La première est la face du livre, sous `/F1`.** Un album dont aucun
+/// bloc ne demande sa face n'en a jamais d'autre : son PDF est celui d'avant,
+/// à l'octet. Toute autre face s'ajoute la première fois qu'un bloc la
+/// demande et devient `/F2`, `/F3`, dans cet ordre. C'est l'album qui décide
+/// de l'ordre, donc deux exports restent identiques.
+///
+/// Passer la table à chaque émetteur est aussi ce qui fait compter la
+/// couverture comme le reste : elle écrit son flux hors du writer.
+pub(crate) struct Ecrivain {
+    faces: Vec<FaceEcrite>,
+    /// Le dossier d'`album.json`, où la face d'un bloc a été copiée. `None`
+    /// pour un writer sans album : tout bloc sort alors dans la face du livre.
+    dir: Option<std::path::PathBuf>,
+    /// Les faces de bloc cherchées et introuvables : un bloc de dix lignes ne
+    /// relit pas dix fois le disque pour apprendre la même chose.
+    manquantes: Vec<String>,
 }
 
 impl Ecrivain {
@@ -68,15 +90,63 @@ impl Ecrivain {
     /// album, and « no face chosen » is one of that resolution's answers.
     #[cfg(test)]
     pub(crate) fn incorporee() -> Self {
-        Self::depuis(font::face_projet())
+        Self::depuis(font::face_projet(), None)
     }
 
 
-    /// A writer over the face an album chose. The `Cow` is the whole point:
-    /// the project's face is opened once for the process and borrowed, an
-    /// album's own is read once per document and owned.
-    pub(crate) fn depuis(face: std::borrow::Cow<'static, font::Embarquee>) -> Self {
-        Self { face, utilises: font::Utilises::default() }
+    /// Un writer sur la face qu'un album a choisie, et le dossier où sont
+    /// les faces de ses blocs. Le `Cow` est tout l'intérêt : la face du projet
+    /// s'ouvre une fois par processus et s'emprunte, celle d'un album se lit
+    /// une fois par document et se possède.
+    pub(crate) fn depuis(
+        face: std::borrow::Cow<'static, font::Embarquee>,
+        dir: Option<&Path>,
+    ) -> Self {
+        Self {
+            faces: vec![FaceEcrite { cle: String::new(), face, utilises: font::Utilises::default() }],
+            dir: dir.map(Path::to_path_buf),
+            manquantes: Vec::new(),
+        }
+    }
+
+    /// Le numéro de ressource d'un texte : `1` pour la face du livre, que
+    /// `None` demande, et où retombe un bloc dont la face a quitté le dossier.
+    /// Jamais un export qui échoue. Une face demandée pour la première fois
+    /// se lit ici et prend le numéro suivant.
+    pub(crate) fn ressource(&mut self, police: Option<&crate::model::Police>) -> usize {
+        let Some(police) = police else { return 1 };
+        if let Some(i) = self.faces.iter().skip(1).position(|f| f.cle == police.fichier) {
+            return i + 2;
+        }
+        if self.manquantes.contains(&police.fichier) {
+            return 1;
+        }
+        let Some(dir) = &self.dir else { return 1 };
+        let choix = font::face_objet(dir, police);
+        if choix.defaut.is_some() {
+            self.manquantes.push(police.fichier.clone());
+            return 1;
+        }
+        self.faces.push(FaceEcrite {
+            cle: police.fichier.clone(),
+            face: choix.face,
+            utilises: font::Utilises::default(),
+        });
+        self.faces.len()
+    }
+
+    /// La face où un bloc sera dessiné, s'il en a une à lui **déjà résolue**
+    /// par [`Self::ressource`] ; `None` le renvoie à celle du livre. En
+    /// lecture seule, pour mesurer une scène pendant que le writer est
+    /// emprunté.
+    fn face_propre(&self, police: Option<&crate::model::Police>) -> Option<&font::Embarquee> {
+        let police = police?;
+        self.faces.iter().skip(1).find(|f| f.cle == police.fichier).map(|f| &*f.face)
+    }
+
+    /// Le nombre de faces que porte le document jusqu'ici, `/F1` comprise.
+    fn nombre(&self) -> usize {
+        self.faces.len()
     }
 
     /// How wide a string sets in **this document's** face.
@@ -87,12 +157,30 @@ impl Ecrivain {
     /// geometries trap with a font in it, and it shows up as a title running
     /// past the guillotine.
     pub(crate) fn largeur_mm(&self, s: &str, size_pt: f64) -> f64 {
-        self.face.largeur_mm(s, size_pt)
+        self.faces[0].face.largeur_mm(s, size_pt)
+    }
+
+    /// Les glyphes d'un texte dans la face `k` (comptée depuis 1, comme
+    /// `/Fk`), notés à mesure qu'ils se dessinent : le fichier décrit ce qu'il
+    /// montre et rien d'autre. Un numéro qu'aucune face ne porte vaut celle
+    /// du livre : un appelant ne fait pas paniquer le writer en demandant une
+    /// face jamais résolue.
+    fn poser(&mut self, k: usize, s: &str) -> (usize, String) {
+        let k = if (1..=self.faces.len()).contains(&k) { k } else { 1 };
+        let f = &mut self.faces[k - 1];
+        let glyphes = f.face.glyphes(s);
+        let mut hex = String::with_capacity(glyphes.len() * 4);
+        for (gid, c) in glyphes {
+            f.utilises.noter(gid, c);
+            hex.push_str(&format!("{gid:04X}"));
+        }
+        (k, hex)
     }
 }
 
 
-/// One run of text at a baseline, in millimetres, in the album's only face.
+/// One run of text at a baseline, in millimetres, dans la face `face` du
+/// document : `1` pour celle du livre, qui porte tout sauf les blocs.
 ///
 /// The single place a string turns into content operators. Under Identity-H a
 /// string is glyph ids, two bytes each, so it is written as a hex string:
@@ -101,6 +189,7 @@ impl Ecrivain {
 pub(crate) fn text_op(
     content: &mut String,
     ecrivain: &mut Ecrivain,
+    face: usize,
     x_mm: f64,
     y_mm: f64,
     size_pt: f64,
@@ -110,21 +199,14 @@ pub(crate) fn text_op(
     if s.is_empty() {
         return;
     }
-    let glyphes = ecrivain.face.glyphes(s);
-    if glyphes.is_empty() {
+    let (k, hex) = ecrivain.poser(face, s);
+    if hex.is_empty() {
         return;
-    }
-    let mut hex = String::with_capacity(glyphes.len() * 4);
-    for (gid, c) in glyphes {
-        // Noted as it is drawn, so the file describes what it shows and
-        // nothing else.
-        ecrivain.utilises.noter(gid, c);
-        hex.push_str(&format!("{gid:04X}"));
     }
     let (x, y) = (x_mm * MM_TO_PT, y_mm * MM_TO_PT);
     let (r, g, b) = (rgb[0], rgb[1], rgb[2]);
     content.push_str(&format!(
-        "BT /F1 {size_pt} Tf {r} {g} {b} rg {x:.2} {y:.2} Td <{hex}> Tj ET\n"
+        "BT /F{k} {size_pt} Tf {r} {g} {b} rg {x:.2} {y:.2} Td <{hex}> Tj ET\n"
     ));
 }
 
@@ -143,6 +225,7 @@ pub(crate) fn text_op(
 pub(crate) fn text_op_tourne(
     content: &mut String,
     ecrivain: &mut Ecrivain,
+    face: usize,
     x_mm: f64,
     y_mm: f64,
     angle_deg: f64,
@@ -151,26 +234,21 @@ pub(crate) fn text_op_tourne(
     s: &str,
 ) {
     if angle_deg == 0.0 {
-        text_op(content, ecrivain, x_mm, y_mm, size_pt, rgb, s);
+        text_op(content, ecrivain, face, x_mm, y_mm, size_pt, rgb, s);
         return;
     }
     if s.is_empty() {
         return;
     }
-    let glyphes = ecrivain.face.glyphes(s);
-    if glyphes.is_empty() {
+    let (k, hex) = ecrivain.poser(face, s);
+    if hex.is_empty() {
         return;
-    }
-    let mut hex = String::with_capacity(glyphes.len() * 4);
-    for (gid, c) in glyphes {
-        ecrivain.utilises.noter(gid, c);
-        hex.push_str(&format!("{gid:04X}"));
     }
     let (x, y) = (x_mm * MM_TO_PT, y_mm * MM_TO_PT);
     let (r, g, b) = (rgb[0], rgb[1], rgb[2]);
     let rot = coefficients_rotation(angle_deg);
     content.push_str(&format!(
-        "BT /F1 {size_pt} Tf {r} {g} {b} rg {rot} {x:.2} {y:.2} Tm <{hex}> Tj ET\n"
+        "BT /F{k} {size_pt} Tf {r} {g} {b} rg {rot} {x:.2} {y:.2} Tm <{hex}> Tj ET\n"
     ));
 }
 
@@ -195,16 +273,18 @@ pub(crate) fn coefficients_rotation(angle_deg: f64) -> String {
 /// path in this file — Flate, an `/SMask`, a colour, and a fresh PDF/A-2b
 /// verification — for a need the vector already covers.
 ///
-/// Black, and one fill. The project has no colour picker anywhere, and the
-/// asset's own `fill` is dropped at the pack's door. It is written `0 0 0 rg`
-/// rather than `0 g` on purpose: this document declares one colour space and
-/// one OutputIntent, and letting DeviceGray in through a fleuron would put a
-/// second one in front of veraPDF for no gain.
+/// Un seul remplissage, dans la couleur de l'objet, noir par défaut. Le
+/// `fill` de l'actif tombe à l'entrée du pack : la couleur est celle de
+/// l'objet, jamais celle du dessin. Elle s'écrit `r g b rg`, donc `0 0 0 rg`
+/// pour le noir et jamais `0 g`, exprès : ce document déclare un espace de
+/// couleur et un OutputIntent, et faire entrer DeviceGray par un fleuron
+/// mettrait un second espace devant veraPDF sans rien acheter.
 pub(crate) fn ornement_op(
     content: &mut String,
     dessin: &crate::ornement::Dessin,
     rect: &Rect,
     angle_deg: f64,
+    rgb: [f64; 3],
 ) {
     use crate::ornement::Segment;
     let [minx, miny, vw, vh] = dessin.viewbox;
@@ -226,10 +306,13 @@ pub(crate) fn ornement_op(
     // whole of the `-sy`: one flip, in the placement matrix, so that not a
     // single coordinate below has to know about it.
     content.push_str(&format!(
-        "{sx:.5} 0 0 {msy:.5} {e:.3} {f:.3} cm\n0 0 0 rg\n",
+        "{sx:.5} 0 0 {msy:.5} {e:.3} {f:.3} cm\n{r} {g} {b} rg\n",
         msy = -sy,
         e = x0 - minx * sx,
         f = y0 + h + miny * sy,
+        r = rgb[0],
+        g = rgb[1],
+        b = rgb[2],
     ));
     for chemin in &dessin.chemins {
         for seg in &chemin.segments {
@@ -751,6 +834,10 @@ pub const TEXT_LEADING_MM: f64 = 6.4;
 pub const INK: [f64; 3] = [0.25, 0.25, 0.25];
 pub const TEXT_INK: [f64; 3] = [0.2, 0.19, 0.16];
 
+/// L'encre d'un ornement dont l'objet n'en nomme aucune : le noir de tous
+/// les ornements imprimés avant que les objets aient une couleur.
+pub const ORNEMENT_INK: [f64; 3] = [0.0, 0.0, 0.0];
+
 /// Where a `texte` spread's first baseline sits: left margin of the recto
 /// page, at 62 % of the height. The editor mirrors this anchor.
 pub fn text_anchor(g: &SpreadGeometry) -> Point {
@@ -883,10 +970,11 @@ pub struct PdfWriter {
     doc: Document,
     page_ids: Vec<Object>,
     pages_id: lopdf::ObjectId,
-    /// Reserved at construction, written at `save`: the composite font can
-    /// only be described once the last spread has been drawn and the set of
-    /// glyphs is closed.
-    font_id: lopdf::ObjectId,
+    /// Un par face d'[`Ecrivain`], dans son ordre. Le premier se réserve à la
+    /// construction, les autres à la première page qui utilise leur face. Tous
+    /// s'écrivent à `save` : une police composite ne se décrit qu'une fois la
+    /// dernière planche dessinée et son jeu de glyphes fermé.
+    font_ids: Vec<lopdf::ObjectId>,
     pub(crate) ecrivain: Ecrivain,
     /// The refusal code of a face named by the album and not found, or
     /// `None`. Carried rather than logged: the screen has to say it.
@@ -913,8 +1001,8 @@ pub struct PdfWriter {
 /// descriptor carries no `/CIDSet`: both would announce a subset that does
 /// not exist. Only `/W` and `/ToUnicode` are restricted to the glyphs drawn —
 /// they describe the document, not the face.
-fn embed_font(doc: &mut Document, font_id: lopdf::ObjectId, ecrivain: &Ecrivain) {
-    let face = &ecrivain.face;
+fn embed_font(doc: &mut Document, font_id: lopdf::ObjectId, ecrite: &FaceEcrite) {
+    let face = &ecrite.face;
     let m = face.metrics();
     let nom = face.postscript().to_string();
 
@@ -956,13 +1044,13 @@ fn embed_font(doc: &mut Document, font_id: lopdf::ObjectId, ecrivain: &Ecrivain)
         },
         "FontDescriptor" => Object::Reference(descriptor_id),
         "DW" => 1000,
-        "W" => largeurs(ecrivain),
+        "W" => largeurs(ecrite),
         "CIDToGIDMap" => "Identity",
     });
 
     let tounicode_id = doc.add_object(Stream::new(
         dictionary! {},
-        tounicode(&ecrivain.utilises).into_bytes(),
+        tounicode(&ecrite.utilises).into_bytes(),
     ));
 
     doc.objects.insert(
@@ -983,21 +1071,21 @@ fn embed_font(doc: &mut Document, font_id: lopdf::ObjectId, ecrivain: &Ecrivain)
 /// Consecutive glyphs share one run — `first [w w w]` — which is the compact
 /// form and, more usefully, the stable one: the same album always yields the
 /// same array, because the glyphs come out of an ordered set.
-fn largeurs(ecrivain: &Ecrivain) -> Vec<Object> {
+fn largeurs(ecrite: &FaceEcrite) -> Vec<Object> {
     let mut out: Vec<Object> = Vec::new();
     let mut run: Vec<Object> = Vec::new();
     let mut debut = 0u16;
     let mut precedent: Option<u16> = None;
-    for (gid, _) in ecrivain.utilises.iter() {
+    for (gid, _) in ecrite.utilises.iter() {
         if precedent.is_some_and(|p| gid == p + 1) {
-            run.push(Object::Integer(i64::from(ecrivain.face.avance(gid))));
+            run.push(Object::Integer(i64::from(ecrite.face.avance(gid))));
         } else {
             if !run.is_empty() {
                 out.push(Object::Integer(i64::from(debut)));
                 out.push(Object::Array(std::mem::take(&mut run)));
             }
             debut = gid;
-            run.push(Object::Integer(i64::from(ecrivain.face.avance(gid))));
+            run.push(Object::Integer(i64::from(ecrite.face.avance(gid))));
         }
         precedent = Some(gid);
     }
@@ -1079,8 +1167,8 @@ impl PdfWriter {
             doc,
             page_ids: Vec::new(),
             pages_id,
-            font_id,
-            ecrivain: Ecrivain::depuis(choix.face),
+            font_ids: vec![font_id],
+            ecrivain: Ecrivain::depuis(choix.face, Some(dir)),
             police_defaut: choix.defaut,
             geom: geometry(album),
             bleed_mm: album.bleed_mm,
@@ -1110,7 +1198,7 @@ impl PdfWriter {
     /// silent about it.
     pub fn add_spread(&mut self, spread: &Spread, assets: &[JpegAsset]) -> Result<()> {
         let scene = self.scene_de(spread);
-        let (content, xobjects) = self.dessiner(&scene.objects, assets);
+        let (content, xobjects) = self.dessiner(&scene.objects, assets, &spread.objets);
         let b = self.bleed_mm;
         self.add_page(
             Boxes {
@@ -1123,14 +1211,24 @@ impl PdfWriter {
         Ok(())
     }
 
-    /// One spread's scene, laid out in **this document's** face.
+    /// One spread's scene, laid out in **this document's** faces.
     ///
     /// The half-title fits its title by shrinking it, so the scene the emitter
     /// draws from has to be the one measured in the face the emitter is about
-    /// to set the page in.
-    fn scene_de(&self, spread: &Spread) -> crate::scene::Scene {
-        let face = &self.ecrivain;
-        crate::scene::Scene::of_avec(spread, &self.geom, &|s, pt| face.largeur_mm(s, pt))
+    /// to set the page in. Un bloc qui a sa face s'y replie : elle se résout
+    /// ici d'abord, pour que les lignes se coupent dans la face qui les
+    /// dessine.
+    fn scene_de(&mut self, spread: &Spread) -> crate::scene::Scene {
+        for objet in &spread.objets {
+            self.ecrivain.ressource(objet.police_texte());
+        }
+        let ecrivain = &self.ecrivain;
+        crate::scene::Scene::of_avec(
+            spread,
+            &self.geom,
+            &|s, pt| ecrivain.largeur_mm(s, pt),
+            &|o| ecrivain.face_propre(o.police_texte()),
+        )
     }
 
     /// Lay a run of scene objects down as a content stream.
@@ -1141,10 +1239,14 @@ impl PdfWriter {
     /// the coordinates of the page being written, so this loop is a
     /// translation and nothing else, exactly as it was when it lived inside
     /// [`Self::add_spread`].
+    ///
+    /// `libres` est la liste des objets libres de la planche : la scène nomme
+    /// un bloc par son indice, et sa face comme sa couleur vivent sur l'objet.
     fn dessiner(
         &mut self,
         objets: &[crate::scene::Object],
         assets: &[JpegAsset],
+        libres: &[crate::model::Objet],
     ) -> (String, lopdf::Dictionary) {
         use crate::scene::Role;
         let mut content = String::new();
@@ -1162,7 +1264,7 @@ impl PdfWriter {
                 // left-aligned on the slot. Printed as typed, never
                 // truncated: the editor is the place that signals overflow.
                 Role::PhotoCaption { text, at, .. } => {
-                    text_op(&mut content, &mut self.ecrivain, at.x, at.y, PHOTO_CAPTION_SIZE_PT, INK, text);
+                    text_op(&mut content, &mut self.ecrivain, 1, at.x, at.y, PHOTO_CAPTION_SIZE_PT, INK, text);
                 }
                 // The three pages of text, now one role: the half-title's two
                 // sizes, the text page's regular leading and the colophon's
@@ -1172,6 +1274,7 @@ impl PdfWriter {
                         text_op(
                             &mut content,
                             &mut self.ecrivain,
+                            1,
                             at.x,
                             at.y - l.dy_mm,
                             l.size_pt,
@@ -1181,13 +1284,17 @@ impl PdfWriter {
                     }
                 }
                 Role::ChapterCaption { text, at } => {
-                    text_op(&mut content, &mut self.ecrivain, at.x, at.y, SPREAD_CAPTION_SIZE_PT, INK, text);
+                    text_op(&mut content, &mut self.ecrivain, 1, at.x, at.y, SPREAD_CAPTION_SIZE_PT, INK, text);
                 }
                 // A free block: laid out upright inside its box by the scene,
                 // then turned once around the box's centre. The lines know
                 // nothing about the angle, which is why the same three numbers
-                // draw it here, on the canvas and in the DOM.
-                Role::FreeText { at, lines, .. } => {
+                // draw it here, on the canvas and in the DOM. Face et couleur
+                // sont celles de l'objet, la face et l'encre du livre par défaut.
+                Role::FreeText { index, at, lines, .. } => {
+                    let libre = libres.get(*index);
+                    let face = self.ecrivain.ressource(libre.and_then(|o| o.police_texte()));
+                    let rgb = libre.and_then(|o| o.rgb()).unwrap_or(TEXT_INK);
                     let centre = crate::scene::centre(&object.rect);
                     for l in lines {
                         let p = crate::scene::tourner(
@@ -1198,11 +1305,12 @@ impl PdfWriter {
                         text_op_tourne(
                             &mut content,
                             &mut self.ecrivain,
+                            face,
                             p.x,
                             p.y,
                             object.angle,
                             l.size_pt,
-                            TEXT_INK,
+                            rgb,
                             &l.text,
                         );
                     }
@@ -1211,9 +1319,10 @@ impl PdfWriter {
                 // that no pack answers draws nothing and fails nothing — an
                 // `album.json` is repairable by hand, so an unknown id is a
                 // state someone can reach, and it must never cost an export.
-                Role::Ornement { id, .. } => {
+                Role::Ornement { index, id, .. } => {
                     if let Some(o) = crate::ornement::par_id(id) {
-                        ornement_op(&mut content, &o.dessin, &object.rect, object.angle);
+                        let rgb = libres.get(*index).and_then(|o| o.rgb()).unwrap_or(ORNEMENT_INK);
+                        ornement_op(&mut content, &o.dessin, &object.rect, object.angle, rgb);
                     }
                 }
             }
@@ -1237,7 +1346,7 @@ impl PdfWriter {
     ) -> Result<()> {
         let scene = self.scene_de(spread);
         let objets = crate::imposition::page(&scene, cote, &self.geom, pli_mm);
-        let (content, xobjects) = self.dessiner(&objets, assets);
+        let (content, xobjects) = self.dessiner(&objets, assets, &spread.objets);
         let f = crate::imposition::page_simple(album, cote, pli_mm);
         self.add_page(Boxes { media: [f.media_w, f.media_h], trim: f.trim }, content, xobjects);
         Ok(())
@@ -1312,9 +1421,19 @@ impl PdfWriter {
         let content_id = self
             .doc
             .add_object(Stream::new(dictionary! {}, content.into_bytes()));
+        // Toutes les faces que le document connaît, celles de la page
+        // comprises : une face se résout avant l'ajout de la première page
+        // qui l'utilise. Un album sans face de bloc ne liste que `/F1`.
+        while self.font_ids.len() < self.ecrivain.nombre() {
+            self.font_ids.push(self.doc.new_object_id());
+        }
+        let mut polices = dictionary! {};
+        for (i, id) in self.font_ids.iter().enumerate() {
+            polices.set(format!("F{}", i + 1), Object::Reference(*id));
+        }
         let resources = dictionary! {
             "XObject" => xobjects,
-            "Font" => dictionary! { "F1" => Object::Reference(self.font_id) },
+            "Font" => polices,
         };
         let pt = |v: f64| Object::Real((v * MM_TO_PT) as f32);
         let page_id = self.doc.add_object(dictionary! {
@@ -1339,9 +1458,13 @@ impl PdfWriter {
                 "Count" => count,
             }),
         );
-        // The glyph set is closed now, so the face can finally describe
-        // itself: `/W` and `/ToUnicode` name what this document draws.
-        embed_font(&mut self.doc, self.font_id, &self.ecrivain);
+        // Les jeux de glyphes sont fermés : chaque face peut se décrire, `/W`
+        // et `/ToUnicode` nomment ce que le document y dessine. Une face
+        // résolue après la dernière page n'a pas d'identifiant, elle reste
+        // dehors.
+        for (id, ecrite) in self.font_ids.iter().zip(&self.ecrivain.faces) {
+            embed_font(&mut self.doc, *id, ecrite);
+        }
         // Colour, standard, dates and identity, all at once: a file that
         // carries some of them and not the others fails a supplier's
         // preflight exactly as loudly as one that carries none.
@@ -1569,6 +1692,8 @@ mod tests {
 
     fn bloc_libre(angle: f64) -> crate::model::Objet {
         crate::model::Objet {
+            couleur: None,
+            police: None,
             x: 40.0,
             y: 60.0,
             w: 80.0,
@@ -1610,6 +1735,8 @@ mod tests {
 
     fn ornement_libre(angle: f64) -> crate::model::Objet {
         crate::model::Objet {
+            couleur: None,
+            police: None,
             x: 40.0,
             y: 60.0,
             w: 80.0,
@@ -1740,6 +1867,203 @@ mod tests {
         };
         assert!(sans.trim().is_empty(), "une planche vide ne dessine rien : {sans:?}");
         assert!(!flux_avec_objet(bloc_libre(0.0)).trim().is_empty());
+    }
+
+    /// Un album dans `dir`, une planche portant `objets`, écrit et relu.
+    fn ecrit_objets(dir: &std::path::Path, objets: Vec<crate::model::Objet>) -> Document {
+        let mut album =
+            Album::new("t", std::path::Path::new("."), Size { w: 210.0, h: 210.0 });
+        album.spreads.push(Spread {
+            template: "texte".into(),
+            slots: vec![],
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets,
+        });
+        let mut w = PdfWriter::new(&album, dir);
+        w.add_spread(&album.spreads[0], &[]).unwrap();
+        let path = dir.join("objets.pdf");
+        w.save(&path).unwrap();
+        let doc = Document::load(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        doc
+    }
+
+    /// Les noms `/Fk` que la première page déclare, dans l'ordre.
+    fn ressources_de_police(doc: &Document) -> Vec<String> {
+        let (_, page_id) = doc.get_pages().into_iter().next().expect("une page");
+        let resources = doc.get_page_resources(page_id).unwrap().0.expect("des ressources");
+        let fonts = resources.get(b"Font").unwrap().as_dict().unwrap();
+        fonts.iter().map(|(k, _)| String::from_utf8_lossy(k).into_owned()).collect()
+    }
+
+    /// Les `FontFile2` du document, par leur nom de base.
+    fn faces_embarquees(doc: &Document) -> Vec<String> {
+        let mut out: Vec<String> = doc
+            .objects
+            .values()
+            .filter_map(|o| o.as_dict().ok())
+            .filter(|d| d.get(b"FontFile2").is_ok())
+            .map(|d| d.get(b"FontName").unwrap().as_name_str().unwrap().to_string())
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn dossier_objets(nom: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("colophon-{nom}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// **Preuve inversée de la couleur.** Un bloc coloré dans la police du
+    /// livre ne change que son `rg` : même flux au caractère près ailleurs,
+    /// aucune `/F2`, une seule face embarquée. Et la sonde mord : la couleur
+    /// se lit bien dans le flux.
+    #[test]
+    fn un_bloc_colore_ne_change_que_son_rg() {
+        let dir = dossier_objets("colore");
+        let noir = flux_avec_objet(bloc_libre(0.0));
+        let colore = crate::model::Objet { couleur: Some("#ff0000".into()), ..bloc_libre(0.0) };
+        let rouge = flux_avec_objet(colore.clone());
+        let [r, g, b] = TEXT_INK;
+        assert!(noir.contains(&format!(" Tf {r} {g} {b} rg ")), "l'encre du livre par défaut :\n{noir}");
+        assert!(rouge.contains(" Tf 1 0 0 rg "), "la couleur de l'objet :\n{rouge}");
+        assert_eq!(noir.replace(&format!("{r} {g} {b} rg"), "1 0 0 rg"), rouge, "rien d'autre ne bouge");
+
+        let doc = ecrit_objets(&dir, vec![colore]);
+        assert_eq!(ressources_de_police(&doc), ["F1"]);
+        assert_eq!(faces_embarquees(&doc), [font::FONT_NAME]);
+
+        // Une couleur gâtée à la main retombe sur l'encre du livre.
+        let gatee = crate::model::Objet { couleur: Some("rouge".into()), ..bloc_libre(0.0) };
+        assert_eq!(flux_avec_objet(gatee), noir);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Un ornement prend la couleur de son objet, en `r g b rg` comme le noir
+    /// qu'il avait : jamais `g`, le document ne déclare qu'un espace.
+    #[test]
+    fn un_ornement_prend_la_couleur_de_son_objet() {
+        let o = crate::model::Objet { couleur: Some("#336699".into()), ..ornement_libre(0.0) };
+        let flux = flux_avec_objet(o);
+        let [r, g, b] = crate::couleur::parse("#336699").unwrap();
+        assert!(flux.contains(&format!("\n{r} {g} {b} rg\n")), "{flux}");
+        assert!(!flux.contains("0 0 0 rg"), "{flux}");
+        assert!(!flux.contains(" g\n"), "jamais DeviceGray : {flux}");
+    }
+
+    /// Un bloc qui porte sa police la fait entrer dans le fichier : `/F2`
+    /// sur la page, dans le flux, et un second `FontFile2` à son nom. Deux
+    /// blocs dans la même face la partagent, il n'y a pas de `/F3` ; le texte
+    /// du livre, lui, reste en `/F1`.
+    #[test]
+    fn un_bloc_dans_sa_police_ajoute_une_face_au_fichier() {
+        let dir = dossier_objets("deux-faces");
+        let nom = "objet-ColophonTest-Regular.ttf";
+        std::fs::write(dir.join(nom), font::tests::face_latin1()).unwrap();
+        let police = crate::model::Police {
+            fichier: nom.into(),
+            postscript: "ColophonTest-Regular".into(),
+            nom: "Colophon Test Regular".into(),
+        };
+        let propre = crate::model::Objet { police: Some(police), ..bloc_libre(0.0) };
+        let doc = ecrit_objets(&dir, vec![bloc_libre(0.0), propre.clone(), propre]);
+        assert_eq!(ressources_de_police(&doc), ["F1", "F2"]);
+        let mut attendu = vec!["ColophonTest-Regular".to_string(), font::FONT_NAME.to_string()];
+        attendu.sort();
+        assert_eq!(faces_embarquees(&doc), attendu);
+
+        let (_, page_id) = doc.get_pages().into_iter().next().unwrap();
+        let c = doc.get_dictionary(page_id).unwrap().get(b"Contents").unwrap().as_reference().unwrap();
+        let contenu = String::from_utf8_lossy(&flux(&doc, c)).into_owned();
+        assert_eq!(contenu.matches("/F1 ").count(), 1, "{contenu}");
+        assert_eq!(contenu.matches("/F2 ").count(), 2, "{contenu}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Une police de bloc effacée du dossier, ou nommée hors grammaire, ne
+    /// fait pas échouer l'export : le bloc sort dans la face du livre, `/F1`
+    /// seule, comme la police de l'album absente en 6.1.
+    #[test]
+    fn une_police_de_bloc_absente_sort_dans_celle_du_livre() {
+        let dir = dossier_objets("bloc-sans-face");
+        for fichier in ["objet-Disparue.ttf", "../police.ttf"] {
+            let police = crate::model::Police {
+                fichier: fichier.into(),
+                postscript: "Disparue".into(),
+                nom: "Disparue".into(),
+            };
+            let bloc = crate::model::Objet { police: Some(police), ..bloc_libre(0.0) };
+            let doc = ecrit_objets(&dir, vec![bloc]);
+            assert_eq!(ressources_de_police(&doc), ["F1"], "{fichier}");
+            assert_eq!(faces_embarquees(&doc), [font::FONT_NAME], "{fichier}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Le fichier de veraPDF pour A-s1 : une planche, le livre en Source
+    /// Sans, un bloc dans une vraie face du Mac, coloré, un autre tourné, et
+    /// un ornement coloré. `COLOPHON_FACE` choisit la face (Helvetica Neue
+    /// Bold par défaut).
+    /// `cargo test -p colophon-core --release banc_deux_faces -- --ignored --nocapture`
+    /// puis `verapdf -f 2b --format text /tmp/colophon-deux-faces.pdf`.
+    #[test]
+    #[ignore]
+    fn banc_deux_faces() {
+        let voulue = std::env::var("COLOPHON_FACE").unwrap_or_else(|_| "Helvetica Neue Bold".into());
+        let Some(installee) =
+            font::installed().into_iter().find(|i| i.face.embeddable() && i.face.nom == voulue)
+        else {
+            println!("aucune face acceptée ne s'appelle « {voulue} »");
+            return;
+        };
+        let dir = dossier_objets("banc-deux-faces");
+        let police = crate::build::poser_police_objet(&dir, &installee).expect("posée");
+        let bloc = |angle: f64, couleur: &str, texte: &str| crate::model::Objet {
+            couleur: Some(couleur.into()),
+            police: Some(police.clone()),
+            contenu: crate::model::Contenu::Texte {
+                texte: texte.into(),
+                taille_pt: 14.0,
+                interligne_mm: None,
+                alignement: crate::model::Alignement::Centre,
+            },
+            ..bloc_libre(angle)
+        };
+        let mut album =
+            Album::new("Deux faces", std::path::Path::new("."), Size { w: 210.0, h: 210.0 });
+        album.spreads.push(Spread {
+            template: "duo".into(),
+            slots: vec![
+                Slot { src: "a.jpg".into(), focal: [0.5, 0.5], zoom: 1.0, caption: Some("la plage".into()) },
+                Slot::new("b.jpg".into(), [0.5, 0.5]),
+            ],
+            caption: Some("Corse, 2013".into()),
+            text: None,
+            edited: false,
+            locked: false,
+            objets: vec![
+                bloc(0.0, "#c0604a", "Zażółć gęślą jaźń, un été à l'Île-Rousse"),
+                crate::model::Objet { x: 250.0, ..bloc(-20.0, "#ffffff", "Calvi, au matin") },
+                crate::model::Objet { couleur: Some("#7f7f7f".into()), ..ornement_libre(10.0) },
+            ],
+        });
+        let assets = vec![
+            solid_jpeg([200, 30, 40], 160, 120).unwrap(),
+            solid_jpeg([30, 120, 200], 160, 120).unwrap(),
+        ];
+        let mut w = PdfWriter::new(&album, &dir);
+        w.add_spread(&album.spreads[0], &assets).unwrap();
+        let out = "/tmp/colophon-deux-faces.pdf";
+        w.save(std::path::Path::new(out)).unwrap();
+        let doc = Document::load(out).unwrap();
+        println!("{out} : {:?}, {:?}", ressources_de_police(&doc), faces_embarquees(&doc));
+        assert_eq!(ressources_de_police(&doc), ["F1", "F2"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The header says 1.6 and the line under it carries the binary marker.
@@ -1972,11 +2296,10 @@ mod tests {
             let mut doc = Document::with_version(pdfx::PDF_VERSION);
             let id = doc.new_object_id();
             let face = font::Embarquee::depuis(octets, 0).expect("face ouverte");
-            let mut ecrivain =
-                Ecrivain { face: std::borrow::Cow::Owned(face), utilises: font::Utilises::default() };
+            let mut ecrivain = Ecrivain::depuis(std::borrow::Cow::Owned(face), None);
             let mut content = String::new();
-            text_op(&mut content, &mut ecrivain, 0.0, 0.0, 10.0, INK, "Corse, 2013");
-            embed_font(&mut doc, id, &ecrivain);
+            text_op(&mut content, &mut ecrivain, 1, 0.0, 0.0, 10.0, INK, "Corse, 2013");
+            embed_font(&mut doc, id, &ecrivain.faces[0]);
             (doc, id, content)
         };
         let (a, ia, ca) = depuis(font::FONT_DATA.to_vec());

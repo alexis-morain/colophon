@@ -146,13 +146,24 @@ _Avoid_: font, typeface, family, style
 **The album's face**:
 The one face a book is set in, whatever else the machine carries: captions,
 chapter titles, half-title, colophon, cover and spine. It is a property of the
-album, never of an object on a page, and it is recorded in `album.json` by the
+album, never of an object on a page (a block that wants another face carries
+its own, below), and it is recorded in `album.json` by the
 name of the file **copied beside it** — so a folder carried to another machine
 opens and prints the same, and nothing ever looks a face up by name on the
 machine that opens it. Absent means the face the engine ships. Changing it
 recomposes nothing: same spreads, same photographs, same crops, and only the
 line breaks follow the new set widths.
 _Avoid_: the album font, the chosen font, embedded font
+
+**A block's face**:
+A face one free text block is set in instead of the album's, copied beside
+`album.json` like it, under a name of a closed grammar
+(`objet-<postscript>.ttf|otf`) so the file cannot be a path. Bold and italic
+are faces of their own, never a simulation: a block is bold because its face
+says so in its own tables. Two blocks in one face share one file, and a save
+removes the files no block names any more. Gone from the folder, the block
+prints in the album's face and never fails an export.
+_Avoid_: object font, custom font, bold flag
 
 
 **Bleed**:

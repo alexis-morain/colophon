@@ -242,8 +242,22 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
     let face = crate::font::face_album(dir, album.police.as_ref().map(|p| p.fichier.as_str()));
     let mesure = |s: &str, pt: f64| face.face.largeur_mm(s, pt);
     let absents = |s: &str| face.face.absents(s);
-    let compteurs =
-        compteurs_avec_face(&album, &infos, &pdf::geometry(&album), &mesure, &absents);
+    // Les faces propres des blocs, lues une fois chacune, comme l'émetteur
+    // les lit. Une face nommée et absente n'entre pas : le bloc sort dans la
+    // face du livre, et le linter le mesure là où l'export le posera.
+    let faces_objet = faces_des_objets(dir, &album);
+    let face_objet = |o: &crate::model::Objet| {
+        let p = o.police_texte()?;
+        faces_objet.get(&p.fichier).map(|f| &**f)
+    };
+    let compteurs = compteurs_avec_face(
+        &album,
+        &infos,
+        &pdf::geometry(&album),
+        &mesure,
+        &absents,
+        &face_objet,
+    );
     let ok = compteurs.all().iter().all(|c| c.passes());
 
     Ok(AuditReport {
@@ -253,6 +267,25 @@ pub fn audit(dir: &Path) -> Result<AuditReport> {
         notes,
         compteurs,
     })
+}
+
+/// Les faces de bloc que l'album nomme et que son dossier porte, par nom de
+/// fichier. Un nom hors grammaire, ou un fichier disparu, n'y est pas.
+fn faces_des_objets(
+    dir: &Path,
+    album: &Album,
+) -> std::collections::BTreeMap<String, std::borrow::Cow<'static, crate::font::Embarquee>> {
+    let mut out = std::collections::BTreeMap::new();
+    for p in album.spreads.iter().flat_map(|s| &s.objets).filter_map(|o| o.police_texte()) {
+        if out.contains_key(&p.fichier) {
+            continue;
+        }
+        let choix = crate::font::face_objet(dir, p);
+        if choix.defaut.is_none() {
+            out.insert(p.fichier.clone(), choix.face);
+        }
+    }
+    out
 }
 
 /// Measure every photo an album (or a set of albums sharing a thumbnail
@@ -400,18 +433,24 @@ pub(crate) fn compteurs_avec(
     // projet : c'est elle que `text_width_mm` mesure et que l'export pose.
     let projet = crate::font::face_projet();
     let absents = |s: &str| projet.absents(s);
-    compteurs_avec_face(album, infos, g, mesure, &absents)
+    compteurs_avec_face(album, infos, g, mesure, &absents, &crate::scene::sans_face_d_objet)
 }
 
 /// [`compteurs_avec`] plus la question que seule la face peut trancher :
 /// quels caractères du livre elle ne dessine pas. `absents` rend, pour un
 /// texte, ceux que l'émetteur remplacera par « ? ».
-pub(crate) fn compteurs_avec_face(
+///
+/// `face_objet` est la face propre d'un bloc, comme [`crate::scene::Scene::of_avec`]
+/// la reçoit : un bloc qui en a une s'y replie et s'y compte, les autres
+/// restent dans la face du livre. Une face nommée et absente du dossier rend
+/// `None` : le bloc sort dans la face du livre, et c'est là qu'on le compte.
+pub(crate) fn compteurs_avec_face<'f>(
     album: &Album,
     infos: &HashMap<String, PhotoInfo>,
     g: &pdf::SpreadGeometry,
     mesure: &dyn Fn(&str, f64) -> f64,
     absents: &dyn Fn(&str) -> Vec<char>,
+    face_objet: &dyn Fn(&crate::model::Objet) -> Option<&'f crate::font::Embarquee>,
 ) -> Counters {
     // The cells the linter judges are the objects the emitter draws: one
     // derivation for both, so a counter can never grade a rectangle the PDF
@@ -419,7 +458,11 @@ pub(crate) fn compteurs_avec_face(
     // free-object counters below reading the very same walk — and the bench
     // re-runs all of this after every candidate substitution.
     let scenes: Vec<crate::scene::Scene> =
-        album.spreads.iter().map(|s| crate::scene::Scene::of_avec(s, g, mesure)).collect();
+        album
+            .spreads
+            .iter()
+            .map(|s| crate::scene::Scene::of_avec(s, g, mesure, face_objet))
+            .collect();
     let rects_of: Vec<Vec<pdf::Rect>> = scenes
         .iter()
         .map(|scene| {
@@ -700,8 +743,11 @@ pub(crate) fn compteurs_avec_face(
     // écrit lui-même (garde, colophon) sont dans la scène comme les autres :
     // un nom de lieu s'y imprime aussi.
     let mut absents_trouves = Vec::new();
-    let mut signale = |planche: usize, quoi: &str, texte: &str| {
-        let manquent = absents(texte);
+    let mut signale = |planche: usize, quoi: &str, texte: &str, propre: Option<&crate::font::Embarquee>| {
+        let manquent = match propre {
+            Some(face) => face.absents(texte),
+            None => absents(texte),
+        };
         if manquent.is_empty() {
             return;
         }
@@ -712,34 +758,36 @@ pub(crate) fn compteurs_avec_face(
             case_idx: None,
             src: None,
             info: format!(
-                "{quoi} : {}{suite} ne se dessinent pas dans la police du livre, imprimés « ? »",
-                liste.join(", ")
+                "{quoi} : {}{suite} ne se dessinent pas dans {}, imprimés « ? »",
+                liste.join(", "),
+                if propre.is_some() { "sa police" } else { "la police du livre" }
             ),
         });
     };
     if let Some(cover) = &album.cover {
-        signale(0, "titre de couverture", &cover.title);
-        signale(0, "sous-titre de couverture", &cover.subtitle);
-        signale(0, "quatrième de couverture", &cover.back_text);
+        signale(0, "titre de couverture", &cover.title, None);
+        signale(0, "sous-titre de couverture", &cover.subtitle, None);
+        signale(0, "quatrième de couverture", &cover.back_text, None);
     } else {
-        signale(0, "titre de couverture", &album.title);
+        signale(0, "titre de couverture", &album.title, None);
     }
     for (si, scene) in scenes.iter().enumerate() {
         for objet in &scene.objects {
             match &objet.role {
                 crate::scene::Role::PhotoCaption { cell, text, .. } => {
-                    signale(si + 1, &format!("légende de la case {}", cell + 1), text)
+                    signale(si + 1, &format!("légende de la case {}", cell + 1), text, None)
                 }
                 crate::scene::Role::ChapterCaption { text, .. } => {
-                    signale(si + 1, "titre de chapitre", text)
+                    signale(si + 1, "titre de chapitre", text, None)
                 }
                 crate::scene::Role::Text { lines, .. } => {
                     let tout: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
-                    signale(si + 1, "page de texte", &tout.join("\n"))
+                    signale(si + 1, "page de texte", &tout.join("\n"), None)
                 }
                 crate::scene::Role::FreeText { index, lines, .. } => {
                     let tout: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
-                    signale(si + 1, &format!("objet libre n° {}", index + 1), &tout.join("\n"))
+                    let propre = album.spreads[si].objets.get(*index).and_then(face_objet);
+                    signale(si + 1, &format!("objet libre n° {}", index + 1), &tout.join("\n"), propre)
                 }
                 _ => {}
             }
@@ -1026,6 +1074,8 @@ mod tests {
             edited: false,
             locked: false,
             objets: vec![Objet {
+                couleur: None,
+                police: None,
                 x: 80.0,
                 y: 80.0,
                 w: 40.0,
@@ -1108,6 +1158,65 @@ mod tests {
         assert!(c.caractere_absent.passes(), "il avertit, il ne décide pas");
     }
 
+    /// Un bloc dans sa propre police se compte dans cette police : « ł » est
+    /// absent de la face de test (0x20..0xFF) et présent dans celle du livre,
+    /// donc il n'est nommé que pour le bloc qui la porte. Un bloc dont la
+    /// police manque du dossier se compte dans la face du livre, où il sortira,
+    /// et ni le linter ni la lecture de l'album n'échouent.
+    #[test]
+    fn un_bloc_se_compte_dans_sa_police_et_une_police_absente_ne_casse_rien() {
+        use crate::model::{Alignement, Contenu, Objet, Police};
+        let dir = std::env::temp_dir().join(format!("colophon-audit-police-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let nom = "objet-ColophonTest-Regular.ttf";
+        fs::write(dir.join(nom), crate::font::tests::face_latin1()).unwrap();
+
+        let bloc = |x: f64, fichier: &str| Objet {
+            x,
+            y: 80.0,
+            w: 80.0,
+            h: 30.0,
+            angle: 0.0,
+            contenu: Contenu::Texte {
+                texte: "Zażółć".into(),
+                taille_pt: 10.0,
+                interligne_mm: None,
+                alignement: Alignement::Gauche,
+            },
+            couleur: None,
+            police: Some(Police { fichier: fichier.into(), postscript: "X".into(), nom: "X".into() }),
+        };
+        let mut a = crate::model::Album::new(
+            "Calvi",
+            &dir,
+            crate::model::Size { w: 210.0, h: 210.0 },
+        );
+        a.spreads = vec![crate::model::Spread {
+            template: "texte".into(),
+            slots: Vec::new(),
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets: vec![bloc(20.0, nom), bloc(250.0, "objet-Disparue.ttf")],
+        }];
+        fs::write(dir.join("album.json"), serde_json::to_string(&a).unwrap()).unwrap();
+        fs::write(dir.join("thumbs.json"), "{}").unwrap();
+
+        let rapport = audit(&dir).expect("une police absente ne fait pas échouer le linter");
+        let c = &rapport.compteurs.caractere_absent;
+        assert_eq!(c.count, 1, "{:?}", c.details);
+        assert!(c.details[0].info.starts_with("objet libre n° 1"), "{}", c.details[0].info);
+        assert!(c.details[0].info.contains("« ł »"), "{}", c.details[0].info);
+        assert!(c.details[0].info.contains("sa police"), "{}", c.details[0].info);
+
+        // Sans la face du bloc, tout se compte dans celle du livre : rien.
+        let c = compteurs(&a, &HashMap::new(), &pdf::geometry(&a));
+        assert_eq!(c.caractere_absent.count, 0, "{:?}", c.caractere_absent.details);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// Les deux compteurs des objets libres, sur un album fabriqué pour eux :
     /// un objet posé dans la bande sûre, un objet dont le texte dépasse sa
     /// boîte. Les deux montent, et **eux seuls** — un compteur qui tape sur
@@ -1124,6 +1233,8 @@ mod tests {
         );
         let g = pdf::geometry(&a);
         let bloc = |x: f64, y: f64, w: f64, h: f64, texte: &str| Objet {
+            couleur: None,
+            police: None,
             x,
             y,
             w,
@@ -1212,6 +1323,8 @@ mod tests {
             edited: false,
             locked: false,
             objets: vec![Objet {
+                couleur: None,
+                police: None,
                 // Dans la bande sûre, sans toucher la coupe : c'est un choix,
                 // pas un défaut, et c'est exactement le cas litigieux.
                 x: g.bleed + 1.0,
@@ -1294,6 +1407,8 @@ mod tests {
             edited: false,
             locked: false,
             objets: vec![Objet {
+                couleur: None,
+                police: None,
                 x: 80.0,
                 y: 80.0,
                 w: 8.0,
@@ -1348,6 +1463,8 @@ mod tests {
             .map(|o| o.rect.clone())
             .expect("la planche porte deux photos");
         let boite = |contenu: Contenu| Objet {
+            couleur: None,
+            police: None,
             x: case.x + case.w / 2.0 - 10.0,
             y: case.y + case.h / 2.0 - 10.0,
             w: 20.0,

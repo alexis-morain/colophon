@@ -34,13 +34,47 @@
 use std::fmt;
 use std::sync::OnceLock;
 
-/// Le manifeste et les trois actifs, compilés dans le binaire comme l'OFL,
-/// l'ICC sRGB et GeoNames le sont déjà.
+/// Le manifeste et ses actifs, compilés dans le binaire comme l'OFL,
+/// l'ICC sRGB et GeoNames le sont déjà. Un actif de plus est une ligne de
+/// plus ici : `include_str!` veut un chemin littéral, et le test du pack
+/// refuse un manifeste qui nomme un fichier absent de cette liste.
 const MANIFESTE: &str = include_str!("../assets/ornements/pack.toml");
-const SVG: [(&str, &str); 3] = [
+const SVG: [(&str, &str); 35] = [
     ("filet-flare.svg", include_str!("../assets/ornements/filet-flare.svg")),
     ("filet-fleche.svg", include_str!("../assets/ornements/filet-fleche.svg")),
     ("filet-losange.svg", include_str!("../assets/ornements/filet-losange.svg")),
+    ("fleuron-lierre.svg", include_str!("../assets/ornements/fleuron-lierre.svg")),
+    ("fleuron-vrilles.svg", include_str!("../assets/ornements/fleuron-vrilles.svg")),
+    ("fleuron-bouquet.svg", include_str!("../assets/ornements/fleuron-bouquet.svg")),
+    ("fleuron-arabesque.svg", include_str!("../assets/ornements/fleuron-arabesque.svg")),
+    ("fleuron-grappe.svg", include_str!("../assets/ornements/fleuron-grappe.svg")),
+    ("fleuron-rose.svg", include_str!("../assets/ornements/fleuron-rose.svg")),
+    ("fleuron-trophee.svg", include_str!("../assets/ornements/fleuron-trophee.svg")),
+    ("fleuron-lys.svg", include_str!("../assets/ornements/fleuron-lys.svg")),
+    ("fleuron-crosse.svg", include_str!("../assets/ornements/fleuron-crosse.svg")),
+    ("fleuron-ramage.svg", include_str!("../assets/ornements/fleuron-ramage.svg")),
+    ("fleuron-vigne.svg", include_str!("../assets/ornements/fleuron-vigne.svg")),
+    ("fleuron-tourbillon.svg", include_str!("../assets/ornements/fleuron-tourbillon.svg")),
+    ("fleuron-oiseau.svg", include_str!("../assets/ornements/fleuron-oiseau.svg")),
+    ("fleuron-brin.svg", include_str!("../assets/ornements/fleuron-brin.svg")),
+    ("filet-fuseaux.svg", include_str!("../assets/ornements/filet-fuseaux.svg")),
+    ("filet-olive.svg", include_str!("../assets/ornements/filet-olive.svg")),
+    ("filet-noeud.svg", include_str!("../assets/ornements/filet-noeud.svg")),
+    ("filet-perle.svg", include_str!("../assets/ornements/filet-perle.svg")),
+    ("filet-ondule.svg", include_str!("../assets/ornements/filet-ondule.svg")),
+    ("filet-effile.svg", include_str!("../assets/ornements/filet-effile.svg")),
+    ("filet-brindille.svg", include_str!("../assets/ornements/filet-brindille.svg")),
+    ("filet-frise.svg", include_str!("../assets/ornements/filet-frise.svg")),
+    ("filet-fleurettes.svg", include_str!("../assets/ornements/filet-fleurettes.svg")),
+    ("filet-feuillage.svg", include_str!("../assets/ornements/filet-feuillage.svg")),
+    ("separateur-spirales.svg", include_str!("../assets/ornements/separateur-spirales.svg")),
+    ("separateur-boucles.svg", include_str!("../assets/ornements/separateur-boucles.svg")),
+    ("separateur-rinceaux.svg", include_str!("../assets/ornements/separateur-rinceaux.svg")),
+    ("separateur-rameaux.svg", include_str!("../assets/ornements/separateur-rameaux.svg")),
+    ("separateur-palmette.svg", include_str!("../assets/ornements/separateur-palmette.svg")),
+    ("separateur-pointes.svg", include_str!("../assets/ornements/separateur-pointes.svg")),
+    ("separateur-vague.svg", include_str!("../assets/ornements/separateur-vague.svg")),
+    ("separateur-volutes.svg", include_str!("../assets/ornements/separateur-volutes.svg")),
 ];
 
 /// Les licences qu'un ornement a le droit de porter, et il n'y en aura pas de
@@ -761,13 +795,16 @@ mod tests {
         assert_eq!(PACK_INTERNE, "colophon", "miroir : ornement.ts::PACK_INTERNE");
     }
 
-    /// Le pack livré se lit, et il se lit **entièrement** : trois actifs, leur
-    /// provenance, leur dessin. C'est ce test qui rend légitime le `expect` de
+    /// Le pack livré se lit, et il se lit **entièrement** : trente-cinq actifs,
+    /// leur provenance, leur dessin. C'est ce test qui rend légitime le `expect` de
     /// [`pack`] — la conformité est prouvée ici, pas devinée à chaud.
     #[test]
     fn le_pack_livre_est_conforme() {
         let p = pack();
-        assert_eq!(p.len(), 3, "trois actifs de démonstration");
+        assert_eq!(p.len(), 35, "trois de démonstration et trente-deux de Commons");
+        for (famille, n) in [(Famille::Fleuron, 14), (Famille::Filet, 13), (Famille::Separateur, 8)] {
+            assert_eq!(p.iter().filter(|o| o.famille == famille).count(), n, "{famille:?}");
+        }
         for o in p {
             assert!(LICENCES.contains(&o.licence.as_str()), "{} : {}", o.id, o.licence);
             assert!(o.source.starts_with("https://commons.wikimedia.org/wiki/File:"));

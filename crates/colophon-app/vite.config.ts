@@ -109,11 +109,17 @@ function albumDevServer(dir: string): Plugin {
       // Le pack d'ornements, tel que le moteur le lit : le harnais tire du
       // même endroit que la fenêtre, sinon l'un des deux montrerait un pack
       // que l'autre n'a pas.
+      // Le dump dépasse le mégaoctet de tampon par défaut de Node depuis que
+      // le pack porte trente-cinq dessins (1,9 Mo) : au-delà, execFileSync
+      // lève ENOBUFS et le sélecteur se dit vide.
       server.middlewares.use("/__dev/ornements", (_req, res) => {
         try {
           res.setHeader("Content-Type", "application/json");
           res.end(
-            execFileSync(engineBinary, ["--dump-ornements"], { encoding: "utf8" }),
+            execFileSync(engineBinary, ["--dump-ornements"], {
+              encoding: "utf8",
+              maxBuffer: 32 * 1024 * 1024,
+            }),
           );
         } catch (e) {
           res.statusCode = 500;

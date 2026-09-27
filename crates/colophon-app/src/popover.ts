@@ -14,17 +14,23 @@ export function largeurLegende(largeurCase: number): number {
   return Math.max(240, Math.min(largeurCase, 420));
 }
 
-/** Sous l'objet, aligné sur son bord gauche ; au-dessus quand le bas de la
- *  fenêtre est trop proche ; toujours dans la fenêtre. */
+/** Sous l'objet, aligné sur son bord gauche ; au-dessus quand le bas est
+ *  trop proche ; toujours dans la fenêtre.
+ *
+ *  `bas` est la limite qu'il ne doit pas franchir : le haut de la barre
+ *  contextuelle (`basUtile`), pas le bas de la fenêtre. Mesuré avec #55 : un
+ *  bloc posé bas ouvrait ses réglages par-dessus « Bloc de texte » et
+ *  « Ornement ». */
 export function placerSous(
   ancre: Boite,
   taille: { w: number; h: number },
   fenetre: { w: number; h: number },
+  bas: number = fenetre.h,
 ): { left: number; top: number } {
   const left = Math.max(ECART, Math.min(ancre.left, fenetre.w - taille.w - ECART));
   const dessous = ancre.bottom + ECART;
   const top =
-    dessous + taille.h + ECART > fenetre.h
+    dessous + taille.h + ECART > bas
       ? Math.max(ECART, ancre.top - taille.h - ECART)
       : dessous;
   return { left, top };
@@ -40,4 +46,11 @@ export function enveloppe(points: { x: number; y: number }[]): Boite {
     right: Math.max(...xs),
     bottom: Math.max(...ys),
   };
+}
+
+/** Le haut de la barre contextuelle, à défaut le bas de la fenêtre : ce
+ *  qu'un popover ne recouvre jamais. */
+export function basUtile(): number {
+  const barre = document.querySelector(".context-line");
+  return barre ? barre.getBoundingClientRect().top : window.innerHeight;
 }

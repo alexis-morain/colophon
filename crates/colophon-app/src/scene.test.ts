@@ -582,3 +582,70 @@ describe("the two guards a gesture applies", () => {
     expect(horsMarge(juste, 25, g)).toBe(true);
   });
 });
+
+// A-s2 : un bloc qui a sa face se replie dans sa face. La mesure reçoit la
+// famille, et c'est la seule chose qui change : Vitest n'a pas de fonte, donc
+// la mesure synthétique rend une chasse par famille pour que la coupure le
+// prouve.
+describe("a block set in its own face", () => {
+  const police = {
+    fichier: "objet-HelveticaNeue-Bold.ttf",
+    postscript: "HelveticaNeue-Bold",
+    nom: "Helvetica Neue Bold",
+  };
+  const bloc = (extra: Partial<Objet>): Objet =>
+    ({
+      x: 20,
+      y: 20,
+      w: 40,
+      h: 30,
+      type: "texte",
+      texte: "Calvi Corse été",
+      taille_pt: 12,
+      ...extra,
+    }) as Objet;
+
+  it("hands its family to every measure of its lines, and only of its lines", () => {
+    const familles: (string | undefined)[][] = [[], []];
+    const espion = (s: string, tailleMm: number, famille?: string) => {
+      familles[famille ? 1 : 0].push(famille);
+      return mesure(s, tailleMm);
+    };
+    const spread: Spread = {
+      ...planche("solo", 1),
+      slots: [{ src: "0.jpg", focal: [0.5, 0.5], caption: "Une légende" }],
+      objets: [bloc({ police }), bloc({})],
+    };
+    const scene = sceneOf(spread, g, espion);
+    expect(familles[1].length).toBeGreaterThan(0);
+    expect(new Set(familles[1])).toEqual(new Set(["colophon-objet-HelveticaNeue-Bold"]));
+    const libres = scene.objects.filter((o) => o.role.role === "free_text");
+    expect(libres.map((o) => (o.role as { famille?: string }).famille)).toEqual([
+      "colophon-objet-HelveticaNeue-Bold",
+      undefined,
+    ]);
+  });
+
+  it("breaks its lines on its face's widths", () => {
+    // La face du bloc est deux fois plus large : la même boîte coupe plus tôt.
+    const large = (s: string, tailleMm: number, famille?: string) =>
+      mesure(s, tailleMm) * (famille ? 2 : 1);
+    const spread: Spread = { ...planche("solo", 0), objets: [bloc({ police }), bloc({})] };
+    const [dans, sans] = sceneOf(spread, g, large).objects.map(
+      (o) => (o.role as { lines: unknown[] }).lines.length,
+    );
+    expect(dans).toBeGreaterThan(sans);
+  });
+
+  it("carries the colour it prints in, the book's ink by default", () => {
+    const orn: Objet = { x: 80, y: 20, w: 40, h: 4, type: "ornement", pack: "colophon", id: "f" };
+    const spread: Spread = {
+      ...planche("solo", 0),
+      objets: [bloc({ couleur: "#b04a1f" }), bloc({}), orn, { ...orn, couleur: "#999999" }],
+    };
+    const couleurs = sceneOf(spread, g, mesure).objects.map(
+      (o) => (o.role as { couleur?: string }).couleur,
+    );
+    expect(couleurs).toEqual(["#b04a1f", "#333029", "#000000", "#999999"]);
+  });
+});

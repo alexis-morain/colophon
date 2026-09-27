@@ -47,6 +47,8 @@ import {
   TEXT_LEADING_MM,
   TEXT_SIZE_MM,
 } from "./album";
+import { couleurDe } from "./couleur";
+import { familleObjet } from "./font";
 
 /** Millimetres, origin top-left of the media box. */
 export type Point = { x: number; y: number };
@@ -99,6 +101,12 @@ export type Role =
       overflow: boolean;
       /** One word wider than the box: printed whole, past the edge. */
       tropLarge: boolean;
+      /** La famille interne de la face du bloc (`font.ts::familleObjet`),
+       *  absente quand il est dans celle du livre. Les deux rendus la posent
+       *  devant la pile du livre, qui la remplace tant qu'elle manque. */
+      famille?: string;
+      /** L'encre du bloc, `#rrggbb`, défaut compris (`couleur.ts`). */
+      couleur: string;
     }
   /** An ornament the reader placed, indexed into `spread.objets` exactly like
    *  a free block.
@@ -108,7 +116,7 @@ export type Role =
    *  parity with the engine therefore bears on the box, the angle and the
    *  identity — not on thousands of coordinates the two sides would each
    *  recompute. */
-  | { role: "ornement"; index: number; pack: string; id: string };
+  | { role: "ornement"; index: number; pack: string; id: string; couleur: string };
 
 /** One visible element: where it is, how it is turned, when it is read, and
  *  what it is.
@@ -376,8 +384,12 @@ export type Scene = { objects: SceneObject[] };
 /** Width of a string at a print size in millimetres. Passed in rather than
  *  imported so the assembler stays pure: the application hands it
  *  `font.ts::measureMm`, the parity test hands it the synthetic measure the
- *  engine also runs. */
-export type Measure = (text: string, sizeMm: number) => number;
+ *  engine also runs.
+ *
+ *  `famille` is a free block's own face, when it has one: its lines break
+ *  on that face's widths, like `Scene::of_avec` breaks them on the engine
+ *  side. Absent, the album's face. */
+export type Measure = (text: string, sizeMm: number, famille?: string) => number;
 
 /** Ink of one set line: the measured width, and the vertical box the engine
  *  has always used around a baseline (`scene.rs::ink_box`, read top-down). */
@@ -562,19 +574,30 @@ function objetLibre(
       rect,
       angle: objet.angle ?? 0,
       reading,
-      role: { role: "ornement", index, pack: objet.pack, id: objet.id },
+      role: {
+        role: "ornement",
+        index,
+        pack: objet.pack,
+        id: objet.id,
+        couleur: couleurDe(objet),
+      },
     };
   }
   const tailleMm = objet.taille_pt * PT_MM;
   const interligne = interligneDe(objet);
   const align: Alignement = objet.alignement ?? "gauche";
+  // Un bloc dans sa face se replie dans sa face : ses coupures et ses
+  // décalages en dépendent. Quand le fichier manque, la famille n'est pas
+  // posée et la mesure retombe sur la face du livre, comme le PDF.
+  const famille = objet.police ? familleObjet(objet.police) : undefined;
+  const mesureBloc: Measure = (t, s) => measure(t, s, famille);
 
-  const { lignes, tropLarge } = replier(objet.texte, objet.w, tailleMm, measure);
+  const { lignes, tropLarge } = replier(objet.texte, objet.w, tailleMm, mesureBloc);
   const lines: SceneLine[] = lignes.map((text, i) => ({
     text,
     sizeMm: tailleMm,
     dyMm: i * interligne,
-    dxMm: decalage(align, objet.w, measure(text, tailleMm)),
+    dxMm: decalage(align, objet.w, mesureBloc(text, tailleMm)),
   }));
 
   // The set height: the drop to the last baseline plus the line box that
@@ -595,6 +618,8 @@ function objetLibre(
       align,
       overflow: hauteur > objet.h + 1e-9,
       tropLarge,
+      ...(famille ? { famille } : {}),
+      couleur: couleurDe(objet),
     },
   };
 }

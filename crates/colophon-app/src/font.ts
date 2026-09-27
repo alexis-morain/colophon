@@ -20,6 +20,13 @@
 // scene that needs a document: Vitest runs without one, so the assembler
 // takes the measure as an argument and this module is what the application
 // hands it.
+//
+// **Un bloc peut avoir sa face** (A-s2) : une seconde pile de `FontFace`,
+// une par fichier `objet-*` de l'album, chargée des octets que l'émetteur
+// embarque (`police_objet_octets`), crénage et ligatures coupés comme la
+// face du livre. Même règle, même raison.
+
+import type { Police } from "./album";
 
 /** The album's face, whatever it turns out to be. Internal: nothing on any
  *  machine is called this, so the stack below can only resolve to the bytes
@@ -32,6 +39,36 @@ export const FAMILLE = "colophon-album";
  *  the engine's own face rather than a system serif, so a caption measured
  *  in that window is off by a rounding rather than by a font. */
 const PILE = `"${FAMILLE}", "Source Sans 3", sans-serif`;
+
+/**
+ * La pile d'un texte : la face de son bloc devant, quand il en a une, puis
+ * celle du livre.
+ *
+ * **Le repli est le comportement voulu.** Une face de bloc n'est posée sur
+ * le document qu'une fois ses octets chargés : avant, ou quand son fichier
+ * a quitté le dossier, la famille n'existe pas et le navigateur passe à la
+ * suivante, qui est la face du livre. C'est exactement ce que fait le PDF
+ * d'un bloc dont la face manque. Utilisée par la mesure, par le canvas et
+ * par le DOM : trois lecteurs, une chaîne.
+ */
+export function pile(famille?: string): string {
+  return famille ? `"${famille}", ${PILE}` : PILE;
+}
+
+/** La grammaire de `font::fichier_objet_valide` : `objet-`, 1 à 64
+ *  caractères de `[A-Za-z0-9-]`, `.ttf` ou `.otf`. Un nom qui en sort est un
+ *  chemin tapé dans `album.json`, jamais un fichier. */
+export function fichierObjetValide(nom: string): boolean {
+  return /^objet-[A-Za-z0-9-]{1,64}\.(ttf|otf)$/.test(nom);
+}
+
+/** La famille interne de la face d'un bloc, tirée de son fichier : le slug
+ *  est déjà réduit à `[A-Za-z0-9-]`, donc il tient entre guillemets dans une
+ *  pile CSS. Interne comme `colophon-album` : rien d'installé ne s'appelle
+ *  ainsi, donc la pile ne résout que vers les octets posés ici. */
+export function familleObjet(police: Police): string {
+  return `colophon-objet-${police.fichier.replace(/^objet-/, "").replace(/\.(ttf|otf)$/, "")}`;
+}
 
 /** The one canvas context of the process: creating one per call would make
  *  a caption measured a hundred times a hundred canvases. */
@@ -150,6 +187,83 @@ export async function chargerFace(octets: ArrayBuffer): Promise<void> {
   abonnes.forEach((cb) => cb());
 }
 
+/** Les faces des blocs, par fichier. `null` : le fichier manque du dossier
+ *  (ou son nom sort de la grammaire), le bloc se dessine dans la face du
+ *  livre. Absent de la table : jamais demandé, ou en cours. */
+const facesObjet = new Map<string, FontFace | null>();
+const objetsEnCours = new Set<string>();
+/** Bumped by `oublierFacesObjet`, so a load that lands after the album
+ *  changed is dropped instead of posing a face under the new album. */
+let generation = 0;
+
+function annoncer() {
+  tour += 1;
+  abonnes.forEach((cb) => cb());
+}
+
+/**
+ * Charger les faces de blocs que l'album nomme et qu'on n'a pas encore.
+ *
+ * Une par fichier : deux blocs dans la même face partagent le fichier, donc
+ * la famille. Chaque arrivée relance la mesure (`surLaFace`), et un refus
+ * aussi : le bloc reste dans la face du livre, et l'écran doit pouvoir le
+ * dire. `lire` est la commande, passée plutôt qu'importée pour que ce module
+ * reste sans pont.
+ */
+export async function chargerFacesObjet(
+  fichiers: readonly string[],
+  lire: (fichier: string) => Promise<ArrayBuffer>,
+): Promise<void> {
+  if (typeof document === "undefined") return;
+  const neufs = [...new Set(fichiers)].filter(
+    (f) => !facesObjet.has(f) && !objetsEnCours.has(f),
+  );
+  const gen = generation;
+  await Promise.all(
+    neufs.map(async (fichier) => {
+      objetsEnCours.add(fichier);
+      let face: FontFace | null = null;
+      try {
+        const octets = await lire(fichier);
+        const famille = familleObjet({ fichier, postscript: "", nom: "" });
+        face = await new FontFace(famille, octets, {
+          featureSettings: '"liga" 0, "clig" 0, "kern" 0',
+        }).load();
+      } catch {
+        face = null;
+      }
+      if (gen !== generation) return;
+      objetsEnCours.delete(fichier);
+      facesObjet.set(fichier, face);
+      if (face) document.fonts.add(face);
+      annoncer();
+    }),
+  );
+}
+
+/** Le fichier d'une face de bloc a-t-il manqué ? Faux tant qu'on ne sait pas. */
+export function faceObjetManque(fichier: string): boolean {
+  return facesObjet.get(fichier) === null;
+}
+
+/** Oublier une face, pour la relire : son fichier vient d'être (re)posé. */
+export function oublierFaceObjet(fichier: string): void {
+  const face = facesObjet.get(fichier);
+  if (face && typeof document !== "undefined") document.fonts.delete(face);
+  facesObjet.delete(fichier);
+}
+
+/** Tout oublier : un autre album est ouvert, et le même nom de fichier peut
+ *  y porter d'autres octets. */
+export function oublierFacesObjet(): void {
+  if (typeof document !== "undefined") {
+    facesObjet.forEach((f) => f && document.fonts.delete(f));
+  }
+  facesObjet.clear();
+  objetsEnCours.clear();
+  generation += 1;
+}
+
 /** Subscribe to face changes, `useSyncExternalStore` style. */
 export function surLaFace(cb: () => void): () => void {
   abonnes.add(cb);
@@ -165,16 +279,17 @@ export function tourDeFace(): number {
 }
 
 /**
- * Width of a string at a print size in millimetres, in spread millimetres.
+ * Width of a string at a print size in millimetres, in spread millimetres,
+ * in the album's face or, with `famille`, in a block's own.
  *
  * Measured at a large fixed size and scaled down: glyph advances are linear
  * in the type size, and measuring big keeps the browser's own rounding well
  * under a micron once divided back.
  */
-export function measureMm(text: string, sizeMm: number): number {
+export function measureMm(text: string, sizeMm: number, famille?: string): number {
   const ctx = contexte();
   if (!ctx) return 0;
-  ctx.font = `100px ${PILE}`;
+  ctx.font = `100px ${pile(famille)}`;
   // Measured as it will print: the width of `?`, not of the glyph another
   // font would lend. Otherwise a line could break here and not on paper.
   return (ctx.measureText(afficher(text)).width * sizeMm) / 100;

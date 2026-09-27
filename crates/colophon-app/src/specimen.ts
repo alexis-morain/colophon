@@ -114,3 +114,21 @@ export function oublierApercus(): void {
   enCours.clear();
   depense = 0;
 }
+
+/** Combien de listes montrent des spécimens en ce moment : le panneau Format
+ *  et le popover d'un bloc peuvent vivre ensemble, et le premier qui se
+ *  ferme ne doit pas retirer les faces que l'autre dessine encore. */
+let lecteurs = 0;
+
+/** Tenir les spécimens le temps qu'une liste vit. Rend de quoi les lâcher ;
+ *  le dernier qui lâche les oublie tous. Taillé pour `useEffect`. */
+export function retenirApercus(): () => void {
+  lecteurs += 1;
+  let lache = false;
+  return () => {
+    if (lache) return;
+    lache = true;
+    lecteurs -= 1;
+    if (lecteurs === 0) oublierApercus();
+  };
+}

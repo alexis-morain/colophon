@@ -2,8 +2,11 @@
 
 import { describe, expect, it } from "vitest";
 import { EN, FR, setLangue } from "./i18n";
+import { PoliceOfferte } from "./bridge";
 import {
   REFUS_KEYS,
+  faceReguliere,
+  faceVoisine,
   nomLisible,
   parFamille,
   refusLibelle,
@@ -196,5 +199,72 @@ describe("les dix familles suggérées", () => {
       expect(FR, cle).toHaveProperty(cle);
       expect(EN, cle).toHaveProperty(cle);
     }
+  });
+});
+
+// A-s2 : gras et italique d'un bloc. Ce sont des faces de la famille, lues
+// dans leurs tables (`gras`, `italique`), jamais une simulation.
+describe("gras et italique dans une famille", () => {
+  const face = (
+    rang: number,
+    nom: string,
+    gras: boolean,
+    italique: boolean,
+    refus: string | null = null,
+  ): PoliceOfferte => ({
+    rang,
+    famille: "Helvetica Neue",
+    nom,
+    postscript: nom.replace(/ /g, ""),
+    refus,
+    gras,
+    italique,
+  });
+  const helvetica = [
+    face(0, "Helvetica Neue", false, false),
+    face(1, "Helvetica Neue Bold", true, false),
+    face(2, "Helvetica Neue Italic", false, true),
+    face(3, "Helvetica Neue Bold Italic", true, true),
+    face(4, "Helvetica Neue Condensed Bold", true, false),
+    face(5, "Helvetica Neue Light", false, false),
+    face(6, "Helvetica Neue Light Italic", false, true),
+  ];
+  const [regular, bold, italic, boldItalic, , light, lightItalic] = helvetica;
+
+  it("la face régulière est ni grasse ni italique", () => {
+    expect(faceReguliere(helvetica)).toBe(regular);
+    // Sinon la première non refusée.
+    const toutesGrasses = [face(0, "X Black", true, false, "illisible"), face(1, "X Bold", true, false)];
+    expect(faceReguliere(toutesGrasses)?.rang).toBe(1);
+    expect(faceReguliere([face(0, "X", false, false, "illisible")])).toBeNull();
+  });
+
+  it("G passe de la droite au gras, et du gras à la droite", () => {
+    expect(faceVoisine(helvetica, regular, "gras")).toBe(bold);
+    expect(faceVoisine(helvetica, bold, "gras")).toBe(regular);
+  });
+
+  it("I passe de la droite à l'italique, et garde le gras", () => {
+    expect(faceVoisine(helvetica, regular, "italique")).toBe(italic);
+    expect(faceVoisine(helvetica, bold, "italique")).toBe(boldItalic);
+    expect(faceVoisine(helvetica, boldItalic, "italique")).toBe(bold);
+    expect(faceVoisine(helvetica, boldItalic, "gras")).toBe(italic);
+  });
+
+  it("garde la graisse d'une face maigre quand elle a sa voisine", () => {
+    expect(faceVoisine(helvetica, light, "italique")).toBe(lightItalic);
+    expect(faceVoisine(helvetica, lightItalic, "italique")).toBe(light);
+  });
+
+  it("ne trouve rien dans une famille sans italique", () => {
+    const sans = [face(0, "Didot", false, false), face(1, "Didot Bold", true, false)];
+    expect(faceVoisine(sans, sans[0], "italique")).toBeNull();
+    expect(faceVoisine(sans, sans[1], "italique")).toBeNull();
+    expect(faceVoisine(sans, sans[0], "gras")).toBe(sans[1]);
+  });
+
+  it("ne propose jamais une face refusée", () => {
+    const refusee = [regular, face(1, "Helvetica Neue Bold", true, false, "embarquement_interdit")];
+    expect(faceVoisine(refusee, regular, "gras")).toBeNull();
   });
 });

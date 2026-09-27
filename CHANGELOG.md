@@ -11,6 +11,22 @@ sur la page des releases.
 
 ### Ajouté
 
+- **Une police, un gras, un italique et une couleur pour chaque bloc de
+  texte, une couleur pour chaque ornement.** Choisissez le bloc sur la
+  planche : ses réglages s'ouvrent dessous. La première rangée porte la
+  police, G, I, le corps et la couleur ; la seconde l'alignement,
+  l'interligne et l'angle. La police se choisit dans la même liste que celle
+  du livre (dix familles, puis toutes celles de la machine), chaque nom écrit
+  dans sa police. « Police du livre » rend au bloc celle du livre. G et I
+  prennent la vraie face grasse ou italique de la famille, jamais une
+  imitation : quand la machine ne l'a pas, le bouton reste inactif et dit
+  pourquoi. La couleur se prend dans six pastilles (l'encre du livre, noir,
+  blanc, deux gris, terracotta) ou dans le sélecteur du système ; un
+  ornement n'a que la couleur et l'angle. La police choisie est copiée dans
+  le dossier de l'album, comme celle du livre. Si son fichier disparaît, le
+  bloc sort dans la police du livre et ses réglages le disent. Chaque choix
+  s'annule d'un ⌘Z, et un copier-coller garde la police et la couleur.
+
 - **Copier, couper, coller, dupliquer et pousser un bloc de texte ou un
   ornement au clavier.** Choisissez l'objet sur la planche : ⌘C le copie,
   ⌘X le coupe, ⌘V le colle sur la planche affichée, et le menu Édition fait

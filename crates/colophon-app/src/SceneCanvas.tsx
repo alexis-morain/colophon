@@ -25,6 +25,7 @@ import {
   Rect,
   SpreadGeometry,
 } from "./album";
+import { pile } from "./font";
 import { angleEcran, centre, Point, Scene } from "./scene";
 import { ornementDe, peindre as peindreOrnement } from "./ornement";
 import { imageDe, imageRegleeDe, surImage } from "./photos";
@@ -125,6 +126,8 @@ export function peindre(
     tailleMm: number,
     couleur: string,
     rotation?: { angle: number; centre: Point },
+    /** La face du bloc, devant celle du livre (`font.ts::pile`). */
+    famille?: string,
   ) => {
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -133,7 +136,7 @@ export function peindre(
       ctx.rotate((angleEcran(rotation.angle) * Math.PI) / 180);
       ctx.translate(-rotation.centre.x * mm, -rotation.centre.y * mm);
     }
-    ctx.font = `${tailleMm * mm}px ${c.police}`;
+    ctx.font = `${tailleMm * mm}px ${famille ? pile(famille) : c.police}`;
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = couleur;
     ctx.fillText(s, x * mm, baseline * mm);
@@ -220,7 +223,16 @@ export function peindre(
           // coupent, et les gonfler montrerait des coupures que le PDF n'a
           // pas. Le rendu DOM fait exactement la même chose, et le dit au
           // même endroit — les deux images doivent rester la même image.
-          texteBrut(l.text, role.at.x + l.dxMm, role.at.y + l.dyMm, l.sizeMm, c.ink, rotation);
+          // Dans la face et l'encre du bloc, comme le flux PDF.
+          texteBrut(
+            l.text,
+            role.at.x + l.dxMm,
+            role.at.y + l.dyMm,
+            l.sizeMm,
+            role.couleur,
+            rotation,
+            role.famille,
+          );
         }
         break;
       }
@@ -241,7 +253,7 @@ export function peindre(
           ctx.rotate((angleEcran(o.angle) * Math.PI) / 180);
           ctx.translate(-ctr.x, -ctr.y);
         }
-        peindreOrnement(ctx, orn.dessin, o.rect, c.ink);
+        peindreOrnement(ctx, orn.dessin, o.rect, role.couleur);
         ctx.restore();
         break;
       }

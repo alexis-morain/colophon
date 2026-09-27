@@ -48,6 +48,14 @@ describe("placerSous", () => {
     expect(placerSous(gauche, { w: 240, h: 46 }, FENETRE).left).toBe(8);
   });
 
+  it("prend le haut de la barre contextuelle pour bas, pas celui de la fenêtre", () => {
+    // Sous l'objet il tiendrait dans la fenêtre (308 + 46 + 8 < 620), mais il
+    // recouvrirait la barre, qui commence à 340 : il passe au-dessus.
+    expect(placerSous(ancre, { w: 300, h: 46 }, FENETRE, 340).top).toBe(100 - 46 - 8);
+    // Assez de place au-dessus de la barre : il reste dessous.
+    expect(placerSous(ancre, { w: 300, h: 46 }, FENETRE, 400).top).toBe(308);
+  });
+
   it("ne sort jamais par le haut quand il passe au-dessus", () => {
     const haute = { left: 100, top: 20, right: 400, bottom: 600 };
     expect(placerSous(haute, { w: 300, h: 80 }, FENETRE).top).toBe(8);

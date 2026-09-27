@@ -47,9 +47,9 @@ import {
   gardePlace,
   GARDE_TEMPLATE,
 } from "./album";
-import { captionSuggestion, detectedFocal } from "./bridge";
+import { captionSuggestion, detectedFocal, PoliceOfferte } from "./bridge";
 import { SceneProxies } from "./SceneProxies";
-import { fontLoaded, measureMm, substituer, surLaFace, tourDeFace } from "./font";
+import { fontLoaded, measureMm, pile, substituer, surLaFace, tourDeFace } from "./font";
 
 import { badgesDe, imageDe, ROOM_EPSILON, surImage } from "./photos";
 import { filtreDe, reglagePose, useReglages } from "./reglages";
@@ -72,7 +72,7 @@ import { attributD, attributViewBox, ornementDe, rapport } from "./ornement";
 import { cachedThumb, loadThumb } from "./thumbs";
 import { ObjetLibreCalque, PoseObjet } from "./ObjetLibreCalque";
 import { ObjetBloc } from "./ObjetBloc";
-import { enveloppe, largeurLegende, placerSous } from "./popover";
+import { basUtile, enveloppe, largeurLegende, placerSous } from "./popover";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
 type CropDraft = { slot: number; focal: [number, number]; zoom: number };
@@ -99,6 +99,8 @@ export function SpreadView({
   onObjetTexte,
   onObjetSupprimer,
   onObjetReglage,
+  polices = [],
+  policeLivre = null,
 }: {
   album: Album;
   spread: Spread;
@@ -140,6 +142,11 @@ export function SpreadView({
   onObjetSupprimer?: (index: number) => void;
   /** Un réglage de l'objet choisi, depuis son popover : un pas d'annulation. */
   onObjetReglage?: (index: number, o: Objet) => void;
+  /** Les faces de la machine, pour la famille d'un bloc. */
+  polices?: PoliceOfferte[];
+  /** Le PostScript de la face du livre, là où G et I cherchent pour un bloc
+   *  qui n'a pas la sienne. */
+  policeLivre?: string | null;
 }) {
   const paper = useRef<HTMLDivElement>(null);
   const [mm, setMm] = useState(1);
@@ -945,6 +952,10 @@ export function SpreadView({
                           left: `${l.dxMm * mm}px`,
                           top: `${(role.at.y - box.y + l.dyMm) * mm - px}px`,
                           fontSize: `${px}px`,
+                          // La face et l'encre du bloc, les mêmes que le
+                          // canvas et que le flux PDF (`scene.ts`).
+                          fontFamily: role.famille ? pile(role.famille) : undefined,
+                          color: role.couleur,
                         }}
                       >
                         {l.text}
@@ -1002,7 +1013,7 @@ export function SpreadView({
                     <path
                       key={i}
                       d={attributD(chemin)}
-                      fill="var(--paper-ink)"
+                      fill={role.couleur}
                       fillRule={chemin.evenodd ? "evenodd" : "nonzero"}
                     />
                   ))}
@@ -1069,6 +1080,9 @@ export function SpreadView({
             const stocke = spread.objets?.[ecrit];
             if (!cible || !stocke || stocke.type !== "texte") return null;
             const px = stocke.taille_pt * PT_MM * mm;
+            // Tapé dans la face du bloc, pour que la frappe ressemble à ce
+            // qui se posera.
+            const famille = cible.role.role === "free_text" ? cible.role.famille : undefined;
             return (
               <textarea
                 className="objet-champ"
@@ -1081,6 +1095,7 @@ export function SpreadView({
                   width: `${cible.rect.w * mm}px`,
                   height: `${Math.max(cible.rect.h * mm, px * 2)}px`,
                   fontSize: `${px}px`,
+                  fontFamily: famille ? pile(famille) : undefined,
                 }}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
@@ -1247,6 +1262,8 @@ export function SpreadView({
                 bottom: y(emprise.bottom),
               }}
               onCommit={(o) => onObjetReglage(objet, o)}
+              polices={polices}
+              policeLivre={policeLivre}
             />
           );
         })()}
@@ -1303,6 +1320,7 @@ function CaptionPopover({
     },
     { w: width, h: HEIGHT },
     { w: window.innerWidth, h: window.innerHeight },
+    basUtile(),
   );
 
   return (

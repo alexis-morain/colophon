@@ -11,10 +11,19 @@
 // **`lire` est la seule porte d'entrée**, et ce qui arrive par là vient de
 // n'importe où. Elle reconstruit un objet champ par champ au lieu de faire
 // confiance au JSON : un champ glissé à côté ne passe pas, une boîte qui ne
-// se dessine pas non plus. Un champ additif du modèle (A-s1 en prépare deux)
-// devra s'ajouter ici, sinon le collage le perdra.
+// se dessine pas non plus. Un champ additif du modèle devra s'ajouter ici,
+// sinon le collage le perdra : c'est arrivé à la couleur et à la police
+// (A-s1), rattrapées en A-s2.
+//
+// **La police d'un bloc voyage comme une fiche, jamais comme un chemin.** Son
+// `fichier` doit tenir dans la grammaire du moteur (`objet-<slug>.ttf|otf`) :
+// c'est lui qu'une commande joindra au dossier de l'album. Collé dans un
+// autre album, le fichier n'y est pas, et le bloc sort dans la police du
+// livre, comme le PDF.
 
-import { Alignement, Objet } from "./album";
+import { Alignement, Objet, Police } from "./album";
+import { couleurValide } from "./couleur";
+import { fichierObjetValide } from "./font";
 import { PACK_INTERNE } from "./ornement";
 
 /** Le type sous lequel un objet voyage. */
@@ -42,6 +51,15 @@ export function serialiser(objet: Objet, de: number): Record<string, string> {
 const fini = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
 
+/** Une fiche de police reçue, ou `null`. */
+function fiche(v: unknown): Police | null {
+  if (typeof v !== "object" || v === null) return null;
+  const { fichier, postscript, nom } = v as Record<string, unknown>;
+  if (typeof fichier !== "string" || !fichierObjetValide(fichier)) return null;
+  if (typeof postscript !== "string" || typeof nom !== "string") return null;
+  return { fichier, postscript, nom };
+}
+
 /** L'objet d'un collage, ou `null` si ce n'en est pas un. Ne lève jamais. */
 export function lire(data: Pick<DataTransfer, "getData">): ObjetColle | null {
   const brut = data.getData(TYPE_OBJET);
@@ -58,15 +76,24 @@ export function lire(data: Pick<DataTransfer, "getData">): ObjetColle | null {
   if (!fini(x) || !fini(y) || !fini(w) || !fini(h)) return null;
   if (w <= 0 || h <= 0 || Math.max(w, h) < COTE_MIN) return null;
   if (angle !== undefined && !fini(angle)) return null;
+  const { couleur } = o;
+  if (couleur !== undefined && !(typeof couleur === "string" && couleurValide(couleur))) {
+    return null;
+  }
   const boite = {
     x,
     y,
     w,
     h,
     ...(angle ? { angle } : {}),
+    ...(couleur !== undefined ? { couleur: couleur as string } : {}),
     ...(Number.isInteger(de) ? { de: de as number } : {}),
   };
   if (o.type === "texte") {
+    // La police ne vaut que pour un bloc : le moteur l'ignore sur un
+    // ornement, donc elle n'y voyage pas.
+    const police = o.police === undefined ? undefined : fiche(o.police);
+    if (police === null) return null;
     const { texte, taille_pt, interligne_mm, alignement } = o;
     if (typeof texte !== "string" || !fini(taille_pt) || taille_pt <= 0) return null;
     if (interligne_mm !== undefined && !fini(interligne_mm)) return null;
@@ -80,6 +107,7 @@ export function lire(data: Pick<DataTransfer, "getData">): ObjetColle | null {
       taille_pt,
       ...(interligne_mm !== undefined ? { interligne_mm } : {}),
       ...(alignement !== undefined ? { alignement: alignement as Alignement } : {}),
+      ...(police ? { police } : {}),
     };
   }
   if (o.type === "ornement") {

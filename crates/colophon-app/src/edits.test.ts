@@ -3,7 +3,7 @@
 // must leave the input untouched (the undo stack stores references).
 
 import { describe, expect, it } from "vitest";
-import { Album, Objet, Slot, Spread, templateCapacity } from "./album";
+import { Album, Objet, Slot, Spread, spreadGeometry, templateCapacity } from "./album";
 import fixture from "./geometrie.fixture.json";
 import { Dump, setGeometrie } from "./geometrie";
 
@@ -23,11 +23,14 @@ import {
   addObjet,
   addOrnement,
   changeTemplate,
+  duplicateObjet,
   duplicateSpread,
   insertSpread,
   movePhoto,
   moveBlocker,
   moveSpread,
+  nudgeObjet,
+  pasteObjet,
   placePhoto,
   removeObjet,
   removePhoto,
@@ -49,7 +52,7 @@ import {
   toggleLock,
   triEntries,
 } from "./edits";
-import { recouvre } from "./scene";
+import { corners, recouvre } from "./scene";
 
 function slot(n: number): Slot {
   return { src: `p${n}.jpg`, focal: [0.5, 0.5] };
@@ -669,5 +672,125 @@ describe("addOrnement", () => {
       photo,
     ]).spreads[0].objets![0];
     expect(recouvre(seul, 0, photo, 0)).toBe(false);
+  });
+});
+
+// ---- copier, coller, dupliquer, pousser ------------------------------------
+
+describe("copier, coller, dupliquer, pousser un objet", () => {
+  const g = spreadGeometry(album());
+  const pli = g.w / 2;
+  const bloc: Objet = {
+    x: 40,
+    y: 120,
+    w: 60,
+    h: 16,
+    type: "texte",
+    texte: "une phrase",
+    taille_pt: 12,
+  };
+  const avec = (...objets: Objet[]): Album => ({
+    ...album(spread("duo", 2), spread("duo", 2)),
+    spreads: [
+      { ...spread("duo", 2), objets },
+      spread("duo", 2),
+    ],
+  });
+
+  describe("pasteObjet", () => {
+    it("décale de 4 mm un objet collé sur sa propre planche", () => {
+      const a = avec(bloc);
+      const b = pasteObjet(a, 0, { ...bloc, de: 0 }, [], PAGE, g);
+      const [orig, colle] = b.spreads[0].objets!;
+      expect(orig).toBe(bloc);
+      // Vers le bas à droite à l'écran, comme la cascade de la naissance :
+      // le repère du fichier a son y vers le haut.
+      expect(colle.x).toBeCloseTo(bloc.x + 4, 9);
+      expect(colle.y).toBeCloseTo(bloc.y - 4, 9);
+      expect(texteDe(colle)).toBe("une phrase");
+      // Le champ d'origine ne va pas dans album.json.
+      expect(colle).not.toHaveProperty("de");
+      expect(b.spreads[0].edited).toBe(true);
+    });
+
+    it("pose à la même place sur une autre planche", () => {
+      const a = avec(bloc);
+      const b = pasteObjet(a, 1, { ...bloc, de: 0 }, [], PAGE, g);
+      const colle = b.spreads[1].objets![0];
+      expect([colle.x, colle.y]).toEqual([bloc.x, bloc.y]);
+      expect(b.spreads[0].objets).toHaveLength(1);
+    });
+
+    it("bute au pli au lieu de passer sur l'autre page", () => {
+      // Collé tout contre le pli, le décalage le ferait franchir : il bute.
+      const contre = { ...bloc, x: pli - bloc.w - 1 };
+      const b = pasteObjet(avec(contre), 0, { ...contre, de: 0 }, [], PAGE, g);
+      const colle = b.spreads[0].objets![1];
+      expect(colle.x + colle.w).toBeCloseTo(pli, 9);
+    });
+
+    it("évite les photos comme une naissance", () => {
+      const photo = { x: PAGE.x, y: 100, w: PAGE.w, h: 50 };
+      const b = pasteObjet(avec(), 0, { ...bloc, de: 1 }, [photo], PAGE, g);
+      expect(recouvre(b.spreads[0].objets![0], 0, photo, 0)).toBe(false);
+    });
+
+    it("ne fait rien hors de l'album", () => {
+      const a = avec(bloc);
+      expect(pasteObjet(a, 7, { ...bloc, de: 0 }, [], PAGE, g)).toBe(a);
+    });
+  });
+
+  describe("duplicateObjet", () => {
+    it("pose une copie décalée de 4 mm, au-dessus de tout", () => {
+      const autre = { ...bloc, x: 120, texte: "autre" };
+      const a = avec(bloc, autre);
+      const b = duplicateObjet(a, 0, 0, g);
+      const objets = b.spreads[0].objets!;
+      expect(objets).toHaveLength(3);
+      expect(texteDe(objets[2])).toBe("une phrase");
+      expect(objets[2].x).toBeCloseTo(bloc.x + 4, 9);
+      expect(objets[2].y).toBeCloseTo(bloc.y - 4, 9);
+      expect(a.spreads[0].objets).toHaveLength(2);
+    });
+
+    it("ne fabrique rien pour un index qui n'existe pas", () => {
+      const a = avec(bloc);
+      expect(duplicateObjet(a, 0, 3, g)).toBe(a);
+    });
+  });
+
+  describe("nudgeObjet", () => {
+    it("pousse d'un millimètre, dans le repère du fichier", () => {
+      const b = nudgeObjet(avec(bloc), 0, 0, 1, 0, g);
+      expect(b.spreads[0].objets![0].x).toBeCloseTo(bloc.x + 1, 9);
+      const c = nudgeObjet(avec(bloc), 0, 0, 0, -1, g);
+      expect(c.spreads[0].objets![0].y).toBeCloseTo(bloc.y - 1, 9);
+    });
+
+    it("pousse de cinq quand on le lui demande", () => {
+      const b = nudgeObjet(avec(bloc), 0, 0, -5, 5, g);
+      const o = b.spreads[0].objets![0];
+      expect([o.x, o.y]).toEqual([bloc.x - 5, bloc.y + 5]);
+    });
+
+    it("bute au pli, et rend le même album quand il n'y a plus rien à gagner", () => {
+      const contre = { ...bloc, x: pli - bloc.w - 2 };
+      const a = avec(contre);
+      const b = nudgeObjet(a, 0, 0, 5, 0, g);
+      const o = b.spreads[0].objets![0];
+      expect(o.x + o.w).toBeCloseTo(pli, 9);
+      // Au butoir, un appui de plus n'est pas un pas d'annulation.
+      expect(nudgeObjet(b, 0, 0, 1, 0, g)).toBe(b);
+    });
+
+    it("bute aussi sur un objet tourné, par ses coins", () => {
+      // Droite, elle dégagerait le pli de 2 mm ; tournée de 45°, un coin le
+      // franchit déjà, et la poussée la ramène.
+      const tourne = { ...bloc, w: 20, h: 60, x: pli - 22, angle: 45 };
+      const b = nudgeObjet(avec(tourne), 0, 0, 1, 0, g);
+      const o = b.spreads[0].objets![0];
+      expect(Math.max(...corners(o, 45).map((p) => p.x))).toBeCloseTo(pli, 9);
+    });
   });
 });

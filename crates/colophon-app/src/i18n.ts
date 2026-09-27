@@ -609,6 +609,8 @@ export const FR = {
   "objet.saisir": "Texte du bloc",
   "objet.pose.encombree":
     "Posé sur une photo : la page n’a plus de place libre. Glissez-le où vous le voulez.",
+  "objet.copie": "Objet copié. ⌘V le colle sur la planche affichée.",
+  "objet.duplique": "Objet dupliqué, décalé de 4 mm.",
   "ornement.ajouter": "Ornement",
   "ornement.ajouter.titre": "Poser un ornement sur cette planche",
   "ornement.vide":
@@ -727,11 +729,11 @@ export const FR = {
   "racc.reserve": "Photos en réserve",
   "racc.fidele": "Aperçu fidèle : la page telle que le PDF la contient",
   "racc.passer.revue": "Passer en revue",
-  "racc.dupliquer": "Dupliquer la planche",
+  "racc.dupliquer": "Dupliquer l’objet choisi, sinon la planche",
   "racc.figer": "Figer ou libérer la planche",
   "racc.supprimer": "Supprimer la planche",
   "racc.envoyer.photo": "Envoyer la photo sur la planche voisine",
-  "racc.retirer.photo": "Retirer la photo sélectionnée",
+  "racc.retirer.photo": "Retirer l’objet choisi, sinon la photo",
   "racc.tab.legende": "Poser la légende proposée",
   "racc.gabarit": "Gabarit suivant, précédent",
   "racc.deplacer.cadrage": "Déplacer le cadrage",
@@ -802,6 +804,11 @@ export const FR = {
     "Si ça se reproduit, collez ce détail dans un signalement (Aide → Signaler un problème).",
   "racc.k.alt.fleches": "⌥ flèches (Planches)",
   "racc.deplacer.planche": "Déplacer la planche dans le livre",
+  "racc.copier": "Copier le bloc ou l’ornement choisi",
+  "racc.couper": "Couper le bloc ou l’ornement choisi",
+  "racc.coller": "Coller sur la planche affichée",
+  "racc.k.fleches.objet": "flèches · ⇧ × 5",
+  "racc.pousser.objet": "Pousser l’objet choisi d’un millimètre",
   "police.absents":
     "Cette police ne dessine pas {n} caractères de l’album, imprimés « ? » : {liste}",
   "police.absents.un":
@@ -1353,6 +1360,8 @@ export const EN: Record<Cle, string> = {
   "objet.saisir": "Block text",
   "objet.pose.encombree":
     "Placed over a photo: the page has no free room left. Drag it wherever you want it.",
+  "objet.copie": "Object copied. ⌘V pastes it onto the spread on screen.",
+  "objet.duplique": "Object duplicated, 4 mm down and right.",
   "ornement.ajouter": "Ornament",
   "ornement.ajouter.titre": "Place an ornament on this spread",
   "ornement.vide":
@@ -1465,11 +1474,11 @@ export const EN: Record<Cle, string> = {
   "racc.reserve": "Photos on hand",
   "racc.fidele": "Faithful preview: the page as the PDF holds it",
   "racc.passer.revue": "Review the discards",
-  "racc.dupliquer": "Duplicate the spread",
+  "racc.dupliquer": "Duplicate the chosen object, or else the spread",
   "racc.figer": "Lock or release the spread",
   "racc.supprimer": "Delete the spread",
   "racc.envoyer.photo": "Send the photo to the next spread",
-  "racc.retirer.photo": "Remove the selected photo",
+  "racc.retirer.photo": "Remove the chosen object, or else the photo",
   "racc.tab.legende": "Take the proposed caption",
   "racc.gabarit": "Next, previous template",
   "racc.deplacer.cadrage": "Move the crop",
@@ -1550,6 +1559,11 @@ export const EN: Record<Cle, string> = {
     "If it happens again, paste this detail into a report (Help → Report a problem).",
   "racc.k.alt.fleches": "⌥ arrows (Spreads)",
   "racc.deplacer.planche": "Move the spread through the book",
+  "racc.copier": "Copy the chosen block or ornament",
+  "racc.couper": "Cut the chosen block or ornament",
+  "racc.coller": "Paste onto the spread on screen",
+  "racc.k.fleches.objet": "arrows · ⇧ × 5",
+  "racc.pousser.objet": "Nudge the chosen object by a millimetre",
   "police.absents":
     "This typeface cannot draw {n} characters of the album; they print as “?”: {liste}",
   "police.absents.un":

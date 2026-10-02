@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use colophon_core::{build_album, format, pdf, Album, BuildOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Colophon: from a folder of photos to a print-ready album.
 #[derive(Parser)]
@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "reserve", "banc_gabarits", "depuis_fiches"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "reserve", "fiche", "banc_gabarits", "depuis_fiches"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -181,6 +181,12 @@ struct Cli {
     #[arg(long, value_name = "PLANCHE", hide = true)]
     reserve: Option<usize>,
 
+    /// Print the sheet of one photo of the album in --out, named by its
+    /// src: the file, the shot, the place, the relevé's measures when the
+    /// album carries one. Feeds the dev album server.
+    #[arg(long, value_name = "SRC", hide = true)]
+    fiche: Option<String>,
+
     /// Run the generated-template bench over composed album directories
     /// (grouped into reference sets by their source folder) and print the
     /// verdict as JSON: which enumerated combinations are green on every
@@ -328,6 +334,15 @@ fn main() -> Result<()> {
             .context("--reserve compte les planches à partir de 1")?;
         let reserve = colophon_core::reserve::reserve_classee(&cli.out, &album, i)?;
         println!("{}", serde_json::to_string(&reserve)?);
+        return Ok(());
+    }
+
+    if let Some(src) = &cli.fiche {
+        let album: Album = serde_json::from_str(&std::fs::read_to_string(
+            cli.out.join("album.json"),
+        )?)?;
+        let fiche = colophon_core::fiche::fiche(&cli.out, Path::new(&album.root), src)?;
+        println!("{}", serde_json::to_string(&fiche)?);
         return Ok(());
     }
 

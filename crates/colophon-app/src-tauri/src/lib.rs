@@ -182,6 +182,71 @@ fn caption_suggestion(src: String, state: State<'_, AppState>) -> Result<Option<
         .then(|| colophon_core::build::date_fr(meta.taken.date(), true)))
 }
 
+/// The root the open album names its photos under. Read from the file
+/// rather than from the state: the state holds the album folder only, and
+/// `root` is the one field that tells where the originals live.
+fn racine_des_photos(state: &State<'_, AppState>) -> Result<PathBuf, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let text = std::fs::read_to_string(dir.join("album.json"))
+        .map_err(|e| format!("lecture de album.json : {e}"))?;
+    let album: Album =
+        serde_json::from_str(&text).map_err(|e| format!("album.json illisible : {e}"))?;
+    Ok(PathBuf::from(album.root))
+}
+
+/// The sheet of one photo: the file, the shot, the place, the relevé's
+/// measures when the album carries one. `src` is a bare file name or it is
+/// refused; the path is formed here, the front never holds one.
+#[tauri::command]
+fn photo_fiche(
+    src: String,
+    state: State<'_, AppState>,
+) -> Result<colophon_core::fiche::FichePhoto, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let root = racine_des_photos(&state)?;
+    colophon_core::fiche::fiche(&dir, &root, &src).map_err(|e| format!("{e:#}"))
+}
+
+/// Show the original in the file manager, selected. The path is canonical
+/// and checked against the canonical album root first (`fiche::a_reveler`),
+/// then handed to the platform's own opener as one argument: `open -R`,
+/// `explorer /select,` through the Windows argument it expects, `xdg-open`
+/// on the parent folder elsewhere. Never through a shell, as `open_report_url`.
+#[tauri::command]
+fn reveler_photo(src: String, state: State<'_, AppState>) -> Result<(), String> {
+    let root = racine_des_photos(&state)?;
+    let cible = colophon_core::fiche::a_reveler(&root, &src).map_err(|e| format!("{e:#}"))?;
+    reveler(&cible)
+}
+
+fn reveler(cible: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let run = std::process::Command::new("open").arg("-R").arg(cible).spawn();
+    // explorer wants `/select,<path>` as a single argument, and `std` would
+    // wrap a path with a space in quotes around the whole thing, which
+    // explorer reads as part of the path. `raw_arg` hands it over verbatim,
+    // the path quoted on its own; a Windows path cannot contain a quote.
+    #[cfg(target_os = "windows")]
+    let run = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{}\"", cible.display()))
+            .spawn()
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let run = std::process::Command::new("xdg-open")
+        .arg(cible.parent().unwrap_or(cible))
+        .spawn();
+    run.map(|_| ())
+        .map_err(|e| format!("ouverture du gestionnaire de fichiers : {e}"))
+}
+
 /// Templates the spread can switch to, count and orientation both fitting:
 /// the engine's one rule (`gabarit::compatibles`). The photos travel as
 /// their srcs, live from the editor, so an unsaved edit filters right.
@@ -1787,6 +1852,8 @@ pub fn run() {
             cancel_build,
             cancel_export,
             caption_suggestion,
+            photo_fiche,
+            reveler_photo,
             proposition_legende,
             gabarits_compatibles,
             reserve_classee,

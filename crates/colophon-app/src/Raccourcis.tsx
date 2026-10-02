@@ -32,6 +32,7 @@ const GROUPES: [Cle, [string | Cle, Cle][]][] = [
       ["racc.k.suppr.livre", "racc.retirer.photo"],
       ["racc.k.fleches.objet", "racc.pousser.objet"],
       ["racc.k.clic.droit", "racc.menu.contextuel"],
+      ["⌘I", "racc.informations"],
       ["Tab", "racc.tab.legende"],
       ["G · ⇧G", "racc.gabarit"],
     ],

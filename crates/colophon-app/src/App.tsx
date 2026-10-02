@@ -130,7 +130,8 @@ import {
   poser as poserCandidate,
   poserApres,
 } from "./reserve";
-import { Reserve, reserveClassee } from "./bridge";
+import { Reserve, reserveClassee, revelerPhoto } from "./bridge";
+import { FichePhoto } from "./FichePhoto";
 import { choixOfferts, faceFor, cleDeForme, formeDe } from "./gabarit";
 import { RevueView, TriView } from "./TriView";
 import { Drawer } from "./Drawer";
@@ -295,6 +296,9 @@ export default function App() {
   const [proposition, setProposition] = useState<string | null>(null);
   // The keyboard cheat-sheet overlay (⌘/, menu Aide).
   const [shortcuts, setShortcuts] = useState(false);
+  /** La fiche d'une photo ouverte (chantier F) : son src, et sa case sur la
+   *  planche affichée quand elle en a une, pour le ppi. */
+  const [fiche, setFiche] = useState<{ src: string; cell: number | null } | null>(null);
   // Le panneau « Changer de format ». Il ne détient rien : le moteur rend un
   // album et un bilan, l'aperçu se lit, et l'appliquer passe par `apply` —
   // donc par l'historique, donc par ⌘Z. Rien n'atteint le disque avant ⌘S.
@@ -1301,6 +1305,23 @@ export default function App() {
       setPrefs(false);
       setStockage((s) => !s);
     },
+    // ⌘I : la fiche de la photo choisie sur la planche. Sans photo choisie,
+    // la ligne de statut le dit plutôt que de ne rien faire.
+    informations: () => {
+      if (!album || view !== "livre" || index < 0) return;
+      const planche = album.spreads[index];
+      const s = selected !== null ? planche?.slots[selected] : undefined;
+      if (!s) {
+        setStatus(t("fiche.photo.dabord"));
+        return;
+      }
+      setShortcuts(false);
+      setStockage(false);
+      setApropos(false);
+      setSignaler(null);
+      setPrefs(false);
+      setFiche((f) => (f ? null : { src: s.src, cell: selected }));
+    },
     apropos: () => {
       setShortcuts(false);
       setStockage(false);
@@ -1367,7 +1388,14 @@ export default function App() {
   // Pas de raccourci intercepté : ⌘C et le menu Édition déclenchent les
   // mêmes événements du document, et un champ de saisie garde les siens.
   const panneau =
-    bilan !== null || bascule || prefs || apropos || stockage || signaler !== null || shortcuts;
+    bilan !== null ||
+    bascule ||
+    prefs ||
+    apropos ||
+    stockage ||
+    signaler !== null ||
+    shortcuts ||
+    fiche !== null;
   const livre = album !== null && view === "livre" && index >= 0 && !panneau;
   const presse = {
     /** Un objet est là à copier, hors d'un champ — ou une photo que le menu
@@ -1534,6 +1562,7 @@ export default function App() {
       revue: () => fire("menu", "revue"),
       reserve: () => fire("menu", "reserve"),
       gabarit: () => fire("menu", "gabarit"),
+      informations: () => fire("menu", "informations"),
       dupliquer: () => fire("menu", "dupliquer"),
       figer: () => fire("menu", "figer"),
       rendreAuto: () => fire("menu", "rendre-auto"),
@@ -1730,6 +1759,15 @@ export default function App() {
         }
         return;
       }
+      // The photo sheet holds the keyboard like the panels below it; ⌘I
+      // closes what ⌘I opened.
+      if (fiche) {
+        if (e.key === "Escape" || (e.metaKey && key === "i")) {
+          e.preventDefault();
+          setFiche(null);
+        }
+        return;
+      }
       // À propos holds the keyboard like the panels below it.
       if (apropos) {
         if (e.key === "Escape") {
@@ -1791,6 +1829,8 @@ export default function App() {
                       ? "fidele"
                       : key === "d"
                       ? "dupliquer"
+                      : key === "i"
+                        ? "informations"
                       : key === "l"
                         ? "figer"
                         : key === ","
@@ -2047,12 +2087,19 @@ export default function App() {
     triSelected,
     fire,
     shortcuts,
+    fiche,
     signaler,
     stockage,
     apropos,
     prefs,
     proposition,
   ]);
+
+  // The sheet dies with its subject: leaving the book view, or closing the
+  // album, closes it.
+  useEffect(() => {
+    if (view !== "livre" || !opened) setFiche(null);
+  }, [view, opened]);
 
   // The review dies with its subject: leaving the sorting view, or rescuing
   // the last photo, closes it. There is nothing left to review.
@@ -2290,8 +2337,14 @@ export default function App() {
         if (cible.type === "page") setOrnementAu({ cible, point });
         return;
       case "voir-original":
+        if (cible.type === "photo") {
+          void revelerPhoto(cible.src).catch((e) =>
+            setError(fault(t("fiche.erreur.original"), e)),
+          );
+        }
+        return;
       case "informations":
-        // Arrivent avec la fiche photo (chantier F) : inactives jusque-là.
+        if (cible.type === "photo") setFiche({ src: cible.src, cell: cible.cell });
         return;
     }
   };
@@ -2626,10 +2679,22 @@ export default function App() {
       )}
       {error && <FaultBlock fault={error} onDismiss={() => setError(null)} />}
       {shortcuts && <RaccourcisView onClose={() => setShortcuts(false)} />}
+      {fiche && (
+        <FichePhoto
+          src={fiche.src}
+          rect={
+            spread && fiche.cell !== null && spread.slots[fiche.cell]
+              ? slotsFor(spread.template, spread.slots.length, spreadGeometry(album))[fiche.cell]
+              : null
+          }
+          zoom={(fiche.cell !== null && spread?.slots[fiche.cell]?.zoom) || 1}
+          onClose={() => setFiche(null)}
+        />
+      )}
       {menu && view === "livre" && (
         <MenuContextuel
           point={menu.point}
-          entrees={entreesPour(menu.cible, { fiche: false })}
+          entrees={entreesPour(menu.cible, { fiche: true })}
           onChoisir={choisirEntree}
           onFermer={() => setMenu(null)}
         />

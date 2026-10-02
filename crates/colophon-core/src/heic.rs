@@ -33,6 +33,14 @@ pub struct ExifSysteme {
     pub modele: Option<String>,
     /// Decimal degrees, signed.
     pub gps: Option<(f64, f64)>,
+    /// The shot as the photo sheet shows it, the same six fields as
+    /// `PhotoMeta`; the exposure already spelled by `meta::temps_de_pose`.
+    pub marque: Option<String>,
+    pub objectif: Option<String>,
+    pub ouverture: Option<f64>,
+    pub temps_de_pose: Option<String>,
+    pub iso: Option<u32>,
+    pub focale: Option<f64>,
 }
 
 /// One platform's system decoder. Same contract as `image::open`: pixels
@@ -269,6 +277,9 @@ mod imageio {
         fn CFGetTypeID(cf: *const c_void) -> usize;
         fn CFStringGetTypeID() -> usize;
         fn CFNumberGetTypeID() -> usize;
+        fn CFArrayGetTypeID() -> usize;
+        fn CFArrayGetCount(array: *const c_void) -> isize;
+        fn CFArrayGetValueAtIndex(array: *const c_void, idx: isize) -> *const c_void;
         static kCFTypeDictionaryKeyCallBacks: CFCallBacks;
         static kCFTypeDictionaryValueCallBacks: CFCallBacks;
         static kCFBooleanTrue: *const c_void;
@@ -302,7 +313,13 @@ mod imageio {
         static kCGImagePropertyTIFFDictionary: *const c_void;
         static kCGImagePropertyGPSDictionary: *const c_void;
         static kCGImagePropertyExifDateTimeOriginal: *const c_void;
+        static kCGImagePropertyExifLensModel: *const c_void;
+        static kCGImagePropertyExifFNumber: *const c_void;
+        static kCGImagePropertyExifExposureTime: *const c_void;
+        static kCGImagePropertyExifISOSpeedRatings: *const c_void;
+        static kCGImagePropertyExifFocalLength: *const c_void;
         static kCGImagePropertyTIFFOrientation: *const c_void;
+        static kCGImagePropertyTIFFMake: *const c_void;
         static kCGImagePropertyTIFFModel: *const c_void;
         static kCGImagePropertyGPSLatitude: *const c_void;
         static kCGImagePropertyGPSLatitudeRef: *const c_void;
@@ -467,6 +484,13 @@ mod imageio {
         }
     }
 
+    /// Quotes and edges stripped, blank read as absent: the same cleaning
+    /// `meta.rs` applies to what the exif crate hands over.
+    fn texte_propre(s: Option<String>) -> Option<String> {
+        s.map(|m| m.replace('"', "").trim().to_string())
+            .filter(|m| !m.is_empty())
+    }
+
     /// A string value of a CF dictionary, `None` when absent or not a string.
     unsafe fn chaine(dict: *const c_void, key: *const c_void) -> Option<String> {
         let v = CFDictionaryGetValue(dict, key);
@@ -493,12 +517,24 @@ mod imageio {
 
     unsafe fn entier(dict: *const c_void, key: *const c_void) -> Option<u32> {
         let v = CFDictionaryGetValue(dict, key);
+        entier_de(v)
+    }
+    unsafe fn entier_de(v: *const c_void) -> Option<u32> {
         if v.is_null() || CFGetTypeID(v) != CFNumberGetTypeID() {
             return None;
         }
         let mut value: i32 = 0;
         CFNumberGetValue(v, CF_NUMBER_SINT32, &mut value as *mut i32 as *mut c_void)
             .then_some(value.max(0) as u32)
+    }
+    /// The first number of an array value. ImageIO hands the ISO over as
+    /// `ISOSpeedRatings`, an array, because the tag may hold several.
+    unsafe fn premier_entier(dict: *const c_void, key: *const c_void) -> Option<u32> {
+        let v = CFDictionaryGetValue(dict, key);
+        if v.is_null() || CFGetTypeID(v) != CFArrayGetTypeID() || CFArrayGetCount(v) < 1 {
+            return None;
+        }
+        entier_de(CFArrayGetValueAtIndex(v, 0))
     }
 
     fn proprietes(path: &Path) -> Result<Released> {
@@ -561,6 +597,13 @@ mod imageio {
                 if !exif.is_null() {
                     lu.prise = chaine(exif, kCGImagePropertyExifDateTimeOriginal)
                         .and_then(|s| super::date_exif(&s));
+                    lu.objectif = texte_propre(chaine(exif, kCGImagePropertyExifLensModel));
+                    lu.ouverture = nombre(exif, kCGImagePropertyExifFNumber).filter(|f| *f > 0.0);
+                    lu.temps_de_pose = nombre(exif, kCGImagePropertyExifExposureTime)
+                        .and_then(crate::meta::temps_de_pose);
+                    lu.iso = premier_entier(exif, kCGImagePropertyExifISOSpeedRatings)
+                        .filter(|i| *i > 0);
+                    lu.focale = nombre(exif, kCGImagePropertyExifFocalLength).filter(|f| *f > 0.0);
                 }
                 // The TIFF block's orientation first, then ImageIO's own
                 // reading of it: both say the same thing, the second is
@@ -573,9 +616,8 @@ mod imageio {
                 .or_else(|| entier(props.0, kCGImagePropertyOrientation));
                 lu.orientation = orientation.filter(|o| (1..=8).contains(o));
                 if !tiff.is_null() {
-                    lu.modele = chaine(tiff, kCGImagePropertyTIFFModel)
-                        .map(|m| m.replace('"', "").trim().to_string())
-                        .filter(|m| !m.is_empty());
+                    lu.modele = texte_propre(chaine(tiff, kCGImagePropertyTIFFModel));
+                    lu.marque = texte_propre(chaine(tiff, kCGImagePropertyTIFFMake));
                 }
                 if !gps.is_null() {
                     let lat = nombre(gps, kCGImagePropertyGPSLatitude);
@@ -686,6 +728,8 @@ mod tests {
             "fichier", "capteur", "aperçu", "ms", "vignette", "ms", "plein ms"
         );
         let mut conteneurs_hors_tiff = 0;
+        let mut iso_absents: Vec<String> = Vec::new();
+        let mut sans_objectif: Vec<String> = Vec::new();
         for p in &fichiers {
             let avant = decodages_pleins();
             let capteur = dimensions(p).unwrap();
@@ -699,6 +743,19 @@ mod tests {
             let ex = exif(p).expect("le système lit les métadonnées");
             assert!(ex.prise.is_some(), "date absente : {}", p.display());
             assert!(ex.modele.is_some(), "modèle absent : {}", p.display());
+            assert!(ex.marque.is_some(), "marque absente : {}", p.display());
+            assert!(ex.temps_de_pose.is_some(), "temps de pose absent : {}", p.display());
+            // Measured on 02/10: ImageIO exposes no ISO for the CR3 (Spotlight
+            // says null too, exiftool reads 800), and the ORF writes f/0 and
+            // 0 mm for a lens without contacts. All read as absent, never as
+            // an error.
+            let nom = p.file_name().unwrap().to_string_lossy().to_string();
+            if ex.iso.is_none() {
+                iso_absents.push(nom.clone());
+            }
+            if ex.ouverture.is_none() || ex.focale.is_none() {
+                sans_objectif.push(nom);
+            }
             assert_eq!(ex.orientation, Some(1), "{}", p.display());
             let t = std::time::Instant::now();
             let plein = open(p).unwrap();
@@ -726,5 +783,7 @@ mod tests {
             );
         }
         assert_eq!(conteneurs_hors_tiff, 4, "les quatre conteneurs que le crate exif refuse");
+        assert_eq!(iso_absents, ["IMG_6310.CR3"], "l'ISO ne manque qu'au CR3");
+        assert_eq!(sans_objectif, ["PB290154.ORF"], "ouverture et focale ne manquent qu'à l'ORF (f/0, 0 mm)");
     }
 }

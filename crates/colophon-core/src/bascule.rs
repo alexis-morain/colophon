@@ -759,6 +759,12 @@ mod tests {
                 gps: None,
                 model: None,
                 rating: None,
+                make: None,
+                lens: None,
+                f_number: None,
+                exposure_time: None,
+                iso: None,
+                focal_mm: None,
             },
             analysis: Analysis {
                 dhash: 1,

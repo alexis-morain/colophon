@@ -204,6 +204,30 @@ fn gabarits_compatibles(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// La réserve classée pour une planche : les photos qu'aucune planche ne
+/// montre, du même jour d'abord, sans les quasi-doublons de la planche,
+/// douze au plus (`reserve::reserve_classee`). L'album voyage en argument
+/// parce que l'éditeur en tient une version que le disque n'a pas encore.
+/// Les vignettes se rouvrent pour mesurer, des centaines sur un gros
+/// dossier : hors du fil principal, comme le prévol.
+#[tauri::command]
+async fn reserve_classee(
+    album: Album,
+    planche: usize,
+    state: State<'_, AppState>,
+) -> Result<colophon_core::reserve::Reserve, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        colophon_core::reserve::reserve_classee(&dir, &album, planche)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("{e:#}"))
+}
+
 /// The caption proposed for a spread whose caption field is empty: the
 /// spread's town when it diverges from its chapter, its day when the
 /// chapter covers several. Computed in core from the originals' EXIF
@@ -1765,6 +1789,7 @@ pub fn run() {
             caption_suggestion,
             proposition_legende,
             gabarits_compatibles,
+            reserve_classee,
             geometrie,
             ornements,
             geometrie_format,

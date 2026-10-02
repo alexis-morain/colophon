@@ -94,6 +94,53 @@ export function growTemplate(
 }
 
 /**
+ * The spread one photo bigger, appended at the end and its template grown
+ * to the exact count, or null when no template holds one more. The one
+ * place a spread grows: a move, a rescue and an add all land here, so the
+ * template rule cannot drift between them.
+ */
+function grownWith(spread: Spread, slot: Slot): Spread | null {
+  const grown = growTemplate(spread.template, spread.slots.length);
+  if (!grown) return null;
+  return touched({
+    ...spread,
+    template: grown.template,
+    slots: [...spread.slots, slot],
+  });
+}
+
+/**
+ * Why a photo cannot be added to a spread, or null when it can. A text page
+ * would lose its text; a full spread has no larger exact template; a photo
+ * already on the spread would make a duplicate pair, which the linter counts
+ * as a defect.
+ */
+export function addBlocker(
+  album: Album,
+  at: number,
+  src: string,
+): "no_target" | "target_full" | "target_text" | "duplicate" | null {
+  const dst = album.spreads[at];
+  if (!dst) return "no_target";
+  if ((dst.text ?? "") !== "") return "target_text";
+  if (dst.slots.some((s) => s.src === src)) return "duplicate";
+  if (!growTemplate(dst.template, dst.slots.length)) return "target_full";
+  return null;
+}
+
+/**
+ * Add a photo to a spread, appended at the end; the template grows one
+ * (E4, the counterpart of `movePhoto`'s destination). Returns the album
+ * unchanged when `addBlocker` says why: the caller reads the reason and
+ * offers « Insérer une planche après ».
+ */
+export function addPhoto(album: Album, at: number, photo: Slot): Album {
+  if (addBlocker(album, at, photo.src) !== null) return album;
+  const grown = grownWith(album.spreads[at], photo);
+  return grown ? withSpread(album, at, grown) : album;
+}
+
+/**
  * Why a photo cannot move from one spread to another, or null when it can.
  * Moving never sacrifices a third photo: when the source would fall past an
  * exact template (6→5, 8→7), the move is refused rather than dropping a
@@ -135,14 +182,9 @@ export function movePhoto(
   if (moveBlocker(album, from, slot, to) !== null) return album;
   const src = album.spreads[from];
   const dst = album.spreads[to];
-  const grown = growTemplate(dst.template, dst.slots.length)!;
 
   const spreads = album.spreads.slice();
-  spreads[to] = touched({
-    ...dst,
-    template: grown.template,
-    slots: [...dst.slots, src.slots[slot]],
-  });
+  spreads[to] = grownWith(dst, src.slots[slot])!;
   const rest = src.slots.filter((_, i) => i !== slot);
   const fb = fallbackTemplate(src.template, rest.length);
   if (!fb) spreads.splice(from, 1);
@@ -196,15 +238,9 @@ export function rescuePhoto(
   for (const at of candidates) {
     const spread = album.spreads[at];
     if (!spread) continue;
-    const grown = growTemplate(spread.template, spread.slots.length);
+    const grown = grownWith(spread, slot);
     if (!grown) continue;
-    const spreads = album.spreads.slice();
-    spreads[at] = touched({
-      ...spread,
-      template: grown.template,
-      slots: [...spread.slots, slot],
-    });
-    return { album: { ...album, spreads }, at };
+    return { album: withSpread(album, at, grown), at };
   }
   return null;
 }

@@ -20,8 +20,10 @@ const texteDe = (o: Objet): string => {
   return o.texte;
 };
 import {
+  addBlocker,
   addObjet,
   addOrnement,
+  addPhoto,
   changeTemplate,
   duplicateObjet,
   duplicateSpread,
@@ -218,6 +220,40 @@ describe("movePhoto", () => {
     expect(b.spreads).toHaveLength(1);
     expect(b.spreads[0].template).toBe("trio");
     assertSound(b);
+  });
+});
+
+describe("addPhoto", () => {
+  const neuve = { src: "neuve.jpg", focal: [0.3, 0.2] as [number, number] };
+
+  it("grows a solo into a duo, the photo appended with its focal", () => {
+    const a = album(spread("solo", 1), spread("duo", 2));
+    const b = addPhoto(a, 0, neuve);
+    expect(b.spreads[0].template).toBe("duo");
+    expect(b.spreads[0].slots[1]).toEqual(neuve);
+    expect(b.spreads[0].edited).toBe(true);
+    expect(b.spreads[1]).toBe(a.spreads[1]);
+    expect(a.spreads[0].slots).toHaveLength(1);
+    assertSound(b);
+  });
+
+  it("refuses a full spread and says so", () => {
+    const a = album(spread("quad", 4));
+    expect(addBlocker(a, 0, "neuve.jpg")).toBe("target_full");
+    expect(addPhoto(a, 0, neuve)).toBe(a);
+  });
+
+  it("refuses a photo already on the spread", () => {
+    const a = album(spread("solo", 1));
+    expect(addBlocker(a, 0, "p0.jpg")).toBe("duplicate");
+    expect(addPhoto(a, 0, slot(0))).toBe(a);
+  });
+
+  it("refuses a page of text, and a spread that is not there", () => {
+    const a = album({ ...spread("solo", 1), text: "un mot" });
+    expect(addBlocker(a, 0, "neuve.jpg")).toBe("target_text");
+    expect(addBlocker(a, 3, "neuve.jpg")).toBe("no_target");
+    expect(addPhoto(a, 3, neuve)).toBe(a);
   });
 });
 

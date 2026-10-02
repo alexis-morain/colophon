@@ -175,6 +175,25 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // La réserve classée pour une planche (comptée à partir de 1, comme
+      // --proposition), lue sur l'album.json du disque : le harnais
+      // enregistre avant de demander. Les vignettes se rouvrent, donc des
+      // secondes sur un gros dossier.
+      server.middlewares.use("/__dev/reserve", (req, res) => {
+        const planche =
+          new URL(req.url ?? "", "http://x").searchParams.get("planche") ?? "1";
+        try {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            execFileSync(engineBinary, ["--reserve", planche, "-o", dir], {
+              encoding: "utf8",
+            }),
+          );
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
       // The templates a spread can switch to, count and orientation both
       // fitting: the engine's one rule. The srcs travel as a JSON array so
       // an unsaved edit filters right.

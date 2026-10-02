@@ -35,6 +35,7 @@ pub mod printer;
 pub mod reglage;
 pub mod releve;
 pub mod reprise;
+pub mod reserve;
 pub mod scan;
 pub mod scene;
 pub mod thumb;

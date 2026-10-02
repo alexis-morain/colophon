@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "banc_gabarits", "depuis_fiches"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "reserve", "banc_gabarits", "depuis_fiches"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -173,6 +173,14 @@ struct Cli {
     #[arg(long, value_name = "SRCS", hide = true)]
     gabarits: Option<String>,
 
+    /// Print the reserve of the album in --out, classed for spread PLANCHE
+    /// (counted from 1, like --proposition): the photos no spread shows,
+    /// same day first, then by date gap and score, near-duplicates of the
+    /// spread's own photos left out, twelve at most. Feeds the dev album
+    /// server; the Tauri command takes the live album instead of the file.
+    #[arg(long, value_name = "PLANCHE", hide = true)]
+    reserve: Option<usize>,
+
     /// Run the generated-template bench over composed album directories
     /// (grouped into reference sets by their source folder) and print the
     /// verdict as JSON: which enumerated combinations are green on every
@@ -308,6 +316,18 @@ fn main() -> Result<()> {
             serde_json::from_str(srcs).context("--gabarits attend un tableau JSON de src")?;
         let noms = colophon_core::gabarit::compatibles_srcs(&cli.out, &srcs)?;
         println!("{}", serde_json::to_string(&noms)?);
+        return Ok(());
+    }
+
+    if let Some(planche) = cli.reserve {
+        let album: Album = serde_json::from_str(&std::fs::read_to_string(
+            cli.out.join("album.json"),
+        )?)?;
+        let i = planche
+            .checked_sub(1)
+            .context("--reserve compte les planches à partir de 1")?;
+        let reserve = colophon_core::reserve::reserve_classee(&cli.out, &album, i)?;
+        println!("{}", serde_json::to_string(&reserve)?);
         return Ok(());
     }
 

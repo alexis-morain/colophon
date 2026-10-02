@@ -559,6 +559,42 @@ export async function fetchCuration(): Promise<Discard[]> {
   return res.json();
 }
 
+/** Pourquoi une photo de la réserve est à sa place, en code : le libellé est
+ *  à `i18n.ts`. Miroir de `reserve::Raison`. */
+export type Raison = "meme_jour" | "proche" | "nette";
+
+/** Une photo de la réserve, telle que le moteur la classe. `focal` est celui
+ *  qu'elle gardera une fois posée : la case se construit sans relire la
+ *  curation. */
+export type Candidat = {
+  src: string;
+  score: number;
+  taken?: string;
+  raison: Raison;
+  focal: [number, number];
+};
+
+/** La réserve classée pour une planche, et ce qui a manqué pour la classer
+ *  tout à fait (`note`). */
+export type Reserve = { candidats: Candidat[]; note?: string };
+
+/** Les photos qu'aucune planche ne montre, classées pour la planche `at` :
+ *  le même jour d'abord, puis par écart de date et par score, sans les
+ *  quasi-doublons de ce qu'elle porte, douze au plus. L'album voyage pour
+ *  qu'une photo retirée à l'instant soit déjà de la réserve. Le serveur de
+ *  dev, lui, lit `album.json` : le harnais enregistre avant de demander.
+ *  Sans serveur de dev, une liste vide. */
+export async function reserveClassee(album: Album, at: number): Promise<Reserve> {
+  if (inTauri) return invoke<Reserve>("reserve_classee", { album, planche: at });
+  try {
+    const res = await fetch(`/__dev/reserve?planche=${at + 1}`);
+    if (!res.ok) return { candidats: [] };
+    return await res.json();
+  } catch {
+    return { candidats: [] };
+  }
+}
+
 /** Overwrite album.json, atomically on both sides of the bridge. */
 /** The characters of this album its face cannot draw, each once. The engine
  *  prints them as `?`, and the screen must show the same. Empty in the

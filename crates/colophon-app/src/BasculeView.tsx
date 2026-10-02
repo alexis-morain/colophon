@@ -12,18 +12,16 @@
 // passe par l'historique d'édition : ⌘Z l'annule comme n'importe quelle
 // retouche, ⌘S la grave. C'est la raison pour laquelle le moteur rend un
 // album au lieu d'en enregistrer un.
+//
+// La liste des polices vit dans `ListePolices.tsx`, partagée avec le popover
+// d'un bloc.
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import { Police } from "./album";
 import { BasculeBilan, FormatPreset, PoliceEtat, PoliceOfferte } from "./bridge";
 import { Dialogue } from "./Dialogue";
-import { Cle, t } from "./i18n";
-import { nomLisible, parFamille, refusLibelle, selection, voixDe } from "./police";
-import { chargerApercu, familleDeja, oublierApercus } from "./specimen";
-
-/** Au-delà, la liste devient un mur : le filtre est ce qui la rend
- *  praticable, et le nombre qui manque se dit au lieu de disparaître. */
-const FAMILLES_MONTREES = 40;
+import { t } from "./i18n";
+import { ListePolices } from "./ListePolices";
+import { nomLisible } from "./police";
 
 export function BasculeView({
   formats,
@@ -62,33 +60,6 @@ export function BasculeView({
   onClose: () => void;
 }) {
   const memeFormat = (f: FormatPreset) => f.w === courant.w && f.h === courant.h;
-
-  // La liste entière reste à un clic, jamais ouverte d'emblée. L'état est
-  // local : le panneau se rouvre sur les dix, comme il se rouvre sans
-  // filtre.
-  const [toutes, setToutes] = useState(false);
-
-  // Les spécimens meurent avec le panneau : un rang ne veut rien dire hors
-  // de la liste qui vient d'être rendue, et une pile de faces qui grossit à
-  // chaque ouverture serait une fuite tranquille.
-  useEffect(() => oublierApercus, []);
-
-  const suggerees = useMemo(() => selection(polices), [polices]);
-
-  // Le filtre porte sur ce que l'écran montre — famille, nom élagué — et
-  // pas sur le nom PostScript, que personne ne tape.
-  const familles = useMemo(() => {
-    const q = filtre.trim().toLocaleLowerCase();
-    const vues = q
-      ? polices.filter((p) =>
-          `${p.famille} ${p.nom}`.toLocaleLowerCase().includes(q),
-        )
-      : polices;
-    return parFamille(vues);
-  }, [polices, filtre]);
-  const montrees = familles.slice(0, FAMILLES_MONTREES);
-  const cachees = familles.length - montrees.length;
-
 
   return (
     <Dialogue titre={t("bascule.titre")} onClose={onClose} className="bascule" panelClassName="bascule-panel">
@@ -234,204 +205,25 @@ export function BasculeView({
         )}
 
         {polices.length > 0 && (
-          <>
-            {/* Dix familles avant huit cents : la liste entière n'a jamais
-                été un choix, et « toutes les polices » la garde à un clic —
-                cacher une police installée serait le défaut que ce panneau
-                existe pour éviter. */}
-            <h4 className="police-titre">{t("police.suggerees")}</h4>
-            <p className="police-note">{t("police.suggerees.note")}</p>
-            <ul className="police-suggerees">
-              {/* La face du moteur en tête, toujours re-sélectionnable :
-                  revenir en arrière ne doit jamais demander de retrouver
-                  laquelle c'était. Elle est nommée et non montrée : ce
-                  qu'un spécimen dessinerait ici, c'est la face de l'album,
-                  qui n'est justement plus celle-là dès qu'on en a choisi
-                  une autre. */}
-              <li>
-                <button
-                  className={"police-carte" + (policeAlbum ? "" : " choisie")}
-                  onClick={onRendrePolice}
-                  aria-pressed={!policeAlbum}
-                >
-                  <span className="police-carte-nom">{t("police.projet")}</span>
-                  <span className="police-carte-note">
-                    {t("police.projet.note")}
-                  </span>
-                </button>
-              </li>
-              {suggerees.map((p) => {
-                const active = policeAlbum?.postscript === p.postscript;
-                const voix = voixDe(p);
-                return (
-                  <li key={p.rang}>
-                    <button
-                      className={"police-carte" + (active ? " choisie" : "")}
-                      aria-pressed={active}
-                      onClick={() => onPolice(p)}
-                    >
-                      <Specimen
-                        rang={p.rang}
-                        classe="police-carte-nom"
-                        texte={nomLisible(p)}
-                      />
-                      <Specimen
-                        rang={p.rang}
-                        classe="police-carte-specimen"
-                        texte={t("police.specimen")}
-                      />
-                      {voix && (
-                        <span className="police-carte-note">
-                          {t(`police.voix.${voix}` as Cle)}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-
-            <button
-              className="link police-toutes"
-              onClick={() => setToutes((v) => !v)}
-              aria-expanded={toutes}
-            >
-              {toutes
-                ? t("police.toutes.masquer")
-                : t("police.toutes", { n: polices.length })}
-            </button>
-
-            {toutes && (
-              <>
-                <label className="police-filtre">
-                  <span className="police-filtre-label">{t("police.filtre")}</span>
-                  <input
-                    type="search"
-                    value={filtre}
-                    placeholder={t("police.filtre.exemple")}
-                    onChange={(e) => onFiltre(e.target.value)}
-                  />
-                </label>
-
-                <ul className="police-familles">
-                  {montrees.map(({ famille, faces }) => (
-                    <li key={famille} className="police-famille">
-                      <h4 className="police-famille-nom">{famille}</h4>
-                      <ul>
-                        {faces.map((p) => {
-                          const active = policeAlbum?.postscript === p.postscript;
-                          return (
-                            <li key={p.rang}>
-                              {/* `aria-disabled` et non `disabled` : un bouton
-                                  désactivé sort de l'ordre de tabulation, et la
-                                  raison du refus deviendrait invisible pour qui
-                                  parcourt la liste au clavier — or c'est
-                                  justement elle qu'on a tenu à afficher. */}
-                              <button
-                                className={
-                                  "police-face" +
-                                  (p.refus ? " refusee" : "") +
-                                  (active ? " choisie" : "")
-                                }
-                                aria-disabled={!!p.refus}
-                                aria-pressed={active}
-                                onClick={() => !p.refus && onPolice(p)}
-                              >
-                                {/* Une face refusée ne se dessine pas : le
-                                    moteur refuserait d'en sortir les octets,
-                                    et c'est le même refus des deux côtés. */}
-                                {p.refus ? (
-                                  <span className="police-face-nom">
-                                    {nomLisible(p)}
-                                  </span>
-                                ) : (
-                                  <Specimen
-                                    rang={p.rang}
-                                    classe="police-face-nom"
-                                    texte={nomLisible(p)}
-                                  />
-                                )}
-                                {/* Une face refusée s'affiche, grisée, avec sa
-                                    raison : la cacher enverrait quelqu'un
-                                    chercher une police qui est bien là. */}
-                                {p.refus && (
-                                  <span className="police-face-refus">
-                                    {refusLibelle(p.refus)}
-                                  </span>
-                                )}
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </li>
-                  ))}
-                </ul>
-                {cachees > 0 && (
-                  <p className="bascule-reste">{t("police.reste", { n: cachees })}</p>
-                )}
-                {familles.length === 0 && (
-                  <p className="bascule-reste">{t("police.aucune")}</p>
-                )}
-              </>
-            )}
-          </>
+          <ListePolices
+            polices={polices}
+            projet={{
+              libelle: t("police.projet"),
+              note: t("police.projet.note"),
+              choisi: !policeAlbum,
+              onChoisir: onRendrePolice,
+            }}
+            estChoisie={(p) => policeAlbum?.postscript === p.postscript}
+            onVoix={onPolice}
+            onFace={onPolice}
+            filtre={filtre}
+            onFiltre={onFiltre}
+          />
         )}
     </Dialogue>
   );
 }
 
-/**
- * Un texte écrit dans la face qu'il nomme, quand elle est là.
- *
- * Les octets arrivent quand la ligne entre dans le champ de vision, pas
- * avant : la liste complète en compte des centaines, et les charger toutes
- * pour en montrer quinze serait payer huit cents extractions pour rien.
- *
- * `null` — face trop lourde, refusée, budget épuisé — laisse le nom dans la
- * police de l'interface, ce qu'il faisait de toute façon jusqu'ici.
- */
-function Specimen({
-  rang,
-  texte,
-  classe,
-}: {
-  rang: number;
-  texte: string;
-  classe: string;
-}) {
-  const [famille, setFamille] = useState<string | null>(() => familleDeja(rang));
-  const ancre = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (famille) return;
-    const el = ancre.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    let mort = false;
-    const io = new IntersectionObserver((entrees) => {
-      if (!entrees.some((e) => e.isIntersecting)) return;
-      io.disconnect();
-      void chargerApercu(rang).then((f) => {
-        if (!mort) setFamille(f);
-      });
-    });
-    io.observe(el);
-    return () => {
-      mort = true;
-      io.disconnect();
-    };
-  }, [rang, famille]);
-
-  return (
-    <span
-      ref={ancre}
-      className={classe}
-      style={famille ? { fontFamily: `"${famille}", var(--font-ui)` } : undefined}
-    >
-      {texte}
-    </span>
-  );
-}
 
 /** « Cette police ne dessine pas N caractères… », la liste entre guillemets,
  *  coupée à douze : au-delà, le nombre dit tout. */

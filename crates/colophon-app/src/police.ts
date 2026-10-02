@@ -205,3 +205,64 @@ export function voixDe(p: PoliceOfferte): string | null {
   );
   return voix ? voix.cle : null;
 }
+
+/** La face droite d'une famille selon ses tables : ni grasse ni italique,
+ *  sinon la première que le moteur accepte. C'est celle que prend un bloc
+ *  quand on lui choisit une famille. */
+export function faceReguliere(faces: PoliceOfferte[]): PoliceOfferte | null {
+  const bonnes = faces.filter((f) => !f.refus);
+  return bonnes.find((f) => !f.gras && !f.italique) ?? bonnes[0] ?? null;
+}
+
+/** Les mots de style d'un nom, hors ceux que les boutons règlent : ce qui
+ *  reste dit la graisse ou la chasse (« Light », « Condensed »). */
+function style(f: PoliceOfferte): Set<string> {
+  const reste = f.nom.startsWith(f.famille) ? f.nom.slice(f.famille.length) : f.nom;
+  return new Set(
+    reste
+      .toLocaleLowerCase()
+      .split(/\s+/)
+      .filter((m) => m && !["bold", "italic", "oblique", "regular"].includes(m)),
+  );
+}
+
+/**
+ * La face que G ou I fait prendre à un bloc : la même famille, l'axe
+ * basculé, l'autre gardé. `null` quand la famille ne l'a pas sur cette
+ * machine, et le bouton le dit au lieu de simuler.
+ *
+ * **Lu dans les tables, jamais dans le nom** : `gras` et `italique` viennent
+ * de l'OS/2, de `post` et de `head`. Le nom ne sert qu'à départager
+ * plusieurs candidates (Bold et Condensed Bold sont toutes deux grasses) :
+ * on garde ce qui ressemble le plus à la face d'où l'on part, Light donne
+ * Light Italic, puis le nom le plus court.
+ */
+export function faceVoisine(
+  faces: PoliceOfferte[],
+  courant: PoliceOfferte,
+  axe: "gras" | "italique",
+): PoliceOfferte | null {
+  const gras = axe === "gras" ? !courant.gras : courant.gras;
+  const italique = axe === "italique" ? !courant.italique : courant.italique;
+  const depart = style(courant);
+  const rang = (f: PoliceOfferte) => {
+    const mots = [...style(f)];
+    const communs = mots.filter((m) => depart.has(m)).length;
+    return [-communs, mots.length - communs, f.nom.length];
+  };
+  const avant = (a: number[], b: number[]) => {
+    const i = a.findIndex((v, k) => v !== b[k]);
+    return i !== -1 && a[i] < b[i];
+  };
+  let meilleure: PoliceOfferte | null = null;
+  let score: number[] = [];
+  for (const f of faces) {
+    if (f.refus || f.gras !== gras || f.italique !== italique) continue;
+    const r = rang(f);
+    if (!meilleure || avant(r, score)) {
+      meilleure = f;
+      score = r;
+    }
+  }
+  return meilleure;
+}

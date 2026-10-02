@@ -48,6 +48,7 @@ import {
   choisirPolice,
   policeEtat,
   PoliceEtat,
+  policeObjetOctets,
   policeOctets,
   polices_installees,
   PoliceOfferte,
@@ -128,7 +129,7 @@ import { Cle, FR, langue, t, useLangue } from "./i18n";
 import { jusquAuRendu } from "./mesure";
 import { RaccourcisView } from "./Raccourcis";
 import { BasculeView } from "./BasculeView";
-import { chargerFace, setAbsents } from "./font";
+import { chargerFace, chargerFacesObjet, oublierFacesObjet, setAbsents } from "./font";
 import { nomLisible } from "./police";
 import { useVeille } from "./maj";
 
@@ -443,6 +444,36 @@ export default function App() {
     // policeFichier est lu dans l'effet, policeCle est ce qui le déclenche.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, policeCle]);
+
+  // Les faces des blocs, une par fichier `objet-*` que l'album nomme, des
+  // octets que l'émetteur embarquera (`font.ts`). Un autre album les oublie
+  // toutes : le même nom de fichier peut y porter une autre face. Une face
+  // partie du dossier reste inconnue du navigateur, le bloc se mesure et se
+  // dessine dans celle du livre, et son popover le dit.
+  const dossier = opened?.dir;
+  useEffect(() => {
+    oublierFacesObjet();
+  }, [dossier]);
+  const fichiersObjet = (album?.spreads ?? [])
+    .flatMap((s) => s.objets ?? [])
+    .flatMap((o) => (o.type === "texte" && o.police ? [o.police.fichier] : []));
+  const fichiersCle = [...new Set(fichiersObjet)].sort().join("|");
+  useEffect(() => {
+    if (!opened || fichiersCle === "") return;
+    void chargerFacesObjet(fichiersCle.split("|"), policeObjetOctets);
+    // fichiersCle porte la liste entière.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened, fichiersCle]);
+
+  // Les faces de la machine, lues au premier objet choisi si le panneau
+  // Format ne l'a pas déjà fait : la famille d'un bloc se choisit dans la
+  // même liste.
+  const objetChoisi = objet !== null;
+  useEffect(() => {
+    if (objetChoisi && inTauri && polices.length === 0) {
+      polices_installees().then(setPolices, () => {});
+    }
+  }, [objetChoisi, polices.length]);
 
 
 
@@ -2241,6 +2272,8 @@ export default function App() {
                   }
                   onObjetSupprimer={(i) => apply((a) => removeObjet(a, index, i))}
                   onObjetReglage={(i, o) => apply((a) => setObjetEdit(a, index, i, o))}
+                  polices={polices}
+                  policeLivre={policeInfo?.postscript ?? null}
                   onSwap={(a, b) => apply((al) => swapPhotos(al, index, a, b))}
                   onPlace={place}
                   onCrop={(slot, focal, zoom) =>

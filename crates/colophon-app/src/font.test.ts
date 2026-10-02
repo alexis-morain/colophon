@@ -22,10 +22,30 @@ const ctx = {
   measureText: (t: string) => ({ width: t.length * 50 }),
 };
 
+/** Les faces posées sur le document, pour voir ce que `font.ts` y ajoute
+ *  et y retire. */
+const posees = new Set<unknown>();
+
 beforeAll(() => {
   (globalThis as unknown as { document: unknown }).document = {
     createElement: () => ({ getContext: () => ctx }),
-    fonts: { load: () => Promise.resolve([]) },
+    fonts: {
+      load: () => Promise.resolve([]),
+      add: (f: unknown) => posees.add(f),
+      delete: (f: unknown) => posees.delete(f),
+    },
+  };
+  // Une `FontFace` qui se charge toujours : ce qui échoue, dans ces tests,
+  // c'est la lecture des octets, pas le navigateur.
+  (globalThis as unknown as { FontFace: unknown }).FontFace = class {
+    constructor(
+      public family: string,
+      public octets: ArrayBuffer,
+      public options: Record<string, string>,
+    ) {}
+    load() {
+      return Promise.resolve(this);
+    }
   };
 });
 
@@ -106,5 +126,84 @@ describe("la substitution", () => {
     expect((vue.objects[2].role as { src: string }).src).toBe("ż.jpg");
     setAbsents([]);
     expect(substituer(scene)).toBe(scene);
+  });
+});
+
+/** La face d'un bloc : une famille interne de plus, devant celle du livre. */
+describe("la face d'un bloc", () => {
+  const police = {
+    fichier: "objet-HelveticaNeue-Bold.ttf",
+    postscript: "HelveticaNeue-Bold",
+    nom: "Helvetica Neue Bold",
+  };
+
+  it("se nomme d'après son fichier, jamais d'après la police installée", async () => {
+    const { familleObjet } = await import("./font");
+    expect(familleObjet(police)).toBe("colophon-objet-HelveticaNeue-Bold");
+    expect(familleObjet({ ...police, fichier: "objet-Didot.otf" })).toBe(
+      "colophon-objet-Didot",
+    );
+  });
+
+  it("se mesure devant la face du livre, qui la remplace tant qu'elle manque", async () => {
+    const { measureMm, FAMILLE } = await import("./font");
+    measureMm("Corse", 10, "colophon-objet-HelveticaNeue-Bold");
+    expect(ctx.font).toBe(
+      `100px "colophon-objet-HelveticaNeue-Bold", "${FAMILLE}", "Source Sans 3", sans-serif`,
+    );
+    expect(ctx.font).not.toContain("Helvetica Neue");
+    // Sans famille, la pile du livre, telle qu'avant.
+    measureMm("Corse", 10);
+    expect(ctx.font).toBe(`100px "${FAMILLE}", "Source Sans 3", sans-serif`);
+  });
+
+  it("tient la grammaire du moteur", async () => {
+    const { fichierObjetValide } = await import("./font");
+    expect(fichierObjetValide("objet-HelveticaNeue-Bold.ttf")).toBe(true);
+    expect(fichierObjetValide("objet-Didot.otf")).toBe(true);
+    expect(fichierObjetValide(`objet-${"a".repeat(64)}.ttf`)).toBe(true);
+    for (const faux of [
+      "police.ttf",
+      "objet-.ttf",
+      "../objet-a.ttf",
+      "objet-a/b.ttf",
+      "objet-a.woff",
+      "objet-a_b.ttf",
+      `objet-${"a".repeat(65)}.ttf`,
+    ]) {
+      expect(fichierObjetValide(faux)).toBe(false);
+    }
+  });
+
+  it("se charge une fois par fichier, dit celles qui manquent, s'oublie au changement d'album", async () => {
+    const { chargerFacesObjet, faceObjetManque, oublierFacesObjet, tourDeFace } =
+      await import("./font");
+    const lus: string[] = [];
+    const lire = async (f: string) => {
+      lus.push(f);
+      if (f === "objet-Parti.ttf") throw new Error("fichier_absent");
+      return new ArrayBuffer(8);
+    };
+    const avant = tourDeFace();
+    await chargerFacesObjet(["objet-A.ttf", "objet-Parti.ttf", "objet-A.ttf"], lire);
+    expect(lus).toEqual(["objet-A.ttf", "objet-Parti.ttf"]);
+    expect(faceObjetManque("objet-A.ttf")).toBe(false);
+    expect(faceObjetManque("objet-Parti.ttf")).toBe(true);
+    expect(tourDeFace()).toBeGreaterThan(avant);
+    const familles = [...posees].map((f) => (f as { family: string }).family);
+    expect(familles).toContain("colophon-objet-A");
+    const options = [...posees].map((f) => (f as { options: Record<string, string> }).options);
+    expect(options[0].featureSettings).toContain('"kern" 0');
+
+    // Déjà connues : rien n'est relu.
+    await chargerFacesObjet(["objet-A.ttf"], lire);
+    expect(lus).toHaveLength(2);
+
+    oublierFacesObjet();
+    expect(posees.size).toBe(0);
+    expect(faceObjetManque("objet-Parti.ttf")).toBe(false);
+    await chargerFacesObjet(["objet-A.ttf"], lire);
+    expect(lus).toHaveLength(3);
+    oublierFacesObjet();
   });
 });

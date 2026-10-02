@@ -112,3 +112,51 @@ describe("lire refuse", () => {
     expect(lire(donnees({ "text/plain": "Corse, été 2013" }))).toBeNull();
   });
 });
+
+// A-s2 : la couleur et la police voyagent avec l'objet. Sans elles, un
+// copier-coller rendait un bloc noir dans la police du livre.
+describe("la couleur et la police d'un objet", () => {
+  const police = {
+    fichier: "objet-HelveticaNeue-Bold.ttf",
+    postscript: "HelveticaNeue-Bold",
+    nom: "Helvetica Neue Bold",
+  };
+
+  it("passent le collage d'un bloc", () => {
+    const habille: Objet = { ...bloc, couleur: "#b04a1f", police };
+    expect(lire(donnees(serialiser(habille, 1)))).toEqual({ ...habille, de: 1 });
+  });
+
+  it("la couleur passe celui d'un ornement, sa police non", () => {
+    const gris: Objet = { ...ornement, couleur: "#999999", police };
+    expect(lire(donnees(serialiser(gris, 0)))).toEqual({
+      ...ornement,
+      couleur: "#999999",
+      de: 0,
+    });
+  });
+
+  it("une couleur accepte les majuscules, comme le moteur", () => {
+    expect(lire(abime({ couleur: "#B04A1F" }))?.couleur).toBe("#B04A1F");
+  });
+
+  it.each(["#abc", "rouge", "#12345g", "", 12, null])(
+    "refusent une couleur hors grammaire (%s)",
+    (couleur) => {
+      expect(lire(abime({ couleur }))).toBeNull();
+    },
+  );
+
+  it.each([
+    ["un chemin", { ...police, fichier: "../secret.ttf" }],
+    ["la police du livre", { ...police, fichier: "police.ttf" }],
+    ["un nom vide", { ...police, fichier: "objet-.ttf" }],
+    ["une barre", { ...police, fichier: "objet-a/b.ttf" }],
+    ["une autre extension", { ...police, fichier: "objet-Helvetica.woff" }],
+    ["un PostScript absent", { fichier: police.fichier, nom: police.nom }],
+    ["un nom qui n'est pas une chaîne", { ...police, nom: 3 }],
+    ["une chaîne", "objet-HelveticaNeue-Bold.ttf"],
+  ])("refusent une police qui n'est pas une fiche (%s)", (_, faux) => {
+    expect(lire(abime({ police: faux }))).toBeNull();
+  });
+});

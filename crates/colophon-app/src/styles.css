@@ -550,6 +550,10 @@ input[type="radio"] {
   overflow: hidden;
   background: var(--paper);
   box-shadow: var(--shadow-paper);
+  /* Jamais un gras ni un italique inventé : un bloc est gras parce que sa
+     face le dit dans ses tables, et le PDF n'a aucun glyphe simulé. Si une
+     face manque, le navigateur ne doit pas en fabriquer une. */
+  font-synthesis: none;
 }
 
 .media-box {
@@ -777,7 +781,6 @@ input[type="radio"] {
 .objet-libre-ligne {
   position: absolute;
   font-family: var(--font-book);
-  color: var(--paper-ink);
   white-space: pre;
 }
 
@@ -3674,11 +3677,14 @@ kbd {
   border-color: var(--accent);
 }
 
-.objet-popover-rangee[role="group"] {
-  gap: 0;
+/* Les boutons d'un même réglage se touchent, bord contre bord. */
+.objet-alignements,
+.objet-axes {
+  display: flex;
 }
 
-.objet-aligner {
+.objet-aligner,
+.objet-axe {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3689,23 +3695,129 @@ kbd {
   margin-left: -1px;
 }
 
-.objet-aligner:first-child {
+.objet-aligner:first-child,
+.objet-axe:first-child {
   margin-left: 0;
 }
 
-.objet-aligner:hover {
+.objet-aligner:hover,
+.objet-axe:hover:not(:disabled) {
   color: var(--text);
 }
 
-.objet-aligner.actif {
+.objet-aligner.actif,
+.objet-axe.actif {
   position: relative;
   color: var(--accent);
   border-color: var(--accent);
 }
 
-.objet-aligner:focus-visible {
+.objet-aligner:focus-visible,
+.objet-axe:focus-visible,
+.objet-famille:focus-visible,
+.objet-pastille:focus-visible,
+.objet-couleur-autre:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* G et I : une lettre, jamais grasse ni penchée par le navigateur. Un
+   bouton inactif a un filet pointillé et dit pourquoi dans son infobulle ;
+   son texte garde le contraste des autres, pas d'opacité. */
+.objet-axe {
+  font: inherit;
+  font-size: var(--fs-13);
+}
+
+.objet-axe:disabled {
+  cursor: default;
+  border-style: dashed;
+}
+
+/* La famille en cours, qui ouvre la liste. Un nom long se coupe d'une
+   ellipse, l'infobulle garde le rôle du bouton. */
+.objet-famille {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  height: 24px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--fond);
+  border: 1px solid var(--rule);
+}
+
+.objet-famille::after {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+
+.objet-famille[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+.objet-famille-nom {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Six pastilles et le sélecteur natif. Les pastilles sont des carrés
+   d'encre : le filet autour garde le blanc visible sur la surface claire. */
+.objet-couleurs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.objet-pastille {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--rule);
+}
+
+.objet-pastille.actif {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.objet-couleur-autre {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  margin-left: 4px;
+  background: none;
+  border: 1px solid var(--rule);
+}
+
+.objet-popover-alerte {
+  margin: 0;
+  max-width: 480px;
+  color: var(--text);
+}
+
+/* La liste des polices, sous les rangées. Sa largeur ne pousse pas celle du
+   popover (`width: 0` puis `min-width: 100%`) : ce sont les réglages qui la
+   décident, et la liste défile en dessous. */
+.objet-polices {
+  width: 0;
+  min-width: 100%;
+  max-height: min(360px, 45vh);
+  overflow-y: auto;
+  border-top: 1px solid var(--rule);
+  padding-top: 4px;
+}
+
+.objet-polices .police-familles {
+  max-height: none;
 }
 
 /* ---- the caption popover ------------------------------------------------- */

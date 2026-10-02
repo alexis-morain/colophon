@@ -11,6 +11,20 @@ sur la page des releases.
 
 ### Ajouté
 
+- **Un clic droit sur la planche, et une photo s'ajoute ou se remplace
+  depuis la réserve.** Sur le papier nu d'une page : « Ajouter une photo… »,
+  un bloc de texte ou un ornement, posés là où vous avez cliqué. Sur une
+  photo : « Remplacer par… », retirer, copier. Sur un bloc ou un ornement :
+  copier, couper, dupliquer, supprimer, et ses réglages. « Ajouter » comme
+  « Remplacer » ouvrent le même choix, douze vignettes au plus prises dans
+  les photos que le livre ne montre pas, les plus proches de la planche
+  d'abord : le même jour, puis les jours voisins, les plus nettes en tête,
+  et jamais le quasi-double d'une photo déjà sur la planche. Ajouter fait
+  grandir la planche d'une case ; quand elle n'en a plus, le choix le dit et
+  pose la photo sur une planche neuve, insérée après. Une photo copiée se
+  colle d'un ⌘V sur la planche affichée. Le menu se parcourt au clavier et
+  se referme à Échap.
+
 - **Une police, un gras, un italique et une couleur pour chaque bloc de
   texte, une couleur pour chaque ornement.** Choisissez le bloc sur la
   planche : ses réglages s'ouvrent dessous. La première rangée porte la

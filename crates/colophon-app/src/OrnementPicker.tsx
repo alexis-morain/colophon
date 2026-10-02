@@ -10,7 +10,9 @@
 // identifiant.
 //
 // Le popover est celui de `TemplatePicker`, au motif près : bouton `.link`,
-// ouverture par un état, fermeture au clic dehors et à Échap.
+// ouverture par un état, fermeture au clic dehors et à Échap. La grille
+// elle-même (`OrnementPanel`) s'ouvre aussi depuis le menu contextuel d'une
+// page, au point du clic : même dessins, même pose, un seul composant.
 
 import { useEffect, useRef, useState } from "react";
 import { t } from "./i18n";
@@ -22,6 +24,68 @@ import {
   titre,
   titreDeFamille,
 } from "./ornement";
+
+/** La grille des dessins du pack, groupés par famille. */
+export function OrnementPanel({
+  onPick,
+  style,
+  className,
+}: {
+  onPick: (o: Ornement) => void;
+  style?: React.CSSProperties;
+  className?: string;
+}) {
+  // Le pack est lu à l'ouverture : il ne change pas pendant la vie de la
+  // fenêtre, `bridge.ts` le posant une fois au démarrage.
+  const groupes = parFamille();
+  return (
+    <div className={"orn-panel" + (className ? ` ${className}` : "")} role="listbox" style={style}>
+      {/* Un moteur plus vieux que l'app ne rend aucun ornement, et c'est
+          un état atteignable : une phrase, jamais une grille vide. */}
+      {groupes.length === 0 ? (
+        <p className="orn-vide">{t("ornement.vide")}</p>
+      ) : (
+        groupes.map(([famille, dedans]) => {
+          const nom = titreDeFamille(famille);
+          return (
+            <div className="orn-groupe" key={famille} role="group" aria-label={nom}>
+              <h4 className="orn-groupe-nom">{nom}</h4>
+              <div className="orn-groupe-cases">
+                {dedans.map((o) => (
+                  <button
+                    key={o.id}
+                    role="option"
+                    aria-selected={false}
+                    className="orn-option"
+                    title={titre(o)}
+                    aria-label={titre(o)}
+                    onClick={() => onPick(o)}
+                  >
+                    <svg
+                      className="orn-dessin"
+                      aria-hidden="true"
+                      viewBox={attributViewBox(o.dessin)}
+                      preserveAspectRatio="xMidYMid meet"
+                    >
+                      {o.dessin.chemins.map((chemin, i) => (
+                        <path
+                          key={i}
+                          d={attributD(chemin)}
+                          fill="currentColor"
+                          fillRule={chemin.evenodd ? "evenodd" : "nonzero"}
+                        />
+                      ))}
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
 
 export function OrnementPicker({ onPick }: { onPick: (o: Ornement) => void }) {
   const [open, setOpen] = useState(false);
@@ -47,10 +111,6 @@ export function OrnementPicker({ onPick }: { onPick: (o: Ornement) => void }) {
     };
   }, [open]);
 
-  // Le pack est lu à l'ouverture : il ne change pas pendant la vie de la
-  // fenêtre, `bridge.ts` le posant une fois au démarrage.
-  const groupes = parFamille();
-
   return (
     <div className="orn" ref={root}>
       <button
@@ -62,59 +122,12 @@ export function OrnementPicker({ onPick }: { onPick: (o: Ornement) => void }) {
         {t("ornement.ajouter")}
       </button>
       {open && (
-        <div className="orn-panel" role="listbox">
-          {/* Un moteur plus vieux que l'app ne rend aucun ornement, et c'est
-              un état atteignable : une phrase, jamais une grille vide. */}
-          {groupes.length === 0 ? (
-            <p className="orn-vide">{t("ornement.vide")}</p>
-          ) : (
-            groupes.map(([famille, dedans]) => {
-              const nom = titreDeFamille(famille);
-              return (
-                <div
-                  className="orn-groupe"
-                  key={famille}
-                  role="group"
-                  aria-label={nom}
-                >
-                  <h4 className="orn-groupe-nom">{nom}</h4>
-                  <div className="orn-groupe-cases">
-                    {dedans.map((o) => (
-                      <button
-                        key={o.id}
-                        role="option"
-                        aria-selected={false}
-                        className="orn-option"
-                        title={titre(o)}
-                        aria-label={titre(o)}
-                        onClick={() => {
-                          setOpen(false);
-                          onPick(o);
-                        }}
-                      >
-                        <svg
-                          className="orn-dessin"
-                          aria-hidden="true"
-                          viewBox={attributViewBox(o.dessin)}
-                          preserveAspectRatio="xMidYMid meet"
-                        >
-                          {o.dessin.chemins.map((chemin, i) => (
-                            <path
-                              key={i}
-                              d={attributD(chemin)}
-                              fill="currentColor"
-                              fillRule={chemin.evenodd ? "evenodd" : "nonzero"}
-                            />
-                          ))}
-                        </svg>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+        <OrnementPanel
+          onPick={(o) => {
+            setOpen(false);
+            onPick(o);
+          }}
+        />
       )}
     </div>
   );

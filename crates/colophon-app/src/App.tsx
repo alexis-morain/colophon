@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AlbumPhotos,
   Etat as EtatPhotos,
@@ -103,8 +103,10 @@ import {
   setObjet as setObjetEdit,
   setObjetTexte,
   removeObjet,
+  addBlocker,
   addObjet,
   addOrnement,
+  addPhoto,
   setSpreadCaption,
   setSpreadText,
   spreadOf,
@@ -117,8 +119,18 @@ import {
 import { BilanView } from "./BilanView";
 import { SpreadView } from "./SpreadView";
 import { TemplatePicker } from "./TemplatePicker";
-import { OrnementPicker } from "./OrnementPicker";
+import { OrnementPanel, OrnementPicker } from "./OrnementPicker";
 import { Ornement, PACK_INTERNE, rapport } from "./ornement";
+import { MenuContextuel } from "./MenuContextuel";
+import { Cible, EntreeId, entreesPour, placerMenu } from "./contextuel";
+import { ChoixReserve } from "./ChoixReserve";
+import {
+  ModeChoix,
+  pleineAvant,
+  poser as poserCandidate,
+  poserApres,
+} from "./reserve";
+import { Reserve, reserveClassee } from "./bridge";
 import { choixOfferts, faceFor, cleDeForme, formeDe } from "./gabarit";
 import { RevueView, TriView } from "./TriView";
 import { Drawer } from "./Drawer";
@@ -230,6 +242,26 @@ export default function App() {
    *  choisi ouvre celui de transformation — deux choses différentes, et les
    *  fondre churnerait trente sites d'appel pour ne rien gagner. */
   const [objet, setObjet] = useState<number | null>(null);
+  /** Le menu contextuel ouvert, un seul à la fois : sa cible et le pointeur. */
+  const [menu, setMenu] = useState<{ cible: Cible; point: { x: number; y: number } } | null>(
+    null,
+  );
+  /** Le choix d'une photo de la réserve, et la réserve classée pour lui
+   *  (`null` tant que le moteur classe). */
+  const [choix, setChoix] = useState<{
+    mode: ModeChoix;
+    at: number;
+    point: { x: number; y: number };
+  } | null>(null);
+  const [reserve, setReserve] = useState<Reserve | null>(null);
+  /** La grille d'ornements ouverte depuis le menu d'une page. */
+  const [ornementAu, setOrnementAu] = useState<{
+    cible: Extract<Cible, { type: "page" }>;
+    point: { x: number; y: number };
+  } | null>(null);
+  /** La photo que le menu vient de demander à copier : `presse.copier` la
+   *  sérialise quand `execCommand("copy")` fait partir l'événement. */
+  const photoACopier = useRef<Slot | null>(null);
   const [error, setError] = useState<Fault | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [building, setBuilding] = useState<string[] | null>(null);
@@ -1338,12 +1370,25 @@ export default function App() {
     bilan !== null || bascule || prefs || apropos || stockage || signaler !== null || shortcuts;
   const livre = album !== null && view === "livre" && index >= 0 && !panneau;
   const presse = {
-    /** Un objet est là à copier, hors d'un champ. */
+    /** Un objet est là à copier, hors d'un champ — ou une photo que le menu
+     *  vient de désigner. */
     copiable: (e: Event) =>
-      livre && objet !== null && !estChamp(e.target) &&
-      album!.spreads[index]?.objets?.[objet] !== undefined,
+      livre &&
+      !estChamp(e.target) &&
+      (photoACopier.current !== null ||
+        (objet !== null && album!.spreads[index]?.objets?.[objet] !== undefined)),
     copier: (e: ClipboardEvent, couper: boolean) => {
       if (!presse.copiable(e) || !e.clipboardData) return;
+      // Une photo voyage sous le type que le tiroir glisse déjà sur une
+      // case : la coller est l'ajouter à la planche affichée.
+      if (photoACopier.current) {
+        const photo = photoACopier.current;
+        e.clipboardData.setData("application/x-colophon-photo", JSON.stringify(photo));
+        e.clipboardData.setData("text/plain", photo.src);
+        e.preventDefault();
+        setStatus(t("photo.copiee"));
+        return;
+      }
       const o = album!.spreads[index].objets![objet!];
       for (const [type, v] of Object.entries(serialiser(o, index))) {
         e.clipboardData.setData(type, v);
@@ -1362,6 +1407,31 @@ export default function App() {
     coller: (e: ClipboardEvent) => {
       if (!presse.collable(e) || !e.clipboardData) return;
       const spread = album!.spreads[index];
+      // Une photo copiée s'ajoute à la planche affichée, qui grandit d'une
+      // case ; pleine, elle le dit et ne bouge pas.
+      const photoCollee = spread ? e.clipboardData.getData("application/x-colophon-photo") : "";
+      if (photoCollee) {
+        e.preventDefault();
+        let photo: Slot | null = null;
+        try {
+          const lu = JSON.parse(photoCollee) as Partial<Slot>;
+          if (typeof lu.src === "string") {
+            photo = { src: lu.src, focal: Array.isArray(lu.focal) ? lu.focal : [0.5, 0.42] };
+          }
+        } catch {
+          /* pas une photo */
+        }
+        if (!photo) return;
+        const blocage = addBlocker(album!, index, photo.src);
+        if (blocage === "duplicate") setStatus(t("place.doublon"));
+        else if (blocage !== null) setStatus(t("photo.coller.pleine"));
+        else {
+          const suivant = addPhoto(album!, index, photo);
+          apply(() => suivant);
+          setStatus(t("photo.collee", { n: suivant.spreads[index].slots.length }));
+        }
+        return;
+      }
       // Un texte brut seul ne crée rien : pas de bloc implicite.
       const colle = spread ? lire(e.clipboardData) : null;
       if (!colle) return;
@@ -2127,9 +2197,12 @@ export default function App() {
    * de la place. Quand elle n'en a plus, il se pose quand même : refuser
    * serait un cul-de-sac, et la ligne de statut le dit.
    */
-  const poser = (edit: (album: Album, page: Rect, photos: Rect[]) => Album) => {
+  const poser = (
+    edit: (album: Album, page: Rect, photos: Rect[]) => Album,
+    droite = false,
+  ) => {
     if (!spread) return;
-    const { page, photos } = gardesDePose(album, spread, false);
+    const { page, photos } = gardesDePose(album, spread, droite);
     const rang = spread.objets?.length ?? 0;
     const suivant = edit(album, page, photos);
     apply(() => suivant);
@@ -2138,6 +2211,129 @@ export default function App() {
     if (pose && photos.some((p) => recouvre(pose, 0, p, 0))) {
       setStatus(t("objet.pose.encombree"));
     }
+  };
+
+  /** Le clic droit sur la planche : un objet se choisit d'abord, pour que ses
+   *  entrées parlent de lui ; une photo ou le papier nu n'y touchent pas. */
+  const surMenu = (cible: Cible, point: { x: number; y: number }) => {
+    setChoix(null);
+    setOrnementAu(null);
+    if (cible.type === "objet") choisirObjet(cible.index);
+    setMenu({ cible, point });
+  };
+
+  /** Ouvrir le choix de la réserve pour la planche affichée, et demander le
+   *  classement au moteur : l'album voyage tel que l'éditeur le tient. */
+  const ouvrirChoix = (mode: ModeChoix, point: { x: number; y: number }, at = index) => {
+    setChoix({ mode, at, point });
+    setReserve(null);
+    void reserveClassee(album, at).then(
+      (r) => setReserve(r),
+      (e) => setReserve({ candidats: [], note: String(e) }),
+    );
+  };
+
+  const choisirEntree = (id: EntreeId) => {
+    const m = menu;
+    setMenu(null);
+    if (!m || !spread) return;
+    const { cible, point } = m;
+    switch (id) {
+      case "remplacer":
+        if (cible.type === "photo") ouvrirChoix({ type: "remplacer", cell: cible.cell }, point);
+        return;
+      case "retirer":
+        if (cible.type !== "photo") return;
+        if (selected === cible.cell) setSelected(null);
+        apply((a) => removePhoto(a, index, cible.cell));
+        return;
+      case "copier":
+        if (cible.type === "photo") {
+          const s = spread.slots[cible.cell];
+          if (!s) return;
+          photoACopier.current = { src: s.src, focal: s.focal };
+          document.execCommand("copy");
+          photoACopier.current = null;
+        } else {
+          document.execCommand("copy");
+        }
+        return;
+      case "couper":
+        document.execCommand("cut");
+        return;
+      case "dupliquer":
+        fire("menu", "dupliquer");
+        return;
+      case "supprimer":
+        if (cible.type !== "objet") return;
+        setObjet(null);
+        apply((a) => removeObjet(a, index, cible.index));
+        return;
+      case "reglages": {
+        // Le popover du bloc est déjà ouvert sous l'objet choisi : on y
+        // envoie le clavier.
+        const premier = document.querySelector<HTMLElement>(
+          ".objet-popover button, .objet-popover input",
+        );
+        premier?.focus();
+        return;
+      }
+      case "ajouter":
+        ouvrirChoix({ type: "ajouter" }, point);
+        return;
+      case "bloc":
+        if (cible.type === "page") {
+          poser((a, page, photos) => addObjet(a, index, page, photos, cible.point), cible.droite);
+        }
+        return;
+      case "ornement":
+        if (cible.type === "page") setOrnementAu({ cible, point });
+        return;
+      case "voir-original":
+      case "informations":
+        // Arrivent avec la fiche photo (chantier F) : inactives jusque-là.
+        return;
+    }
+  };
+
+  /** Une candidate choisie dans le popover : ajoutée, remplacée, ou posée
+   *  sur une planche neuve quand la planche visée n'a plus de place. */
+  const choisirCandidate = (c: Parameters<typeof poserCandidate>[3]) => {
+    const ch = choix;
+    if (!ch) return;
+    setChoix(null);
+    const r = poserCandidate(album, ch.at, ch.mode, c);
+    switch (r.type) {
+      case "posee":
+        apply(() => r.album);
+        setStatus(t("reserve.posee", { n: r.album.spreads[r.at].slots.length }));
+        return;
+      case "remplacee":
+        apply(() => r.album);
+        setStatus(t("place.remplacee"));
+        return;
+      case "pleine": {
+        const apres = poserApres(album, ch.at, c);
+        apply(() => apres.album);
+        setIndex(apres.at);
+        setStatus(t("reserve.posee.apres", { n: apres.at + 1 }));
+        return;
+      }
+      case "refus":
+        setStatus(t("place.doublon"));
+        return;
+    }
+  };
+
+  /** L'issue d'une planche pleine sans choisir encore : une planche vide
+   *  après, et le choix s'y rouvre. */
+  const insererApresPuisChoisir = () => {
+    const ch = choix;
+    if (!ch) return;
+    apply((a) => insertSpread(a, ch.at, "vide"));
+    setIndex(ch.at + 1);
+    setStatus(t("planche.vide.inseree"));
+    ouvrirChoix({ type: "ajouter" }, ch.point, ch.at + 1);
   };
   const entries = triEntries(album, curation, opened?.thumb_srcs ?? []);
   const triEntry = entries.find((e) => e.src === triSelected) ?? null;
@@ -2276,6 +2472,7 @@ export default function App() {
                   policeLivre={policeInfo?.postscript ?? null}
                   onSwap={(a, b) => apply((al) => swapPhotos(al, index, a, b))}
                   onPlace={place}
+                  onMenu={surMenu}
                   onCrop={(slot, focal, zoom) =>
                     apply((a) => setSlotCrop(a, index, slot, focal, zoom))
                   }
@@ -2429,6 +2626,39 @@ export default function App() {
       )}
       {error && <FaultBlock fault={error} onDismiss={() => setError(null)} />}
       {shortcuts && <RaccourcisView onClose={() => setShortcuts(false)} />}
+      {menu && view === "livre" && (
+        <MenuContextuel
+          point={menu.point}
+          entrees={entreesPour(menu.cible, { fiche: false })}
+          onChoisir={choisirEntree}
+          onFermer={() => setMenu(null)}
+        />
+      )}
+      {choix && view === "livre" && (
+        <ChoixReserve
+          point={choix.point}
+          reserve={reserve}
+          pleine={choix.mode.type === "ajouter" ? pleineAvant(album, choix.at) : null}
+          onChoisir={choisirCandidate}
+          onInsererApres={insererApresPuisChoisir}
+          onFermer={() => setChoix(null)}
+        />
+      )}
+      {ornementAu && view === "livre" && (
+        <OrnementAuPointeur
+          point={ornementAu.point}
+          onPick={(o) => {
+            const { cible } = ornementAu;
+            setOrnementAu(null);
+            poser(
+              (a, page, photos) =>
+                addOrnement(a, index, page, PACK_INTERNE, o.id, rapport(o.dessin), photos, cible.point),
+              cible.droite,
+            );
+          }}
+          onFermer={() => setOrnementAu(null)}
+        />
+      )}
       {bascule && hist && (
         <BasculeView
           formats={basculeFormats}
@@ -2729,6 +2959,54 @@ function Bar({
  * on a selection, the drawer's whereabouts on the cover). Fixed height, so
  * the planche above never moves.
  */
+/** La grille d'ornements au point du clic droit : la même que celle du
+ *  bouton, rabattue dans la fenêtre, fermée à Échap et au clic dehors. */
+function OrnementAuPointeur({
+  point,
+  onPick,
+  onFermer,
+}: {
+  point: { x: number; y: number };
+  onPick: (o: Ornement) => void;
+  onFermer: () => void;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: point.x, top: point.y });
+  useLayoutEffect(() => {
+    const el = root.current?.firstElementChild;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos(
+      placerMenu(point, { w: r.width, h: r.height }, { w: window.innerWidth, h: window.innerHeight }),
+    );
+  }, [point.x, point.y]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onFermer();
+    };
+    const onDown = (e: MouseEvent) => {
+      if (!root.current?.contains(e.target as Node)) onFermer();
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("mousedown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("mousedown", onDown, true);
+    };
+  }, [onFermer]);
+  return (
+    <div ref={root}>
+      <OrnementPanel
+        className="au-pointeur"
+        style={{ left: `${pos.left}px`, top: `${pos.top}px` }}
+        onPick={onPick}
+      />
+    </div>
+  );
+}
+
 function ContextLine({
   album,
   spread,

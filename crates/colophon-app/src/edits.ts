@@ -400,6 +400,8 @@ export function addObjet(
   /** Les cases photo de la planche, repère moteur. Absente ou vide, la
    *  naissance est celle d'avant que ce paramètre existe, au millimètre. */
   photos?: Rect[],
+  /** Le point du clic droit, repère moteur, quand le bloc naît du menu. */
+  a?: { x: number; y: number },
 ): Album {
   const spread = album.spreads[at];
   if (!spread) return album;
@@ -411,6 +413,7 @@ export function addObjet(
       (OBJET_TAILLE_PT / (72 / 25.4)) * 1.35 * 3,
       objets.length,
       photos,
+      a,
     ),
     type: "texte",
     texte: "",
@@ -443,6 +446,8 @@ export function addOrnement(
   /** `ornement.ts::rapport`, largeur sur hauteur du `viewBox`. */
   rapport: number,
   photos?: Rect[],
+  /** Le point du clic droit, repère moteur, quand l'ornement naît du menu. */
+  a?: { x: number; y: number },
 ): Album {
   const spread = album.spreads[at];
   if (!spread) return album;
@@ -456,7 +461,7 @@ export function addOrnement(
     w = h * rapport;
   }
   const objet: Objet = {
-    ...naissance(page, w, h, objets.length, photos),
+    ...naissance(page, w, h, objets.length, photos, a),
     type: "ornement",
     pack,
     id,
@@ -483,14 +488,25 @@ function naissance(
   h: number,
   rang: number,
   photos?: Rect[],
+  /** Où la main a cliqué, repère moteur : le coin haut gauche de la boîte
+   *  s'y pose, ramené dans la page quand il en sortirait. Absent, la
+   *  naissance d'aujourd'hui, en cascade au centre. */
+  a?: { x: number; y: number },
 ): Rect {
   const cran = rang * OBJET_CASCADE_MM;
-  const depart: Rect = {
-    x: Math.min(page.x + (page.w - w) / 2 + cran, page.x + page.w - w),
-    y: Math.max(page.y + (page.h - h) / 2 - cran, page.y),
-    w,
-    h,
-  };
+  const depart: Rect = a
+    ? {
+        x: Math.max(page.x, Math.min(a.x, page.x + page.w - w)),
+        y: Math.max(page.y, Math.min(a.y - h, page.y + page.h - h)),
+        w,
+        h,
+      }
+    : {
+        x: Math.min(page.x + (page.w - w) / 2 + cran, page.x + page.w - w),
+        y: Math.max(page.y + (page.h - h) / 2 - cran, page.y),
+        w,
+        h,
+      };
   // Un objet neuf n'est jamais tourné, et une case ne l'est jamais : les deux
   // angles valent zéro, et `recouvre` rend alors ce qu'un chevauchement droit
   // rendrait, au bit. C'est la scène qui répond, comme pour le pli et la marge.

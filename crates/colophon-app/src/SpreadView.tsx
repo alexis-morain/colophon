@@ -68,6 +68,7 @@ import {
   SceneObject,
   sceneOf,
 } from "./scene";
+import { Cible } from "./contextuel";
 import { attributD, attributViewBox, ornementDe, rapport } from "./ornement";
 import { cachedThumb, loadThumb } from "./thumbs";
 import { ObjetLibreCalque, PoseObjet } from "./ObjetLibreCalque";
@@ -85,6 +86,7 @@ export function SpreadView({
   onSelect,
   onSwap,
   onPlace,
+  onMenu,
   onCrop,
   onCaption,
   onSpreadCaption,
@@ -147,6 +149,10 @@ export function SpreadView({
   /** Le PostScript de la face du livre, là où G et I cherchent pour un bloc
    *  qui n'a pas la sienne. */
   policeLivre?: string | null;
+  /** Le clic droit : ce qu'il y avait dessous, lu dans la scène par le même
+   *  `hitTest` que les gestes, et le pointeur en pixels de la fenêtre. Les
+   *  deux rendus passent par là, le canvas comme le DOM. */
+  onMenu?: (cible: Cible, point: { x: number; y: number }) => void;
 }) {
   const paper = useRef<HTMLDivElement>(null);
   const [mm, setMm] = useState(1);
@@ -756,6 +762,37 @@ export function SpreadView({
           width: `${geom.w * mm}px`,
           height: `${geom.h * mm}px`,
         }}
+        onContextMenu={
+          onMenu &&
+          ((e) => {
+            // Un champ garde le menu du système : couper-coller y est à lui.
+            const cible = e.target as HTMLElement | null;
+            if (cible && /^(INPUT|TEXTAREA)$/.test(cible.tagName)) return;
+            e.preventDefault();
+            const r = e.currentTarget.getBoundingClientRect();
+            const p = { x: (e.clientX - r.left) / mm, y: (e.clientY - r.top) / mm };
+            const at = hitTest(scene, p.x, p.y);
+            const role = at === null ? null : scene.objects[at].role;
+            let sous: Cible;
+            if (role && (role.role === "free_text" || role.role === "ornement")) {
+              sous = { type: "objet", index: role.index };
+            } else if (role && (role.role === "photo" || role.role === "photo_caption")) {
+              const src = spread.slots[role.cell]?.src;
+              if (src === undefined) return;
+              sous = { type: "photo", cell: role.cell, src };
+            } else {
+              // Le papier nu, et tout ce qu'un gabarit y a écrit : le point
+              // part en repère moteur, origine en bas à gauche, là où un
+              // bloc neuf naîtra.
+              sous = {
+                type: "page",
+                droite: p.x > geom.w / 2,
+                point: { x: p.x, y: geom.h - p.y },
+              };
+            }
+            onMenu(sous, { x: e.clientX, y: e.clientY });
+          })
+        }
       >
         {/* Painted in one element rather than thirty, when the switch says
             so. The gestures below it read the same scene through the hit

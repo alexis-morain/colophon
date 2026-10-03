@@ -25,6 +25,13 @@ serde = { version = "1", features = ["derive"] }
 # dix-huit lignes d'album.json.
 serde_json = { version = "1", features = ["float_roundtrip"] }
 walkdir = "2"
+# La commande chez Cloudprinter et le dépôt S3 (K-s2). Synchrones et sans
+# tokio : le moteur n'a pas d'exécuteur, et `reqwest` n'est dans l'arbre que
+# pour l'updater de l'app. TLS par rustls et les racines de webpki-roots,
+# rien d'OpenSSL. Licences auditées avant la première ligne, arbre compris.
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+rusty-s3 = { version = "0.10", default-features = false, features = ["rustcrypto"] }
+jiff = { version = "0.2", default-features = false, features = ["std"] }
 
 [profile.release]
 opt-level = 3

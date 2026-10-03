@@ -39,6 +39,13 @@ sur la page des releases.
   sous-titre. Elle se change dans Couverture, et une recomposition garde
   celle que vous avez choisie.
 
+- **Le moteur sait parler à Cloudprinter et à un dépôt S3, sans écran.**
+  Devis, commande, état et annulation par l'API CloudCore, et dépôt des deux
+  PDF sur un seau S3 (Cloudflare R2, MinIO) par URL présignée, lisible sept
+  jours. Rien n'est encore visible dans l'app : ces briques attendent l'écran
+  qui les utilisera. Une option cachée de la ligne de commande, `--devis`,
+  demande le prix d'un exemplaire au sandbox de Cloudprinter.
+
 - **Une alerte de qualité sur les photos, en un seul signe.** Un petit
   triangle dans le coin d'une case dit qu'elle imprimera mal : sous 250 ppi,
   très sombre, ou **floue**, l'alerte nouvelle, qui marque les photos du

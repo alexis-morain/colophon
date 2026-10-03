@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "preparer", "sheets", "bascule", "proposition", "gabarits", "reserve", "fiche", "releve_album", "dates", "banc_gabarits", "depuis_fiches"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "preparer", "sheets", "bascule", "proposition", "gabarits", "reserve", "devis", "fiche", "releve_album", "dates", "banc_gabarits", "depuis_fiches"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -189,6 +189,18 @@ struct Cli {
     #[arg(long, value_name = "PLANCHE", hide = true)]
     reserve: Option<usize>,
 
+    /// Demande à Cloudprinter le devis d'un exemplaire de l'album ALBUM
+    /// (le compte de pages du prévol, les codes du profil cloudprinter),
+    /// livré dans --pays, et l'imprime en JSON. La clé vient de
+    /// CLOUDPRINTER_SANDBOX_API_KEY dans l'environnement, jamais d'un
+    /// argument : un devis ne dépense rien, mais la clé, si.
+    #[arg(long, value_name = "ALBUM", hide = true)]
+    devis: Option<PathBuf>,
+
+    /// Avec --devis : le pays de livraison, code ISO à deux lettres.
+    #[arg(long, value_name = "PAYS", default_value = "FR", hide = true)]
+    pays: String,
+
     /// Print the sheet of one photo of the album in --out, named by its
     /// src: the file, the shot, the place, the relevé's measures when the
     /// album carries one. Feeds the dev album server.
@@ -355,6 +367,29 @@ fn main() -> Result<()> {
             .context("--reserve compte les planches à partir de 1")?;
         let reserve = colophon_core::reserve::reserve_classee(&cli.out, &album, i)?;
         println!("{}", serde_json::to_string(&reserve)?);
+        return Ok(());
+    }
+
+    if let Some(dir) = &cli.devis {
+        use colophon_core::commande;
+        let profil = profil("cloudprinter")?;
+        let pages = colophon_core::prevol::prevol(dir, profil)?.fiche.pages_fichier;
+        let livre = commande::Livre::pour(profil, u32::try_from(pages)?)
+            .context("le profil cloudprinter n'a pas de codes de commande")?;
+        let cle = std::env::var("CLOUDPRINTER_SANDBOX_API_KEY")
+            .context("--devis lit la clé dans CLOUDPRINTER_SANDBOX_API_KEY")?;
+        let compte = commande::Compte { cle: commande::Cle::new(cle), mode: commande::Mode::Sandbox };
+        let devis = commande::devis(&commande::Ureq::default(), &compte, &cli.pays, &livre)?;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "mode": compte.mode,
+                "pays": cli.pays,
+                "pages": pages,
+                "livre": livre,
+                "devis": devis,
+            }))?
+        );
         return Ok(());
     }
 

@@ -271,6 +271,7 @@ export const FR = {
   "export.pdf": "PDF enregistré : {nom}",
   "export.annule": "Export annulé, aucun fichier écrit",
   "export.annuler": "Annuler l’export",
+  "export.dossier": "Dossier préparé : {dossier}",
   "erreur.export": "Le rendu du PDF a échoué.",
 
   // -- gestes sur les planches et les photos
@@ -498,7 +499,7 @@ export const FR = {
     "Chaque ligne mène à sa planche. Corrigez, revenez, le contrôle se refait tout seul.",
   "envoi.defaut.album": "L’album",
   "envoi.defaut.planche": "Planche {n}",
-  "envoi.imprimeurs": "Qui accepte un PDF comme celui-ci",
+  "envoi.imprimeur": "L’imprimeur",
   "envoi.pdf.simple": "PDF simple",
   "envoi.rvb": "RVB",
   "envoi.cmjn": "CMJN FOGRA39",
@@ -542,8 +543,20 @@ export const FR = {
   "envoi.exporter.titre":
     "Rendu à 300 dpi, puis la couverture si l’imprimeur en veut une",
   "envoi.exporter.bloque": "Corrigez d’abord ce qui bloque",
-  "envoi.porte":
-    "Un imprimeur sans contrainte accepte souvent ce que {nom} refuse : essayez « Imprimeur local » ci-dessus pour voir ce qui resterait.",
+  "envoi.preparer": "Préparer pour {imprimeur}",
+  "envoi.preparer.titre":
+    "L’intérieur et la couverture à 300 dpi dans un dossier que vous choisissez, avec leur fiche et leurs empreintes, puis le contrôle relu sur les fichiers écrits",
+  "envoi.autre": "Un autre imprimeur ? PDF sans contrainte",
+  "envoi.libre.tete":
+    "PDF sans contrainte, pour l’imprimeur de votre choix : un seul fichier, couverture comprise, sans dos ni feuille à plat. Le contrôle ne vise plus Cloudprinter.",
+  "envoi.libre.retour": "Revenir à Cloudprinter",
+  "envoi.prepare.ok":
+    "Dossier « {dossier} » prêt : les deux PDF relus, rien ne s’oppose à la commande.",
+  "envoi.prepare.ko.un":
+    "Dossier « {dossier} » écrit, mais le contrôle relu sur ses fichiers trouve un défaut : rien ne part en l’état.",
+  "envoi.prepare.ko":
+    "Dossier « {dossier} » écrit, mais le contrôle relu sur ses fichiers trouve {n} défauts : rien ne part en l’état.",
+  "envoi.prepare.montrer": "Montrer le dossier",
   "envoi.verdict.titre": "Votre avis vaut une planche corrigée",
   "envoi.verdict.texte":
     "Deux questions, dix secondes : montreriez-vous cet album tel que le logiciel l’a composé, et quelles sont ses trois pires planches ? Chaque planche citée est examinée une par une.",
@@ -1160,6 +1173,7 @@ export const EN: Record<Cle, string> = {
   "export.pdf": "PDF saved: {nom}",
   "export.annule": "Export cancelled, no file written",
   "export.annuler": "Cancel the export",
+  "export.dossier": "Folder prepared: {dossier}",
   "erreur.export": "Rendering the PDF failed.",
 
   "repeche.place":
@@ -1364,7 +1378,7 @@ export const EN: Record<Cle, string> = {
     "Each line leads to its spread. Fix, come back, the check reruns on its own.",
   "envoi.defaut.album": "The album",
   "envoi.defaut.planche": "Spread {n}",
-  "envoi.imprimeurs": "Who accepts a PDF like this one",
+  "envoi.imprimeur": "The printer",
   "envoi.pdf.simple": "plain PDF",
   "envoi.rvb": "RGB",
   "envoi.cmjn": "CMYK FOGRA39",
@@ -1407,8 +1421,20 @@ export const EN: Record<Cle, string> = {
   "envoi.exporter.titre":
     "Rendered at 300 dpi, then the cover if the printer wants one",
   "envoi.exporter.bloque": "Fix what blocks first",
-  "envoi.porte":
-    "A printer without constraints often accepts what {nom} refuses: try “Local printer” above to see what would remain.",
+  "envoi.preparer": "Prepare for {imprimeur}",
+  "envoi.preparer.titre":
+    "The interior and the cover at 300 dpi in a folder you choose, with their sheet and their checksums, then the check read again on the files written",
+  "envoi.autre": "Another printer? A PDF without constraints",
+  "envoi.libre.tete":
+    "A PDF without constraints, for the printer of your choice: one file, cover included, no spine and no flat sheet. The check no longer aims at Cloudprinter.",
+  "envoi.libre.retour": "Back to Cloudprinter",
+  "envoi.prepare.ok":
+    "Folder “{dossier}” ready: both PDFs read again, nothing stands against the order.",
+  "envoi.prepare.ko.un":
+    "Folder “{dossier}” written, but the check read on its files finds one defect: nothing leaves as it is.",
+  "envoi.prepare.ko":
+    "Folder “{dossier}” written, but the check read on its files finds {n} defects: nothing leaves as it is.",
+  "envoi.prepare.montrer": "Show the folder",
   "envoi.verdict.titre": "Your verdict is worth a corrected spread",
   "envoi.verdict.texte":
     "Two questions, ten seconds: would you show this album exactly as the software composed it, and which are its three worst spreads? Every cited spread is examined one by one.",

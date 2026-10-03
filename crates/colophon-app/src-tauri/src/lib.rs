@@ -31,6 +31,10 @@ struct AppState {
     /// The faces of this machine as the picker last listed them. Held so the
     /// rank the front end sends back names the same face it was shown.
     polices: Mutex<Vec<colophon_core::font::Installee>>,
+    /// Le dernier dossier que « Préparer » a écrit. Tenu ici pour que
+    /// « Montrer le dossier » l'ouvre sans que le front ne porte jamais un
+    /// chemin : la même doctrine que `reveal_data_dir`.
+    prepare: Mutex<Option<PathBuf>>,
 }
 
 
@@ -1004,7 +1008,9 @@ async fn recompose_album(
         // which the rebuild writes into, so only the album's record of it
         // could be lost — silently, and in the one place nobody would look.
         police: album.police.clone(),
-
+        // Le colophon dit le jour où le livre a été composé, et une
+        // recomposition le compose : la date du jour, comme avant.
+        aujourdhui: None,
     };
     tauri::async_runtime::spawn_blocking(move || {
         colophon_core::build_album(&root, &build_out, opts)
@@ -1066,13 +1072,27 @@ fn photos_dossier_propose(nom: String, app: tauri::AppHandle) -> Result<String, 
 /// The file name the save dialog proposes: the album's title, with what a
 /// file system refuses replaced, `album.pdf` for an empty title.
 fn nom_de_fichier_pdf(titre: &str) -> String {
+    format!("{}.pdf", nom_propre(titre))
+}
+
+/// Le dossier que « Préparer » crée dans celui que la personne a choisi :
+/// `<Titre> – Cloudprinter`, le titre nettoyé comme pour un nom de PDF. Un
+/// dossier à lui, pour que les quatre fichiers ne se mêlent pas à ce que
+/// contient déjà Téléchargements, et qu'une seconde préparation remplace la
+/// première au lieu de s'empiler à côté.
+fn nom_du_dossier_prepare(titre: &str, imprimeur: &str) -> String {
+    format!("{} – {imprimeur}", nom_propre(titre))
+}
+
+/// Le titre sans ce qu'un système de fichiers refuse, `album` s'il est vide.
+fn nom_propre(titre: &str) -> String {
     let propre: String = titre
         .trim()
         .chars()
         .map(|c| if matches!(c, '/' | '\\' | ':') { '-' } else { c })
         .collect();
     let propre = propre.trim_matches('-').trim();
-    format!("{}.pdf", if propre.is_empty() { "album" } else { propre })
+    if propre.is_empty() { "album".into() } else { propre.into() }
 }
 
 /// Whether an import destination is one this app proposes: a direct child
@@ -1248,6 +1268,109 @@ async fn export_pdf(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Ce que « Préparer » rend à la fenêtre : le nom du dossier (jamais son
+/// chemin), les fichiers posés et le prévol relu sur eux.
+#[derive(Serialize)]
+struct Preparation {
+    dossier: String,
+    fichiers: Vec<String>,
+    rapport: colophon_core::prevol::PrevolReport,
+}
+
+/// Prépare le dossier de la commande : la boîte native choisit un dossier,
+/// l'app y crée `<Titre> – <Imprimeur>` et y écrit l'intérieur, la
+/// couverture, leur `export.json` et `fiche.txt` (`export::preparer`, la
+/// même fonction que `--preparer`), puis relit le prévol sur ces fichiers et
+/// ouvre le dossier dans le Finder. Vide quand la boîte est fermée.
+///
+/// Comme `export_pdf`, la destination se demande ici et jamais au front :
+/// rien de ce que la fenêtre envoie ne devient un chemin.
+#[tauri::command]
+async fn preparer_dossier(
+    app: tauri::AppHandle,
+    titre: String,
+    profil: String,
+    state: State<'_, AppState>,
+) -> Result<Option<Preparation>, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let profil = printer_profile(&profil)?;
+    let nom = nom_du_dossier_prepare(&titre, profil.nom);
+    let telechargements = app.path().download_dir().ok();
+    let choisi = {
+        use tauri_plugin_dialog::DialogExt;
+        let app = app.clone();
+        let titre_boite = format!("Où préparer le dossier pour {}", profil.nom);
+        tauri::async_runtime::spawn_blocking(move || {
+            let mut boite = app.dialog().file().set_title(&titre_boite);
+            if let Some(d) = telechargements {
+                boite = boite.set_directory(d);
+            }
+            boite.blocking_pick_folder()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    };
+    let Some(choisi) = choisi else {
+        return Ok(None);
+    };
+    let dest = choisi
+        .into_path()
+        .map_err(|e| format!("dossier illisible : {e}"))?
+        .join(&nom);
+    state.cancel_export.store(false, Ordering::Relaxed);
+    let flag = state.cancel_export.clone();
+    let emetteur = app.clone();
+    let ecrit = dest.clone();
+    let p = tauri::async_runtime::spawn_blocking(move || {
+        colophon_core::log::line(&format!("préparation du dossier, profil {}", profil.id));
+        colophon_core::export::preparer(
+            &dir,
+            profil,
+            &ecrit,
+            &|line| {
+                let _ = emetteur.emit("export:progress", line);
+            },
+            &move || flag.load(Ordering::Relaxed),
+        )
+        .map_err(|e| {
+            colophon_core::log::line(&format!("préparation en échec : {e:#}"));
+            format!("{e:#}")
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    colophon_core::log::line("dossier préparé");
+    *state.prepare.lock().unwrap() = Some(dest.clone());
+    // Le dossier s'ouvre de lui-même : c'est là que la personne va prendre
+    // les deux fichiers pour la commande. Un échec d'ouverture ne défait pas
+    // ce qui est écrit.
+    let _ = ouvrir_dossier(&dest);
+    Ok(Some(Preparation { dossier: nom, fichiers: p.fichiers, rapport: p.rapport }))
+}
+
+/// Rouvre le dernier dossier préparé. Le chemin est celui que l'app a écrit,
+/// jamais un que la fenêtre envoie.
+#[tauri::command]
+fn montrer_dossier_prepare(state: State<'_, AppState>) -> Result<(), String> {
+    let dest = state.prepare.lock().unwrap().clone().ok_or("aucun dossier préparé")?;
+    ouvrir_dossier(&dest)
+}
+
+/// Ouvre un dossier dans le gestionnaire de fichiers du système.
+fn ouvrir_dossier(dir: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let run = std::process::Command::new("open").arg(dir).spawn();
+    #[cfg(target_os = "windows")]
+    let run = std::process::Command::new("explorer").arg(dir).spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let run = std::process::Command::new("xdg-open").arg(dir).spawn();
+    run.map(|_| ())
+        .map_err(|e| format!("ouverture du dossier : {e}"))
 }
 
 /// The composition paces the creation screen offers, each with the sentence
@@ -1778,14 +1901,7 @@ fn reveal_data_dir(app: tauri::AppHandle) -> Result<(), String> {
         .app_data_dir()
         .map_err(|e| format!("dossier de données introuvable : {e}"))?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("création du dossier : {e}"))?;
-    #[cfg(target_os = "macos")]
-    let run = std::process::Command::new("open").arg(&dir).spawn();
-    #[cfg(target_os = "windows")]
-    let run = std::process::Command::new("explorer").arg(&dir).spawn();
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let run = std::process::Command::new("xdg-open").arg(&dir).spawn();
-    run.map(|_| ())
-        .map_err(|e| format!("ouverture du dossier : {e}"))
+    ouvrir_dossier(&dir)
 }
 
 /// Preflight the album as it stands on disk against one profile. Reads every
@@ -1871,6 +1987,8 @@ pub fn run() {
             save_album,
             render_pdf,
             export_pdf,
+            preparer_dossier,
+            montrer_dossier_prepare,
             list_formats,
             build_album_from_folder,
             recompose_album,
@@ -2169,6 +2287,18 @@ mod tests {
         assert_eq!(nom_de_fichier_pdf(" Été / mer : sable "), "Été - mer - sable.pdf");
         assert_eq!(nom_de_fichier_pdf(""), "album.pdf");
         assert_eq!(nom_de_fichier_pdf("///"), "album.pdf");
+    }
+
+    /// Le dossier préparé porte le titre et l'imprimeur, nettoyés de la même
+    /// façon qu'un nom de PDF : un titre ne crée jamais un sous-dossier.
+    #[test]
+    fn le_dossier_prepare_porte_le_titre_et_l_imprimeur() {
+        assert_eq!(nom_du_dossier_prepare("Corse 2013", "Cloudprinter"), "Corse 2013 – Cloudprinter");
+        assert_eq!(
+            nom_du_dossier_prepare(" Été / mer ", "Cloudprinter"),
+            "Été - mer – Cloudprinter"
+        );
+        assert_eq!(nom_du_dossier_prepare("", "Cloudprinter"), "album – Cloudprinter");
     }
 
     /// The id is a folder name, nothing else. Everything that could climb out

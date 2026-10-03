@@ -306,12 +306,20 @@ _Avoid_: prepress check, validation
 
 **Manifest**:
 What the exports of one album folder wrote, listed in `export.json` beside
-`album.json`: one entry per delivered file, naming the printer profile it was
-rendered for, the fingerprint of the album at the time, its size and its date.
-Written by the command line, never by the application, which exports wherever
-the user points it. It only ever adds precision: a file it says nothing about
-is not suspect for that.
+the files it describes: one entry per delivered file, naming the printer
+profile it was rendered for, the fingerprint of the album at the time, its
+size and its date. The command line writes it beside `album.json`; the
+application writes it in the prepared folder, beside the two PDFs, with the
+same function. It only ever adds precision: a file it says nothing about is
+not suspect for that.
 _Avoid_: manifeste (French in a diff), receipt, index, ledger
+
+**Prepared folder**:
+The folder « Préparer » writes for a two-file supplier, away from the album:
+the interior, the cover, their manifest and `fiche.txt`, the sheet to copy
+into the order, sizes and checksums included. The preflight is read again on
+these files, never on whatever lies beside `album.json`.
+_Avoid_: export folder, bundle, package, dossier prêt (French in a diff)
 
 **Fingerprint**:
 Sixteen bytes that differ between two albums that would print differently, and

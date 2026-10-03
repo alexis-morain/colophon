@@ -4090,10 +4090,6 @@ button.envoi-defaut:focus-visible {
   transition: background var(--turn), border-color var(--turn);
 }
 
-.envoi-imprimeur:hover {
-  background: var(--surface);
-}
-
 .envoi-imprimeur.active {
   background: var(--surface);
   border-left-color: var(--accent);
@@ -4216,11 +4212,35 @@ button.envoi-defaut:focus-visible {
   cursor: not-allowed;
 }
 
-.envoi-porte {
-  margin: 12px 0 0;
-  color: var(--muted);
+/* What the prepared folder holds, said in one sentence under the button,
+   with the way to it. The defects the reread found sit between the two. */
+.envoi-prepare {
+  margin: 14px 0 0;
+  max-width: 58ch;
+}
+
+.envoi-prepare p {
+  margin: 0 0 6px;
+  line-height: var(--lh-ui);
+}
+
+.envoi-prepare-ko {
+  color: var(--accent);
+}
+
+/* The way to the PDF without constraints: a link, at the foot, and quiet. */
+.envoi-autre {
+  margin: 18px 0 0;
   font-size: var(--fs-13);
-  max-width: 52ch;
+}
+
+/* Said at the head when the screen no longer aims at Cloudprinter. */
+.envoi-libre {
+  margin: 0 0 14px;
+  padding-left: 12px;
+  border-left: 2px solid var(--rule);
+  color: var(--muted);
+  max-width: 58ch;
 }
 
 /* The verdict call, shown once a print PDF exists: a rule above, no card.

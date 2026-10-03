@@ -1,8 +1,12 @@
 // Où envoyer ce PDF. The last screen before a file leaves the machine.
 //
 // Three things at once, in the order a human needs them: what is wrong and
-// where (clickable, each defect jumps to its spread), who takes a file like
-// this one, and the sheet of specifications a printer asks for on the phone.
+// where (clickable, each defect jumps to its spread), the printer the file is
+// for, and the sheet of specifications a printer asks for on the phone.
+//
+// One printer, Cloudprinter, and its button prepares the folder of the
+// order. The PDF without constraints stays one link away; Prodigi and Lulu
+// are engine and command-line profiles only (`envoi.ts`).
 //
 // Nothing here is computed in the browser. The preflight, the spec sheet and
 // the spine all come from the engine, per profile: two suppliers disagree on
@@ -12,7 +16,16 @@
 import { useEffect, useState } from "react";
 import { phraseAbsents } from "./BasculeView";
 import { Album } from "./album";
-import { Defaut, Printer, PrevolReport, openReportUrl, preflight } from "./bridge";
+import {
+  Defaut,
+  Preparation,
+  Printer,
+  PrevolReport,
+  montrerDossierPrepare,
+  openReportUrl,
+  preflight,
+} from "./bridge";
+import { PROFIL_ENVOI, PROFIL_LIBRE, actionEnvoi, imprimeurAffiche, phrasePreparation } from "./envoi";
 import { t } from "./i18n";
 import { VERDICT_URL } from "./signaler";
 
@@ -25,6 +38,8 @@ export function EnvoiView({
   onProfil,
   onJump,
   onExport,
+  onPrepare,
+  preparation,
   exporting,
   exporte,
   dirty,
@@ -44,7 +59,13 @@ export function EnvoiView({
   onProfil: (id: string) => void;
   /** Show spread `n` (1-based) in the book view. */
   onJump: (planche: number) => void;
+  /** Le PDF sans contrainte : un fichier, où la boîte le pose. */
   onExport: () => void;
+  /** Chez qui relie deux fichiers : le dossier de la commande. */
+  onPrepare: () => void;
+  /** Ce que la dernière préparation a écrit et ce que le contrôle relu en
+   *  dit. Null tant que rien n'a été préparé pour cet album. */
+  preparation: Preparation | null;
   exporting: boolean;
   /** A print PDF was written for this album: the verdict form is offered. */
   exporte: boolean;
@@ -89,13 +110,23 @@ export function EnvoiView({
     };
   }, [profil, album, dirty]);
 
-  const chosen = printers?.find((p) => p.id === profil);
+  const chosen = imprimeurAffiche(printers, profil);
+  const libre = profil === PROFIL_LIBRE;
+  const action = chosen ? actionEnvoi(chosen) : null;
   const bloquants = report?.defauts.filter((d) => d.bloquant) ?? [];
   const avertissements = report?.defauts.filter((d) => !d.bloquant) ?? [];
 
   return (
     <div className="envoi">
       <section className="envoi-verdict">
+        {libre && (
+          <p className="envoi-libre">
+            {t("envoi.libre.tete")}{" "}
+            <button className="link" onClick={() => onProfil(PROFIL_ENVOI)}>
+              {t("envoi.libre.retour")}
+            </button>
+          </p>
+        )}
         {policeManquante && (
           <p className="envoi-dirty">{t("police.manquante")}</p>
         )}
@@ -157,35 +188,27 @@ export function EnvoiView({
         </section>
       )}
 
-      <section className="envoi-imprimeurs">
-        <h3>{t("envoi.imprimeurs")}</h3>
-        <ul>
-          {(printers ?? []).map((p) => (
-            <li key={p.id}>
-              <button
-                className={"envoi-imprimeur" + (p.id === profil ? " active" : "")}
-                onClick={() => onProfil(p.id)}
-                aria-pressed={p.id === profil}
-              >
-                <span className="envoi-imprimeur-nom">{p.nom}</span>
-                <span className="envoi-imprimeur-quoi">
-                  {p.pdf_x === "x4" ? "PDF/X-4" : t("envoi.pdf.simple")} ·{" "}
-                  {p.espace === "rgb" ? t("envoi.rvb") : t("envoi.cmjn")} ·{" "}
-                  {p.fichiers === "deux"
-                    ? t("envoi.deux.fichiers")
-                    : t("envoi.un.fichier")}{" "}
-                  · {p.dos.mode === "calcule" ? t("envoi.dos.fournir") : t("envoi.dos.non")}
-                </span>
-                {p.certitude === "provisoire" && (
-                  <span className="envoi-provisoire" title={p.reserves.join(" · ")}>
-                    {t("envoi.provisoire")}
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {chosen && (
+        <section className="envoi-imprimeurs">
+          <h3>{t("envoi.imprimeur")}</h3>
+          <div className="envoi-imprimeur active">
+            <span className="envoi-imprimeur-nom">{chosen.nom}</span>
+            <span className="envoi-imprimeur-quoi">
+              {chosen.pdf_x === "x4" ? "PDF/X-4" : t("envoi.pdf.simple")} ·{" "}
+              {chosen.espace === "rgb" ? t("envoi.rvb") : t("envoi.cmjn")} ·{" "}
+              {chosen.fichiers === "deux"
+                ? t("envoi.deux.fichiers")
+                : t("envoi.un.fichier")}{" "}
+              · {chosen.dos.mode === "calcule" ? t("envoi.dos.fournir") : t("envoi.dos.non")}
+            </span>
+            {chosen.certitude === "provisoire" && (
+              <span className="envoi-provisoire" title={chosen.reserves.join(" · ")}>
+                {t("envoi.provisoire")}
+              </span>
+            )}
+          </div>
+        </section>
+      )}
 
       {report && (
         <section className="envoi-fiche">
@@ -289,16 +312,37 @@ export function EnvoiView({
       <section className="envoi-actions">
         <button
           className="envoi-exporter"
-          onClick={onExport}
-          disabled={exporting || !report?.ok}
-          title={
-            report?.ok ? t("envoi.exporter.titre") : t("envoi.exporter.bloque")
-          }
+          onClick={action?.prepare ? onPrepare : onExport}
+          disabled={exporting || !report?.ok || !action}
+          title={report?.ok ? action?.titre : t("envoi.exporter.bloque")}
         >
-          {exporting ? t("envoi.exporter.rendu") : t("envoi.exporter")}
+          {exporting ? t("envoi.exporter.rendu") : action?.texte ?? t("envoi.exporter")}
         </button>
-        {chosen && !report?.ok && (
-          <p className="envoi-porte">{t("envoi.porte", { nom: chosen.nom })}</p>
+        {preparation && action?.prepare && (
+          <div className="envoi-prepare">
+            <p className={preparation.rapport.ok ? "envoi-prepare-ok" : "envoi-prepare-ko"}>
+              {phrasePreparation(preparation)}
+            </p>
+            {preparation.rapport.defauts.some((d) => d.bloquant) && (
+              <div className="envoi-defauts">
+                {preparation.rapport.defauts
+                  .filter((d) => d.bloquant)
+                  .map((d, i) => (
+                    <DefautLigne key={i} d={d} onJump={onJump} />
+                  ))}
+              </div>
+            )}
+            <button className="link" onClick={() => void montrerDossierPrepare()}>
+              {t("envoi.prepare.montrer")}
+            </button>
+          </div>
+        )}
+        {!libre && (
+          <p className="envoi-autre">
+            <button className="link" onClick={() => onProfil(PROFIL_LIBRE)}>
+              {t("envoi.autre")}
+            </button>
+          </p>
         )}
       </section>
 

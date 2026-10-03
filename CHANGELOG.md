@@ -21,6 +21,24 @@ sur la page des releases.
   exactement ce que le bouton a écrit. Le popover de légende d'une photo
   porte le même geste, « Dater » ou « Retirer la date ».
 
+- **Le dossier prêt pour Cloudprinter.** Dans Envoi, « Préparer pour
+  Cloudprinter » demande un dossier et y crée `<Titre> – Cloudprinter`, avec
+  quatre fichiers : `album-print.pdf` et `album-cover.pdf` à 300 dpi,
+  `export.json`, le manifeste qui dit de quel album et pour quel imprimeur
+  ils sortent, et `fiche.txt`, à recopier dans la commande : format, planches,
+  pages, fond perdu, feuille de couverture, dos, papier `pageblock_150mcs`,
+  couverture `cover_130mcg` en finition mate, et pour chaque PDF sa taille,
+  son SHA-256 et son MD5, celui que l'API de Cloudprinter demande. Le contrôle
+  se relit ensuite sur ces fichiers-là, le verdict tient en une phrase sous le
+  bouton, et le dossier s'ouvre dans le Finder ; « Montrer le dossier » le
+  rouvre. La ligne de commande fait la même chose avec `--preparer <dossier>`.
+
+- **Une couverture composée d'office.** Un album neuf naît avec sa
+  couverture : la photo la mieux notée du quart supérieur du livre, en
+  paysage ou carrée, le titre de l'album, et les dates de la page de garde en
+  sous-titre. Elle se change dans Couverture, et une recomposition garde
+  celle que vous avez choisie.
+
 - **Une alerte de qualité sur les photos, en un seul signe.** Un petit
   triangle dans le coin d'une case dit qu'elle imprimera mal : sous 250 ppi,
   très sombre, ou **floue**, l'alerte nouvelle, qui marque les photos du
@@ -126,6 +144,17 @@ sur la page des releases.
 
 ### Modifié
 
+- **Envoi n'offre plus qu'un imprimeur.** Le choix entre quatre profils
+  disparaît : l'écran vise Cloudprinter, le seul qu'on commande. Un lien en
+  bas, « Un autre imprimeur ? PDF sans contrainte », bascule sur le PDF libre
+  et le dit en tête de l'écran ; son bouton enregistre un seul fichier, comme
+  avant. Prodigi et Lulu restent dans la ligne de commande (`--profil`).
+
+- **Cloudprinter relie de 24 à 800 pages.** Le plafond était de 200, sans
+  source ; leur devis accepte tout compte pair de 24 à 800 pages et refuse 22
+  et 1000. Sous 24 pages, le contrôle propose d'ajouter des planches ou de
+  choisir un rythme plus aéré.
+
 - **Les réglages d'un bloc de texte s'ouvrent sous le bloc.** Corps,
   interligne, angle et alignement vivaient dans la barre sous la planche, où
   ils s'empilaient faute de place dès que la fenêtre rétrécissait. Ils
@@ -179,6 +208,17 @@ sur la page des releases.
   depuis ses fiches porte : sur un album composé depuis les photos, les deux
   lignes manquaient toujours. Elle lit désormais la même mesure que l'alerte
   de qualité, prise sur la vignette de la photo quand le relevé manque.
+
+- **Une couverture sans photo ne part plus chez l'imprimeur.** Le 21/09, la
+  couverture envoyée à Cloudprinter était blanche : l'album n'avait pas de
+  couverture, le rendu est retombé sur le nom du dossier, aux bonnes cotes et
+  avec un contrôle vert. Chez qui relie deux fichiers, une couverture sans
+  photo bloque désormais l'envoi, avec le remède : choisissez une photo dans
+  Couverture.
+
+- **La date du colophon suit `SOURCE_DATE_EPOCH`.** Comme l'instant déclaré
+  dans le PDF : deux compositions reproductibles impriment le même jour, même
+  à cheval sur minuit.
 
 - **Les planches se réordonnent à la souris.** Glisser une planche sur une
   autre dans *Planches* ne faisait rien dans l'application installée. Le

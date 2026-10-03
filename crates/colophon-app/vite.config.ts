@@ -2,13 +2,21 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { execFileSync } from "node:child_process";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import type { Plugin, ViteDevServer } from "vite";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 // @ts-expect-error process is a nodejs global
 const devAlbum: string | undefined = process.env.COLOPHON_ALBUM;
+// Où « Préparer » écrit au harnais : COLOPHON_PREPARER quand il est posé,
+// sinon un dossier du répertoire temporaire du système. Jamais à côté de
+// l'album, jamais dans `.albums/`.
+const devPreparer: string =
+  // @ts-expect-error process is a nodejs global
+  process.env.COLOPHON_PREPARER ??
+  join(tmpdir(), "colophon-preparer", "Album – Cloudprinter");
 
 /**
  * Dev-only album server. With COLOPHON_ALBUM pointing at a folder built by the
@@ -104,6 +112,43 @@ function albumDevServer(dir: string): Plugin {
           }
           res.statusCode = 500;
           res.end(String(e));
+        }
+      });
+      // « Préparer pour Cloudprinter » au harnais : `colophon --preparer`, le
+      // même `export::preparer` que la fenêtre, dans COLOPHON_PREPARER. La
+      // réponse a la forme de la commande Tauri : le nom du dossier, jamais
+      // son chemin.
+      server.middlewares.use("/__dev/preparer", (req, res) => {
+        if (req.method !== "POST") {
+          res.statusCode = 405;
+          res.end("POST seulement");
+          return;
+        }
+        console.log(`[preparer] ${devPreparer}`);
+        const profil =
+          new URL(req.url ?? "", "http://x").searchParams.get("profil") ??
+          "cloudprinter";
+        const repondre = (out: string) => {
+          const p = JSON.parse(out);
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ dossier: basename(devPreparer), ...p }));
+        };
+        try {
+          repondre(
+            execFileSync(
+              engineBinary,
+              ["--preparer", devPreparer, "--profil", profil, "-o", dir],
+              { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+            ),
+          );
+        } catch (e: any) {
+          // Un bloquant sort en échec, le rapport est sur stdout quand même.
+          if (e?.stdout) {
+            repondre(e.stdout);
+            return;
+          }
+          res.statusCode = 500;
+          res.end(String(e?.stderr || e));
         }
       });
       // Le pack d'ornements, tel que le moteur le lit : le harnais tire du

@@ -52,6 +52,12 @@ pub struct BuildOptions {
     /// `album.json`, which is where the rebuild writes. A fresh build has
     /// none, and « none » means the face this crate ships.
     pub police: Option<model::Police>,
+    /// Le jour de la composition, celui que le colophon imprime (« composé
+    /// le »). `None` est le cas ordinaire : l'horloge, ou
+    /// `SOURCE_DATE_EPOCH` quand il est posé, la même lecture que l'instant
+    /// déclaré dans le PDF. Un test qui compare deux compositions le passe
+    /// ici plutôt que de toucher à l'environnement du processus.
+    pub aujourdhui: Option<chrono::NaiveDate>,
 }
 
 
@@ -71,6 +77,7 @@ impl Default for BuildOptions {
             variantes: Vec::new(),
             reglages: std::collections::BTreeMap::new(),
             police: None,
+            aujourdhui: None,
         }
     }
 }
@@ -610,6 +617,13 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
     // of the cheap half and one pass of the expensive one.
     anyhow::ensure!(!cancelled(), "composition annulée");
 
+    // Le jour du colophon. L'horloge, sauf quand `SOURCE_DATE_EPOCH` est
+    // posé : la même lecture que l'instant déclaré dans le PDF, donc un
+    // build reproductible l'est jusqu'à la date qu'il imprime.
+    let aujourdhui = opts
+        .aujourdhui
+        .unwrap_or_else(|| crate::pdfx::stamp().date_naive());
+
     let compose_une = |densite: layout::Densite,
                        cible: usize|
      -> (model::Album, Vec<model::Discard>, usize) {
@@ -705,7 +719,7 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
             &base,
             photos_kept,
             photos_scanned,
-            chrono::Local::now().date_naive(),
+            aujourdhui,
         ));
         if let (true, Some(f)) = (opts.colophon, &album.colophon) {
             album.spreads.push(crate::colophon::spread(
@@ -724,6 +738,54 @@ pub fn composer(releve: Releve, out: &Path, opts: BuildOptions) -> Result<BuildR
             let titre = crate::cover::titre_du_livre(&album).to_string();
             let garde = crate::garde::spread(&titre, f, crate::garde::place(&g));
             album.spreads.insert(0, garde);
+        }
+
+        // La couverture, quand personne n'en a encore choisi. Sans elle,
+        // `cover.rs` retombe sur le nom du dossier sans photo : c'est la
+        // planche blanche partie chez Cloudprinter le 21/09, 0,12 % d'encre.
+        // Une photo du livre, le titre de l'album, les dates de la page de
+        // garde ; une main la change dans Couverture, et la recomposition
+        // porte ensuite la sienne (`opts.cover`).
+        if album.cover.is_none() {
+            let par_src: std::collections::HashMap<String, &Photo> = base
+                .iter()
+                .flat_map(|c| c.photos.iter())
+                .map(|p| (rel(&p.path), p))
+                .collect();
+            // La surface de la photo sur la couverture de chaque profil,
+            // mesurée sur ce livre-ci : le dos dépend du nombre de pages.
+            let surfaces: Vec<(crate::pdf::Rect, f64)> = crate::printer::PrinterProfile::tous()
+                .iter()
+                .map(|p| (crate::cover::photo_rect_du_profil(&album, p), p.min_ppi))
+                .collect();
+            let imprimable = |(w, h): (u32, u32)| {
+                surfaces
+                    .iter()
+                    .all(|(r, min)| crate::print::effective_ppi(r, w, h, 1.0) >= *min)
+            };
+            let dans_le_livre: Vec<(&str, f64, (u32, u32), bool)> = album
+                .spreads
+                .iter()
+                .flat_map(|s| s.slots.iter())
+                .filter_map(|sl| {
+                    par_src.get(&sl.src).map(|p| {
+                        (sl.src.as_str(), p.effective_score(), p.orig, imprimable(p.orig))
+                    })
+                })
+                .collect();
+            album.cover = photo_de_couverture(&dans_le_livre).map(|src| {
+                let focal = par_src[src].focal.unwrap_or_else(model::default_focal);
+                model::Cover {
+                    title: title.clone(),
+                    subtitle: album
+                        .colophon
+                        .as_ref()
+                        .and_then(crate::garde::ligne_des_dates)
+                        .unwrap_or_default(),
+                    photo: Some(model::Slot::new(src.to_string(), focal)),
+                    back_text: String::new(),
+                }
+            });
         }
 
         // Photos that survived curation but not this proposal's own spread
@@ -1344,10 +1406,52 @@ fn focal_du_schema_1(dir: &Path, album: &mut model::Album) -> (usize, usize) {
     (slots, irresolus)
 }
 
+/// La photo de couverture que le Composer pose quand personne n'en a choisi :
+/// la mieux notée du quartile haut qui soit paysage ou carrée (largeur ≥
+/// hauteur, orientation appliquée), parce que le panneau avant est presque
+/// carré et qu'une portrait y perd son haut et son bas. Quand le quartile
+/// haut n'a que des portraits, la mieux notée d'entre elles : une photo bien
+/// notée en portrait vaut mieux qu'une paysage médiocre, et bien mieux
+/// qu'une couverture blanche.
+///
+/// Avant tout cela, le plancher : une photo qui tomberait sous les 250 ppi
+/// sur la feuille de couverture d'un des profils ne se propose pas, et le
+/// quartile se compte sur celles qui restent. « Jamais de résolution sous
+/// 250 ppi » est une décision du projet, et la feuille cartonnée est la plus
+/// grande image du livre : sans ce filtre, corse-2013 en A4 portrait sortait
+/// une couverture à 221 ppi chez Cloudprinter. Quand aucune ne passe, la
+/// règle s'applique à toutes, et le prévol le dira.
+///
+/// `photos` porte, pour chaque photo du livre, sa source, sa note, ses
+/// dimensions et si elle passe ce plancher. L'ordre est total (la note,
+/// puis la source), donc le même relevé rend toujours le même choix, depuis
+/// les photos comme depuis les fiches.
+pub(crate) fn photo_de_couverture<'a>(
+    photos: &[(&'a str, f64, (u32, u32), bool)],
+) -> Option<&'a str> {
+    let imprimables = photos.iter().any(|p| p.3);
+    let mut rang: Vec<&(&str, f64, (u32, u32), bool)> =
+        photos.iter().filter(|p| p.3 || !imprimables).collect();
+    rang.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    // Une photo posée deux fois dans le livre ne compte qu'une fois.
+    rang.dedup_by(|a, b| a.0 == b.0);
+    let haut = &rang[..rang.len().div_ceil(4)];
+    haut.iter()
+        .find(|(_, _, (w, h), _)| w >= h)
+        .or_else(|| haut.first())
+        .map(|(src, _, _, _)| *src)
+}
+
 /// Re-render `album.pdf` from `album.json` alone, resolving every photo
 /// through `thumbs.json`. No scan, no analysis: this is what the editor calls
 /// after a change, and it works even when the original folder has moved.
 pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
+    rendre_apercu(dir, crate::pdfx::stamp())
+}
+
+/// [`render_album_pdf`] à un instant donné : le PDF est une fonction pure de
+/// l'album, de ses vignettes et de cet instant.
+fn rendre_apercu(dir: &Path, stamp: chrono::DateTime<chrono::Local>) -> Result<PathBuf> {
     // Avant toute lecture : un dossier d'avant le schéma 2 porte des `focal`
     // qui ne veulent plus ce qu'ils disent, et le rendre sans migrer le
     // recadrerait en silence.
@@ -1367,7 +1471,7 @@ pub fn render_album_pdf(dir: &Path) -> Result<PathBuf> {
         "l'album n'a aucune planche : rien à rendre"
     );
 
-    let mut writer = pdf::PdfWriter::new(&album, dir);
+    let mut writer = pdf::PdfWriter::with_stamp(&album, dir, stamp);
     for (i, spread) in album.spreads.iter().enumerate() {
         let assets: Vec<pdf::JpegAsset> = spread
             .slots
@@ -1534,19 +1638,140 @@ pub fn jpeg_dimensions(data: &[u8]) -> Option<(u32, u32)> {
 mod tests {
     use super::*;
 
-    /// The declared instant is a process-wide environment variable, so the
-    /// tests that pin it cannot run side by side: one of them clearing
-    /// `SOURCE_DATE_EPOCH` while the other renders turns a byte-identity
-    /// assertion into a coin toss. Found the hard way — the identity held
-    /// alone and fell in the full suite.
-    static HORLOGE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// Le jour et l'instant de tous les tests qui comparent deux rendus, passés
+    /// en paramètre. Ils posaient `SOURCE_DATE_EPOCH` dans l'environnement du
+    /// processus, sous un verrou, et la date du colophon suivait l'horloge :
+    /// deux compositions à cheval sur minuit rendaient deux PDF (vu sur un run
+    /// Ubuntu de #56, le 27/09), et une variable de processus posée par un
+    /// test se lit dans tous les autres threads.
+    fn jour_fixe() -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2023, 11, 14).unwrap()
+    }
 
-    /// Take the clock. A test that panicked while holding it poisoned
-    /// nothing but the lock itself; the next one takes it anyway.
-    fn horloge_pinnee() -> std::sync::MutexGuard<'static, ()> {
-        let garde = HORLOGE.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
-        garde
+    fn instant_fixe() -> chrono::DateTime<chrono::Local> {
+        use chrono::TimeZone;
+        chrono::Local.timestamp_opt(1_700_000_000, 0).unwrap()
+    }
+
+    fn options_datees() -> BuildOptions {
+        BuildOptions { aujourdhui: Some(jour_fixe()), ..Default::default() }
+    }
+
+    /// `album.pdf` rendu à l'instant fixe, sans toucher à l'environnement.
+    fn apercu_fixe(out: &Path) -> Vec<u8> {
+        rendre_apercu(out, instant_fixe()).unwrap();
+        fs::read(out.join("album.pdf")).unwrap()
+    }
+
+    /// La date du colophon vient des options quand on la donne : deux
+    /// compositions du même dossier, un même jour donné, rendent le même
+    /// `album.json`, quelle que soit l'heure à laquelle elles tournent.
+    #[test]
+    fn la_date_du_colophon_se_passe_en_parametre() {
+        let (photos, out) = dossier_test("jour");
+        for i in 0..3 {
+            jpeg_imprimable(&photos.join(format!("photo-{i}.jpg")), i);
+        }
+        let a = build_album(&photos, &out, options_datees()).unwrap().album;
+        assert_eq!(a.colophon.as_ref().unwrap().compose_le, jour_fixe());
+        let b = build_album(&photos, &out, options_datees()).unwrap().album;
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap(),
+            "le même dossier, le même jour : le même album"
+        );
+    }
+
+    /// Le choix de la photo de couverture, sur des valeurs : la mieux notée
+    /// du quartile haut qui soit paysage ou carrée ; une portrait seulement
+    /// quand le quartile haut n'en a pas d'autre ; et le même relevé rend
+    /// toujours le même choix, égalités comprises.
+    #[test]
+    fn la_couverture_prend_la_meilleure_paysage_du_quartile_haut() {
+        let c = |src: &'static str, score: f64, w: u32, h: u32| (src, score, (w, h), true);
+        // Huit photos, quartile haut = les deux meilleures. La meilleure est
+        // en portrait, la deuxième en paysage : c'est la deuxième.
+        let photos = [
+            c("a.jpg", 0.95, 3000, 4000),
+            c("b.jpg", 0.90, 4000, 3000),
+            c("c.jpg", 0.85, 4000, 4000),
+            c("d.jpg", 0.50, 4000, 3000),
+            c("e.jpg", 0.40, 4000, 3000),
+            c("f.jpg", 0.30, 4000, 3000),
+            c("g.jpg", 0.20, 4000, 3000),
+            c("h.jpg", 0.10, 4000, 3000),
+        ];
+        assert_eq!(photo_de_couverture(&photos), Some("b.jpg"));
+        // Le carré compte comme paysage : rapport ≥ 1.
+        let mut carre = photos;
+        carre[1] = c("b.jpg", 0.90, 4000, 4000);
+        assert_eq!(photo_de_couverture(&carre), Some("b.jpg"));
+        // Le quartile haut tout en portrait : la qualité d'abord, une portrait
+        // bien notée plutôt qu'une paysage médiocre.
+        let debout = [
+            c("a.jpg", 0.95, 3000, 4000),
+            c("b.jpg", 0.30, 4000, 3000),
+            c("c.jpg", 0.20, 4000, 3000),
+            c("d.jpg", 0.10, 4000, 3000),
+        ];
+        assert_eq!(photo_de_couverture(&debout), Some("a.jpg"));
+        // Égalité de note : l'ordre des noms tranche, pas l'ordre d'arrivée.
+        let egales = [c("z.jpg", 0.5, 4000, 3000), c("m.jpg", 0.5, 4000, 3000)];
+        let inverse = [c("m.jpg", 0.5, 4000, 3000), c("z.jpg", 0.5, 4000, 3000)];
+        assert_eq!(photo_de_couverture(&egales), Some("m.jpg"));
+        assert_eq!(photo_de_couverture(&inverse), Some("m.jpg"));
+        assert_eq!(photo_de_couverture(&[]), None);
+
+        // Le plancher de 250 ppi passe avant tout le reste : une photo trop
+        // petite pour la feuille ne se propose pas, même la mieux notée. Le
+        // quartile se compte sur celles qui passent.
+        let mut petites = photos;
+        petites[1].3 = false; // b.jpg, la paysage du quartile haut
+        assert_eq!(photo_de_couverture(&petites), Some("c.jpg"));
+        // Et quand aucune ne passe, la règle s'applique à toutes : une
+        // couverture que le prévol signale vaut mieux qu'une couverture
+        // blanche, qu'il bloquerait aussi.
+        let aucune = photos.map(|(s, n, d, _)| (s, n, d, false));
+        assert_eq!(photo_de_couverture(&aucune), Some("b.jpg"));
+    }
+
+    /// Le Composer pose une couverture quand on ne lui en donne pas : une
+    /// photo du livre, le titre de l'album, les dates de la page de garde.
+    /// C'est la planche blanche du 21/09 qui ne se compose plus. Et une
+    /// couverture donnée (la recomposition porte celle de la main) passe
+    /// telle quelle.
+    #[test]
+    fn le_composer_pose_une_couverture_quand_on_ne_lui_en_donne_pas() {
+        let (photos, out) = dossier_test("couverture");
+        for i in 0..3 {
+            jpeg_imprimable(&photos.join(format!("photo-{i}.jpg")), i);
+        }
+        let album = build_album(&photos, &out, options_datees()).unwrap().album;
+        let cover = album.cover.as_ref().expect("une couverture composée");
+        assert_eq!(cover.title, album.title);
+        let photo = cover.photo.as_ref().expect("une photo sur la couverture");
+        assert!(
+            album.spreads.iter().flat_map(|s| &s.slots).any(|sl| sl.src == photo.src),
+            "la photo de couverture est une photo du livre : {}",
+            photo.src
+        );
+        let attendu = crate::garde::ligne_des_dates(album.colophon.as_ref().unwrap())
+            .unwrap_or_default();
+        assert_eq!(cover.subtitle, attendu);
+        assert!(cover.back_text.is_empty());
+
+        let main = model::Cover {
+            title: "Corse".into(),
+            subtitle: "à la main".into(),
+            photo: None,
+            back_text: "quatrième".into(),
+        };
+        let opts = BuildOptions { cover: Some(main.clone()), ..options_datees() };
+        let repris = build_album(&photos, &out, opts).unwrap().album;
+        assert_eq!(
+            serde_json::to_string(&repris.cover).unwrap(),
+            serde_json::to_string(&Some(main)).unwrap()
+        );
     }
 
     /// A throwaway photos folder and its (not yet created) output folder.
@@ -2034,12 +2259,8 @@ mod tests {
         for i in 0..3 {
             jpeg_imprimable(&photos.join(format!("photo-{i}.jpg")), i);
         }
-        build_album(&photos, &out, BuildOptions::default()).expect("un album");
-        let _horloge = horloge_pinnee();
-        let sans = {
-            render_album_pdf(&out).unwrap();
-            fs::read(out.join("album.pdf")).unwrap()
-        };
+        build_album(&photos, &out, options_datees()).expect("un album");
+        let sans = apercu_fixe(&out);
 
         // Une vraie face, posée comme l'app la pose : extraite, jamais le
         // fichier système recopié. La face du projet fait l'affaire — ce que
@@ -2057,17 +2278,14 @@ mod tests {
         // La recomposition la garde : c'est le champ que rien d'autre ne
         // rattraperait, le fichier restant sur le disque sans que l'album le
         // nomme plus.
-        let opts = BuildOptions { police: Some(police.clone()), ..Default::default() };
+        let opts = BuildOptions { police: Some(police.clone()), ..options_datees() };
         let repris = build_album(&photos, &out, opts).expect("recomposition");
         assert_eq!(repris.album.police.as_ref(), Some(&police));
 
         // Et elle atteint le rendu. Les octets diffèrent : la face extraite
         // n'est pas le fichier entier, donc `FontFile2` change — et c'est
         // bien le seul chemin par lequel un choix de police peut compter.
-        let avec = {
-            render_album_pdf(&out).unwrap();
-            fs::read(out.join("album.pdf")).unwrap()
-        };
+        let avec = apercu_fixe(&out);
         assert_ne!(sans, avec, "la face choisie n'atteint pas le PDF");
 
         // Le retour en arrière est exact, pas approché : un album qui n'a
@@ -2075,10 +2293,9 @@ mod tests {
         let mut album = repris.album.clone();
         album.police = None;
         write_album_json(&out, &album).unwrap();
-        render_album_pdf(&out).unwrap();
         assert_eq!(
             sans,
-            fs::read(out.join("album.pdf")).unwrap(),
+            apercu_fixe(&out),
             "sans police choisie, le PDF d'avant cette session, à l'octet"
         );
     }
@@ -2087,15 +2304,15 @@ mod tests {
     /// A recomposition carries the table (dropping the field from
     /// `BuildOptions` makes this fall); the preview render applies it
     /// (neutralising the application in `render_album_pdf` makes this fall);
-    /// and two renders of the same adjusted album are byte-identical under
-    /// `SOURCE_DATE_EPOCH`, exactly like the unadjusted ones.
+    /// and two renders of the same adjusted album are byte-identical at a
+    /// fixed instant, exactly like the unadjusted ones.
     #[test]
     fn la_recomposition_garde_les_reglages_et_lapercu_les_applique() {
         let (photos, out) = dossier_test("reglages");
         for i in 0..3 {
             jpeg_imprimable(&photos.join(format!("photo-{i}.jpg")), i);
         }
-        let report = build_album(&photos, &out, BuildOptions::default())
+        let report = build_album(&photos, &out, options_datees())
             .expect("trois photos font un album");
         let src = report
             .album
@@ -2108,15 +2325,11 @@ mod tests {
             .clone();
 
         // One clock for every render below: the diffs are about pixels.
-        let _horloge = horloge_pinnee();
-        let nu = {
-            render_album_pdf(&out).unwrap();
-            fs::read(out.join("album.pdf")).unwrap()
-        };
+        let nu = apercu_fixe(&out);
 
         // The recomposition path: same folder, the réglage in the options,
         // exactly what `recompose_album` passes.
-        let mut opts = BuildOptions::default();
+        let mut opts = options_datees();
         opts.reglages.insert(
             src.clone(),
             model::Reglage { expo: 1.0, contraste: 0.0, nb: false },
@@ -2128,16 +2341,10 @@ mod tests {
             "la table survit à la recomposition"
         );
 
-        let regle = {
-            render_album_pdf(&out).unwrap();
-            fs::read(out.join("album.pdf")).unwrap()
-        };
+        let regle = apercu_fixe(&out);
         assert_ne!(nu, regle, "le réglage doit atteindre l'aperçu rendu");
 
-        let regle_bis = {
-            render_album_pdf(&out).unwrap();
-            fs::read(out.join("album.pdf")).unwrap()
-        };
+        let regle_bis = apercu_fixe(&out);
         assert_eq!(regle, regle_bis, "deux rendus du même album réglé, à l'octet");
 
         // Take the réglage away and the render is today's again: the
@@ -2145,10 +2352,7 @@ mod tests {
         let mut album = repris.album.clone();
         album.reglages.clear();
         write_album_json(&out, &album).unwrap();
-        render_album_pdf(&out).unwrap();
-        assert_eq!(nu, fs::read(out.join("album.pdf")).unwrap());
-        // Rendue sous le verrou : l'horloge est au processus, pas au test.
-        std::env::remove_var("SOURCE_DATE_EPOCH");
+        assert_eq!(nu, apercu_fixe(&out));
     }
 
     /// Ten photos: the album is sized on the folder, not on the 48 spreads

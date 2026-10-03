@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-03",
+  "session": "K-s1, Envoi pour Cloudprinter seul, le dossier prêt, la couverture",
+  "plan": "plans/2026-09-26-retours-du-test-a-l-ecran.md, chantier K (hors dépôt)",
+  "resume": "Le Composer pose une couverture, un album sans photo de couverture bloque chez qui relie deux fichiers, et « Préparer » écrit les deux PDF, leur manifeste et une fiche dans un dossier où le prévol se relit.",
+  "la_couverture_composee": {
+    "regle": "parmi les photos du livre qui passent 250 ppi sur la feuille de couverture de chacun des quatre profils (toutes si aucune ne passe), la mieux notée du quartile haut en paysage ou carrée, sinon la mieux notée du quartile haut ; titre = titre de l'album, sous-titre = la ligne des dates de la page de garde",
+    "pourquoi_le_plancher": "sans lui, corse-2013 en portrait-a4 sortait une couverture à 221 ppi chez Cloudprinter (L1110946, rapport ≥ 1, mieux notée du quartile haut), un bloquant que le prévol d'avant ne pouvait pas voir faute de photo de couverture",
+    "jeux_de_reference_carre_21_cloudprinter": {
+      "corse-2013": { "photo": "2013-10-31_115821_L1110946.jpg", "sous_titre": "Du 27 octobre au 3 novembre 2013", "feuille_mm": [490.8, 258.0], "encre_pct": 48.7, "prevol": "2 bloquants resolution, les deux mêmes qu'au 08/09, aucun de couverture" },
+      "mauritanie-2019": { "photo": "2019-03-10_210454_IMG_1176.heic", "sous_titre": "Du 24 février au 3 mars 2019", "feuille_mm": [492.0, 258.0], "encre_pct": 48.6, "prevol": "ok" },
+      "random-2024": { "photo": "2024-06-20/000021720021_edited.jpg", "sous_titre": "Du 3 janvier au 24 décembre 2024", "feuille_mm": [491.0, 258.0], "encre_pct": 48.7, "prevol": "ok" }
+    },
+    "etalon": "la couverture de .albums/mesure-couv (album.json copié, rendu ailleurs) mesure 48,8 %, le chiffre du journal du 22/09 : la sonde est la même",
+    "mordant": "le même album corse-2013 sans clé cover : 0,1 % d'encre, et couverture_vide bloque (« la couverture n'a pas de photo, elle sortirait blanche avec le nom du dossier »)",
+    "sonde": "pypdfium2, page 1 rendue à 72 dpi sur fond blanc, pixel d'encre = un canal sous 250"
+  },
+  "le_verdict_a_trois_revu": {
+    "methode": "corse-2013 composé le 03/10 dans les six formats avec le code de la session, --prevol sur les quatre profils, comparé à la colonne « apres » de 2026-09-08-le-verdict-a-trois.json",
+    "couverture_vide": "ne mord sur aucune des 24 cases : chaque album composé porte une couverture avec photo",
+    "identique_au_08_09": "carre-21, paysage-28x21, paysage-a4, portrait-20x25 et portrait-a4 sur les quatre profils, et carre-30 chez Prodigi",
+    "change": {
+      "carre-30": {
+        "cloudprinter": "resolution!=4 → couverture_resolution!=1 resolution!=4 (219 ppi sur 329 × 348 mm)",
+        "lulu": "+ couverture_resolution!=1 (249 ppi)",
+        "generique": "+ couverture_resolution!=1 (249 ppi)",
+        "pourquoi": "aucune photo de corse-2013 (12 Mpx au plus) ne tient 250 ppi sur une feuille de 348 mm de haut : le plancher retombe sur toutes, et le prévol, qui ne mesurait rien faute de photo, le dit enfin. Le 30 × 30 avait déjà quatre cases d'intérieur sous le plancher."
+      }
+    }
+  },
+  "le_dossier_prepare_au_harnais": {
+    "album": ".albums/jetable-14 (50 planches), une couverture et deux cases à 130 ppi remplacées le temps de la mesure, album.json restauré ensuite à l'octet",
+    "fichiers": ["album-cover.pdf", "album-print.pdf", "export.json", "fiche.txt"],
+    "octets": { "album-print.pdf": 98125393, "album-cover.pdf": 5702491 },
+    "empreintes_verifiees_par_md5_et_shasum_du_systeme": true,
+    "verdict_affiche": "Dossier « Album – Cloudprinter » prêt : les deux PDF relus, rien ne s’oppose à la commande.",
+    "encre_couverture_pct": 48.7
+  },
+  "la_pagination": {
+    "cloudprinter": "24 à 800 pages, pas de 2, mesuré au devis sandbox du 26/09 (22 et 1000 refusés)"
+  }
+}

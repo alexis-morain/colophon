@@ -1126,6 +1126,54 @@ export async function preflight(profil: string): Promise<PrevolReport> {
   }
 }
 
+/** Ce que « Préparer » a écrit : le nom du dossier (jamais son chemin), les
+ *  fichiers posés, et le prévol relu sur ces fichiers-là. */
+export type Preparation = {
+  dossier: string;
+  fichiers: string[];
+  rapport: PrevolReport;
+};
+
+/** Prépare le dossier de la commande : la boîte native choisit un dossier,
+ *  le moteur y écrit l'intérieur, la couverture, `export.json` et
+ *  `fiche.txt`, puis relit le prévol sur eux. Null quand la boîte est
+ *  fermée. Le chemin reste côté moteur, comme pour `exportPdf`.
+ *
+ *  Au harnais, le serveur de dev appelle `colophon --preparer` dans le
+ *  dossier jetable que `COLOPHON_PREPARER` nomme (le répertoire temporaire
+ *  du système à défaut), jamais à côté de l'album. */
+export async function preparerDossier(
+  title: string,
+  profil: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<Preparation | null> {
+  if (!inTauri) {
+    const res = await fetch(`/__dev/preparer?profil=${encodeURIComponent(profil)}`, {
+      method: "POST",
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(text);
+    return JSON.parse(text);
+  }
+  const { listen } = await import("@tauri-apps/api/event");
+  const off = await listen<string>("export:progress", (e) => {
+    const m = /^render: (\d+)\/(\d+)/.exec(e.payload);
+    if (m && onProgress) onProgress(Number(m[1]), Number(m[2]));
+  });
+  try {
+    return await invoke<Preparation | null>("preparer_dossier", { titre: title, profil });
+  } finally {
+    off();
+  }
+}
+
+/** Rouvre le dernier dossier préparé dans le Finder. Le moteur tient le
+ *  chemin ; au harnais il n'y a pas de Finder, rien ne se passe. */
+export async function montrerDossierPrepare(): Promise<void> {
+  if (!inTauri) return;
+  return invoke("montrer_dossier_prepare");
+}
+
 /** Ask where to keep the PDF (Téléchargements by default), then render it
  *  at print resolution straight to that path. The dialog comes first: the
  *  render reopens every original at 300 dpi and takes minutes, nobody

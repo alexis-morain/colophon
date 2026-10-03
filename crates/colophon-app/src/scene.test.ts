@@ -205,6 +205,19 @@ describe("what the keyboard calls an object", () => {
     expect(nomDObjet(scene.objects[1], scene)).toBe("Photo 2 of 2, 1.jpg");
   });
 
+  it("says a photograph's alerts in its name, and only its own", () => {
+    setLangue("fr");
+    const scene = sceneOf(planche("duo", 2), g, mesure);
+    const alertes = new Map([[1, [{ code: "sous_resolution" as const, ppi: 220 }]]]);
+    expect(nomDObjet(scene.objects[1], scene, alertes)).toBe(
+      "Photo 2 sur 2, 1.jpg, 220 ppi, sous 250",
+    );
+    expect(nomDObjet(scene.objects[0], scene, alertes)).toBe("Photo 1 sur 2, 0.jpg");
+    setLangue("en");
+    const deux = new Map([[0, [{ code: "sombre" as const }, { code: "floue" as const }]]]);
+    expect(nomDObjet(scene.objects[0], scene, deux)).toBe("Photo 1 of 2, 0.jpg, dark, blurry");
+  });
+
   it("says a folder out loud to nobody", () => {
     setLangue("fr");
     const spread = planche("solo", 1);

@@ -51,6 +51,13 @@ pub fn analyze(img: &DynamicImage) -> Analysis {
     }
 }
 
+/// The two numbers of [`analyze`] a quality alert reads, without the
+/// hashes: the same functions on the same grey image, so the same bits.
+pub fn nettete_et_exposition(img: &DynamicImage) -> (f64, f64) {
+    let gray = img.to_luma8();
+    (laplacian_variance(&gray), exposure_score(&gray))
+}
+
 fn colorsig(img: &DynamicImage) -> [u8; 12] {
     let small = img.resize_exact(2, 2, FilterType::Triangle).to_rgb8();
     let mut sig = [0u8; 12];

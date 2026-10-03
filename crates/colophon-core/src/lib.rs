@@ -33,6 +33,7 @@ pub mod places;
 pub mod prevol;
 pub mod print;
 pub mod printer;
+pub mod qualite;
 pub mod reglage;
 pub mod releve;
 pub mod reprise;

@@ -719,9 +719,17 @@ export const FR = {
     "Glisser pour recadrer · molette pour zoomer · ⌥ affine",
   "planche.warn.ppi":
     "Cette photo imprimerait vers {ppi} ppi ici, sous le plancher de {plancher}. Une case plus petite, un zoom réduit ou une autre photo règlent le problème. L’export le signalera aussi.",
-  "planche.warn.sombre.badge": "sombre",
   "planche.warn.sombre":
     "Photo très sombre : le papier la rendra plus sombre encore que l’écran. À garder en connaissance de cause, rien ne bloque.",
+  "planche.warn.floue":
+    "Photo floue : elle est dans le dixième le moins net de son dossier. Le papier ne la rendra pas plus nette. Une autre prise de la même scène la remplace peut-être, sinon gardez-la en connaissance de cause.",
+  "alerte.sous_resolution": "{ppi} ppi, sous {plancher}",
+  "alerte.sombre": "sombre",
+  "alerte.floue": "floue",
+  "tri.alerte.sous_resolution":
+    "Trop petite pour une demi-page : {ppi} ppi sur une demi-page de ce format, sous le plancher de {plancher}. Elle tient dans une case plus petite.",
+  "table.alerte": "{n} cases en alerte",
+  "table.alerte.une": "Une case en alerte",
   "fidele.pdf.aria": "Aperçu fidèle, rendu depuis le PDF",
   "deborde.legende.horspage":
     "la légende de la case {i} tombe hors page sous une pleine page : retirez-la ou changez de gabarit",
@@ -1557,9 +1565,17 @@ export const EN: Record<Cle, string> = {
   "planche.couverture.recadrer": "Drag to crop · wheel to zoom · ⌥ refines",
   "planche.warn.ppi":
     "This photo would print near {ppi} ppi here, under the {plancher} floor. A smaller cell, less zoom or another photo fixes it. The export will flag it too.",
-  "planche.warn.sombre.badge": "dark",
   "planche.warn.sombre":
     "Very dark photo: paper will print it darker still than the screen. Keep it knowingly, nothing blocks.",
+  "planche.warn.floue":
+    "Blurry photo: it is in the least sharp tenth of its folder. Paper will not make it sharper. Another shot of the same scene may replace it, or keep it knowingly.",
+  "alerte.sous_resolution": "{ppi} ppi, under {plancher}",
+  "alerte.sombre": "dark",
+  "alerte.floue": "blurry",
+  "tri.alerte.sous_resolution":
+    "Too small for half a page: {ppi} ppi on half a page of this format, under the {plancher} floor. It fits a smaller cell.",
+  "table.alerte": "{n} cells flagged",
+  "table.alerte.une": "One cell flagged",
   "fidele.pdf.aria": "Faithful preview, rendered from the PDF",
   "deborde.legende.horspage":
     "the caption of cell {i} falls off the page under a full bleed: remove it or change the template",

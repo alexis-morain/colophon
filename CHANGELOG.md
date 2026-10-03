@@ -11,6 +11,18 @@ sur la page des releases.
 
 ### Ajouté
 
+- **Une alerte de qualité sur les photos, en un seul signe.** Un petit
+  triangle dans le coin d'une case dit qu'elle imprimera mal : sous 250 ppi,
+  très sombre, ou **floue**, l'alerte nouvelle, qui marque les photos du
+  dixième le moins net de leur dossier (rien sous 25 photos). Le survol
+  donne la raison et le remède, et VoiceOver lit l'alerte dans le nom de la
+  photo : « Photo 2 sur 3, IMG_2193.jpg, 220 ppi, sous 250 ». Le même
+  triangle marque, dans le Tri, les photos de la réserve trop petites pour
+  une demi-page du format ou floues, et Planches pose un point d'alerte à
+  côté du point « éditée » sur chaque planche qui en a une. Le ppi se juge
+  sur la taille de l'original, même quand sa vignette est réduite. Aucun
+  seuil de l'audit ne bouge.
+
 - **La fiche d'une photo, et son original.** Sur une photo de la planche,
   « Informations… » du menu contextuel ou ⌘I ouvre sa fiche : dimensions,
   poids, format, date de prise de vue (et si elle vient du fichier faute

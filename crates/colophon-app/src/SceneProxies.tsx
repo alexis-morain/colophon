@@ -28,6 +28,7 @@ import { useEffect, useRef } from "react";
 import { Rect } from "./album";
 import { t } from "./i18n";
 import { ornementDe, titre } from "./ornement";
+import { Alerte, nomDAlerte } from "./photos";
 import { angleEcran, Scene, SceneObject } from "./scene";
 
 // ---- où le clavier se tient, et pourquoi ça vit hors du composant --------
@@ -59,8 +60,17 @@ function surPointeur() {
  * What to call one object, out loud. Built from the role code and its
  * parameters, so both languages say it their own way and neither inherits
  * the other's word order.
+ *
+ * A photograph's alerts end its name, by cell: they are codes the app
+ * computed (`photos.ts::badgesDe`), never a string of the engine nor a read
+ * of the template, so this stays a function of the scene and of what the
+ * caller hands it — the same for both renderers.
  */
-export function nomDObjet(o: SceneObject, scene: Scene): string {
+export function nomDObjet(
+  o: SceneObject,
+  scene: Scene,
+  alertes?: ReadonlyMap<number, Alerte[]>,
+): string {
   const role = o.role;
   switch (role.role) {
     case "photo": {
@@ -69,7 +79,9 @@ export function nomDObjet(o: SceneObject, scene: Scene): string {
       // out loud. Its folder is not: a spoken path is noise, and the rest of
       // the application never says one either.
       const fichier = role.src.split("/").pop() ?? role.src;
-      return t("scene.photo", { n: role.cell + 1, total, fichier });
+      const nom = t("scene.photo", { n: role.cell + 1, total, fichier });
+      const dites = (alertes?.get(role.cell) ?? []).map(nomDAlerte);
+      return [nom, ...dites].join(", ");
     }
     case "photo_caption":
       return t("scene.legende", { n: role.cell + 1, texte: role.text });
@@ -117,7 +129,7 @@ export function enOrdreDeLecture(scene: Scene): { o: SceneObject; depth: number 
  * everywhere it is measured, and only the box the keyboard lands on is
  * brought back inside the page.
  */
-function auRognage(r: Rect, trim: Rect): Rect {
+export function auRognage(r: Rect, trim: Rect): Rect {
   const x = Math.max(r.x, trim.x);
   const y = Math.max(r.y, trim.y);
   return {
@@ -145,6 +157,7 @@ export function SceneProxies({
   onActivate,
   onEchap,
   onPlanche,
+  alertes,
 }: {
   scene: Scene;
   mm: number;
@@ -163,6 +176,8 @@ export function SceneProxies({
   /** Au bout de l'ordre de lecture, la lecture continue à la planche d'à
    *  côté. Rend vrai si la planche a effectivement tourné. */
   onPlanche?: (sens: 1 | -1) => boolean;
+  /** Les alertes de chaque case, dites à la fin du nom de sa photo. */
+  alertes?: ReadonlyMap<number, Alerte[]>;
 }) {
   const conteneur = useRef<HTMLDivElement>(null);
   /** Le champ ouvert l'a été depuis une boîte, donc le focus lui revient. */
@@ -257,7 +272,7 @@ export function SceneProxies({
               height: `${box.h * mm}px`,
               transform: tourne ? `rotate(${angleEcran(o.angle)}deg)` : undefined,
             }}
-            aria-label={nomDObjet(o, scene)}
+            aria-label={nomDObjet(o, scene, alertes)}
             aria-pressed={
               o.role.role === "photo" ? selected === o.role.cell : undefined
             }

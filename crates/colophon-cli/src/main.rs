@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "reserve", "fiche", "banc_gabarits", "depuis_fiches"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "reserve", "fiche", "releve_album", "banc_gabarits", "depuis_fiches"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -187,6 +187,12 @@ struct Cli {
     #[arg(long, value_name = "SRC", hide = true)]
     fiche: Option<String>,
 
+    /// Print what the quality alert reads of every photo of the album in
+    /// --out: original size, sharpness, exposure, and the blur threshold of
+    /// the folder. Feeds the dev album server.
+    #[arg(long, hide = true)]
+    releve_album: bool,
+
     /// Run the generated-template bench over composed album directories
     /// (grouped into reference sets by their source folder) and print the
     /// verdict as JSON: which enumerated combinations are green on every
@@ -343,6 +349,15 @@ fn main() -> Result<()> {
         )?)?;
         let fiche = colophon_core::fiche::fiche(&cli.out, Path::new(&album.root), src)?;
         println!("{}", serde_json::to_string(&fiche)?);
+        return Ok(());
+    }
+
+    if cli.releve_album {
+        let album: Album = serde_json::from_str(&std::fs::read_to_string(
+            cli.out.join("album.json"),
+        )?)?;
+        let releve = colophon_core::qualite::releve_album(&cli.out, Path::new(&album.root))?;
+        println!("{}", serde_json::to_string(&releve)?);
         return Ok(());
     }
 

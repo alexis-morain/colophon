@@ -212,6 +212,22 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // Ce que l'alerte de qualité lit de chaque photo : taille d'origine,
+      // netteté, exposition, et le seuil de flou du dossier.
+      server.middlewares.use("/__dev/releve", (_req, res) => {
+        try {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            execFileSync(engineBinary, ["--releve-album", "-o", dir], {
+              encoding: "utf8",
+              maxBuffer: 64 * 1024 * 1024,
+            }),
+          );
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
       // The templates a spread can switch to, count and orientation both
       // fitting: the engine's one rule. The srcs travel as a JSON array so
       // an unsaved edit filters right.

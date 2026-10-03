@@ -64,3 +64,21 @@ export function AlignGlyph({ cote }: { cote: "gauche" | "centre" | "droite" }) {
     </svg>
   );
 }
+
+/** L'alerte de qualité, un seul motif partout : un triangle de 12 px,
+ *  l'accent des pastilles cerné du verre sombre, lisible sur toute photo.
+ *  Sans texte : le texte est dans le `title` de qui le porte, et dans le
+ *  nom de l'objet pour la voix. */
+export function PastilleAlerte() {
+  return (
+    <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+      <path
+        d="M 6 1 L 11.25 11 L 0.75 11 Z"
+        fill="var(--chip-accent)"
+        stroke="rgb(var(--ink-rgb) / 0.72)"
+        strokeWidth="1"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

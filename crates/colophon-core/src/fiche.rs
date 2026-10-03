@@ -1,8 +1,8 @@
 //! The sheet of one photograph, as the window shows it: what the file says
 //! of itself (name, pixels, weight, format), what the camera wrote (date,
-//! body, lens, exposure, place), what the user said (rating), and what one
-//! reading measured when the album carries its relevé (sharpness,
-//! exposure). Read on demand for one photo, never during composition.
+//! body, lens, exposure, place), what the user said (rating), and the
+//! sharpness and exposure the quality alert reads (`qualite::mesure_photo`:
+//! the relevé when the album carries one, the thumbnail otherwise). Read on demand for one photo, never during composition.
 //!
 //! Two doors, and the front end never holds a path: a `src` is the bare
 //! file name `album.json` names a photo by, validated the way `thumb::chemin`
@@ -14,7 +14,6 @@
 use crate::heic;
 use crate::meta;
 use crate::places;
-use crate::releve::Releve;
 use anyhow::{bail, Context, Result};
 use chrono::NaiveDateTime;
 use serde::Serialize;
@@ -46,7 +45,8 @@ pub struct FichePhoto {
     pub lieu: Option<Lieu>,
     /// 1 to 5 stars, -1 rejected, `None` never rated.
     pub note: Option<i8>,
-    /// From the album's relevé when it carries one; absent otherwise.
+    /// The quality alert's measure: the relevé when the album carries one,
+    /// the thumbnail otherwise; absent when neither reads.
     pub nettete: Option<f64>,
     pub exposition: Option<f64>,
 }
@@ -97,15 +97,13 @@ pub fn fiche(dir: &Path, root: &Path, src: &str) -> Result<FichePhoto> {
     // header otherwise, then the EXIF swap. A RAW measures its sensor.
     let (largeur, hauteur) = heic::oriented_dimensions(&fichier, meta.orientation)
         .with_context(|| format!("dimensions illisibles : {src}"))?;
-    let (nettete, exposition) = match Releve::dans_album(dir)? {
-        Some(releve) => releve
-            .photos
-            .iter()
-            .find(|p| releve.src(&p.path) == src)
-            .map(|p| (Some(p.analysis.sharpness), Some(p.analysis.exposure)))
-            .unwrap_or((None, None)),
-        None => (None, None),
-    };
+    // The quality alert's own measure: the relevé when the album carries
+    // one, the photo's thumbnail otherwise. One source for both screens.
+    let mesure = crate::qualite::mesure_photo(dir, root, src)?;
+    let (nettete, exposition) = (
+        mesure.as_ref().map(|m| m.nettete),
+        mesure.as_ref().map(|m| m.exposition),
+    );
     Ok(FichePhoto {
         nom: src.to_string(),
         largeur,
@@ -177,6 +175,7 @@ pub fn lieu_de(gps: Option<(f64, f64)>) -> Option<Lieu> {
 mod tests {
     use super::*;
     use crate::meta::fixture::{jpeg_decodable_avec_exif, Ifd, Val};
+    use crate::releve::Releve;
     use std::fs;
 
     fn dossier(nom: &str) -> PathBuf {
@@ -266,6 +265,36 @@ mod tests {
 
         assert!(fiche(&dir, &root, "absente.jpg").is_err());
         assert!(fiche(&dir, &root, "../IMG_0001.jpg").is_err());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// Without a relevé (an album composed on the Mac from its photos), the
+    /// sheet still carries the two measures: the quality alert's own,
+    /// taken on the photo's thumbnail (`qualite`), never a second reading.
+    #[test]
+    fn la_fiche_mesure_la_vignette_quand_l_album_n_a_pas_de_releve() {
+        let base = dossier("sans-releve");
+        let root = base.join("photos");
+        let dir = base.join("album");
+        let cache = dir.join(".cache").join("thumbs");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&cache).unwrap();
+        image::ImageBuffer::from_fn(640, 480, |_, _| image::Rgb([1u8, 2, 3]))
+            .save(root.join("nette.png"))
+            .unwrap();
+        let rayures = image::ImageBuffer::from_fn(64, 48, |x, _| {
+            image::Rgb(if x % 2 == 0 { [0u8, 0, 0] } else { [255, 255, 255] })
+        });
+        rayures.save(cache.join("v-nette.png")).unwrap();
+        fs::write(dir.join("thumbs.json"), r#"{"nette.png":"v-nette.png"}"#).unwrap();
+
+        let f = fiche(&dir, &root, "nette.png").unwrap();
+        let a = crate::analyze::analyze(&image::open(cache.join("v-nette.png")).unwrap());
+        assert_eq!(f.nettete.map(f64::to_bits), Some(a.sharpness.to_bits()));
+        assert_eq!(f.exposition.map(f64::to_bits), Some(a.exposure.to_bits()));
+        // Et la même mesure que l'alerte de qualité, au bit près.
+        let r = crate::qualite::releve_album(&dir, &root).unwrap();
+        assert_eq!(f.nettete, Some(r.photos["nette.png"].nettete));
         let _ = fs::remove_dir_all(&base);
     }
 

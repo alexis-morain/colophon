@@ -40,6 +40,8 @@ export type MenuActions = {
   rendreAuto(): void;
   insererVide(): void;
   insererTexte(): void;
+  dater(): void;
+  dedater(): void;
   supprimerPlanche(): void;
   raccourcis(): void;
   signalerBug(): void;
@@ -219,6 +221,11 @@ export async function installMenu(
       await item("insererTexte", t("menu.inserer.texte"), {
         enabled: albumOpen,
       }),
+      await sep(),
+      // Tout l'album, en un pas d'annulation : la porte d'une seule photo
+      // est le bouton « Dater » du popover de légende.
+      await item("dater", t("menu.dater"), { enabled: albumOpen }),
+      await item("dedater", t("menu.dedater"), { enabled: albumOpen }),
       await sep(),
       await item("supprimerPlanche", t("menu.supprimer.planche"), { enabled: albumOpen }),
     ],

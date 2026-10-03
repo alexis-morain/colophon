@@ -158,6 +158,7 @@ import { PrefsView } from "./PrefsView";
 import { ApercuFidele } from "./pdfview";
 import { forgetPdfs } from "./raster";
 import { Tourneur } from "./Feuilletage";
+import { chargerReleve } from "./photos";
 import { cachedThumb, loadThumb, resetThumbs } from "./thumbs";
 import "./styles.css";
 
@@ -539,6 +540,9 @@ export default function App() {
   const adopt = useCallback((result: OpenedAlbum) => {
     finPremiere.current = jusquAuRendu("planche.premiere");
     resetThumbs();
+    // Le relevé de l'album qui s'ouvre, lu une fois : celui d'avant tombe
+    // ici, et aucune case ne porte d'alerte tant que le nouveau n'est pas là.
+    void chargerReleve();
     setOpened(result);
     setHist({ album: result.album, past: [], future: [] });
     setSavedAlbum(result.album);
@@ -2416,6 +2420,7 @@ export default function App() {
       {view === "tri" ? (
         <TriView
           entries={entries}
+          page={album.trim_mm}
           selected={triSelected}
           onSelect={setTriSelected}
           onRescue={rescue}

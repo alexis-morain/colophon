@@ -23,7 +23,8 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "./i18n";
 import { Album, Spread, spreadGeometry, slotsFor } from "./album";
-import { useReglages } from "./reglages";
+import { badgesDe, useReleve } from "./photos";
+import { reglagePose, useReglages } from "./reglages";
 import { thumbCropStyle } from "./SpreadView";
 import { cachedThumb, loadThumb } from "./thumbs";
 import { cibleSous, RectCellule, seuilFranchi } from "./planches";
@@ -283,6 +284,32 @@ function PlancheCell({
   /** Vrai une fois si le clic qui arrive suit un glisser. */
   avaleClic: () => boolean;
 }) {
+  // Les cases en alerte, par la règle de la planche (`badgesDe`) : ce que le
+  // relevé sait tout de suite, et « sombre » quand la vignette d'une case
+  // s'est décodée, puisqu'il lit ses pixels.
+  const releve = useReleve();
+  const [sombres, setSombres] = useState<ReadonlySet<number>>(() => new Set());
+  const rects = slotsFor(spread.template, spread.slots.length, spreadGeometry(album));
+  const enAlerte = spread.slots.filter((slot, i) => {
+    const r = rects[i];
+    if (!r) return false;
+    const b = badgesDe(slot.src, null, r, 1, slot.zoom ?? 1, undefined, releve);
+    return b.alertes.length > 0 || sombres.has(i);
+  }).length;
+  const surSombre = (i: number, sombre: boolean) =>
+    setSombres((avant) => {
+      if (avant.has(i) === sombre) return avant;
+      const apres = new Set(avant);
+      if (sombre) apres.add(i);
+      else apres.delete(i);
+      return apres;
+    });
+  const ditAlerte =
+    enAlerte === 0
+      ? ""
+      : enAlerte === 1
+        ? t("table.alerte.une")
+        : t("table.alerte", { n: enAlerte });
   return (
     <figure
       role="listitem"
@@ -322,11 +349,12 @@ function PlancheCell({
       aria-current={current ? true : undefined}
       aria-label={
         (spread.caption ? `${spread.caption} · ` : "") +
-        t("table.cellule.nom", { n: index + 1 })
+        t("table.cellule.nom", { n: index + 1 }) +
+        (ditAlerte ? ` · ${ditAlerte}` : "")
       }
       onKeyDown={onKey}
     >
-      <MiniSpread album={album} spread={spread} />
+      <MiniSpread album={album} spread={spread} onSombre={surSombre} />
       <figcaption className="planche-meta">
         <span className="planche-num">{index + 1}</span>
         {spread.caption && <span className="planche-chapter">{spread.caption}</span>}
@@ -337,6 +365,7 @@ function PlancheCell({
               title={t("table.editee")}
             />
           )}
+          {ditAlerte && <span className="badge-alerte" title={ditAlerte} />}
           <button
             className={"lock" + (spread.locked ? " locked" : "")}
             onClick={(e) => {
@@ -427,7 +456,16 @@ export function LockGlyph({ open }: { open: boolean }) {
  * One spread at postage size: real geometry, real crops, images gated by
  * an IntersectionObserver so sixty planches cost only what is on screen.
  */
-function MiniSpread({ album, spread }: { album: Album; spread: Spread }) {
+function MiniSpread({
+  album,
+  spread,
+  onSombre,
+}: {
+  album: Album;
+  spread: Spread;
+  /** Une vignette décodée dit si sa case est sombre. */
+  onSombre: (cell: number, sombre: boolean) => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const geom = spreadGeometry(album);
@@ -469,7 +507,9 @@ function MiniSpread({ album, spread }: { album: Album; spread: Spread }) {
               height: `${(r.h / geom.h) * 100}%`,
             }}
           >
-            {visible && <MiniImg slot={slot} />}
+            {visible && (
+              <MiniImg slot={slot} rect={r} onSombre={(v) => onSombre(i, v)} />
+            )}
           </span>
         );
       })}
@@ -485,10 +525,42 @@ function MiniSpread({ album, spread }: { album: Album; spread: Spread }) {
   );
 }
 
-function MiniImg({ slot }: { slot: { src: string; focal: [number, number]; zoom?: number } }) {
+function MiniImg({
+  slot,
+  rect,
+  onSombre,
+}: {
+  slot: { src: string; focal: [number, number]; zoom?: number };
+  /** La case, pour une planche ; la couverture n'en passe pas, son
+   *  alerte n'est pas de ce chantier. */
+  rect?: { x: number; y: number; w: number; h: number };
+  onSombre?: (sombre: boolean) => void;
+}) {
   const [url, setUrl] = useState<string | undefined>(() => cachedThumb(slot.src));
   // thumbCropStyle carries the photo's adjustment: follow it.
   useReglages();
+  const img = useRef<HTMLImageElement>(null);
+  const releve = useReleve();
+  // « Sombre » lit les pixels au travers du réglage posé, comme sur la
+  // planche ; la clé relance la lecture quand le réglage change.
+  const r = reglagePose(slot.src);
+  const cle = `${r?.expo ?? 0}|${r?.contraste ?? 0}|${r?.nb ?? false}`;
+  useEffect(() => {
+    const el = img.current;
+    if (!el || !url || !rect || !onSombre) return;
+    const lire = () => {
+      if (!el.naturalWidth) return;
+      const b = badgesDe(slot.src, el, rect, 1, slot.zoom ?? 1, reglagePose(slot.src), releve);
+      onSombre(b.alertes.some((a) => a.code === "sombre"));
+    };
+    if (el.complete) {
+      lire();
+      return;
+    }
+    el.addEventListener("load", lire, { once: true });
+    return () => el.removeEventListener("load", lire);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, releve, cle, slot.src]);
   useEffect(() => {
     let alive = true;
     if (!cachedThumb(slot.src)) setUrl(undefined);
@@ -500,5 +572,5 @@ function MiniImg({ slot }: { slot: { src: string; focal: [number, number]; zoom?
       alive = false;
     };
   }, [slot.src]);
-  return url ? <img src={url} alt="" style={thumbCropStyle(slot)} /> : null;
+  return url ? <img ref={img} src={url} alt="" style={thumbCropStyle(slot)} /> : null;
 }

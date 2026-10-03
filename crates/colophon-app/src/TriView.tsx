@@ -4,20 +4,27 @@
 // derived from the thumbnail index.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MIN_EFFECTIVE_PPI } from "./album";
 import { TriEntry } from "./edits";
 import { t } from "./i18n";
+import { PastilleAlerte } from "./icons";
+import { Alerte, alertesDeReserve, nomDAlerte, texteDAlerte, useReleve } from "./photos";
 import { REASON_KEYS, reasonLabel } from "./reasons";
 import { filtreDe, useReglages } from "./reglages";
 import { cachedThumb, loadThumb } from "./thumbs";
 
 export function TriView({
   entries,
+  page,
   selected,
   onSelect,
   onRescue,
   onRevue,
 }: {
   entries: TriEntry[];
+  /** La page rognée de l'album : une photo de la réserve se juge sur une
+   *  demi-page de ce format. */
+  page: { w: number; h: number };
   selected: string | null;
   onSelect: (src: string | null) => void;
   onRescue: (entry: TriEntry) => void;
@@ -36,6 +43,7 @@ export function TriView({
       list: by.get(key)!,
     }));
   }, [entries]);
+  const releve = useReleve();
 
   if (entries.length === 0) {
     return (
@@ -74,6 +82,7 @@ export function TriView({
               <Cell
                 key={e.src}
                 entry={e}
+                alertes={alertesDeReserve(e.src, page, releve)}
                 selected={selected === e.src}
                 onSelect={() => onSelect(selected === e.src ? null : e.src)}
                 onRescue={() => onRescue(e)}
@@ -86,13 +95,23 @@ export function TriView({
   );
 }
 
+/** Le remède d'une alerte de la réserve : une photo sans case se dit trop
+ *  petite pour une demi-page, pas pour une case. */
+function texteDeReserve(a: Alerte): string {
+  return a.code === "sous_resolution"
+    ? t("tri.alerte.sous_resolution", { ppi: a.ppi, plancher: MIN_EFFECTIVE_PPI })
+    : texteDAlerte(a);
+}
+
 function Cell({
   entry,
+  alertes,
   selected,
   onSelect,
   onRescue,
 }: {
   entry: TriEntry;
+  alertes: Alerte[];
   selected: boolean;
   onSelect: () => void;
   onRescue: () => void;
@@ -116,6 +135,16 @@ function Cell({
       }
     >
       <LazyThumb src={entry.src} />
+      {alertes.length > 0 && (
+        <span
+          className="slot-alerte"
+          role="img"
+          aria-label={alertes.map(nomDAlerte).join(", ")}
+          title={alertes.map(texteDeReserve).join("\n")}
+        >
+          <PastilleAlerte />
+        </span>
+      )}
     </figure>
   );
 }

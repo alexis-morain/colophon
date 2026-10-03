@@ -628,6 +628,33 @@ export async function photoFiche(src: string): Promise<FichePhoto> {
   return res.json();
 }
 
+/** Ce que l'alerte de qualité lit d'une photo (`qualite::Mesure`) : la
+ *  taille de l'original, orientation appliquée, et deux mesures de
+ *  l'analyse. */
+export type MesurePhoto = {
+  largeur: number;
+  hauteur: number;
+  nettete: number;
+  exposition: number;
+};
+
+/** Le relevé de l'album ouvert, par `src`, et le seuil de flou du dossier
+ *  (le dernier décile ; `null` pour un petit dossier). */
+export type ReleveAlbum = {
+  photos: Record<string, MesurePhoto>;
+  seuil_flou: number | null;
+};
+
+/** Le relevé, lu une fois par album : du `releve.json` de l'album quand il
+ *  en porte un, des vignettes sinon. Le serveur de dev lance le même
+ *  moteur. */
+export async function releveAlbum(): Promise<ReleveAlbum> {
+  if (inTauri) return invoke<ReleveAlbum>("releve_album");
+  const res = await fetch("/__dev/releve");
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 /** Montrer l'original dans le gestionnaire de fichiers, sélectionné. Le
  *  chemin se résout et se vérifie côté moteur (canonique, sous `album.root`).
  *  Dans le navigateur il n'y a pas de Finder : rien ne se passe. */

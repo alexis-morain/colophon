@@ -247,6 +247,28 @@ fn reveler(cible: &Path) -> Result<(), String> {
         .map_err(|e| format!("ouverture du gestionnaire de fichiers : {e}"))
 }
 
+/// What the quality alert reads of every photo of the open album: original
+/// size, sharpness, exposure, and the folder's blur threshold
+/// (`qualite::releve_album`). From the relevé when the album carries one,
+/// from the thumbnails otherwise — hundreds of them on a big folder, so off
+/// the main thread. The app asks once per album.
+#[tauri::command]
+async fn releve_album(
+    state: State<'_, AppState>,
+) -> Result<colophon_core::qualite::ReleveAlbum, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let root = racine_des_photos(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        colophon_core::qualite::releve_album(&dir, &root)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("{e:#}"))
+}
+
 /// Templates the spread can switch to, count and orientation both fitting:
 /// the engine's one rule (`gabarit::compatibles`). The photos travel as
 /// their srcs, live from the editor, so an unsaved edit filters right.
@@ -1854,6 +1876,7 @@ pub fn run() {
             caption_suggestion,
             photo_fiche,
             reveler_photo,
+            releve_album,
             proposition_legende,
             gabarits_compatibles,
             reserve_classee,

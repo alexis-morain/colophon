@@ -351,6 +351,14 @@ faces — exactly as the composer consumes it. A fiche is the `Photo` struct
 itself, serialized; never a second model beside it.
 _Avoid_: record, entry, sidecar
 
+**Fiche (of a photo, on screen)**:
+What the window shows of one photograph when asked — file, shot, place,
+rating, and the relevé's sharpness and exposure when the album carries one —
+read on demand by `photo_fiche` into a `FichePhoto` and never stored. The
+same word as the relevé's fiche, a second sense: it quotes that fiche, and
+nothing composes from it.
+_Avoid_: info panel, properties, inspector, metadata sheet
+
 **Relevé**:
 Every fiche one reading of a folder produced, plus what that reading skipped
 or could not decode. Serialized, it replays a composition on a machine that

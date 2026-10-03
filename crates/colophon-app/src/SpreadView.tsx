@@ -33,7 +33,6 @@ import {
   Spread,
   TEXT_LEADING_MM,
   TEXT_SIZE_MM,
-  MIN_EFFECTIVE_PPI,
   ZOOM_MAX,
   ZOOM_MIN,
   captionAnchor,
@@ -48,10 +47,19 @@ import {
   GARDE_TEMPLATE,
 } from "./album";
 import { captionSuggestion, detectedFocal, PoliceOfferte } from "./bridge";
-import { SceneProxies } from "./SceneProxies";
+import { auRognage, SceneProxies } from "./SceneProxies";
+import { PastilleAlerte } from "./icons";
 import { fontLoaded, measureMm, pile, substituer, surLaFace, tourDeFace } from "./font";
 
-import { badgesDe, imageDe, ROOM_EPSILON, surImage } from "./photos";
+import {
+  Alerte,
+  badgesDe,
+  imageDe,
+  ROOM_EPSILON,
+  surImage,
+  texteDAlerte,
+  useReleve,
+} from "./photos";
 import { filtreDe, reglagePose, useReglages } from "./reglages";
 import { useRendu } from "./rendu";
 import { SceneCanvas } from "./SceneCanvas";
@@ -246,6 +254,26 @@ export function SpreadView({
   scene.objects.forEach((o) => {
     if (o.role.role === "photo") cellRects.set(o.role.cell, o.rect);
   });
+
+  // The alerts of every case, once, for both renderers and for the names
+  // the keyboard reads: one computation, so the triangle a case wears and
+  // the sentence VoiceOver says cannot disagree. The réglage is the posed
+  // one — the badges speak about the album, not about a slider in flight.
+  const releve = useReleve();
+  const trim: Rect = {
+    x: album.bleed_mm,
+    y: album.bleed_mm,
+    w: geom.w - 2 * album.bleed_mm,
+    h: geom.h - 2 * album.bleed_mm,
+  };
+  const alertes = new Map<number, Alerte[]>();
+  for (const [cell, r] of cellRects) {
+    const slot = spread.slots[cell];
+    if (!slot) continue;
+    const zoom = draft?.slot === cell ? draft.zoom : (slot.zoom ?? 1);
+    const b = badgesDe(slot.src, imageDe(slot.src), r, mm, zoom, reglagePose(slot.src), releve);
+    if (b.alertes.length > 0) alertes.set(cell, b.alertes);
+  }
 
   // Photo captions wider than their slot, and text lines wider than the
   // page: named to the reader, never cut.
@@ -488,13 +516,11 @@ export function SpreadView({
     signale: boolean;
     at: number | null;
   } | null>(null);
-  // A canvas has no `<img>` to wait on its behalf: a thumbnail landing has
-  // to repaint the badges too, not only the picture.
+  // The alerts read the decoded thumbnail (« sombre »), under both
+  // renderers, and a canvas has no `<img>` to wait on its behalf: a
+  // thumbnail landing repaints the alerts too, not only the picture.
   const [, setArrivee] = useState(0);
-  useEffect(
-    () => (modeCanvas ? surImage(() => setArrivee((n) => n + 1)) : undefined),
-    [modeCanvas],
-  );
+  useEffect(() => surImage(() => setArrivee((n) => n + 1)), []);
 
   /** Pointer coordinates in the scene's own frame: millimetres, top-left of
    *  the media box, which is exactly what the canvas covers. */
@@ -1164,27 +1190,42 @@ export function SpreadView({
           onSpreadCaption &&
           chapitre(null, captionAnchor(spread.template, spread.slots.length, geom))}
 
-        {/* The badges a case wears, when a canvas draws the case. The rule
-            they read is the DOM renderer's own (`photos.ts::badgesDe`); what
-            differs is only that there is no `<img>` here to hang them on.
-            They stay in the DOM on purpose: an infobulle carries the remedy,
-            and a canvas has no infobulle. */}
+        {/* The alert a case wears, under both renderers: one triangle in
+            the corner of the case as the page shows it (a full-bleed photo
+            would lose a corner to the trim), its sentences in the title.
+            Décor for the accessibility tree: the proxy's name says it. */}
+        {onSelect &&
+          [...alertes].map(([cell, liste]) => {
+            const r = cellRects.get(cell);
+            if (!r) return null;
+            const vue = auRognage(r, trim);
+            return (
+              <span
+                key={`alerte-${cell}`}
+                className="slot-alerte"
+                style={{ left: `${vue.x * mm}px`, top: `${vue.y * mm}px` }}
+                title={liste.map(texteDAlerte).join("\n")}
+                aria-hidden="true"
+              >
+                <PastilleAlerte />
+              </span>
+            );
+          })}
+
+        {/* The zoom readout, when a canvas draws the case: there is no
+            `<img>` here to hang it on. */}
         {modeCanvas &&
           onSelect &&
-          [...cellRects].map(([cell, r]) => {
-            const slot = spread.slots[cell];
-            const img = slot ? imageDe(slot.src) : null;
-            if (!slot || !img) return null;
-            const zoomPose = slot.zoom ?? 1;
-            const zoom = draft?.slot === cell ? draft.zoom : zoomPose;
-            // The posed réglage, like the posed zoom just above: the badges
-            // speak about the album, not about the gesture in flight.
-            const b = badgesDe(slot.src, img, r, mm, zoom, reglagePose(slot.src));
-            const montreZoom = selected === cell && zoomPose > 1.001;
-            if (b.ppi === null && !b.dark && !montreZoom) return null;
+          selected !== null &&
+          selected !== undefined &&
+          (() => {
+            const r = cellRects.get(selected);
+            const slot = spread.slots[selected];
+            const zoomPose = slot?.zoom ?? 1;
+            if (!r || !slot || zoomPose <= 1.001) return null;
+            const zoom = draft?.slot === selected ? draft.zoom : zoomPose;
             return (
               <div
-                key={`badges-${cell}`}
                 className="slot-chips"
                 style={{
                   left: `${r.x * mm}px`,
@@ -1193,34 +1234,12 @@ export function SpreadView({
                   height: `${r.h * mm}px`,
                 }}
               >
-                {(b.ppi !== null || b.dark) && (
-                  <span className="slot-warns">
-                    {b.ppi !== null && (
-                      <span
-                        className="slot-warn"
-                        title={t("planche.warn.ppi", {
-                          ppi: b.ppi,
-                          plancher: MIN_EFFECTIVE_PPI,
-                        })}
-                      >
-                        {b.ppi} ppi
-                      </span>
-                    )}
-                    {b.dark && (
-                      <span className="slot-warn" title={t("planche.warn.sombre")}>
-                        {t("planche.warn.sombre.badge")}
-                      </span>
-                    )}
-                  </span>
-                )}
-                {montreZoom && (
-                  <span className="slot-zoom">
-                    ×{zoom.toFixed(2).replace(".", ",")}
-                  </span>
-                )}
+                <span className="slot-zoom">
+                  ×{zoom.toFixed(2).replace(".", ",")}
+                </span>
               </div>
             );
-          })}
+          })()}
 
         {/* A text page with nothing written yet: same case, one page later. */}
         {!aTexte && spread.template === "texte" && (
@@ -1245,12 +1264,8 @@ export function SpreadView({
         <SceneProxies
           scene={scene}
           mm={mm}
-          trim={{
-            x: album.bleed_mm,
-            y: album.bleed_mm,
-            w: geom.w - 2 * album.bleed_mm,
-            h: geom.h - 2 * album.bleed_mm,
-          }}
+          trim={trim}
+          alertes={alertes}
           selected={selected}
           planche={planche}
           edition={editingCaption || editingText}
@@ -1609,37 +1624,19 @@ function CropPhoto({
     };
   }, [src]);
 
-  // Warning badges, computed from the thumbnail already on screen (front
-  // only, no engine round-trip). Resolution is only asserted when it is
-  // known: a thumbnail under THUMB_SIZE was never downscaled, so its pixel
-  // count is the original's. A downscaled one proves the original is
-  // bigger, hence a computed ppi ABOVE the floor clears the photo but one
-  // below it proves nothing, and no badge shows. The preflight, which
-  // reopens the originals, remains the authority at export time.
-  const [warn, setWarn] = useState<{ ppi: number | null; dark: boolean }>({
-    ppi: null,
-    dark: false,
-  });
   // Whether this framing has any slack, kept in state because it depends on
   // the loaded image's own pixels. Feeds the tooltip; the gesture recomputes
   // it from the same function rather than reading this, so a stale render can
   // never make a drag lie.
   const [sansMarge, setSansMarge] = useState(false);
-  // The adjustment the album carries, draft excluded on purpose: the
-  // « sombre » badge must fall at the release, not flicker under the slider.
-  // `useReglages` above re-renders on every change; this key is what re-runs
-  // the inspection below, which has no other reason to.
-  const reglagePosee = reglagePose(src);
-  const clePosee = `${reglagePosee?.expo ?? 0}|${reglagePosee?.contraste ?? 0}|${reglagePosee?.nb ?? false}`;
+  // The alerts a case wears are drawn by SpreadView, over both renderers;
+  // what is left here is the one fact the crop gesture's tooltip needs.
   useEffect(() => {
     const el = img.current;
     if (!el || !url) return;
     const inspect = () => {
       if (!el.naturalWidth) return;
-      // The same rule the canvas renderer reads, written once.
-      const b = badgesDe(src, el, rect, mm, zoom, reglagePose(src));
-      setWarn({ ppi: b.ppi, dark: b.dark });
-      setSansMarge(b.sansMarge);
+      setSansMarge(badgesDe(src, el, rect, mm, zoom, undefined, null).sansMarge);
     };
     if (el.complete) {
       inspect();
@@ -1647,7 +1644,7 @@ function CropPhoto({
     }
     el.addEventListener("load", inspect, { once: true });
     return () => el.removeEventListener("load", inspect);
-  }, [url, src, rect.w, rect.h, zoom, mm, clePosee]);
+  }, [url, src, rect.w, rect.h, zoom, mm]);
 
   // Wheel zoom needs a non-passive listener to swallow the page scroll.
   const box = useRef<HTMLDivElement>(null);
@@ -1855,29 +1852,6 @@ function CropPhoto({
       )}
       {selected && zoomPose > 1.001 && (
         <span className="slot-zoom">×{zoom.toFixed(2).replace(".", ",")}</span>
-      )}
-      {editable && (warn.ppi !== null || warn.dark) && (
-        <span className="slot-warns">
-          {warn.ppi !== null && (
-            <span
-              className="slot-warn"
-              title={t("planche.warn.ppi", {
-                ppi: warn.ppi,
-                plancher: MIN_EFFECTIVE_PPI,
-              })}
-            >
-              {warn.ppi} ppi
-            </span>
-          )}
-          {warn.dark && (
-            <span
-              className="slot-warn"
-              title={t("planche.warn.sombre")}
-            >
-              {t("planche.warn.sombre.badge")}
-            </span>
-          )}
-        </span>
       )}
     </div>
   );

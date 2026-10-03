@@ -626,26 +626,23 @@ input[type="radio"] {
   pointer-events: none;
 }
 
-/* Warning badges on a case: resolution under the floor, night-dark photo.
-   Same chip as the zoom readout, accent text; information while composing,
-   never a modal. The title carries the remedy, l'écran Envoi redira le
-   premier à l'export. */
-.slot-warns {
+/* The quality alert on a case (resolution under the floor, night-dark,
+   blurry): one 12 px triangle in the top-left corner of the case as the
+   page shows it, the same for both renderers. Information while
+   composing, never a modal: the title carries the remedies, the proxy's
+   name says them, and the Envoi screen repeats the first at export. */
+.slot-alerte {
   position: absolute;
-  left: 0;
-  bottom: 0;
-  display: flex;
-  gap: 1px;
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin: 4px 0 0 4px;
+  line-height: 0;
+  cursor: help;
 }
 
-.slot-warn {
-  padding: 2px 6px;
-  background: rgb(var(--ink-rgb) / 0.72);
-  color: var(--chip-accent);
-  font-family: var(--font-ui);
-  font-size: var(--fs-12);
-  letter-spacing: 0.02em;
-  cursor: help;
+.slot-alerte svg {
+  display: block;
 }
 
 /* A zoomed slot flags itself discreetly even unselected. */
@@ -1089,6 +1086,11 @@ input[type="radio"] {
   aspect-ratio: 1;
   cursor: pointer;
   background: var(--surface);
+}
+
+.tri-cell > .slot-alerte {
+  top: 0;
+  left: 0;
 }
 
 .tri-cell.selected {
@@ -3038,6 +3040,16 @@ kbd {
   width: 7px;
   height: 7px;
   background: var(--accent);
+  display: inline-block;
+}
+
+/* « Une case en alerte » : the alert's triangle at the size of the edited
+   point, same accent, the title counting the cells. */
+.badge-alerte {
+  width: 9px;
+  height: 8px;
+  background: var(--accent);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
   display: inline-block;
 }
 

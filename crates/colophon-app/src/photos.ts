@@ -8,15 +8,17 @@
 // the element it already drew, the canvas reads them from here, and the rule
 // they read them by is written once.
 
+import { useSyncExternalStore } from "react";
 import {
   DARK_MEAN_LUMA,
   MIN_EFFECTIVE_PPI,
   Rect,
   Reglage,
-  THUMB_SIZE,
   effectivePpi,
   slidingRoom,
 } from "./album";
+import { ReleveAlbum, releveAlbum } from "./bridge";
+import { t } from "./i18n";
 import { appliquer, estIdentite } from "./reglage";
 import {
   cachedThumb,
@@ -94,14 +96,98 @@ export function surImage(hook: (src: string) => void): () => void {
   };
 }
 
+// ---- the relevé, once per album -----------------------------------------
+
+let releve: ReleveAlbum | null = null;
+/** Chaque chargement a son numéro : la réponse d'un album qu'on a quitté
+ *  arrive parfois après celle du suivant, et ne doit rien écraser. */
+let generation = 0;
+let versionReleve = 0;
+const abonnesReleve = new Set<() => void>();
+
+function annoncerReleve() {
+  versionReleve++;
+  abonnesReleve.forEach((f) => f());
+}
+
+/**
+ * Lire le relevé de l'album qui vient de s'ouvrir, et oublier celui
+ * d'avant. Appelé à chaque ouverture : un autre album, d'autres photos.
+ * Tant qu'il n'est pas là, ou s'il n'a pas pu se lire, aucune case ne porte
+ * d'alerte — l'alerte ne s'invente rien.
+ */
+export function chargerReleve(
+  lire: () => Promise<ReleveAlbum> = releveAlbum,
+): Promise<void> {
+  const g = ++generation;
+  releve = null;
+  annoncerReleve();
+  return lire().then(
+    (r) => {
+      if (g !== generation) return;
+      releve = r;
+      annoncerReleve();
+    },
+    () => {},
+  );
+}
+
+export function releveCourant(): ReleveAlbum | null {
+  return releve;
+}
+
+/** Le relevé de l'album ouvert, et un nouveau rendu quand il arrive. */
+export function useReleve(): ReleveAlbum | null {
+  useSyncExternalStore(
+    (f) => {
+      abonnesReleve.add(f);
+      return () => abonnesReleve.delete(f);
+    },
+    () => versionReleve,
+    () => versionReleve,
+  );
+  return releve;
+}
+
+// ---- the alerts ------------------------------------------------------------
+
+/** Ce qu'une case dit d'elle-même : trois alertes, un code chacune, dans
+ *  cet ordre. Le texte est à `nomDAlerte` et `texteDAlerte`. */
+export type Alerte =
+  | { code: "sous_resolution"; ppi: number }
+  | { code: "sombre" }
+  | { code: "floue" };
+
 /** What a case says about itself, over the photograph. */
 export type Badges = {
-  /** Effective resolution, only when it is both known and under the floor. */
-  ppi: number | null;
-  dark: boolean;
+  alertes: Alerte[];
   /** The photograph fills its cell exactly: no gesture can slide it. */
   sansMarge: boolean;
 };
+
+/** L'alerte dite en quelques mots, pour le nom d'un objet (VoiceOver). */
+export function nomDAlerte(a: Alerte): string {
+  switch (a.code) {
+    case "sous_resolution":
+      return t("alerte.sous_resolution", { ppi: a.ppi, plancher: MIN_EFFECTIVE_PPI });
+    case "sombre":
+      return t("alerte.sombre");
+    case "floue":
+      return t("alerte.floue");
+  }
+}
+
+/** L'alerte avec son remède, pour l'infobulle d'une case. */
+export function texteDAlerte(a: Alerte): string {
+  switch (a.code) {
+    case "sous_resolution":
+      return t("planche.warn.ppi", { ppi: a.ppi, plancher: MIN_EFFECTIVE_PPI });
+    case "sombre":
+      return t("planche.warn.sombre");
+    case "floue":
+      return t("planche.warn.floue");
+  }
+}
 
 /** Under half a pixel each way, no gesture can move anything. Read by the
  *  badge below and by the two crop gestures, so it is declared once. */
@@ -137,41 +223,74 @@ function estSombre(
 }
 
 /**
- * The two warnings and the one fact, from the thumbnail already on screen —
- * no engine round-trip.
+ * The three alerts and the one fact.
  *
- * Resolution is only asserted when it is known: a thumbnail under
- * `THUMB_SIZE` was never downscaled, so its pixel count is the original's. A
- * downscaled one proves the original is bigger, so a computed ppi *above*
- * the floor clears the photograph, while one below it proves nothing and no
- * badge shows. The preflight, which reopens the originals, stays the
- * authority at export time.
+ * Resolution and blur speak about the original, so they read the relevé:
+ * the original's size, oriented, and the sharpness the analysis measured,
+ * against the folder's own threshold. Darkness speaks about the print, so
+ * it reads the thumbnail through the réglage, and needs its pixels. A
+ * photo the relevé does not know carries no alert at all, and neither does
+ * any photo while the relevé is on its way: a thumbnail of 1600 px proves
+ * nothing about the original, and nothing is guessed. The preflight, which
+ * reopens the originals, stays the authority at export time.
  */
 export function badgesDe(
   src: string,
-  img: HTMLImageElement,
+  img: HTMLImageElement | null,
   rect: Rect,
   mm: number,
   zoom: number,
-  reglage?: Reglage,
+  reglage: Reglage | undefined,
+  releveAlbum: ReleveAlbum | null,
 ): Badges {
-  if (!img.naturalWidth) return { ppi: null, dark: false, sansMarge: false };
-  const connu = Math.max(img.naturalWidth, img.naturalHeight) < THUMB_SIZE;
-  const p = effectivePpi(rect, img.naturalWidth, img.naturalHeight, zoom);
-  const room = slidingRoom(
-    { w: rect.w * mm, h: rect.h * mm },
-    img.naturalWidth,
-    img.naturalHeight,
-    zoom,
-  );
-  return {
-    ppi: connu && p < MIN_EFFECTIVE_PPI ? Math.round(p) : null,
-    // Resolution stays a fact about the original — a réglage moves no pixel
-    // count — while darkness is a fact about the print, and reads through
-    // the adjustment. The analysis's own exposure score does not: it is a
-    // scalar of the original, and nothing can unfold it. See
-    // `analyze.rs::exposure_score`, which says so where it is computed.
-    dark: estSombre(src, img, reglage),
-    sansMarge: room.x <= ROOM_EPSILON && room.y <= ROOM_EPSILON,
-  };
+  const pixels = img !== null && img.naturalWidth > 0 ? img : null;
+  let sansMarge = false;
+  if (pixels) {
+    const room = slidingRoom(
+      { w: rect.w * mm, h: rect.h * mm },
+      pixels.naturalWidth,
+      pixels.naturalHeight,
+      zoom,
+    );
+    sansMarge = room.x <= ROOM_EPSILON && room.y <= ROOM_EPSILON;
+  }
+  const m = releveAlbum?.photos[src];
+  if (!releveAlbum || !m) return { alertes: [], sansMarge };
+  const alertes: Alerte[] = [];
+  const p = effectivePpi(rect, m.largeur, m.hauteur, zoom);
+  if (p < MIN_EFFECTIVE_PPI) alertes.push({ code: "sous_resolution", ppi: Math.round(p) });
+  // Darkness is a fact about the print, and reads through the adjustment.
+  // The analysis's own exposure score does not: it is a scalar of the
+  // original, and nothing can unfold it. See `analyze.rs::exposure_score`.
+  if (pixels && estSombre(src, pixels, reglage)) alertes.push({ code: "sombre" });
+  if (estFloue(m.nettete, releveAlbum)) alertes.push({ code: "floue" });
+  return { alertes, sansMarge };
+}
+
+function estFloue(nettete: number, r: ReleveAlbum): boolean {
+  return r.seuil_flou !== null && nettete <= r.seuil_flou;
+}
+
+/**
+ * Ce que la table lumineuse dit d'une photo de la réserve, qui n'a pas de
+ * case : trop petite pour une demi-page à 250 ppi dans le format de
+ * l'album, ou floue. La demi-page coupe la page en deux sur sa longueur et
+ * se tourne comme la photo ; le ppi s'y calcule comme dans une case, par
+ * `effectivePpi`, sans nouveau seuil.
+ */
+export function alertesDeReserve(
+  src: string,
+  page: { w: number; h: number },
+  releveAlbum: ReleveAlbum | null,
+): Alerte[] {
+  const m = releveAlbum?.photos[src];
+  if (!releveAlbum || !m) return [];
+  const demi = page.w >= page.h ? { w: page.w / 2, h: page.h } : { w: page.w, h: page.h / 2 };
+  const [long, court] = [Math.max(demi.w, demi.h), Math.min(demi.w, demi.h)];
+  const rect = m.largeur >= m.hauteur ? { w: long, h: court } : { w: court, h: long };
+  const alertes: Alerte[] = [];
+  const p = effectivePpi(rect, m.largeur, m.hauteur);
+  if (p < MIN_EFFECTIVE_PPI) alertes.push({ code: "sous_resolution", ppi: Math.round(p) });
+  if (estFloue(m.nettete, releveAlbum)) alertes.push({ code: "floue" });
+  return alertes;
 }

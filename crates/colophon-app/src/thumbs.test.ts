@@ -97,8 +97,17 @@ const image = () =>
 /** A cell far above the resolution floor, so only darkness is under test. */
 const CASE: Rect = { x: 0, y: 0, w: 40, h: 30 };
 
+/** The relevé that knows the photograph, big and sharp, so only darkness
+ *  is under test: without it no case carries any alert (`photos.test.ts`). */
+const connue = (src: string) => ({
+  photos: { [src]: { largeur: 4000, hauteur: 3000, nettete: 500, exposition: 0.5 } },
+  seuil_flou: null,
+});
+
 const badgeSombre = (src: string, r?: Reglage) =>
-  badgesDe(src, image(), CASE, 1, 1, r).dark;
+  badgesDe(src, image(), CASE, 1, 1, r, connue(src)).alertes.some(
+    (a) => a.code === "sombre",
+  );
 
 describe("le badge « sombre »", () => {
   beforeEach(() => resetThumbs());

@@ -174,6 +174,12 @@ sur la page des releases.
 
 ### Corrigé
 
+- **La fiche d'une photo montre sa netteté et son exposition sur tout
+  album.** Elle ne les lisait que dans le relevé, que seul un album composé
+  depuis ses fiches porte : sur un album composé depuis les photos, les deux
+  lignes manquaient toujours. Elle lit désormais la même mesure que l'alerte
+  de qualité, prise sur la vignette de la photo quand le relevé manque.
+
 - **Les planches se réordonnent à la souris.** Glisser une planche sur une
   autre dans *Planches* ne faisait rien dans l'application installée. Le
   glisser est réécrit : la planche suit la souris, la planche visée se marque

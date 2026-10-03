@@ -101,17 +101,42 @@ fn depuis_les_vignettes(dir: &Path, root: &Path) -> Result<BTreeMap<String, Mesu
         serde_json::from_str(&std::fs::read_to_string(&index)?).context("thumbs.json illisible")?;
     Ok(thumbs
         .par_iter()
-        .filter_map(|(src, nom)| {
-            let vignette = crate::thumb::chemin(dir, nom)?;
-            let img = image::open(vignette).ok()?;
-            let (nettete, exposition) = analyze::nettete_et_exposition(&img);
-            let original = root.join(src);
-            let m = crate::meta::read(&original);
-            let (largeur, hauteur) =
-                crate::heic::oriented_dimensions(&original, m.orientation).ok()?;
-            Some((src.clone(), Mesure { largeur, hauteur, nettete, exposition }))
-        })
+        .filter_map(|(src, nom)| Some((src.clone(), par_la_vignette(dir, root, src, nom)?)))
         .collect())
+}
+
+/// Une photo, par sa vignette et l'en-tête de son original : le seul calcul
+/// du chemin sans relevé, que le dossier entier et la fiche d'une photo
+/// partagent.
+fn par_la_vignette(dir: &Path, root: &Path, src: &str, nom: &str) -> Option<Mesure> {
+    let vignette = crate::thumb::chemin(dir, nom)?;
+    let img = image::open(vignette).ok()?;
+    let (nettete, exposition) = analyze::nettete_et_exposition(&img);
+    let original = root.join(src);
+    let m = crate::meta::read(&original);
+    let (largeur, hauteur) = crate::heic::oriented_dimensions(&original, m.orientation).ok()?;
+    Some(Mesure { largeur, hauteur, nettete, exposition })
+}
+
+/// Ce que l'alerte lit d'une seule photo, par les deux mêmes chemins que
+/// `releve_album` : le relevé quand l'album en porte un, sa vignette
+/// sinon. Pour la fiche d'une photo, qui n'a pas à rouvrir tout le dossier.
+pub fn mesure_photo(dir: &Path, root: &Path, src: &str) -> Result<Option<Mesure>> {
+    if let Some(releve) = Releve::dans_album(dir)? {
+        return Ok(releve.photos.iter().find(|p| releve.src(&p.path) == src).map(|p| Mesure {
+            largeur: p.orig.0,
+            hauteur: p.orig.1,
+            nettete: p.analysis.sharpness,
+            exposition: p.analysis.exposure,
+        }));
+    }
+    let index = dir.join("thumbs.json");
+    if !index.is_file() {
+        return Ok(None);
+    }
+    let thumbs: HashMap<String, String> =
+        serde_json::from_str(&std::fs::read_to_string(&index)?).context("thumbs.json illisible")?;
+    Ok(thumbs.get(src).and_then(|nom| par_la_vignette(dir, root, src, nom)))
 }
 
 #[cfg(test)]

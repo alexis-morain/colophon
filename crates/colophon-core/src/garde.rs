@@ -77,8 +77,8 @@ pub fn place(g: &SpreadGeometry) -> f64 {
 /// before the composition, so measuring it once here is measuring it once.
 pub fn texte(titre: &str, f: &Faits, place_mm: f64) -> String {
     let mut quiet: Vec<String> = Vec::new();
-    if let Some(p) = crate::colophon::periode(f.debut, f.fin) {
-        quiet.push(majuscule(&p));
+    if let Some(p) = ligne_des_dates(f) {
+        quiet.push(p);
     }
     if let Some(v) = villes(&f.lieux, place_mm) {
         quiet.push(v);
@@ -88,6 +88,13 @@ pub fn texte(titre: &str, f: &Faits, place_mm: f64) -> String {
         return titre.to_string();
     }
     format!("{titre}\n\n{}", quiet.join("\n"))
+}
+
+/// La première ligne discrète de la page : les dates, avec sa majuscule
+/// (« Du 21 au 29 octobre 2013 »). Le sous-titre que le Composer pose sur la
+/// couverture est cette ligne-là, pour que les deux ne se contredisent pas.
+pub fn ligne_des_dates(f: &Faits) -> Option<String> {
+    crate::colophon::periode(f.debut, f.fin).map(|p| majuscule(&p))
 }
 
 /// The spread the album carries at its head, text already rendered.

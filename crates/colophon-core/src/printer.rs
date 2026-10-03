@@ -160,6 +160,22 @@ pub struct PrinterProfile {
     pub certitude: Certitude,
     /// What still has to be confirmed, in words, for the spec sheet.
     pub reserves: &'static [&'static str],
+    /// Les options à choisir à la commande, sous les codes du fournisseur,
+    /// quand on les connaît. `fiche.txt` les recopie dans le dossier préparé,
+    /// pour que la personne qui commande n'ait rien à deviner.
+    pub commande: Option<OptionsCommande>,
+}
+
+/// Ce qu'un fournisseur demande de choisir à la commande, sous ses propres
+/// codes, tels que son API les rend.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct OptionsCommande {
+    /// Le papier de l'intérieur.
+    pub papier: &'static str,
+    /// Le papier de la couverture.
+    pub couverture: &'static str,
+    /// La finition de la couverture.
+    pub finition: &'static str,
 }
 
 impl PrinterProfile {
@@ -242,8 +258,14 @@ static PROFILS: &[PrinterProfile] = &[
             constante_mm: 6.0,
             certitude: Certitude::Confirme,
         },
+        // Mesuré au devis du sandbox le 26/09 : le même produit, le même
+        // papier, accepte tout compte de 24 à 800 pages et refuse 22 et 1000
+        // (`total_pages_value_not_supported_by_available_productions`). Le
+        // 200 d'avant n'avait de source dans aucun mail. Le plancher est celui
+        // de leur guide, et le pas reste 2 : le devis prend un compte impair,
+        // un livre relié n'en a jamais.
         pages_min: 24,
-        pages_max: 200,
+        pages_max: 800,
         pas_pagination: 2,
         min_ppi: 250.0,
         certitude: Certitude::Provisoire,
@@ -252,6 +274,14 @@ static PROFILS: &[PrinterProfile] = &[
             "et ils ont répondu qu'on ne peut ni épingler un site de production, ni interroger le dos d'un produit avant commande : l'écart se mesurera au pied à coulisse sur l'album reçu",
             "leur zone sûre est une recommandation à fourchette, « at least 7-10 mm », donnée à propos de la couverture : les 7 mm retenus en sont le bas, et aucun de leurs deux gabarits n'en dessine une",
         ],
+        // Lus sur `products/info` du compte le 26/09 (photobook_cw_s210_s_fc) :
+        // le papier du devis de Nataliia, la seule couverture proposée, et la
+        // finition mate du devis sandbox.
+        commande: Some(OptionsCommande {
+            papier: "pageblock_150mcs",
+            couverture: "cover_130mcg",
+            finition: "cover_finish_matte",
+        }),
     },
     // Second supplier, and the only one that takes a single file and builds
     // the spine itself. That is why it is the fallback for the paper test.
@@ -288,6 +318,7 @@ static PROFILS: &[PrinterProfile] = &[
             "ils refusent tout fond perdu et l'album en porte trois millimètres sur les bords extérieurs : leur massicot les prendra, la page finie est la même",
             "ils recommandent un contrôle X-4 en FOGRA39 tout en demandant des images RVB : notre intention de sortie reste sRGB",
         ],
+        commande: None,
     },
     // Kept as a comparison point: symmetric bleed and CMYK, the opposite of
     // Prodigi on every field, which is exactly why the profile is data.
@@ -319,6 +350,7 @@ static PROFILS: &[PrinterProfile] = &[
             "profil non testé : aucune commande passée chez eux",
             "cotes du cartonné inconnues : rempli, débord et mors sont à zéro faute de gabarit, donc la feuille sortie ici est une couverture souple à plat et non un boîtier",
         ],
+        commande: None,
     },
     // The one that owes nothing to anybody: the file you hand to the printer
     // down the street. Loosest constraints, no conformance demanded.
@@ -343,6 +375,7 @@ static PROFILS: &[PrinterProfile] = &[
         min_ppi: 250.0,
         certitude: Certitude::Confirme,
         reserves: &[],
+        commande: None,
     },
 ];
 
@@ -485,13 +518,24 @@ mod tests {
     }
 
     /// A binding refuses an odd page count and anything out of its range.
+    ///
+    /// Les bornes de Cloudprinter sont celles que leur devis a rendues sur le
+    /// sandbox le 26/09 : 24 à 800 pages acceptées, 22 et 1000 refusées
+    /// (`total_pages_value_not_supported_by_available_productions`). Le devis
+    /// prend aussi un compte impair ; un livre relié n'en a jamais, et
+    /// l'imposition émet toujours 2n pages, donc le pas reste 2.
     #[test]
     fn pagination_bounds_are_enforced() {
         let cp = PrinterProfile::par_id("cloudprinter").unwrap();
         assert!(cp.pagination_ok(96));
         assert!(!cp.pagination_ok(97), "pagination impaire");
         assert!(!cp.pagination_ok(12), "sous le minimum");
-        assert!(!cp.pagination_ok(400), "au-dessus du maximum");
+        assert!(!cp.pagination_ok(22), "refusé au devis du 26/09");
+        assert!(cp.pagination_ok(24), "le plancher de leur guide");
+        assert!(cp.pagination_ok(400), "accepté au devis du 26/09");
+        assert!(cp.pagination_ok(800), "le plafond mesuré au devis du 26/09");
+        assert!(!cp.pagination_ok(802), "au-dessus du plafond mesuré");
+        assert!(!cp.pagination_ok(1000), "refusé au devis du 26/09");
     }
 
     /// A provisional profile says what it is waiting for. Silence would let a

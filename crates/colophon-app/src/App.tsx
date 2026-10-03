@@ -21,6 +21,8 @@ import {
   quitApp,
   surFermeture,
   exportPdf,
+  preparerDossier,
+  Preparation,
   fetchCuration,
   FormatPreset,
   inTauri,
@@ -283,6 +285,9 @@ export default function App() {
   // A print PDF left the machine for this album: the Envoi screen then
   // offers the verdict form (the two questions of the launch protocol).
   const [exporte, setExporte] = useState(false);
+  // What the last « Préparer » wrote and what the check read on its files
+  // said. Dies with the album it judged, like the verdict offer above.
+  const [preparation, setPreparation] = useState<Preparation | null>(null);
   const [view, setView] = useState<View>("livre");
   const [curation, setCuration] = useState<Discard[]>([]);
   const [triSelected, setTriSelected] = useState<string | null>(null);
@@ -835,6 +840,40 @@ export default function App() {
             : t("export.pdf", { nom: written[0] }),
       );
       if (written !== null) setExporte(true);
+    } catch (e) {
+      if (String(e).includes("export annulé")) {
+        setStatus(t("export.annule"));
+      } else {
+        setError(fault(t("erreur.export"), e));
+      }
+    } finally {
+      setRendering(false);
+    }
+  }, [save, rendering, hist, profil]);
+
+  /** Prepare the order folder for a two-file supplier: the interior, the
+   *  cover, their manifest and the sheet, then the check read again on the
+   *  files written. The folder is chosen in the native dialog, and its path
+   *  never reaches this side. */
+  const preparer = useCallback(async () => {
+    if (rendering || !hist || !(await save())) return;
+    setRendering(true);
+    setStatus(t("export.rendu"));
+    try {
+      let dernier = 0;
+      const p = await preparerDossier(hist.album.title, profil, (done, total) => {
+        const now = performance.now();
+        if (done < total && now - dernier < 1000) return;
+        dernier = now;
+        setStatus(t("export.progress", { done, total }));
+      });
+      if (p === null) {
+        setStatus(t("export.enregistrement.annule"));
+        return;
+      }
+      setPreparation(p);
+      setStatus(t("export.dossier", { dossier: p.dossier }));
+      setExporte(true);
     } catch (e) {
       if (String(e).includes("export annulé")) {
         setStatus(t("export.annule"));
@@ -1715,6 +1754,7 @@ export default function App() {
   // Another album, another verdict: the offer dies with the album it judged.
   useEffect(() => {
     setExporte(false);
+    setPreparation(null);
   }, [opened]);
 
   // The proposed caption of the spread on screen, fetched when its field is
@@ -2491,6 +2531,8 @@ export default function App() {
             setView("livre");
           }}
           onExport={() => void regenPdf()}
+          onPrepare={() => void preparer()}
+          preparation={preparation}
           exporting={rendering}
           exporte={exporte}
           dirty={dirty}

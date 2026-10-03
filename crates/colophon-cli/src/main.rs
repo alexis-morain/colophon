@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "reserve", "fiche", "releve_album", "dates", "banc_gabarits", "depuis_fiches"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "preparer", "sheets", "bascule", "proposition", "gabarits", "reserve", "fiche", "releve_album", "dates", "banc_gabarits", "depuis_fiches"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -126,6 +126,14 @@ struct Cli {
     /// the report plus the spec sheet. Exits non-zero on a blocking defect.
     #[arg(long)]
     prevol: bool,
+
+    /// Prépare le dossier de la commande pour --profil, comme le bouton de
+    /// l'écran Envoi : album-print.pdf, album-cover.pdf, export.json et
+    /// fiche.txt dans DOSSIER, jamais à côté de l'album, puis le prévol relu
+    /// sur ces fichiers-là. Imprime le rapport, sort en échec sur un
+    /// bloquant. Seulement chez qui relie deux fichiers.
+    #[arg(long, value_name = "DOSSIER")]
+    preparer: Option<PathBuf>,
 
     /// Bascule l'album de --out vers un autre format, et dit ce que ça coûte.
     /// Le même album : mêmes planches, même ordre, mêmes photos. Seul le
@@ -398,6 +406,27 @@ fn main() -> Result<()> {
         let report = colophon_core::prevol::prevol(&cli.out, profil(&cli.profil)?)?;
         println!("{}", serde_json::to_string_pretty(&report)?);
         if !report.ok {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    if let Some(dest) = &cli.preparer {
+        let p = colophon_core::export::preparer(
+            &cli.out,
+            profil(&cli.profil)?,
+            dest,
+            &|line| eprintln!("{line}"),
+            &|| false,
+        )?;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "fichiers": p.fichiers,
+                "rapport": p.rapport,
+            }))?
+        );
+        if !p.rapport.ok {
             std::process::exit(1);
         }
         return Ok(());

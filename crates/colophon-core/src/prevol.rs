@@ -206,13 +206,30 @@ fn media_box_mm(doc: &lopdf::Document, page: lopdf::ObjectId) -> Option<[f64; 2]
 
 /// Run the preflight over a composed album folder.
 pub fn prevol(dir: &Path, profil: &'static PrinterProfile) -> Result<PrevolReport> {
+    prevol_dossier(dir, dir, profil)
+}
+
+/// Le même prévol, les fichiers lus dans `fichiers` plutôt qu'à côté
+/// d'`album.json`.
+///
+/// C'est le dossier que « Préparer pour Cloudprinter » vient d'écrire hors du
+/// dossier de l'album : les deux PDF, leur `export.json`, la fiche. Le relire
+/// ici est ce qui fait mordre `fichier_interieur`, `fichier_couverture`,
+/// `fichier_profil` et `fichier_perime` sur les fichiers réellement écrits,
+/// et non sur ceux qu'un export d'avant aurait laissés à côté de l'album.
+/// L'album, lui, se lit toujours dans `dir` : c'est contre lui qu'on juge.
+pub fn prevol_dossier(
+    dir: &Path,
+    fichiers: &Path,
+    profil: &'static PrinterProfile,
+) -> Result<PrevolReport> {
     let json = dir.join("album.json");
     let album: Album = serde_json::from_str(
         &fs::read_to_string(&json).with_context(|| format!("lecture de {}", json.display()))?,
     )
     .context("album.json illisible")?;
     let dims = original_dimensions(&album);
-    Ok(check(&album, profil, &dims, &FichiersPoses::lire(dir)))
+    Ok(check(&album, profil, &dims, &FichiersPoses::lire(fichiers)))
 }
 
 /// The page the machine writes that the album could do without, named as the
@@ -313,6 +330,14 @@ pub fn check(
                 .filter(|_| profil.pagination_ok(pages_fichier - 2))
             {
                 format!("décochez la page {page} dans l'écran Envoi : elle vaut deux pages, et sans elle le compte tombe juste")
+            } else if pages_fichier < profil.pages_min {
+                // Sous le plancher, retirer n'a aucun sens. Un rythme plus
+                // aéré pose moins de photos par planche, donc allonge le livre
+                // sans en ajouter une seule.
+                format!(
+                    "ajoutez des planches ou choisissez un rythme plus aéré : une planche vaut deux pages, il en faut au moins {}",
+                    profil.pages_min.div_ceil(2)
+                )
             } else {
                 format!(
                     "ajoutez ou retirez des planches : une planche vaut deux pages, il en faut entre {} et {}",
@@ -602,6 +627,36 @@ pub fn check(
                         .into(),
                 });
             }
+        }
+    }
+
+    // La couverture vide. Le 21/09 la feuille partie chez Cloudprinter était
+    // blanche : `album.json` n'avait pas de clé `cover`, le rendu est retombé
+    // sur le nom du dossier sans photo, 0,12 % d'encre, aux cotes exactes et
+    // au prévol vert. C'est l'imprimeur qui l'a vu. La règle lit l'album, pas
+    // le raster : une couverture sans photo sort blanche, qu'elle ait un
+    // titre ou non, et chez qui relie deux fichiers c'est un fichier qu'on
+    // envoie. Ailleurs la couverture voyage dans l'intérieur, la même
+    // frontière que `fichier_couverture`.
+    if profil.fichiers == Fichiers::Deux {
+        let photo = album.cover.as_ref().and_then(|c| c.photo.as_ref());
+        if photo.is_none() {
+            let titree = album.cover.as_ref().is_some_and(|c| !c.title.trim().is_empty());
+            defauts.push(Defaut {
+                regle: "couverture_vide",
+                bloquant: true,
+                planche: None,
+                case_idx: None,
+                src: None,
+                cause: if titree {
+                    "la couverture n'a pas de photo, elle sortirait blanche avec son seul titre"
+                        .into()
+                } else {
+                    "la couverture n'a pas de photo, elle sortirait blanche avec le nom du dossier"
+                        .into()
+                },
+                remede: "choisissez une photo dans Couverture".into(),
+            });
         }
     }
 
@@ -985,6 +1040,17 @@ mod tests {
     fn album_de(n: usize, bleed: f64) -> Album {
         let mut a = Album::new("t", Path::new("/p"), Size { w: 210.0, h: 210.0 });
         a.bleed_mm = bleed;
+        // Une couverture composée, comme le Composer en pose une depuis
+        // K-s1 : sans elle, `couverture_vide` bloquerait tout album de test
+        // chez qui relie deux fichiers. Sa photo n'a pas de dimensions dans
+        // les relevés des tests, donc sa résolution n'est jamais mesurée ici :
+        // les tests de couverture posent la leur.
+        a.cover = Some(crate::model::Cover {
+            title: "t".into(),
+            subtitle: String::new(),
+            photo: Some(Slot::new("couverture.jpg".into(), [0.5, 0.5])),
+            back_text: String::new(),
+        });
         for i in 0..n {
             a.spreads.push(Spread {
                 template: "solo".into(),
@@ -1267,17 +1333,17 @@ mod tests {
     /// sending somebody hunting through a hundred spreads.
     #[test]
     fn the_machine_pages_are_named_when_they_are_the_two_pages_too_many() {
-        let dims: HashMap<String, (u32, u32)> = (0..101)
+        let dims: HashMap<String, (u32, u32)> = (0..401)
             .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
             .collect();
-        let pr = PrinterProfile::par_id("cloudprinter").unwrap(); // 24 à 200 pages
+        let pr = PrinterProfile::par_id("cloudprinter").unwrap(); // 24 à 800 pages
 
-        // 100 spreads = 200 pages, exactly the bound: nothing to report.
-        let a = album_de(100, 3.0);
+        // 400 spreads = 800 pages, exactly the bound: nothing to report.
+        let a = album_de(400, 3.0);
         let r = check(&a, pr, &dims, &FichiersPoses::default());
         assert!(!r.defauts.iter().any(|d| d.regle == "pagination"), "{:?}", r.defauts);
 
-        // The colophon page makes 202, and the remedy says which page to drop.
+        // The colophon page makes 802, and the remedy says which page to drop.
         let mut avec = a.clone();
         avec.spreads.push(crate::colophon::spread(
             &crate::colophon::Faits {
@@ -1295,7 +1361,7 @@ mod tests {
         ));
         let r = check(&avec, pr, &dims, &FichiersPoses::default());
         let d = r.defauts.iter().find(|d| d.regle == "pagination").unwrap();
-        assert!(d.cause.contains("202 pages"), "{}", d.cause);
+        assert!(d.cause.contains("802 pages"), "{}", d.cause);
         assert!(d.remede.contains("colophon"), "{}", d.remede);
 
         // A book without a colophon but with a half-title: the remedy names
@@ -1326,6 +1392,78 @@ mod tests {
             .find(|d| d.regle == "pagination")
             .unwrap();
         assert!(!d.remede.contains("colophon"), "{}", d.remede);
+    }
+
+    /// Sous le plancher, retirer n'a aucun sens : le remède ne propose que ce
+    /// qui allonge le livre, et le rythme en est une manière, parce qu'un
+    /// rythme plus aéré pose moins de photos par planche.
+    #[test]
+    fn sous_le_plancher_le_remede_allonge_le_livre() {
+        let pr = PrinterProfile::par_id("cloudprinter").unwrap();
+        let d = check(&album_de(11, 3.0), pr, &HashMap::new(), &FichiersPoses::default())
+            .defauts
+            .into_iter()
+            .find(|d| d.regle == "pagination")
+            .expect("22 pages, sous les 24 de Cloudprinter");
+        assert!(d.bloquant);
+        assert!(
+            d.remede.starts_with("ajoutez des planches ou choisissez un rythme plus aéré"),
+            "{}",
+            d.remede
+        );
+        assert!(!d.remede.contains("retirez"), "{}", d.remede);
+    }
+
+    /// La planche blanche du 21/09 : `album.json` sans clé `cover`, rendue
+    /// au nom du dossier, sans photo, 0,12 % d'encre, et c'est l'imprimeur
+    /// qui l'a vue. Chez qui relie deux fichiers, la couverture est un
+    /// fichier qu'on envoie : sans photo, elle bloque.
+    #[test]
+    fn une_couverture_sans_photo_bloque_chez_qui_en_attend_une() {
+        let cp = PrinterProfile::par_id("cloudprinter").unwrap();
+        let vide = |a: &Album, p: &'static PrinterProfile| -> Vec<Defaut> {
+            check(a, p, &HashMap::new(), &FichiersPoses::default())
+                .defauts
+                .into_iter()
+                .filter(|d| d.regle == "couverture_vide")
+                .collect()
+        };
+
+        // Pas de clé `cover` du tout : le cas du 21/09.
+        let mut sans = album_de(12, 3.0);
+        sans.cover = None;
+        let d = vide(&sans, cp);
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert!(d[0].bloquant);
+        assert_eq!(
+            d[0].cause,
+            "la couverture n'a pas de photo, elle sortirait blanche avec le nom du dossier"
+        );
+        assert_eq!(d[0].remede, "choisissez une photo dans Couverture");
+        assert!(!check(&sans, cp, &HashMap::new(), &FichiersPoses::default()).ok);
+
+        // Une couverture titrée sans photo sort blanche aussi, avec son
+        // titre : la règle mord pareil, la phrase ne ment pas sur le titre.
+        let mut titree = album_de(12, 3.0);
+        titree.cover.as_mut().unwrap().photo = None;
+        titree.cover.as_mut().unwrap().title = "Corse".into();
+        let d = vide(&titree, cp);
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert!(d[0].bloquant);
+        assert!(d[0].cause.starts_with("la couverture n'a pas de photo, elle sortirait blanche"));
+        assert!(!d[0].cause.contains("nom du dossier"), "{}", d[0].cause);
+
+        // Avec une photo, rien.
+        assert!(vide(&album_de(12, 3.0), cp).is_empty());
+
+        // Chez qui relie un seul fichier, la règle se tait : la couverture y
+        // voyage dans l'intérieur, la même frontière que `fichier_couverture`.
+        for id in ["generique", "prodigi"] {
+            let p = PrinterProfile::par_id(id).unwrap();
+            assert!(vide(&sans, p).is_empty(), "{id}");
+        }
+        // Lulu relie deux fichiers, comme Cloudprinter.
+        assert_eq!(vide(&sans, PrinterProfile::par_id("lulu").unwrap()).len(), 1);
     }
 
     /// A small original in a full-page cell is caught, and the finding names
@@ -1598,12 +1736,9 @@ mod tests {
         // Les 48 planches de l'album de la commande, pour que les deux
         // feuilles soient celles du 08/09 au centième près.
         let mut a = album_de(48, 3.0);
-        a.cover = Some(crate::model::Cover {
-            title: "Corse".into(),
-            subtitle: String::new(),
-            photo: None,
-            back_text: String::new(),
-        });
+        // La photo de `album_de` reste : une couverture sans photo bloque
+        // depuis K-s1 (`couverture_vide`), et ce test regarde la géométrie.
+        a.cover.as_mut().unwrap().title = "Corse".into();
         let dims: HashMap<String, (u32, u32)> = (0..48)
             .map(|i| (format!("{i}.jpg"), (5000u32, 5000u32)))
             .collect();

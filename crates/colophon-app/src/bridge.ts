@@ -503,10 +503,25 @@ export async function cancelExport(): Promise<void> {
   return invoke("cancel_export");
 }
 
-/** EXIF date of a photo, formatted for a caption suggestion, or null. */
+/** EXIF date of a photo, formatted for a caption suggestion, or null. The
+ *  dev server answers from the same table as « Dater » (`/__dev/dates`), so
+ *  the popover's buttons show in a browser too. */
 export async function captionSuggestion(src: string): Promise<string | null> {
-  if (!inTauri) return null;
-  return invoke<string | null>("caption_suggestion", { src });
+  if (inTauri) return invoke<string | null>("caption_suggestion", { src });
+  const res = await fetch("/__dev/dates");
+  if (!res.ok) return null;
+  const dates: Record<string, string> = await res.json();
+  return dates[src] ?? null;
+}
+
+/** La date fiable de chaque photo posée, par src, écrite comme la
+ *  proposition de la case (`legende::date_de`). Une photo absente de la
+ *  table n'a pas de date fiable. Le serveur de dev lit l'album du disque. */
+export async function datesFiables(album: Album): Promise<Record<string, string>> {
+  if (inTauri) return invoke<Record<string, string>>("dates_fiables", { album });
+  const res = await fetch("/__dev/dates");
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 /** The caption proposed for a spread whose caption is empty: town when it

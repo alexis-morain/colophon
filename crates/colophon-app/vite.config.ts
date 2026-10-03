@@ -228,6 +228,21 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // La date fiable de chaque photo posée, par src, lue sur l'album.json
+      // du disque comme la réserve : le harnais enregistre avant de dater.
+      server.middlewares.use("/__dev/dates", (_req, res) => {
+        try {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            execFileSync(engineBinary, ["--dates", "-o", dir], {
+              encoding: "utf8",
+            }),
+          );
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
       // The templates a spread can switch to, count and orientation both
       // fitting: the engine's one rule. The srcs travel as a JSON array so
       // an unsaved edit filters right.

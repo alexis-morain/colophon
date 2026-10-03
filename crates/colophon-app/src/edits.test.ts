@@ -25,6 +25,8 @@ import {
   addOrnement,
   addPhoto,
   changeTemplate,
+  daterLegendes,
+  dedaterLegendes,
   duplicateObjet,
   duplicateSpread,
   insertSpread,
@@ -828,5 +830,97 @@ describe("copier, coller, dupliquer, pousser un objet", () => {
       const o = b.spreads[0].objets![0];
       expect(Math.max(...corners(o, 45).map((p) => p.x))).toBeCloseTo(pli, 9);
     });
+  });
+});
+
+// H-s1 : la date dans la légende, après un point médian, sur la même ligne.
+// Les dates viennent du moteur (`dates_fiables`), une photo sans entrée n'a
+// pas de date fiable.
+describe("daterLegendes et dedaterLegendes", () => {
+  const D = "28 octobre 2013";
+  const dates = { "p0.jpg": D, "p1.jpg": "29 octobre 2013" };
+  const legendes = (a: Album) => a.spreads.map((s) => s.slots.map((x) => x.caption));
+
+  it("pose la date seule dans une légende vide", () => {
+    const a = album(spread("duo", 2));
+    const r = daterLegendes(a, dates);
+    expect(r.album.spreads[0].slots[0].caption).toBe(D);
+    expect(r.album.spreads[0].slots[1].caption).toBe("29 octobre 2013");
+    expect(r.album.spreads[0].edited).toBe(true);
+    expect(r.datees).toBe(2);
+    expect(r.sansDate).toBe(0);
+  });
+
+  it("ajoute « · date » à une légende écrite, et laisse une légende déjà datée", () => {
+    const a = album(spread("duo", 2));
+    a.spreads[0].slots[0].caption = "la plage";
+    a.spreads[0].slots[1].caption = "Calvi · 29 octobre 2013";
+    const r = daterLegendes(a, dates);
+    expect(legendes(r.album)).toEqual([["la plage · 28 octobre 2013", "Calvi · 29 octobre 2013"]]);
+    expect(r.datees).toBe(2);
+  });
+
+  it("ne date pas une photo sans date fiable, et la compte", () => {
+    const a = album(spread("duo", 2), spread("trio", 3));
+    a.spreads[1].slots[2].caption = "le port";
+    const r = daterLegendes(a, dates);
+    expect(legendes(r.album)[1]).toEqual([D, "29 octobre 2013", "le port"]);
+    expect(r.datees).toBe(4);
+    expect(r.sansDate).toBe(1);
+    // Les planches visées seulement.
+    const seule = daterLegendes(a, dates, [1]);
+    expect(legendes(seule.album)[0]).toEqual([undefined, undefined]);
+    expect(seule.album.spreads[0].edited).toBeUndefined();
+    expect(seule.datees).toBe(2);
+  });
+
+  it("retire exactement le suffixe « · date », rien d'autre", () => {
+    const a = album(spread("trio", 3));
+    a.spreads[0].slots[0].caption = "la plage · 28 octobre 2013";
+    // Une autre date, ou un point médian écrit à la main, restent.
+    a.spreads[0].slots[1].caption = "Calvi · 30 octobre 2013";
+    a.spreads[0].slots[2].caption = "nord · sud";
+    const r = dedaterLegendes(a, { ...dates, "p2.jpg": "sud" });
+    expect(legendes(r.album)).toEqual([["la plage", "Calvi · 30 octobre 2013", "nord"]]);
+    expect(r.album.spreads[0].edited).toBe(true);
+    expect(r.retirees).toBe(2);
+  });
+
+  it("retire la légende entière quand elle vaut la date seule", () => {
+    const a = album(spread("duo", 2));
+    a.spreads[0].slots[0].caption = D;
+    const r = dedaterLegendes(a, dates);
+    expect(r.album.spreads[0].slots[0].caption).toBeUndefined();
+    expect("caption" in r.album.spreads[0].slots[0]).toBe(false);
+    expect(r.retirees).toBe(1);
+  });
+
+  it("dater deux fois vaut dater une fois, et retirer rend l'album d'avant", () => {
+    const a = album(spread("duo", 2), spread("trio", 3));
+    a.spreads[1].slots[2].caption = "le port";
+    const une = daterLegendes(a, dates).album;
+    const deux = daterLegendes(une, dates);
+    // Rien à faire : la même référence, donc aucun pas d'historique vide.
+    expect(deux.album).toBe(une);
+    expect(legendes(dedaterLegendes(une, dates).album)).toEqual(legendes(a));
+  });
+
+  it("tient en un seul pas d'annulation pour tout l'album", () => {
+    const a = album(spread("duo", 2), spread("duo", 2), spread("trio", 3));
+    const avant = JSON.stringify(a);
+    // L'historique d'App empile un album par édition : une fonction, un
+    // album rendu, une entrée. L'album d'entrée reste intact, c'est lui que
+    // ⌘Z rend.
+    const pile: Album[] = [];
+    const appliquer = (edit: (x: Album) => Album, x: Album) => {
+      const suivant = edit(x);
+      if (suivant !== x) pile.push(x);
+      return suivant;
+    };
+    const apres = appliquer((x) => daterLegendes(x, dates).album, a);
+    expect(pile).toHaveLength(1);
+    expect(pile[0]).toBe(a);
+    expect(JSON.stringify(a)).toBe(avant);
+    expect(apres.spreads.every((s) => s.edited)).toBe(true);
   });
 });

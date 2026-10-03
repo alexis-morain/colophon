@@ -11,6 +11,16 @@ sur la page des releases.
 
 ### Ajouté
 
+- **La date dans les légendes, en un bouton.** Planche → « Dater toutes les
+  légendes » écrit la date de prise de vue sous chaque photo, sur la même
+  ligne : la date seule dans une légende vide, « · 28 octobre 2013 » à la
+  suite d'une légende écrite. Seules les photos dont la date est fiable sont
+  datées, les autres se comptent dans la ligne de statut (« 41 légendes
+  datées, 3 photos sans date fiable »). Dater deux fois ne change rien, ⌘Z
+  défait tout l'album d'un coup, et « Retirer les dates des légendes » ôte
+  exactement ce que le bouton a écrit. Le popover de légende d'une photo
+  porte le même geste, « Dater » ou « Retirer la date ».
+
 - **Une alerte de qualité sur les photos, en un seul signe.** Un petit
   triangle dans le coin d'une case dit qu'elle imprimera mal : sous 250 ppi,
   très sombre, ou **floue**, l'alerte nouvelle, qui marque les photos du

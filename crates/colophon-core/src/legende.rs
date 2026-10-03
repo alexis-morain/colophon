@@ -5,12 +5,16 @@
 //! the spread's town when it diverges from the chapter's, the spread's day
 //! when the chapter covers several. Never a path, never a coordinate: the
 //! words come from the gazetteer and `date_fr`, nowhere else.
+//!
+//! It also holds the one wording of a photo's own date (`date_de`), which
+//! the caption editor proposes and the « Dater » button writes.
 
 use crate::build::date_fr;
 use crate::meta;
 use crate::model::Album;
 use crate::places;
 use chrono::NaiveDate;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// The caption proposed for one spread, or None: silence is a full answer.
@@ -65,6 +69,36 @@ pub fn proposition(album: &Album, planche: usize) -> Option<String> {
     let bornes_c = bornes(&jours_c);
 
     texte(place_p, place_c, titre, jour_p, bornes_c)
+}
+
+/// The capture date of one photo, worded for a caption, or None when the
+/// date is not trusted (a screenshot, a forward: the mtime is a copy date)
+/// or the original is gone. The one wording of a photo's date: the caption
+/// editor proposes it, the « Dater » button writes it.
+pub fn date_de(root: &Path, src: &str) -> Option<String> {
+    let path = root.join(src);
+    if !path.is_file() {
+        return None;
+    }
+    let m = meta::read(&path);
+    m.taken_reliable.then(|| date_fr(m.taken.date(), true))
+}
+
+/// Every placed photo's trusted date, by source, for dating all the
+/// captions in one step. A photo without an entry is one the status line
+/// counts as having no trusted date.
+pub fn dates_fiables(album: &Album) -> BTreeMap<String, String> {
+    let root = Path::new(&album.root);
+    let mut dates = BTreeMap::new();
+    for slot in album.spreads.iter().flat_map(|s| &s.slots) {
+        if dates.contains_key(&slot.src) {
+            continue;
+        }
+        if let Some(d) = date_de(root, &slot.src) {
+            dates.insert(slot.src.clone(), d);
+        }
+    }
+    dates
 }
 
 /// The day every trusted date of the spread agrees on. A spread shot across
@@ -224,5 +258,49 @@ mod tests {
         assert_eq!(proposition(&album, 0), None);
         // Hors bornes, planche légendée : mêmes silences.
         assert_eq!(proposition(&album, 7), None);
+    }
+
+    /// Les dates du bouton « Dater » : une par photo posée dont la date est
+    /// fiable, écrite par `date_fr` comme la proposition de la case. Une
+    /// photo datée par son seul mtime, ou disparue, n'a pas d'entrée : c'est
+    /// elle que la ligne de statut compte.
+    #[test]
+    fn dates_fiables_ne_rend_que_les_dates_fiables() {
+        let dir = std::env::temp_dir()
+            .join(format!("colophon-dates-fiables-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Un sidecar Takeout date « a.jpg » : 2020-05-10 12:00:00 UTC.
+        std::fs::write(dir.join("a.jpg"), b"pas un jpeg").unwrap();
+        std::fs::write(
+            dir.join("a.jpg.json"),
+            r#"{"title":"x","photoTakenTime":{"timestamp":"1589112000","formatted":"x"}}"#,
+        )
+        .unwrap();
+        // « b.jpg » n'a que son mtime, « c.jpg » n'existe pas.
+        std::fs::write(dir.join("b.jpg"), b"pas un jpeg").unwrap();
+
+        let mut album = Album::new("t", &dir, crate::model::Size { w: 210.0, h: 210.0 });
+        album.spreads.push(crate::model::Spread {
+            template: "trio".into(),
+            slots: ["a.jpg", "b.jpg", "c.jpg"]
+                .iter()
+                .map(|s| crate::model::Slot::new((*s).into(), [0.5, 0.42]))
+                .collect(),
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets: Vec::new(),
+        });
+
+        let dates = dates_fiables(&album);
+        assert_eq!(dates.len(), 1, "{dates:?}");
+        assert_eq!(dates.get("a.jpg").map(String::as_str), Some("10 mai 2020"));
+        // La même fonction que la proposition de la case, à la lettre.
+        assert_eq!(date_de(&dir, "a.jpg").as_deref(), Some("10 mai 2020"));
+        assert_eq!(date_de(&dir, "b.jpg"), None);
+        assert_eq!(date_de(&dir, "c.jpg"), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

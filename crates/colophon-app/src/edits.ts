@@ -341,6 +341,103 @@ export function setSlotCaption(
   return withSpread(album, at, touched({ ...spread, slots }));
 }
 
+/** Ce qui sépare une légende de sa date : la date s'écrit sur la même
+ *  ligne, la bande de légende n'en a qu'une. */
+const POINT_MEDIAN = " · ";
+
+/** La légende porte-t-elle déjà cette date, seule ou en suffixe ? */
+export function estDatee(caption: string | undefined, date: string): boolean {
+  const c = caption ?? "";
+  return c === date || c.endsWith(POINT_MEDIAN + date);
+}
+
+/** La légende datée : la date seule si elle était vide, `· date` ajouté
+ *  sinon, inchangée si elle la porte déjà. */
+export function legendeDatee(caption: string | undefined, date: string): string {
+  const c = caption ?? "";
+  if (estDatee(c, date)) return c;
+  return c ? c + POINT_MEDIAN + date : date;
+}
+
+/** La légende sans sa date : exactement le suffixe que `legendeDatee` a
+ *  écrit, ou rien quand elle ne valait que la date. */
+export function legendeDedatee(caption: string | undefined, date: string): string {
+  const c = caption ?? "";
+  if (c === date) return "";
+  const suffixe = POINT_MEDIAN + date;
+  return c.endsWith(suffixe) ? c.slice(0, -suffixe.length) : c;
+}
+
+/** Réécrit les légendes des planches visées (toutes par défaut) en un seul
+ *  album, donc un seul pas d'annulation. Une planche n'est marquée que si
+ *  une de ses légendes a changé, comme `setSlotCaption`. Rend l'album
+ *  d'entrée tel quel quand rien ne change. */
+function reecrireLegendes(
+  album: Album,
+  planches: number[] | undefined,
+  reecrire: (s: Slot) => string,
+): Album {
+  const visees = new Set(planches ?? album.spreads.map((_, i) => i));
+  let change = false;
+  const spreads = album.spreads.map((spread, i) => {
+    if (!visees.has(i)) return spread;
+    let touche = false;
+    const slots = spread.slots.map((s) => {
+      const suivante = reecrire(s);
+      if (suivante === (s.caption ?? "")) return s;
+      touche = true;
+      const { caption: _, ...sans } = s;
+      return suivante ? { ...sans, caption: suivante } : sans;
+    });
+    if (!touche) return spread;
+    change = true;
+    return touched({ ...spread, slots });
+  });
+  return change ? { ...album, spreads } : album;
+}
+
+/**
+ * Date les légendes des planches visées, toutes par défaut, avec les dates
+ * fiables du moteur (`dates_fiables`, par src). Rend aussi les deux nombres
+ * de la ligne de statut : les légendes qui portent leur date après coup, et
+ * les photos visées qui n'ont pas de date fiable.
+ */
+export function daterLegendes(
+  album: Album,
+  dates: Record<string, string>,
+  planches?: number[],
+): { album: Album; datees: number; sansDate: number } {
+  let datees = 0;
+  let sansDate = 0;
+  const suivant = reecrireLegendes(album, planches, (s) => {
+    const date = dates[s.src];
+    if (!date) {
+      sansDate++;
+      return s.caption ?? "";
+    }
+    datees++;
+    return legendeDatee(s.caption, date);
+  });
+  return { album: suivant, datees, sansDate };
+}
+
+/** Retire des légendes visées la date que `daterLegendes` a écrite, et rien
+ *  d'autre. Rend le nombre de légendes qui l'ont perdue. */
+export function dedaterLegendes(
+  album: Album,
+  dates: Record<string, string>,
+  planches?: number[],
+): { album: Album; retirees: number } {
+  let retirees = 0;
+  const suivant = reecrireLegendes(album, planches, (s) => {
+    const date = dates[s.src];
+    if (!date || !estDatee(s.caption, date)) return s.caption ?? "";
+    retirees++;
+    return legendeDedatee(s.caption, date);
+  });
+  return { album: suivant, retirees };
+}
+
 /** Rename (or clear) a spread's chapter caption, in place. */
 export function setSpreadCaption(album: Album, at: number, caption: string): Album {
   const spread = album.spreads[at];

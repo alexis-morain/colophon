@@ -56,6 +56,7 @@ import {
   renderCoverPreview,
   renderPdf,
   saveAlbum,
+  datesFiables,
 } from "./bridge";
 import {
   Album,
@@ -99,6 +100,8 @@ import {
   setCover,
   setReglage,
   setSlotCaption,
+  daterLegendes,
+  dedaterLegendes,
   setSlotCrop,
   setObjet as setObjetEdit,
   setObjetTexte,
@@ -1159,6 +1162,36 @@ export default function App() {
     })();
   };
 
+  /** Planche → « Dater toutes les légendes » (ou les retirer) : les dates
+   *  fiables de tout l'album en un appel, puis une seule édition. Le compte
+   *  se lit sur l'album du moment, celui que l'édition reçoit. */
+  const daterTout = async (dater: boolean) => {
+    const courant = histRef.current?.album;
+    if (!courant) return;
+    let dates: Record<string, string>;
+    try {
+      dates = await datesFiables(courant);
+    } catch (e) {
+      setError(fault(t("erreur.dates"), e));
+      return;
+    }
+    const avant = histRef.current?.album;
+    if (!avant) return;
+    if (dater) {
+      const r = daterLegendes(avant, dates);
+      apply((a) => daterLegendes(a, dates).album);
+      setStatus(
+        r.sansDate
+          ? t("legendes.datees.sans", { n: r.datees, m: r.sansDate })
+          : t("legendes.datees", { n: r.datees }),
+      );
+    } else {
+      const r = dedaterLegendes(avant, dates);
+      apply((a) => dedaterLegendes(a, dates).album);
+      setStatus(t("legendes.dedatees", { n: r.retirees }));
+    }
+  };
+
   // Every command of the app, by name. The window's keydown handler and the
   // native menu both land here, so a chord and its menu item are one code
   // path with one guard each.
@@ -1286,6 +1319,10 @@ export default function App() {
       setIndex(at + 1);
       setStatus(t("planche.texte.inseree"));
     },
+    // Dater tout l'album, ou retirer ces dates : les dates viennent du
+    // moteur en un appel, l'édition est un seul pas d'annulation.
+    dater: () => void daterTout(true),
+    dedater: () => void daterTout(false),
     "supprimer-planche": () => {
       if (!album || index < 0 || (view !== "livre" && view !== "planches")) return;
       apply((a) => removeSpread(a, index));
@@ -1519,7 +1556,7 @@ export default function App() {
   }, []);
 
   // The browser harness has no native menu: a window event stands in for
-  // the three Aide → Signaler items, the way the gabarit picker is asked
+  // the three Aide → Signaler items and the two dating items, the way the gabarit picker is asked
   // for. Same table, same guards.
   useEffect(() => {
     const onSignal = (e: Event) => {
@@ -1529,11 +1566,18 @@ export default function App() {
       }
     };
     const onStockage = () => fire("menu", "stockage");
+    // Planche → « Dater toutes les légendes » et sa réciproque.
+    const onDater = (e: Event) => {
+      const kind = (e as CustomEvent<string>).detail;
+      if (kind === "dater" || kind === "dedater") fire("menu", kind);
+    };
     window.addEventListener("colophon:signaler", onSignal);
     window.addEventListener("colophon:stockage", onStockage);
+    window.addEventListener("colophon:dater", onDater);
     return () => {
       window.removeEventListener("colophon:signaler", onSignal);
       window.removeEventListener("colophon:stockage", onStockage);
+      window.removeEventListener("colophon:dater", onDater);
     };
   }, [fire]);
 
@@ -1572,6 +1616,8 @@ export default function App() {
       rendreAuto: () => fire("menu", "rendre-auto"),
       insererVide: () => fire("menu", "inserer-vide"),
       insererTexte: () => fire("menu", "inserer-texte"),
+      dater: () => fire("menu", "dater"),
+      dedater: () => fire("menu", "dedater"),
       supprimerPlanche: () => fire("menu", "supprimer-planche"),
       raccourcis: () => fire("menu", "raccourcis"),
       signalerBug: () => fire("menu", "signaler-bug"),

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 #[command(after_help = FORMAT_HELP.as_str())]
 struct Cli {
     /// Folder of photos to build the album from
-    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "reserve", "fiche", "releve_album", "banc_gabarits", "depuis_fiches"])]
+    #[arg(required_unless_present_any = ["formats", "profils", "profils_json", "dump_geometry", "dump_ornements", "dump_lut", "dump_scene", "print", "cover", "audit", "reprise", "prevol", "sheets", "bascule", "proposition", "gabarits", "reserve", "fiche", "releve_album", "dates", "banc_gabarits", "depuis_fiches"])]
     photos: Option<PathBuf>,
 
     /// Output directory (album.json, album.pdf, thumbnail cache)
@@ -193,6 +193,13 @@ struct Cli {
     #[arg(long, hide = true)]
     releve_album: bool,
 
+    /// Print the trusted date of every placed photo of the album in --out,
+    /// as a JSON object `{src: "28 octobre 2013"}`, worded like the caption
+    /// suggestion. Feeds the dev album server, which reads the album on
+    /// disk: the harness saves before it asks.
+    #[arg(long, hide = true)]
+    dates: bool,
+
     /// Run the generated-template bench over composed album directories
     /// (grouped into reference sets by their source folder) and print the
     /// verdict as JSON: which enumerated combinations are green on every
@@ -358,6 +365,15 @@ fn main() -> Result<()> {
         )?)?;
         let releve = colophon_core::qualite::releve_album(&cli.out, Path::new(&album.root))?;
         println!("{}", serde_json::to_string(&releve)?);
+        return Ok(());
+    }
+
+    if cli.dates {
+        let album: Album = serde_json::from_str(&std::fs::read_to_string(
+            cli.out.join("album.json"),
+        )?)?;
+        let dates = colophon_core::legende::dates_fiables(&album);
+        println!("{}", serde_json::to_string(&dates)?);
         return Ok(());
     }
 

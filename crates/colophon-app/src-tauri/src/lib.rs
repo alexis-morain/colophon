@@ -172,14 +172,18 @@ fn caption_suggestion(src: String, state: State<'_, AppState>) -> Result<Option<
         .map_err(|e| format!("lecture de album.json : {e}"))?;
     let album: Album =
         serde_json::from_str(&text).map_err(|e| format!("album.json illisible : {e}"))?;
-    let path = PathBuf::from(&album.root).join(&src);
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let meta = colophon_core::meta::read(&path);
-    Ok(meta
-        .taken_reliable
-        .then(|| colophon_core::build::date_fr(meta.taken.date(), true)))
+    Ok(colophon_core::legende::date_de(Path::new(&album.root), &src))
+}
+
+/// The trusted date of every placed photo, by source, worded like the
+/// suggestion above (`legende::date_de`): what « Dater toutes les
+/// légendes » writes. Takes the live album, so a photo placed since the
+/// last save is dated too. One EXIF read per photo, off the main thread.
+#[tauri::command]
+async fn dates_fiables(album: Album) -> Result<BTreeMap<String, String>, String> {
+    tauri::async_runtime::spawn_blocking(move || colophon_core::legende::dates_fiables(&album))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The root the open album names its photos under. Read from the file
@@ -1874,6 +1878,7 @@ pub fn run() {
             cancel_build,
             cancel_export,
             caption_suggestion,
+            dates_fiables,
             photo_fiche,
             reveler_photo,
             releve_album,

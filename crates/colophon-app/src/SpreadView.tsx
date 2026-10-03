@@ -82,6 +82,7 @@ import { cachedThumb, loadThumb } from "./thumbs";
 import { ObjetLibreCalque, PoseObjet } from "./ObjetLibreCalque";
 import { ObjetBloc } from "./ObjetBloc";
 import { basUtile, enveloppe, largeurLegende, placerSous } from "./popover";
+import { estDatee, legendeDatee, legendeDedatee } from "./edits";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
 type CropDraft = { slot: number; focal: [number, number]; zoom: number };
@@ -1414,6 +1415,30 @@ function CaptionPopover({
           title={`${t("planche.legende.proposer", { texte: suggestion })} · ${t("planche.legende.exif")}`}
         >
           {t("planche.legende.proposer", { texte: suggestion })}
+        </button>
+      )}
+      {/* Légende vide : la proposition ci-dessus pose déjà la date seule.
+          Écrite, la légende gagne « · date » ; datée, elle peut la perdre. */}
+      {suggestion && value.trim() && (
+        <button
+          className="link"
+          onClick={() => {
+            const v = value.trim();
+            const next = estDatee(v, suggestion)
+              ? legendeDedatee(v, suggestion)
+              : legendeDatee(v, suggestion);
+            setValue(next);
+            onCaption(next);
+          }}
+          title={
+            estDatee(value.trim(), suggestion)
+              ? undefined
+              : `${t("planche.legende.dater.titre", { date: suggestion })} · ${t("planche.legende.exif")}`
+          }
+        >
+          {estDatee(value.trim(), suggestion)
+            ? t("planche.legende.dedater")
+            : t("planche.legende.dater")}
         </button>
       )}
     </div>

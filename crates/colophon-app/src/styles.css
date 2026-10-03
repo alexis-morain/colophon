@@ -1607,6 +1607,52 @@ input[type="radio"] {
   color: var(--muted);
 }
 
+/* ---- la fiche d'une photo ----------------------------------------------- */
+
+.fiche-panel {
+  width: min(560px, 90vw);
+}
+
+.fiche-photo {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 0;
+  font-size: var(--fs-13);
+}
+
+.fiche-photo dt {
+  color: var(--muted);
+}
+
+.fiche-photo dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* Sous le plancher de résolution : la même terracotta que les alertes. */
+.fiche-sous {
+  color: var(--accent);
+}
+
+.fiche-attente,
+.fiche-erreur {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.fiche-erreur {
+  color: var(--accent);
+}
+
+.fiche-pied {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
 /* ---- changer de format (la bascule) ------------------------------------- */
 
 .bascule {

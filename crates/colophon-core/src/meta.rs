@@ -17,6 +17,24 @@ pub struct PhotoMeta {
     pub gps: Option<(f64, f64)>,
     /// Camera model from EXIF. Its absence is a strong junk signal.
     pub model: Option<String>,
+    /// What the photo sheet shows of the shot, and nothing downstream
+    /// reads: maker, lens, aperture, exposure, sensitivity, focal length.
+    /// Absent from the fiche when the file is silent, so the reference
+    /// fiches do not move for a field the composition never looks at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub make: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lens: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub f_number: Option<f64>,
+    /// Written the way the camera shows it, `1/250` or `2.5`, in seconds:
+    /// see [`temps_de_pose`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exposure_time: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iso: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focal_mm: Option<f64>,
     /// What the user already said about this photo: 1 to 5 stars, or -1 for
     /// a photo they rejected. `None` when nobody ever rated it, which is
     /// the case for the overwhelming majority of folders, and reads as a
@@ -37,6 +55,12 @@ pub fn read(path: &Path) -> PhotoMeta {
         orientation: 1,
         gps: None,
         model: None,
+        make: None,
+        lens: None,
+        f_number: None,
+        exposure_time: None,
+        iso: None,
+        focal_mm: None,
         rating: read_xmp_rating(path),
     };
 
@@ -69,6 +93,12 @@ fn read_exif(path: &Path, meta: &mut PhotoMeta) {
                 meta.orientation = o;
             }
             meta.model = lu.modele;
+            meta.make = lu.marque;
+            meta.lens = lu.objectif;
+            meta.f_number = lu.ouverture;
+            meta.exposure_time = lu.temps_de_pose;
+            meta.iso = lu.iso;
+            meta.focal_mm = lu.focale;
             meta.gps = lu.gps;
             return;
         }
@@ -105,12 +135,16 @@ fn read_exif(path: &Path, meta: &mut PhotoMeta) {
         }
     }
 
-    if let Some(f) = exif.get_field(exif::Tag::Model, exif::In::PRIMARY) {
-        let m = f.display_value().to_string().replace('"', "").trim().to_string();
-        if !m.is_empty() {
-            meta.model = Some(m);
-        }
-    }
+    meta.model = chaine(&exif, exif::Tag::Model);
+    meta.make = chaine(&exif, exif::Tag::Make);
+    meta.lens = chaine(&exif, exif::Tag::LensModel);
+    meta.f_number = decimal(&exif, exif::Tag::FNumber);
+    meta.exposure_time = decimal(&exif, exif::Tag::ExposureTime).and_then(temps_de_pose);
+    meta.iso = exif
+        .get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY)
+        .and_then(|f| f.value.get_uint(0))
+        .filter(|v| *v > 0);
+    meta.focal_mm = decimal(&exif, exif::Tag::FocalLength);
 
     // The Windows rating tag, written by Explorer and by a fair share of
     // cameras. XMP wins when both are there: it is what the cataloguing
@@ -594,37 +628,82 @@ mod tests {
     /// APP1 (TIFF little-endian, IFD0 → ExifIFD → 0x9003), EOI. Il ne se
     /// décode pas, mais `meta::read` n'a que ses en-têtes à lire.
     fn jpeg_avec_date_exif(date: &str) -> Vec<u8> {
-        assert_eq!(date.len(), 19);
-        let mut tiff: Vec<u8> = Vec::new();
-        tiff.extend_from_slice(b"II*\0");
-        tiff.extend_from_slice(&8u32.to_le_bytes()); // IFD0 à l'offset 8
-        // IFD0 : une entrée, le pointeur vers l'ExifIFD (0x8769).
-        tiff.extend_from_slice(&1u16.to_le_bytes());
-        tiff.extend_from_slice(&0x8769u16.to_le_bytes());
-        tiff.extend_from_slice(&4u16.to_le_bytes()); // LONG
-        tiff.extend_from_slice(&1u32.to_le_bytes());
-        let exif_ifd_offset = 8 + 2 + 12 + 4; // en-tête IFD0 + entrée + next
-        tiff.extend_from_slice(&(exif_ifd_offset as u32).to_le_bytes());
-        tiff.extend_from_slice(&0u32.to_le_bytes()); // pas d'IFD suivant
-        // ExifIFD : une entrée, DateTimeOriginal (0x9003, ASCII, 20 octets).
-        tiff.extend_from_slice(&1u16.to_le_bytes());
-        tiff.extend_from_slice(&0x9003u16.to_le_bytes());
-        tiff.extend_from_slice(&2u16.to_le_bytes()); // ASCII
-        tiff.extend_from_slice(&20u32.to_le_bytes());
-        let date_offset = exif_ifd_offset + 2 + 12 + 4;
-        tiff.extend_from_slice(&(date_offset as u32).to_le_bytes());
-        tiff.extend_from_slice(&0u32.to_le_bytes());
-        tiff.extend_from_slice(date.as_bytes());
-        tiff.push(0);
+        use fixture::{Ifd, Val};
+        fixture::jpeg_avec_exif(&[(Ifd::Exif, 0x9003, Val::Ascii(date.to_string()))])
+    }
 
-        let mut out = vec![0xFF, 0xD8]; // SOI
-        out.extend_from_slice(&[0xFF, 0xE1]); // APP1
-        let len = (2 + 6 + tiff.len()) as u16;
-        out.extend_from_slice(&len.to_be_bytes());
-        out.extend_from_slice(b"Exif\0\0");
-        out.extend_from_slice(&tiff);
-        out.extend_from_slice(&[0xFF, 0xD9]); // EOI
-        out
+    /// Les champs de prise de vue, tels qu'un boîtier les écrit : le
+    /// constructeur et l'objectif en IFD0 et en ExifIFD, l'ouverture, le
+    /// temps de pose et la focale en rationnels, l'ISO en entier court.
+    #[test]
+    fn les_champs_de_prise_de_vue_se_lisent() {
+        use fixture::{Ifd, Val};
+        let dir = dossier("prise-de-vue");
+        let p = dir.join("boitier.jpg");
+        fs::write(
+            &p,
+            fixture::jpeg_avec_exif(&[
+                (Ifd::Ifd0, 0x010F, Val::Ascii("Canon".into())),
+                (Ifd::Ifd0, 0x0110, Val::Ascii("Canon EOS 5D Mark IV".into())),
+                (Ifd::Exif, 0x829A, Val::Rational(1, 250)),
+                (Ifd::Exif, 0x829D, Val::Rational(28, 10)),
+                (Ifd::Exif, 0x8827, Val::Short(200)),
+                (Ifd::Exif, 0x9003, Val::Ascii("2019:07:14 18:30:00".into())),
+                (Ifd::Exif, 0x920A, Val::Rational(35, 1)),
+                (Ifd::Exif, 0xA434, Val::Ascii("EF35mm f/1.4L USM".into())),
+            ]),
+        )
+        .unwrap();
+        let m = read(&p);
+        assert!(m.taken_reliable);
+        assert_eq!(m.make.as_deref(), Some("Canon"));
+        assert_eq!(m.model.as_deref(), Some("Canon EOS 5D Mark IV"));
+        assert_eq!(m.lens.as_deref(), Some("EF35mm f/1.4L USM"));
+        assert_eq!(m.f_number, Some(2.8));
+        assert_eq!(m.exposure_time.as_deref(), Some("1/250"));
+        assert_eq!(m.iso, Some(200));
+        assert_eq!(m.focal_mm, Some(35.0));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Une valeur absente est `None`, jamais une erreur : un fichier daté
+    /// sans le reste, et un fichier qui n'est pas une image, rendent tous
+    /// deux une fiche muette sur la prise de vue.
+    #[test]
+    fn un_champ_de_prise_de_vue_absent_est_none() {
+        let dir = dossier("prise-de-vue-absente");
+        let p = dir.join("date-seule.jpg");
+        fs::write(&p, jpeg_avec_date_exif("2019:07:14 18:30:00")).unwrap();
+        let q = dir.join("pas-une-image.jpg");
+        fs::write(&q, b"rien").unwrap();
+        for f in [&p, &q] {
+            let m = read(f);
+            assert_eq!(m.make, None, "{}", f.display());
+            assert_eq!(m.lens, None);
+            assert_eq!(m.f_number, None);
+            assert_eq!(m.exposure_time, None);
+            assert_eq!(m.iso, None);
+            assert_eq!(m.focal_mm, None);
+        }
+        assert!(read(&p).taken_reliable, "la date, elle, se lit toujours");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Le temps de pose s'écrit comme sur le boîtier : une fraction d'une
+    /// seconde quand elle en est une, un nombre court sinon.
+    #[test]
+    fn le_temps_de_pose_s_ecrit_comme_sur_le_boitier() {
+        assert_eq!(temps_de_pose(1.0 / 250.0).as_deref(), Some("1/250"));
+        assert_eq!(temps_de_pose(10.0 / 2500.0).as_deref(), Some("1/250"));
+        assert_eq!(temps_de_pose(1.0 / 3.0).as_deref(), Some("1/3"));
+        assert_eq!(temps_de_pose(0.5).as_deref(), Some("1/2"));
+        // 0,6 s n'est pas 1/2 : le boîtier l'écrit en décimal, nous aussi.
+        assert_eq!(temps_de_pose(0.6).as_deref(), Some("0.6"));
+        assert_eq!(temps_de_pose(2.5).as_deref(), Some("2.5"));
+        assert_eq!(temps_de_pose(30.0).as_deref(), Some("30"));
+        assert_eq!(temps_de_pose(0.0), None);
+        assert_eq!(temps_de_pose(-1.0), None);
+        assert_eq!(temps_de_pose(f64::NAN), None);
     }
 
     /// Le chrono de 5.1 : 1000 photos, dix appelants simulés par dix
@@ -710,6 +789,44 @@ mod tests {
     }
 }
 
+/// An ASCII field, quotes and edges stripped, `None` when absent or blank.
+fn chaine(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
+    let f = exif.get_field(tag, exif::In::PRIMARY)?;
+    let s = f.display_value().to_string().replace('"', "").trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
+/// The first rational of a field, as a number. Aperture, exposure time and
+/// focal length are all written this way; a value of `0/0` reads as
+/// absent, not as zero.
+fn decimal(exif: &exif::Exif, tag: exif::Tag) -> Option<f64> {
+    let f = exif.get_field(tag, exif::In::PRIMARY)?;
+    match &f.value {
+        exif::Value::Rational(v) if !v.is_empty() && v[0].denom != 0 => Some(v[0].to_f64()),
+        _ => None,
+    }
+}
+
+/// An exposure time in seconds, written the way the camera's own screen
+/// writes it: `1/250` whenever a whole fraction of a second is within one
+/// percent, the decimal otherwise (`0.6`, `2.5`, `30`). One spelling for the
+/// two readers, the exif crate and ImageIO, which hand over a rational and
+/// a double. Language-neutral: the application puts the unit and the comma.
+pub fn temps_de_pose(secondes: f64) -> Option<String> {
+    if !secondes.is_finite() || secondes <= 0.0 {
+        return None;
+    }
+    if secondes < 1.0 {
+        let inverse = 1.0 / secondes;
+        let rond = inverse.round();
+        if (inverse - rond).abs() <= 0.01 * rond {
+            return Some(format!("1/{}", rond as u64));
+        }
+    }
+    let court = format!("{secondes:.1}");
+    Some(court.trim_end_matches('0').trim_end_matches('.').to_string())
+}
+
 fn ref_sign(exif: &exif::Exif, tag: exif::Tag, negative: &str) -> f64 {
     exif.get_field(tag, exif::In::PRIMARY)
         .map(|f| {
@@ -720,4 +837,140 @@ fn ref_sign(exif: &exif::Exif, tag: exif::Tag, negative: &str) -> f64 {
             }
         })
         .unwrap_or(1.0)
+}
+
+/// A JPEG carrying exactly the EXIF entries a test names, and nothing else.
+/// Built by hand rather than taken from a photograph: a fixture file would
+/// carry a hundred tags nobody asserted on, and the next reader would not
+/// know which ones the test depends on.
+#[cfg(test)]
+pub(crate) mod fixture {
+    /// Which directory an entry goes to. `Make`, `Model` and `Orientation`
+    /// live in IFD0; the shooting fields live in the Exif sub-IFD.
+    #[derive(Clone, Copy, PartialEq)]
+    pub enum Ifd {
+        Ifd0,
+        Exif,
+    }
+
+    #[derive(Clone)]
+    pub enum Val {
+        Ascii(String),
+        Short(u16),
+        Rational(u32, u32),
+    }
+
+    /// The TIFF block alone (little-endian), IFD0 then the Exif IFD, values
+    /// longer than four bytes stored after both directories.
+    fn tiff(entrees: &[(Ifd, u16, Val)]) -> Vec<u8> {
+        let mut ifd0: Vec<(u16, Val)> = entrees
+            .iter()
+            .filter(|(i, _, _)| *i == Ifd::Ifd0)
+            .map(|(_, t, v)| (*t, v.clone()))
+            .collect();
+        let mut exif: Vec<(u16, Val)> = entrees
+            .iter()
+            .filter(|(i, _, _)| *i == Ifd::Exif)
+            .map(|(_, t, v)| (*t, v.clone()))
+            .collect();
+        // The Exif IFD pointer is an IFD0 entry like the others, written
+        // where its tag sorts; its value is patched once the layout is known.
+        const POINTEUR: u16 = 0x8769;
+        ifd0.push((POINTEUR, Val::Short(0)));
+        ifd0.sort_by_key(|(t, _)| *t);
+        exif.sort_by_key(|(t, _)| *t);
+
+        let ifd0_off = 8usize;
+        let exif_off = ifd0_off + 2 + 12 * ifd0.len() + 4;
+        let data_off = exif_off + 2 + 12 * exif.len() + 4;
+
+        let mut data: Vec<u8> = Vec::new();
+        let mut dirs: Vec<u8> = Vec::new();
+        let ecrire = |dirs: &mut Vec<u8>, data: &mut Vec<u8>, entrees: &[(u16, Val)]| {
+            dirs.extend_from_slice(&(entrees.len() as u16).to_le_bytes());
+            for (tag, val) in entrees {
+                dirs.extend_from_slice(&tag.to_le_bytes());
+                match val {
+                    Val::Short(v) if *tag == POINTEUR => {
+                        let _ = v;
+                        dirs.extend_from_slice(&4u16.to_le_bytes()); // LONG
+                        dirs.extend_from_slice(&1u32.to_le_bytes());
+                        dirs.extend_from_slice(&(exif_off as u32).to_le_bytes());
+                    }
+                    Val::Short(v) => {
+                        dirs.extend_from_slice(&3u16.to_le_bytes());
+                        dirs.extend_from_slice(&1u32.to_le_bytes());
+                        dirs.extend_from_slice(&v.to_le_bytes());
+                        dirs.extend_from_slice(&[0, 0]);
+                    }
+                    Val::Ascii(s) => {
+                        let mut octets = s.as_bytes().to_vec();
+                        octets.push(0);
+                        dirs.extend_from_slice(&2u16.to_le_bytes());
+                        dirs.extend_from_slice(&(octets.len() as u32).to_le_bytes());
+                        if octets.len() <= 4 {
+                            octets.resize(4, 0);
+                            dirs.extend_from_slice(&octets);
+                        } else {
+                            dirs.extend_from_slice(&((data_off + data.len()) as u32).to_le_bytes());
+                            data.extend_from_slice(&octets);
+                        }
+                    }
+                    Val::Rational(n, d) => {
+                        dirs.extend_from_slice(&5u16.to_le_bytes());
+                        dirs.extend_from_slice(&1u32.to_le_bytes());
+                        dirs.extend_from_slice(&((data_off + data.len()) as u32).to_le_bytes());
+                        data.extend_from_slice(&n.to_le_bytes());
+                        data.extend_from_slice(&d.to_le_bytes());
+                    }
+                }
+            }
+            dirs.extend_from_slice(&0u32.to_le_bytes()); // pas d'IFD suivant
+        };
+        ecrire(&mut dirs, &mut data, &ifd0);
+        ecrire(&mut dirs, &mut data, &exif);
+
+        let mut out: Vec<u8> = Vec::new();
+        out.extend_from_slice(b"II*\0");
+        out.extend_from_slice(&(ifd0_off as u32).to_le_bytes());
+        out.extend_from_slice(&dirs);
+        out.extend_from_slice(&data);
+        out
+    }
+
+    /// The APP1 segment, marker included.
+    fn app1(entrees: &[(Ifd, u16, Val)]) -> Vec<u8> {
+        let tiff = tiff(entrees);
+        let mut seg = vec![0xFF, 0xE1];
+        let len = (2 + 6 + tiff.len()) as u16;
+        seg.extend_from_slice(&len.to_be_bytes());
+        seg.extend_from_slice(b"Exif\0\0");
+        seg.extend_from_slice(&tiff);
+        seg
+    }
+
+    /// A JPEG that is only its EXIF: SOI, APP1, EOI. Enough for `meta::read`,
+    /// not for a decoder.
+    pub fn jpeg_avec_exif(entrees: &[(Ifd, u16, Val)]) -> Vec<u8> {
+        let mut out = vec![0xFF, 0xD8];
+        out.extend_from_slice(&app1(entrees));
+        out.extend_from_slice(&[0xFF, 0xD9]);
+        out
+    }
+
+    /// A real, decodable JPEG of `w` × `h` grey pixels with the same EXIF
+    /// spliced in after SOI: what a fiche needs, since it reads the header
+    /// for the pixel size as well as the metadata.
+    pub fn jpeg_decodable_avec_exif(w: u32, h: u32, entrees: &[(Ifd, u16, Val)]) -> Vec<u8> {
+        let img = image::RgbImage::from_pixel(w, h, image::Rgb([128, 128, 128]));
+        let mut encode: Vec<u8> = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new(&mut encode)
+            .encode_image(&img)
+            .expect("encodage JPEG");
+        assert_eq!(&encode[..2], &[0xFF, 0xD8]);
+        let mut out = vec![0xFF, 0xD8];
+        out.extend_from_slice(&app1(entrees));
+        out.extend_from_slice(&encode[2..]);
+        out
+    }
 }

@@ -189,6 +189,12 @@ mod tests {
                 gps: Some((42.5623, 8.741866999924259)),
                 model: Some("Canon".into()),
                 rating: Some(3),
+                make: None,
+                lens: None,
+                f_number: None,
+                exposure_time: None,
+                iso: None,
+                focal_mm: None,
             },
             analysis: Analysis {
                 dhash: 15506529376606216,

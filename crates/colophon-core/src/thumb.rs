@@ -17,12 +17,17 @@ pub const THUMB_SIZE: u32 = 1600;
 /// the police file and the album id already have. A name is a name — no
 /// separator, no `.`, no `..`, nothing empty — or it is nothing.
 pub fn chemin(dir: &Path, name: &str) -> Option<PathBuf> {
-    let propre = !name.is_empty()
+    nom_propre(name).then(|| dir.join(".cache").join("thumbs").join(name))
+}
+
+/// The rule itself, shared with the photo sheet, which validates a `src`
+/// the same way before joining it to `album.root`.
+pub fn nom_propre(name: &str) -> bool {
+    !name.is_empty()
         && name != "."
         && name != ".."
         && !name.contains(['/', '\\'])
-        && !name.contains('\0');
-    propre.then(|| dir.join(".cache").join("thumbs").join(name))
+        && !name.contains('\0')
 }
 
 pub struct ThumbCache {

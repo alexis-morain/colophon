@@ -433,6 +433,12 @@ mod tests {
                 gps: None,
                 model: Some("Canon".into()),
                 rating,
+                make: None,
+                lens: None,
+                f_number: None,
+                exposure_time: None,
+                iso: None,
+                focal_mm: None,
             },
             analysis: Analysis {
                 dhash: 0,

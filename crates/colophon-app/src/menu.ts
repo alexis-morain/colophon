@@ -34,6 +34,7 @@ export type MenuActions = {
   revue(): void;
   reserve(): void;
   gabarit(): void;
+  informations(): void;
   dupliquer(): void;
   figer(): void;
   rendreAuto(): void;
@@ -198,6 +199,10 @@ export async function installMenu(
     text: t("menu.planche"),
     items: [
       await item("gabarit", t("menu.gabarit"), { enabled: albumOpen }),
+      await item("informations", t("menu.informations"), {
+        accelerator: "CmdOrCtrl+I",
+        enabled: albumOpen,
+      }),
       await item("dupliquer", t("menu.dupliquer"), {
         accelerator: "CmdOrCtrl+D",
         enabled: albumOpen,

@@ -194,6 +194,24 @@ function albumDevServer(dir: string): Plugin {
           res.end(String(e));
         }
       });
+      // La fiche d'une photo, par son src : le moteur lit le fichier et le
+      // relevé s'il y en a un. Un src qui n'est pas un nom est refusé là,
+      // pas ici.
+      server.middlewares.use("/__dev/fiche", (req, res) => {
+        const src =
+          new URL(req.url ?? "", "http://x").searchParams.get("src") ?? "";
+        try {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            execFileSync(engineBinary, ["--fiche", src, "-o", dir], {
+              encoding: "utf8",
+            }),
+          );
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(String(e));
+        }
+      });
       // The templates a spread can switch to, count and orientation both
       // fitting: the engine's one rule. The srcs travel as a JSON array so
       // an unsaved edit filters right.

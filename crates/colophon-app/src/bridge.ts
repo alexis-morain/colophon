@@ -595,6 +595,47 @@ export async function reserveClassee(album: Album, at: number): Promise<Reserve>
   }
 }
 
+/** La fiche d'une photo, telle que le moteur la lit (`fiche::FichePhoto`) :
+ *  le fichier, la prise de vue, le lieu, les mesures du relevé s'il y en a.
+ *  Jamais un chemin : `nom` est le nom du fichier. */
+export type FichePhoto = {
+  nom: string;
+  largeur: number;
+  hauteur: number;
+  octets: number;
+  format: string;
+  taken: string;
+  taken_reliable: boolean;
+  appareil: string | null;
+  objectif: string | null;
+  ouverture: number | null;
+  temps_de_pose: string | null;
+  iso: number | null;
+  focale_mm: number | null;
+  gps: [number, number] | null;
+  lieu: { nom: string; pays: string } | null;
+  note: number | null;
+  nettete: number | null;
+  exposition: number | null;
+};
+
+/** La fiche d'une photo par son `src` ; le moteur refuse tout `src` qui
+ *  n'est pas un nom de fichier, et forme le chemin depuis `album.root`. */
+export async function photoFiche(src: string): Promise<FichePhoto> {
+  if (inTauri) return invoke<FichePhoto>("photo_fiche", { src });
+  const res = await fetch(`/__dev/fiche?src=${encodeURIComponent(src)}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/** Montrer l'original dans le gestionnaire de fichiers, sélectionné. Le
+ *  chemin se résout et se vérifie côté moteur (canonique, sous `album.root`).
+ *  Dans le navigateur il n'y a pas de Finder : rien ne se passe. */
+export async function revelerPhoto(src: string): Promise<void> {
+  if (!inTauri) return;
+  return invoke("reveler_photo", { src });
+}
+
 /** Overwrite album.json, atomically on both sides of the bridge. */
 /** The characters of this album its face cannot draw, each once. The engine
  *  prints them as `?`, and the screen must show the same. Empty in the

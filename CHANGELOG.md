@@ -11,6 +11,18 @@ sur la page des releases.
 
 ### Ajouté
 
+- **La fiche d'une photo, et son original.** Sur une photo de la planche,
+  « Informations… » du menu contextuel ou ⌘I ouvre sa fiche : dimensions,
+  poids, format, date de prise de vue (et si elle vient du fichier faute
+  d'EXIF), appareil, objectif, ouverture, temps de pose, ISO, focale,
+  coordonnées en degrés décimaux, lieu (hors ligne, par l'atlas de
+  l'album), note, netteté et exposition quand l'album porte son relevé, et
+  la résolution dans sa case, en terracotta quand elle est sous le
+  plancher. Une ligne que le fichier ne dit pas ne s'affiche pas. « Voir
+  l'original » montre le fichier sélectionné dans le Finder ou l'Explorateur,
+  depuis la fiche ou depuis le menu ; l'app ne reçoit jamais un chemin, et
+  un nom qui sort du dossier des photos est refusé.
+
 - **Un clic droit sur la planche, et une photo s'ajoute ou se remplace
   depuis la réserve.** Sur le papier nu d'une page : « Ajouter une photo… »,
   un bloc de texte ou un ornement, posés là où vous avez cliqué. Sur une

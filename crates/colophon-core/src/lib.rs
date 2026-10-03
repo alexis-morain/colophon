@@ -12,6 +12,7 @@ pub mod couleur;
 pub mod cover;
 pub mod export;
 pub mod face;
+pub mod fiche;
 pub mod font;
 pub mod format;
 pub mod gabarit;

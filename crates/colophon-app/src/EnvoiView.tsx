@@ -15,9 +15,8 @@
 // every field, and a second copy of their specs in TypeScript would be a
 // second thing to keep true.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { phraseAbsents } from "./BasculeView";
-import { CommandeView } from "./CommandeView";
 import { Album } from "./album";
 import {
   Defaut,
@@ -117,14 +116,6 @@ export function EnvoiView({
   const [report, setReport] = useState<PrevolReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  // Le dossier préparé avant cette ouverture d'Envoi : « Commander » ne
-  // s'offre que sur un dossier préparé depuis (décision 3 de K-s3). L'écran
-  // se démonte quand on le quitte, donc le montage est l'ouverture.
-  const preparationALOuverture = useRef(preparation);
-  const preparationNeuve =
-    preparation && preparation !== preparationALOuverture.current && profil !== PROFIL_LIBRE
-      ? preparation
-      : null;
 
   // Re-run on every profile change, on every arrival, and the moment the
   // album stops being dirty: the preflight reads the disk, so a save is what
@@ -384,7 +375,6 @@ export function EnvoiView({
             </button>
           </div>
         )}
-        <CommandeView preparationNeuve={preparationNeuve} />
         {!libre && (
           <p className="envoi-autre">
             <button className="link" onClick={() => onProfil(PROFIL_LIBRE)}>

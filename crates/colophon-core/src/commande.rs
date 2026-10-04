@@ -72,14 +72,18 @@ const fn cotes(produit: &'static str, largeur_mm: f64, hauteur_mm: f64, pages_mi
     }
 }
 
-/// Les quatre cartonnés retenus. Les quarante-trois du catalogue ont tous
+/// Les cinq cartonnés retenus. Les quarante-trois du catalogue ont tous
 /// le même fond perdu, squeeze, overlap et wrap : c'est la largeur et la
 /// hauteur qui tranchent.
-pub const COTES_DES_PRODUITS: [CotesProduit; 4] = [
+pub const COTES_DES_PRODUITS: [CotesProduit; 5] = [
     cotes("photobook_cw_s210_s_fc", 210.0, 210.0, 24),
     cotes("photobook_cw_s300_s_fc", 300.0, 300.0, 22),
     cotes("photobook_cw_a4_p_fc", 210.0, 297.0, 22),
     cotes("photobook_cw_a4_l_fc", 297.0, 210.0, 24),
+    // Le 8 × 10 pouces : ses cotes sont celles de `products/info` du 03/10.
+    // Ses bornes de pages n'ont pas été sondées au devis : ce sont celles du
+    // profil, que le devis accepte sur les quatre autres.
+    CotesProduit { pages_min: 24, pages_max: 800, ..cotes("photobook_cw_us_8x10_p_fc", 203.2, 254.0, 24) },
 ];
 
 /// Le produit Cloudprinter d'un format de Colophon (`format::FORMATS`), ou
@@ -92,6 +96,7 @@ pub fn produit_pour(format: &str) -> Option<&'static str> {
         "carre-30" => Some("photobook_cw_s300_s_fc"),
         "portrait-a4" => Some("photobook_cw_a4_p_fc"),
         "paysage-a4" => Some("photobook_cw_a4_l_fc"),
+        "portrait-20x25" => Some("photobook_cw_us_8x10_p_fc"),
         _ => None,
     }
 }
@@ -1053,9 +1058,8 @@ mod tests {
                 ("paysage-a4", Some("photobook_cw_a4_l_fc")),
                 // Aucun cartonné du compte ne fait 280 × 210.
                 ("paysage-28x21", None),
-                // Le 8 × 10 pouces de Cloudprinter fait 203,2 de large, le
-                // format 203,0 : 0,2 mm d'écart, au-delà du dixième.
-                ("portrait-20x25", None),
+                // Le 8 × 10 pouces, 203,2 × 254,0 depuis le 04/10.
+                ("portrait-20x25", Some("photobook_cw_us_8x10_p_fc")),
             ]
         );
         assert_eq!(produit_pour("carre-21"), Some(PRODUIT));

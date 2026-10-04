@@ -11,7 +11,7 @@ pub const FORMATS: &[(&str, f64, f64, &str)] = &[
     ("portrait-a4", 210.0, 297.0, "A4 portrait"),
     ("paysage-a4", 297.0, 210.0, "A4 paysage"),
     ("paysage-28x21", 280.0, 210.0, "paysage 28 × 21"),
-    ("portrait-20x25", 203.0, 254.0, "portrait 20 × 25, le 8 × 10 pouces"),
+    ("portrait-20x25", 203.2, 254.0, "portrait 20 × 25, le 8 × 10 pouces"),
 ];
 
 /// Accepts a preset name or a raw `LARGEURxHAUTEUR` in millimetres.

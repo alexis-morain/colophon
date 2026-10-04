@@ -7,7 +7,8 @@
 // lien de distance : l'export gratuit, hors ligne et sans compte ne dépend
 // d'aucun imprimeur.
 
-import type { Preparation, Printer } from "./bridge";
+import type { Album } from "./album";
+import type { Defaut, Preparation, Printer } from "./bridge";
 import { t } from "./i18n";
 
 /** L'imprimeur que l'écran nomme et prépare. */
@@ -47,4 +48,28 @@ export function phrasePreparation(p: Preparation): string {
   return n === 1
     ? t("envoi.prepare.ko.un", { dossier: p.dossier })
     : t("envoi.prepare.ko", { dossier: p.dossier, n });
+}
+
+/** Un geste offert sur une ligne de défaut d'Envoi. */
+export type ActionDefaut = "voir" | "remplacer" | "retirer";
+
+/** Les gestes d'un défaut `resolution`. Retirer marche toujours, même quand
+ *  aucune case n'est assez petite pour cet original : c'est l'échappatoire
+ *  qui ne manque jamais. Remplacer demande une réserve. Rien pour un défaut
+ *  sans planche ni case, rien pour une autre règle. Et rien non plus quand la
+ *  case ne porte plus la photo que le rapport nomme : le prévol lit le
+ *  disque, et après une édition non enregistrée retirer viserait une autre
+ *  photo. */
+export function actionsDefaut(d: Defaut, album: Album, reserveVide: boolean): ActionDefaut[] {
+  if (d.regle !== "resolution" || d.planche === undefined || d.case === undefined) return [];
+  if (album.spreads[d.planche - 1]?.slots[d.case]?.src !== d.src) return [];
+  return reserveVide ? ["voir", "retirer"] : ["voir", "remplacer", "retirer"];
+}
+
+/** La résolution qu'un défaut `resolution` mesure, lue dans sa cause : le
+ *  moteur ne la porte pas en champ, et le prévol n'est pas à toucher pour
+ *  ça. Null quand la cause ne la dit pas. */
+export function ppiDe(d: Defaut): number | null {
+  const m = / (\d+) ppi /.exec(d.cause);
+  return m ? Number(m[1]) : null;
 }

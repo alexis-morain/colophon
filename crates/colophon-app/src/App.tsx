@@ -1680,9 +1680,12 @@ export default function App() {
     if (total > 0 && index >= total) setIndex(total - 1);
   }, [total, index]);
 
-  // The selection belongs to one spread only.
+  // The selection belongs to one spread only. « Voir », dans Envoi, ouvre une
+  // planche sur une case : celle-là survit au changement de planche.
+  const caseALOuverture = useRef<number | null>(null);
   useEffect(() => {
-    setSelected(null);
+    setSelected(caseALOuverture.current);
+    caseALOuverture.current = null;
     setObjet(null);
   }, [index]);
 
@@ -2439,6 +2442,21 @@ export default function App() {
     }
   };
 
+  /** Un geste d'Envoi sur une photo trop petite. Le prévol lit le disque :
+   *  l'album s'enregistre aussitôt, comme avant Préparer, pour que le
+   *  contrôle relu voie la correction. Le geste reste une entrée
+   *  d'historique, et ⌘Z le défait. */
+  const appliquerDepuisEnvoi = (suivant: Album) => {
+    apply(() => suivant);
+    void saveAlbum(suivant).then(
+      () => {
+        setSavedAlbum(suivant);
+        setStatus(t("etat.enregistre"));
+      },
+      (e) => setError(fault(t("erreur.enregistrement"), e)),
+    );
+  };
+
   /** Une candidate choisie dans le popover : ajoutée, remplacée, ou posée
    *  sur une planche neuve quand la planche visée n'a plus de place. */
   const choisirCandidate = (c: Parameters<typeof poserCandidate>[3]) => {
@@ -2452,6 +2470,10 @@ export default function App() {
         setStatus(t("reserve.posee", { n: r.album.spreads[r.at].slots.length }));
         return;
       case "remplacee":
+        if (view === "envoi") {
+          appliquerDepuisEnvoi(r.album);
+          return;
+        }
         apply(() => r.album);
         setStatus(t("place.remplacee"));
         return;
@@ -2530,6 +2552,21 @@ export default function App() {
             setSelected(null);
             setView("livre");
           }}
+          onVoir={(planche, cell) => {
+            // Sur la planche déjà ouverte, l'effet ne repasse pas : rien à
+            // garder pour lui.
+            if (planche - 1 !== index) caseALOuverture.current = cell;
+            setIndex(planche - 1);
+            choisirCase(cell);
+            setView("livre");
+          }}
+          onRemplacer={(planche, cell, point) =>
+            ouvrirChoix({ type: "remplacer", cell }, point, planche - 1)
+          }
+          onRetirer={(planche, cell) =>
+            appliquerDepuisEnvoi(removePhoto(album, planche - 1, cell))
+          }
+          reserveVide={entries.length === 0}
           onExport={() => void regenPdf()}
           onPrepare={() => void preparer()}
           preparation={preparation}
@@ -2792,7 +2829,7 @@ export default function App() {
           onFermer={() => setMenu(null)}
         />
       )}
-      {choix && view === "livre" && (
+      {choix && (view === "livre" || view === "envoi") && (
         <ChoixReserve
           point={choix.point}
           reserve={reserve}

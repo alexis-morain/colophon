@@ -475,6 +475,7 @@ function commandeDev(dir: string) {
     "300x300": "photobook_cw_s300_s_fc",
     "210x297": "photobook_cw_a4_p_fc",
     "297x210": "photobook_cw_a4_l_fc",
+    "203.2x254": "photobook_cw_us_8x10_p_fc",
   };
   const option = (reference: string, type_: string, note: string, defaut = false) => ({
     reference,

@@ -7,6 +7,17 @@ import { Album, Slot } from "./album";
 import { Candidat } from "./bridge";
 import { addBlocker, addPhoto, insertSpread, placePhoto } from "./edits";
 
+/** Le type sous lequel une photo voyage, du tiroir à une case. */
+export const TYPE_PHOTO = "application/x-colophon-photo";
+
+/** L'effet qu'une case annonce au survol. Le tiroir n'autorise que la copie
+ *  (`effectAllowed = "copy"`) : annoncer `move` à sa photo fait annuler le
+ *  dépôt par le navigateur, et `drop` ne part jamais. L'échange de deux
+ *  cases, lui, est un déplacement. */
+export function effetDeDepot(types: readonly string[]): "copy" | "move" {
+  return types.includes(TYPE_PHOTO) ? "copy" : "move";
+}
+
 /** D'où le choix vient : « Ajouter une photo… » sur une page, ou
  *  « Remplacer par… » sur une case. */
 export type ModeChoix = { type: "ajouter" } | { type: "remplacer"; cell: number };

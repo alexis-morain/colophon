@@ -4062,6 +4062,27 @@ button.envoi-defaut:focus-visible {
   font-size: var(--fs-13);
 }
 
+/* Une photo trop petite : sa vignette dans la colonne du lieu, puis où elle
+   est et ses gestes. La phrase de tête dit une fois pourquoi. */
+.envoi-resolution-tete {
+  margin: 0 0 10px;
+  max-width: 58ch;
+}
+
+.envoi-resolution-vignette {
+  grid-row: span 2;
+  width: 92px;
+  aspect-ratio: 3 / 2;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.envoi-resolution-gestes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
 .envoi-imprimeurs {
   grid-area: imprimeurs;
 }

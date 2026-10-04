@@ -83,6 +83,7 @@ import { ObjetLibreCalque, PoseObjet } from "./ObjetLibreCalque";
 import { ObjetBloc } from "./ObjetBloc";
 import { basUtile, enveloppe, largeurLegende, placerSous } from "./popover";
 import { estDatee, legendeDatee, legendeDedatee } from "./edits";
+import { effetDeDepot, TYPE_PHOTO } from "./reserve";
 
 /** A crop being adjusted: values shown before they land on the undo stack. */
 type CropDraft = { slot: number; focal: [number, number]; zoom: number };
@@ -840,7 +841,7 @@ export function SpreadView({
               (onSwap || onPlace) &&
               ((e) => {
                 e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
+                e.dataTransfer.dropEffect = effetDeDepot([...e.dataTransfer.types]);
                 const p = enMm(e);
                 setDrop(caseSous(p.x, p.y));
               })
@@ -853,7 +854,7 @@ export function SpreadView({
                 const p = enMm(e);
                 const cell = caseSous(p.x, p.y);
                 setDrop(null);
-                const pool = e.dataTransfer.getData("application/x-colophon-photo");
+                const pool = e.dataTransfer.getData(TYPE_PHOTO);
                 if (cell === null || !pool) return;
                 try {
                   const photo = JSON.parse(pool) as Slot;
@@ -1819,7 +1820,7 @@ function CropPhoto({
         (onSwap || onPlace) &&
         ((e) => {
           e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
+          e.dataTransfer.dropEffect = effetDeDepot([...e.dataTransfer.types]);
         })
       }
       onDragEnter={(onSwap || onPlace) && (() => setOver(true))}
@@ -1829,7 +1830,7 @@ function CropPhoto({
         ((e) => {
           e.preventDefault();
           setOver(false);
-          const pool = e.dataTransfer.getData("application/x-colophon-photo");
+          const pool = e.dataTransfer.getData(TYPE_PHOTO);
           if (pool && onPlace) {
             try {
               const photo = JSON.parse(pool) as Slot;

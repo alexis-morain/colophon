@@ -49,7 +49,7 @@ const DEV_FORMATS: FormatPreset[] = [
   { name: "portrait-a4", w: 210, h: 297, about: "A4 portrait" },
   { name: "paysage-a4", w: 297, h: 210, about: "A4 paysage" },
   { name: "paysage-28x21", w: 280, h: 210, about: "paysage 28 × 21" },
-  { name: "portrait-20x25", w: 203, h: 254, about: "portrait 20 × 25, le 8 × 10 pouces" },
+  { name: "portrait-20x25", w: 203.2, h: 254, about: "portrait 20 × 25, le 8 × 10 pouces" },
 ];
 
 /** A composition pace offered at the first build, as the engine names it. */

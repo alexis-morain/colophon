@@ -9,6 +9,7 @@ import { TriEntry } from "./edits";
 import { t } from "./i18n";
 import { Chevron } from "./icons";
 import { reasonPhrase } from "./reasons";
+import { TYPE_PHOTO } from "./reserve";
 import { LazyThumb } from "./TriView";
 
 /** Reasons that read as « good photo, just not placed ». */
@@ -83,7 +84,7 @@ export function Drawer({
                 draggable
                 onDragStart={(ev) => {
                   ev.dataTransfer.setData(
-                    "application/x-colophon-photo",
+                    TYPE_PHOTO,
                     JSON.stringify({ src: e.src, focal: e.focal }),
                   );
                   ev.dataTransfer.effectAllowed = "copy";

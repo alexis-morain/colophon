@@ -44,9 +44,10 @@ sur la page des releases.
   propose la finition, le nombre d'exemplaires et l'adresse, affiche le devis, puis demande confirmation avec
   le prix et le mode en toutes lettres. L'état se relit à l'ouverture d'Envoi,
   une commande s'annule tant que la production n'a pas commencé, et les
-  fichiers quittent le dépôt une fois la commande expédiée ou annulée. Quatre
-  formats ont un produit : carré 21, carré 30, A4 portrait et A4 paysage. Les
-  autres passent par le dossier préparé et Quick order.
+  fichiers quittent le dépôt une fois la commande expédiée ou annulée. Cinq
+  formats ont un produit : carré 21, carré 30, A4 portrait, A4 paysage et
+  portrait 20 × 25. Le paysage 28 × 21 passe par le dossier préparé et Quick
+  order.
 
 - **Une couverture composée d'office.** Un album neuf naît avec sa
   couverture : la photo la mieux notée du quart supérieur du livre, en
@@ -224,6 +225,29 @@ sur la page des releases.
   et la mention « fiche provisoire » montent d'un pixel.
 
 ### Corrigé
+
+- **Un export bloqué par une photo trop petite a maintenant une sortie.**
+  Envoi refusait l'export et disait seulement quoi faire, alors qu'un
+  original vraiment petit peut ne tenir dans aucune case. Chaque photo sous
+  250 ppi a désormais sa ligne : la vignette, la planche, la résolution, et
+  trois gestes. « Voir » ouvre la planche sur la case, « Remplacer » propose
+  les photos de la réserve, « Retirer de la planche » la rend à la réserve.
+  Retirer marche toujours. Les deux derniers enregistrent l'album et relancent
+  le contrôle, ⌘Z les défait. La barre ne bouge pas : Colophon n'imprime
+  jamais sous 250 ppi. La ligne de commande dit le même remède, raccourci à
+  ce qui est vrai pour elle aussi.
+
+- **Le portrait 20 × 25 mesure 203,2 mm de large, le vrai 8 × 10 pouces.** Il
+  en faisait 203,0, un arrondi, et ces 0,2 mm le privaient du cartonné 8 × 10
+  de Cloudprinter. Les marges suivent la largeur, de 13,53 à 13,55 mm.
+
+- **Glisser une photo du tiroir sur une case la pose de nouveau.** Le tiroir
+  « Photos en réserve » propose une copie, et la case annonçait un
+  déplacement : le navigateur annulait le dépôt sans rien dire, et la photo
+  restait dans le tiroir. La case annonce maintenant une copie pour une photo
+  du tiroir, l'échange de deux cases reste un déplacement, et ⌘Z retire la
+  photo posée. Sous Windows, le glisser-déposer de fichiers de Tauri est coupé :
+  l'app n'en reçoit aucun, et il avalait celui de la page.
 
 - **La fiche d'une photo montre sa netteté et son exposition sur tout
   album.** Elle ne les lisait que dans le relevé, que seul un album composé

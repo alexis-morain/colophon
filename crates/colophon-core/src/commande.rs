@@ -362,6 +362,11 @@ pub struct Devis {
     #[serde(rename(deserialize = "currency"))]
     pub devise: String,
     pub expire_date: String,
+    /// Le délai de fabrication, en jours (`production_sla_days`). C'est le
+    /// seul délai que le devis rend : les offres d'expédition n'en portent
+    /// aucun, relevé au sandbox le 03/10.
+    #[serde(rename(deserialize = "production_sla_days"), default)]
+    pub production_jours: Option<u32>,
     /// Les expéditions telles que rendues, chacune avec ses offres.
     #[serde(rename(deserialize = "shipments"), default)]
     pub expeditions: Vec<Expedition>,
@@ -833,6 +838,7 @@ mod tests {
         let d = devis(&http, &compte(), "FR", &livre()).unwrap();
         assert_eq!((d.prix.as_str(), d.tva.as_str(), d.devise.as_str()), ("11.8333", "2.3667", "EUR"));
         assert_eq!(d.expire_date, "2026-09-28T21:00:00.000000Z");
+        assert_eq!(d.production_jours, Some(4));
         assert_eq!(d.expeditions.len(), 1);
         assert_eq!(d.expeditions[0].poids_g.as_deref(), Some("627"));
         let offres = &d.expeditions[0].offres;

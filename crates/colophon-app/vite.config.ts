@@ -507,13 +507,9 @@ function commandeDev(dir: string) {
         format: cle,
         produit,
         pages: 2 * album.spreads.length,
-        papiers: produit
-          ? [
-              option("pageblock_200mcg", "type_main_paper", "Pageblock paper 200gsm Machine Coated Gloss", true),
-              option("pageblock_150mcs", "type_main_paper", "Pageblock paper 150gsm Machine Coated Silk"),
-              option("pageblock_170mcs", "type_main_paper", "Pageblock paper 170gsm Machine Coated Silk"),
-            ]
-          : [],
+        papier: produit
+          ? option("pageblock_150mcs", "type_main_paper", "Pageblock paper 150gsm Machine Coated Silk")
+          : null,
         finitions: produit
           ? [
               option("cover_finish_gloss", "type_book_cover_finish", "Cover lamination Gloss finish", true),

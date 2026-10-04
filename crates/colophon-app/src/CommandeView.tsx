@@ -27,7 +27,6 @@ import {
 import {
   Devis,
   FINITION_DEFAUT,
-  PAPIER_DEFAUT,
   Vue,
   annulable,
   commandePossible,
@@ -179,7 +178,6 @@ function Commander({
   onPassee: (v: Vue) => void;
 }) {
   const [offre, setOffre] = useState<OffreCommande | null>(null);
-  const [papier, setPapier] = useState("");
   const [finition, setFinition] = useState("");
   const [quantite, setQuantite] = useState(1);
   const [pays, setPays] = useState("FR");
@@ -205,7 +203,6 @@ function Commander({
           l.find((x) => x.defaut)?.reference ??
           l[0]?.reference ??
           "";
-        setPapier(choix(o.papiers, PAPIER_DEFAUT));
         setFinition(choix(o.finitions, FINITION_DEFAUT));
         if (!o.pays.some((p) => p.code === "FR") && o.pays[0]) setPays(o.pays[0].code);
       },
@@ -216,12 +213,12 @@ function Commander({
     };
   }, [preparation]);
 
-  // Un devis chiffre un papier, une finition, une quantité et un pays :
-  // changer l'un d'eux le défait.
+  // Un devis chiffre une finition, une quantité et un pays : changer l'un
+  // d'eux le défait. Le papier est celui du dossier préparé, il ne bouge pas.
   useEffect(() => {
     setDevis(null);
     setQuote(null);
-  }, [papier, finition, quantite, pays]);
+  }, [finition, quantite, pays]);
 
   const offres = useMemo(() => devis?.expeditions.flatMap((e) => e.offres) ?? [], [devis]);
   const choisie = offres.find((o) => o.quote === quote) ?? null;
@@ -244,7 +241,6 @@ function Commander({
     setErreur(null);
     try {
       const d = await commandeDevis({
-        papier,
         couverture: offre.couverture ?? "",
         finition,
         quantite,
@@ -304,14 +300,8 @@ function Commander({
       <div className="commande-grille">
         <span>{t("commande.produit")}</span>
         <span className="commande-code">{offre.produit}</span>
-        <label htmlFor="commande-papier">{t("commande.papier")}</label>
-        <select id="commande-papier" value={papier} onChange={(e) => setPapier(e.target.value)}>
-          {offre.papiers.map((p) => (
-            <option key={p.reference} value={p.reference}>
-              {p.note ?? p.reference}
-            </option>
-          ))}
-        </select>
+        <span>{t("commande.papier")}</span>
+        <span>{t("commande.papier.v", { papier: offre.papier?.note ?? offre.papier?.reference ?? "" })}</span>
         <label htmlFor="commande-finition">{t("commande.finition")}</label>
         <select id="commande-finition" value={finition} onChange={(e) => setFinition(e.target.value)}>
           {offre.finitions.map((p) => (

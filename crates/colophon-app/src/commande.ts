@@ -51,9 +51,8 @@ export type Devis = {
   expeditions: { poids_g: string | null; offres: Offre[] }[];
 };
 
-/** Le papier et la finition présélectionnés (décision 4), quand le produit
- *  les propose. */
-export const PAPIER_DEFAUT = "pageblock_150mcs";
+/** La finition présélectionnée (décision 4), quand le produit la propose.
+ *  Le papier, lui, ne se choisit pas : c'est celui du dossier préparé. */
 export const FINITION_DEFAUT = "cover_finish_matte";
 
 /** « Commander » s'affiche-t-il ? La clé et le dépôt enregistrés, un dossier

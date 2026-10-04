@@ -245,10 +245,33 @@ pub enum Etape {
     Commande,
 }
 
+/// Pourquoi une commande ne part pas.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Echec {
+    /// Le livre demande un autre papier intérieur que celui du dossier
+    /// préparé : la couverture porte le dos de ce papier-là, un autre
+    /// ferait un livre plus épais ou plus mince que sa couverture.
+    PapierRefuse { attendu: String, demande: String },
+    /// Le dépôt, Cloudprinter ou la lecture d'un fichier.
+    Autre(String),
+}
+
+impl std::fmt::Display for Echec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Echec::PapierRefuse { attendu, demande } => {
+                write!(f, "papier_refuse : le dossier est préparé pour {attendu}, pas pour {demande}")
+            }
+            Echec::Autre(e) => f.write_str(e),
+        }
+    }
+}
+
 /// Dépose les deux PDF du `dossier` préparé, pose leurs URL de lecture de
 /// sept jours et passe la commande sous le hash du devis. Une erreur à
-/// mi-chemin retire ce qui a été déposé. Rend l'identifiant de Cloudprinter
-/// et les deux objets posés.
+/// mi-chemin retire ce qui a été déposé. Un livre dont le papier n'est pas
+/// `papier_prepare` est refusé avant tout geste. Rend l'identifiant de
+/// Cloudprinter et les deux objets posés.
 #[allow(clippy::too_many_arguments)]
 pub fn passer(
     http: &dyn Http,
@@ -256,11 +279,17 @@ pub fn passer(
     gestes: &dyn Gestes,
     reference: &str,
     dossier: &Path,
+    papier_prepare: &str,
     livre: Livre,
     quote: String,
     adresse: Adresse,
     progres: &dyn Fn(Etape),
-) -> Result<(String, Vec<Objet>), String> {
+) -> Result<(String, Vec<Objet>), Echec> {
+    // Le papier est la première option du livre (`Livre::choisi`).
+    let demande = livre.options.first().map(|o| o.option.clone()).unwrap_or_default();
+    if demande != papier_prepare {
+        return Err(Echec::PapierRefuse { attendu: papier_prepare.to_string(), demande });
+    }
     let mut poses: Vec<Objet> = Vec::new();
     let mut fichiers: Vec<FichierCommande> = Vec::new();
     let resultat = (|| {
@@ -287,7 +316,7 @@ pub fn passer(
                     colophon_core::log::line(&format!("commande : un objet reste au dépôt après l'échec ({r})"));
                 }
             }
-            Err(e)
+            Err(Echec::Autre(e))
         }
     }
 }
@@ -522,7 +551,7 @@ mod tests {
         let http = faux(vec![("orders/add", 201, r#"{"order": "CP-77"}"#)]);
         let g = FauxDepot::default();
         let etapes = RefCell::new(Vec::new());
-        let (id, objets) = passer(&http, &compte(), &g, "colophon-x", &d, livre(), "h4sh".into(), adresse(), &|e| {
+        let (id, objets) = passer(&http, &compte(), &g, "colophon-x", &d, "pageblock_150mcs", livre(), "h4sh".into(), adresse(), &|e| {
             etapes.borrow_mut().push(e)
         })
         .unwrap();
@@ -540,21 +569,42 @@ mod tests {
         std::fs::remove_dir_all(&d).unwrap();
     }
 
+    /// Décision d'Alexis (04/10) : le papier intérieur est celui du dossier
+    /// préparé, `pageblock_150mcs`, dont la couverture porte le dos. Un autre
+    /// papier est refusé avant tout dépôt et toute commande.
+    #[test]
+    fn passer_refuse_un_autre_papier_que_celui_du_dossier() {
+        let d = prepare("papier");
+        let http = faux(vec![("orders/add", 201, r#"{"order": "CP-1"}"#)]);
+        let g = FauxDepot::default();
+        let autre =
+            Livre::choisi("photobook_cw_s210_s_fc", "pageblock_200mcg", "cover_130mcg", "cover_finish_matte", 96, 1);
+        let e = passer(&http, &compte(), &g, "colophon-p", &d, "pageblock_150mcs", autre, "h".into(), adresse(), &|_| {})
+            .unwrap_err();
+        assert_eq!(
+            e,
+            Echec::PapierRefuse { attendu: "pageblock_150mcs".into(), demande: "pageblock_200mcg".into() }
+        );
+        assert!(g.poses.borrow().is_empty(), "rien n'est déposé");
+        assert!(http.recu.borrow().is_empty(), "rien n'est commandé");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
     #[test]
     fn une_erreur_a_mi_chemin_retire_ce_qui_a_ete_depose() {
         let d = prepare("mi-chemin");
         // La couverture est refusée : l'intérieur, déjà posé, est retiré.
         let g = FauxDepot { refuse: Some(LIVRAISON_COUVERTURE), ..Default::default() };
         let http = faux(vec![]);
-        assert!(passer(&http, &compte(), &g, "colophon-y", &d, livre(), "h".into(), adresse(), &|_| {}).is_err());
+        assert!(passer(&http, &compte(), &g, "colophon-y", &d, "pageblock_150mcs", livre(), "h".into(), adresse(), &|_| {}).is_err());
         assert_eq!(*g.retires.borrow(), ["colophon/colophon-y/album-print.pdf"]);
         assert!(http.recu.borrow().is_empty(), "aucune commande sans les deux fichiers");
 
         // Cloudprinter refuse la commande : les deux objets sont retirés.
         let g = FauxDepot::default();
         let http = faux(vec![("orders/add", 400, r#"{"error": {"type": "quote_expired"}}"#)]);
-        let e = passer(&http, &compte(), &g, "colophon-z", &d, livre(), "h".into(), adresse(), &|_| {}).unwrap_err();
-        assert!(e.contains("quote_expired"), "{e}");
+        let e = passer(&http, &compte(), &g, "colophon-z", &d, "pageblock_150mcs", livre(), "h".into(), adresse(), &|_| {}).unwrap_err();
+        assert!(e.to_string().contains("quote_expired"), "{e}");
         assert_eq!(g.retires.borrow().len(), 2);
         std::fs::remove_dir_all(&d).unwrap();
     }

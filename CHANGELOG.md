@@ -40,8 +40,8 @@ sur la page des releases.
   et les accès restent sur l'ordinateur, dans le dossier de données de
   l'application, et l'écran n'en montre que les quatre derniers caractères.
   Après « Préparer pour Cloudprinter », si le contrôle relu est vert,
-  « Commander » propose le papier et la finition du produit, le nombre
-  d'exemplaires et l'adresse, affiche le devis, puis demande confirmation avec
+  « Commander » montre le papier intérieur, celui du dossier préparé, et
+  propose la finition, le nombre d'exemplaires et l'adresse, affiche le devis, puis demande confirmation avec
   le prix et le mode en toutes lettres. L'état se relit à l'ouverture d'Envoi,
   une commande s'annule tant que la production n'a pas commencé, et les
   fichiers quittent le dépôt une fois la commande expédiée ou annulée. Quatre

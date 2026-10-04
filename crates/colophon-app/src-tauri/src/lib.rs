@@ -52,6 +52,10 @@ struct Prepare {
     format: String,
     /// Le prévol relu sur ces fichiers est vert.
     ok: bool,
+    /// Le papier intérieur dont la couverture porte le dos
+    /// (`PrinterProfile::commande`), le seul qui se commande sur ce dossier.
+    /// Aucun chez un profil sans codes de commande.
+    papier: Option<&'static str>,
 }
 
 /// Un devis, et ce qu'il chiffre.
@@ -1378,6 +1382,7 @@ async fn preparer_dossier(
             h: fiche.format_page_mm[1],
         }),
         ok: p.rapport.ok,
+        papier: profil.commande.map(|c| c.papier),
     });
     *state.devis.lock().unwrap() = None;
     // Le dossier s'ouvre de lui-même : c'est là que la personne va prendre
@@ -1608,9 +1613,12 @@ async fn commande_verifier(app: tauri::AppHandle) -> Result<Verification, String
 struct OffreCommande {
     format: String,
     /// Le produit de ce format, ou aucun : l'écran le dit alors en une ligne.
+    /// Aucun aussi quand le produit n'offre pas le papier du dossier.
     produit: Option<&'static str>,
     pages: u32,
-    papiers: Vec<colophon_core::commande::OptionProduit>,
+    /// Le papier intérieur, figé sur celui du dossier préparé (décision
+    /// d'Alexis du 04/10) : la couverture porte son dos.
+    papier: Option<colophon_core::commande::OptionProduit>,
     finitions: Vec<colophon_core::commande::OptionProduit>,
     couverture: Option<String>,
     /// Les pays de livraison qui ne demandent pas d'État dans l'adresse.
@@ -1633,31 +1641,35 @@ fn compte_enregistre(app: &tauri::AppHandle) -> Result<(commande::Stock, colopho
 async fn commande_offre(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<OffreCommande, String> {
     use colophon_core::commande as cc;
     let p = prepare_tenu(&state)?;
-    let produit = cc::produit_pour(&p.format);
-    let Some(reference) = produit else {
-        return Ok(OffreCommande {
-            format: p.format,
-            produit: None,
-            pages: p.pages,
-            papiers: vec![],
-            finitions: vec![],
-            couverture: None,
-            pays: vec![],
-        });
+    let sans_produit = |p: Prepare| OffreCommande {
+        format: p.format,
+        produit: None,
+        pages: p.pages,
+        papier: None,
+        finitions: vec![],
+        couverture: None,
+        pays: vec![],
+    };
+    let (Some(reference), Some(papier)) = (cc::produit_pour(&p.format), p.papier) else {
+        return Ok(sans_produit(p));
     };
     let (_, compte) = compte_enregistre(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let http = cc::Ureq::default();
         let i = cc::infos_produit(&http, &compte, reference).map_err(|e| e.to_string())?;
+        // Un produit qui n'offre pas le papier du dossier ne se commande pas.
+        let Some(papier) = i.options_de(cc::TYPE_PAPIER).find(|o| o.reference == papier).cloned() else {
+            return Ok(sans_produit(p));
+        };
         let pays = cc::pays(&http, &compte).map_err(|e| e.to_string())?;
         let de = |t: &str| i.options_de(t).cloned().collect::<Vec<_>>();
         let couvertures = de(cc::TYPE_COUVERTURE);
         let couverture = couvertures.iter().find(|o| o.defaut).or(couvertures.first()).map(|o| o.reference.clone());
         Ok(OffreCommande {
             format: p.format,
-            produit,
+            produit: Some(reference),
             pages: p.pages,
-            papiers: de(cc::TYPE_PAPIER),
+            papier: Some(papier),
             finitions: de(cc::TYPE_FINITION),
             couverture,
             pays: pays.into_iter().filter(|p| !p.etat_requis).collect(),
@@ -1672,7 +1684,6 @@ async fn commande_offre(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
 async fn commande_devis(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
-    papier: String,
     couverture: String,
     finition: String,
     quantite: u32,
@@ -1684,8 +1695,9 @@ async fn commande_devis(
     }
     let p = prepare_tenu(&state)?;
     let produit = cc::produit_pour(&p.format).ok_or("ce format ne se commande pas depuis Colophon")?;
+    let papier = p.papier.ok_or("ce dossier n'a pas de papier de commande")?;
     let (_, compte) = compte_enregistre(&app)?;
-    let livre = cc::Livre::choisi(produit, &papier, &couverture, &finition, p.pages, quantite);
+    let livre = cc::Livre::choisi(produit, papier, &couverture, &finition, p.pages, quantite);
     let (l, pa) = (livre.clone(), pays.clone());
     let devis = tauri::async_runtime::spawn_blocking(move || cc::devis(&cc::Ureq::default(), &compte, &pa, &l))
         .await
@@ -1757,8 +1769,9 @@ async fn commande_passer(
     let reference = commande::reference_neuve(chrono::Utc::now());
     let emetteur = app.clone();
     let (r, mode) = (reference.clone(), compte.mode);
+    let papier = p.papier.ok_or("ce dossier n'a pas de papier de commande")?;
     let (identifiant, objets) = tauri::async_runtime::spawn_blocking(move || {
-        commande::passer(&cc::Ureq::default(), &compte, &depot, &r, &p.dossier, livre, quote, adresse, &|e| {
+        commande::passer(&cc::Ureq::default(), &compte, &depot, &r, &p.dossier, papier, livre, quote, adresse, &|e| {
             let _ = emetteur.emit("commande:progress", e);
         })
     })
@@ -1766,7 +1779,7 @@ async fn commande_passer(
     .map_err(|e| e.to_string())?
     .map_err(|e| {
         commande::journal(commande::Evenement::CommandeEchouee);
-        e
+        e.to_string()
     })?;
     *state.devis.lock().unwrap() = None;
     let mut s = commande::Stock::lire(&dir)?;

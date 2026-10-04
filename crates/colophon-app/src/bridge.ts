@@ -1227,7 +1227,9 @@ export type OffreCommande = {
   /** Null : ce format n'a pas de produit, l'écran le dit en une ligne. */
   produit: string | null;
   pages: number;
-  papiers: OptionProduit[];
+  /** Le papier intérieur, figé sur celui du dossier préparé : la
+   *  couverture porte son dos. Null quand le format n'a pas de produit. */
+  papier: OptionProduit | null;
   finitions: OptionProduit[];
   couverture: string | null;
   pays: Pays[];
@@ -1287,7 +1289,6 @@ export const commandeVerifier = () => commandeAppel<Verification>("commande_veri
 export const commandeOffre = () => commandeAppel<OffreCommande>("commande_offre", "offre");
 
 export const commandeDevis = (c: {
-  papier: string;
   couverture: string;
   finition: string;
   quantite: number;

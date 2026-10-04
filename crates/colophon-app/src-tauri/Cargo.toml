@@ -22,8 +22,6 @@ cc = "1"
 [dependencies]
 colophon-core = { path = "../../colophon-core" }
 anyhow.workspace = true
-# Déjà dans l'arbre par colophon-core : les dates des commandes (K-s3).
-chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }

@@ -77,8 +77,8 @@ Ce qu'ils ont posé, et qui se lit plus bas : la fiche d'une photo et son origin
 (F-s1), l'alerte de qualité (G-s1), les dates dans les légendes (H-s1), Envoi pour
 Cloudprinter seul avec le dossier préparé et la couverture composée (K-s1), la sortie
 d'un export bloqué par la résolution et le glisser depuis la réserve (L-s1), lopdf 0.42
-(#41) et le passe-plat JPEG vérifié (#52). Le code de commande de K-s2 et K-s3 est
-aussi dans `main`, décrit tel qu'il est, hors du périmètre annoncé de la 1.0.
+(#41) et le passe-plat JPEG vérifié (#52). Le code de commande de K-s2 reste dans le
+moteur et la CLI ; l'écran de K-s3 est retiré de l'app (S-s3a), Commander attend le relais.
 Ce qui suit est l'état laissé par les vagues 2 à 6.
 
 **2.6, la page qui tourne, est close — et la vague 2 avec elle (28/08).** Session 1
@@ -486,37 +486,41 @@ le dépôt.
 pas. Retirer et Remplacer **enregistrent l'album**, parce que le prévol lit le disque ;
 une ligne dont la case ne porte plus la photo du rapport se tait.
 
-### Le code de commande (K-s2, K-s3)
+### Le code de commande : le moteur et la CLI, pas l'app
 
-Il est dans `main` et **n'est pas une fonction de la 1.0** : aucun texte public ne le
-nomme (README, CHANGELOG, site), et une session peut encore retirer ce parcours avant le
-tag. Ce qui suit décrit le code tel qu'il est. `core::commande` parle à CloudCore (`devis`, `commander`,
-`etat`, `annuler`) derrière le trait `Http`, `Ureq` en vrai (rustls, 60 s), un faux en
-test ; `core::depot` pose les deux PDF sur un seau S3 de l'utilisateur par PUT présigné
-(`rusty-s3`, URL en chemin), lisible sept jours, clés d'objet limitées à
+**L'app ne tient ni clé ni dépôt, et n'offre pas Commander** (S-s3a). Le compte
+Cloudprinter des Préférences, `CommandeView`, `src-tauri/src/commande.rs`, les onze
+commandes Tauri `commande_*` et le faux `/__dev/commande` sont partis avant la 1.0 ; ils
+se relisent dans git (#76). Commander reviendra contre un relais tenu par Alexis (S-s3),
+qui tient les clés : sans relais joignable, rien ne s'affiche. `commande.ts` garde ce que
+ce parcours réemploiera, testé et sans appelant : `commandePossible(relaisJoignable,
+preparationNeuve)`, `formatPrix`, `phraseEtat`, `annulable`, `phraseConfirmation`,
+`phraseErreur`, avec leurs phrases FR et EN. `AppState.prepare` garde le papier du
+dossier préparé pour ce relais. Le rapport de Signaler ne cite jamais `commande.json`,
+même quand un tel fichier traîne au dossier de données
+(`le_rapport_ne_cite_jamais_commande_json`).
+
+**Le moteur et la CLI gardent CloudCore et S3.** `core::commande` parle à CloudCore
+(`devis`, `commander`, `etat`, `annuler`) derrière le trait `Http`, `Ureq` en vrai
+(rustls, 60 s), un faux en test ; `core::depot` pose les deux PDF sur un seau S3 par PUT
+présigné (`rusty-s3`, URL en chemin), lisible sept jours, clés d'objet limitées à
 `colophon/<référence>/album-print.pdf` et `album-cover.pdf`. Le moteur reste synchrone,
 sans tokio ; les deux crates sont passés à l'audit de licence avant leur première ligne.
+Seul `--devis` les appelle depuis la CLI ; le dépôt et la commande ne tournent qu'au banc.
+`SECURITY.md` le dit : l'app fait un appel, la vérification de mise à jour, et la CLI
+joint `api.cloudprinter.com` avec la clé de qui la lance.
 
-Six choses à ne pas défaire. **Le secret ne fuit pas** : `Cle` et `Acces` rendent `***`
+Cinq choses à ne pas défaire. **Le secret ne fuit pas** : `Cle` et `Acces` rendent `***`
 en `Debug` et `Display`, sans `Serialize`, la clé n'entre que dans le corps par
-`commande::appeler`, et tout texte venu de dehors passe par un masque. **Le compte vit
-côté Rust** (`src-tauri/src/commande.rs`) : `commande.json` au dossier de données, créé
-en `0600` puis renommé ; le front ne reçoit qu'une `Vue` (quatre derniers caractères de
-la clé), le journal que des phrases fixes, et l'adresse n'est écrite nulle part. **Le
-mode sandbox ou réel est déclaré** par l'utilisateur, CloudCore ne le dit jamais (seul
-l'état 501 le trahit). **Le devis et la commande nomment l'article pareil**
-(`commande::ARTICLE`), et `orders/info` met le numéro d'état dans `state`, pas dans
-`state_code`. **Le papier est figé** sur celui du dossier préparé : `passer` rend
-`PapierRefuse` avant tout dépôt. **Rien ne tourne en fond** : l'état se relit à
-l'ouverture d'Envoi et par un bouton, les objets se retirent à 100, 500, 501 ou trente
-jours (`depot::a_retirer`), et une erreur à mi-chemin retire ce qui a été posé.
-« Commander » n'apparaît que si clé et dépôt sont enregistrés, le dossier préparé dans
-cette ouverture d'Envoi et le prévol relu vert (`commande.ts::commandePossible`). Un
-produit par format (`commande::produit_pour`) : tous sauf `paysage-28x21`, qui passe par
-Quick order. Banc : `banc_commande_sandbox` (`#[ignore]`, `CLOUDPRINTER_SANDBOX_API_KEY`
-et `R2_*`). **`SECURITY.md` dit encore « exactly one network call » et « no HTTP client
-of its own »** : faux tant que ce code est dans l'app, et ce que le texte public en dit
-attend la décision d'Alexis.
+`commande::appeler`, et tout texte venu de dehors passe par un masque. **Le mode sandbox
+ou réel est déclaré**, CloudCore ne le dit jamais (seul l'état 501 le trahit). **Le devis
+et la commande nomment l'article pareil** (`commande::ARTICLE`), et `orders/info` met le
+numéro d'état dans `state`, pas dans `state_code`. **Le papier est figé** sur celui du
+dossier préparé : `passer` rend `PapierRefuse` avant tout dépôt. **Les objets se
+retirent** à 100, 500, 501 ou trente jours (`depot::a_retirer`), et une erreur à
+mi-chemin retire ce qui a été posé. Un produit par format (`commande::produit_pour`) :
+tous sauf `paysage-28x21`, qui passe par Quick order. Banc : `banc_commande_sandbox`
+(`#[ignore]`, `CLOUDPRINTER_SANDBOX_API_KEY` et `R2_*`).
 
 **lopdf est en 0.42** (#41, RUSTSEC-2026-0187) : la seule lecture de PDF en production
 est celle du prévol, sur des fichiers d'un dossier qui se partage, et un débordement de
@@ -882,8 +886,8 @@ l'automatique », recomposition préservante, légendes, texte, couverture, **En
 (qui offre le verdict après un export ou une préparation), bilan de choix, revue
 clavier, Stockage, À propos, **fiche d'une photo ⌘I**, **Préférences ⌘,** (langue
 `i18n.ts` sans redémarrage, mises à jour, apparence), **aperçu
-fidèle ⇧⌘P** (pdf.js). Le compte Cloudprinter des Préférences appartient au code de
-commande (voir plus bas). L'interrupteur DOM/canvas a quitté les Préférences : il ne vit
+fidèle ⇧⌘P** (pdf.js). Ni clé ni dépôt dans les Préférences : Commander attend le
+relais (voir plus haut). L'interrupteur DOM/canvas a quitté les Préférences : il ne vit
 plus que dans la clé `colophon.rendu` du `localStorage` (`rendu.ts`), pour la mesure.
 
 **Le clavier garde sa place quand la page tourne** : la couche est démontée à chaque tour
@@ -1191,9 +1195,8 @@ feuilletage, `photos.ts` vignettes décodées et badges, `font.ts` la mesure de 
 les octets de l'album, `police.ts` les noms et les refus d'une face,
 `ornement.ts` le pack et le seul tracé que les deux rendus partagent,
 `menu.ts`, `signaler.ts`, `pdfview.tsx`, `reasons.ts`, `icons.tsx`, `recents.ts`,
-`envoi.ts` et `commande.ts` la logique pure d'Envoi et de Commander) plus la coquille
-Tauri (`src-tauri/src/commande.rs` le compte et les commandes gardées), marques
-d'icône dans `design/marques`.
+`envoi.ts` la logique pure d'Envoi, `commande.ts` celle que Commander reprendra) plus
+la coquille Tauri, marques d'icône dans `design/marques`.
 
 
 Chaîne de distribution : `NOTICES.md` et `src-tauri/notices.md`, la copie embarquée,

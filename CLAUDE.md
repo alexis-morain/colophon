@@ -10,7 +10,9 @@ Le glossaire du domaine est `CONTEXT.md`. Un synonyme dans un diff est un rappor
 qui attend.
 
 Logiciel libre d'albums photo : un dossier en entrée, composition automatique, tout
-modifiable, PDF prêt à imprimer. Tauri 2 (Rust + React), GPL-3.0, version 0.9.0.
+modifiable, PDF prêt à imprimer. Tauri 2 (Rust + React), GPL-3.0, version 1.0.0, pas encore taguée : le tag `v1.0.0` est le
+geste d'Alexis, et `release.yml` le refuse si les quatre fichiers de version ou la section
+`## [1.0.0]` du CHANGELOG manquent.
 
 ## Si tu es une session cloud, commence par ça
 
@@ -70,6 +72,15 @@ aboli depuis que le gate est portable, 27/08.)
 
 ## La vague en cours
 
+**Les chantiers A à L du test à l'écran sont fusionnés (#55 à #77), avec #41 et #52.**
+Ce qu'ils ont posé, et qui se lit plus bas : la fiche d'une photo et son original
+(F-s1), l'alerte de qualité (G-s1), les dates dans les légendes (H-s1), Envoi pour
+Cloudprinter seul avec le dossier préparé et la couverture composée (K-s1), la sortie
+d'un export bloqué par la résolution et le glisser depuis la réserve (L-s1), lopdf 0.42
+(#41) et le passe-plat JPEG vérifié (#52). Le code de commande de K-s2 et K-s3 est
+aussi dans `main`, décrit tel qu'il est, hors du périmètre annoncé de la 1.0.
+Ce qui suit est l'état laissé par les vagues 2 à 6.
+
 **2.6, la page qui tourne, est close — et la vague 2 avec elle (28/08).** Session 1
 livrée le 27/08 : le geste au coin, le clavier, le mouvement réduit, le *fait quand*
 tenu sur ses cinq points et mesuré. Les sept verdicts humains du bundle sont tombés le
@@ -121,8 +132,8 @@ et « L'éditeur des objets libres »).
 dans le PDF (voir « Les ornements »). **6.3 s2 est close (09/09)**, en deux PR : le
 compteur `ornement_sur_photo` avec `scene::recouvre` d'abord, puis le sélecteur, la
 naissance hors des cases photo et l'attribution dans À propos (voir « L'ornement se
-pose »). **6.3 est donc close aussi**, sauf la sélection nominative des 32 actifs, qui est
-un travail d'œil et appartient à Alexis.
+pose »). **6.3 est donc close aussi**, et les 32 actifs de Commons sont dans le pack
+(#58) : 35 ornements, quatorze fleurons, treize filets, huit séparateurs.
 
 **6.4 est close** : ce que les objets libres obligeaient partout ailleurs. Le linter
 gagne **deux compteurs**, `objet_hors_marge` et `objet_deborde` (voir « Le linter et les
@@ -216,9 +227,11 @@ par les deux appelants — le workspace n'a aucun crate de hachage et n'en gagne
 Et **on ne hache pas les photographies** : 95 Mo à chaque prévol paierait très cher un
 cas rare, donc une photo réécrite hors de Colophon n'est pas vue, et un `root` repointé
 sur un autre dossier aux mêmes noms non plus. `octets` attrape le reste pour le prix d'un
-`stat`. **C'est la CLI qui note** (`main.rs`, après `--print` et après `--cover`) :
-`export_pdf` de l'app écrit à la destination que l'utilisateur choisit, jamais dans le
-dossier de l'album, donc l'app n'a pas de manifeste à poser et n'a pas bougé.
+`stat`. **Deux appelants notent, par la même fonction `export::noter`** : la CLI
+(`main.rs`, après `--print` et après `--cover`) dans le dossier de l'album, et
+`export::preparer` dans le dossier préparé (K-s1, voir « Envoi, le dossier préparé et
+la commande »). `export_pdf` de l'app, le PDF sans contrainte, écrit un seul fichier à
+la destination choisie et ne pose aucun manifeste.
 
 **Et l'aperçu de la couverture a cessé d'écrire sous le nom de la livraison
 (08/09).** `render_cover_preview` posait `album-cover.pdf`, au profil de
@@ -440,6 +453,101 @@ annoncera donc que Colophon peut modifier la photothèque, ce qui est faux ; la
 `NSPhotoLibraryUsageDescription` de l'`Info.plist` est le seul endroit où la vérité se
 rétablit, et c'est elle que l'utilisateur lit.
 
+## Envoi, le dossier préparé et la commande
+
+**Envoi ne vise qu'un imprimeur, Cloudprinter** (K-s1, `EnvoiView.tsx`, `envoi.ts`).
+Le lien « Un autre imprimeur ? » bascule sur le profil `generique` : un seul PDF sans
+contrainte, `export_pdf`, sans manifeste. Prodigi et Lulu restent dans `printer.rs` et
+la CLI (`--profil`), avec tous leurs tests. Cloudprinter relie de 24 à 800 pages.
+
+**« Préparer pour Cloudprinter » est `export::preparer`** (commande `preparer_dossier`,
+CLI `--preparer`) : la boîte native choisit un dossier, l'app y crée
+`<Titre> – Cloudprinter` avec `album-print.pdf`, `album-cover.pdf`, `export.json` (par
+`export::noter`) et `fiche.txt`, puis relit le prévol **sur ces fichiers-là**
+(`prevol::prevol_dossier(dir, fichiers, profil)`, dont `prevol(dir)` est le cas
+`dir, dir` ; `check()` reste pure). Les codes de papier et de finition vivent dans
+`PrinterProfile::commande` (`pageblock_150mcs`, `cover_130mcg`, `cover_finish_matte`),
+jamais dans un `match` sur l'identifiant. MD5 et SHA-256 sont écrits à la main dans
+`export`, testés contre les vecteurs de la RFC 1321 et du NIST : le workspace n'a pas de
+crate de hachage et n'en gagne pas. Le chemin du dossier reste dans `AppState`
+(`montrer_dossier_prepare`), le front n'en reçoit que le nom.
+
+**Le Composer pose une couverture** quand `BuildOptions.cover` est vide
+(`build::photo_de_couverture`) : la mieux notée du quartile haut, paysage ou carrée,
+parmi les photos qui tiennent 250 ppi sur la feuille de couverture des quatre profils ;
+titre de l'album, sous-titre `garde::ligne_des_dates`. Une recomposition garde la
+couverture choisie. **`couverture_vide` bloque** chez `Fichiers::Deux` (Cloudprinter,
+Lulu) : c'est la planche blanche du 21/09. La date du colophon passe par
+`BuildOptions.aujourdhui`, `None` lisant `pdfx::stamp()` : plus aucun `set_var` dans
+le dépôt.
+
+**Une photo sous 250 ppi a une sortie dans Envoi** (L-s1, `ResolutionLigne`,
+`envoi.ts::actionsDefaut`) : Voir, Remplacer, Retirer de la planche. La barre ne bouge
+pas. Retirer et Remplacer **enregistrent l'album**, parce que le prévol lit le disque ;
+une ligne dont la case ne porte plus la photo du rapport se tait.
+
+### Le code de commande (K-s2, K-s3)
+
+Il est dans `main` et **n'est pas une fonction de la 1.0** : aucun texte public ne le
+nomme (README, CHANGELOG, site), et une session peut encore retirer ce parcours avant le
+tag. Ce qui suit décrit le code tel qu'il est. `core::commande` parle à CloudCore (`devis`, `commander`,
+`etat`, `annuler`) derrière le trait `Http`, `Ureq` en vrai (rustls, 60 s), un faux en
+test ; `core::depot` pose les deux PDF sur un seau S3 de l'utilisateur par PUT présigné
+(`rusty-s3`, URL en chemin), lisible sept jours, clés d'objet limitées à
+`colophon/<référence>/album-print.pdf` et `album-cover.pdf`. Le moteur reste synchrone,
+sans tokio ; les deux crates sont passés à l'audit de licence avant leur première ligne.
+
+Six choses à ne pas défaire. **Le secret ne fuit pas** : `Cle` et `Acces` rendent `***`
+en `Debug` et `Display`, sans `Serialize`, la clé n'entre que dans le corps par
+`commande::appeler`, et tout texte venu de dehors passe par un masque. **Le compte vit
+côté Rust** (`src-tauri/src/commande.rs`) : `commande.json` au dossier de données, créé
+en `0600` puis renommé ; le front ne reçoit qu'une `Vue` (quatre derniers caractères de
+la clé), le journal que des phrases fixes, et l'adresse n'est écrite nulle part. **Le
+mode sandbox ou réel est déclaré** par l'utilisateur, CloudCore ne le dit jamais (seul
+l'état 501 le trahit). **Le devis et la commande nomment l'article pareil**
+(`commande::ARTICLE`), et `orders/info` met le numéro d'état dans `state`, pas dans
+`state_code`. **Le papier est figé** sur celui du dossier préparé : `passer` rend
+`PapierRefuse` avant tout dépôt. **Rien ne tourne en fond** : l'état se relit à
+l'ouverture d'Envoi et par un bouton, les objets se retirent à 100, 500, 501 ou trente
+jours (`depot::a_retirer`), et une erreur à mi-chemin retire ce qui a été posé.
+« Commander » n'apparaît que si clé et dépôt sont enregistrés, le dossier préparé dans
+cette ouverture d'Envoi et le prévol relu vert (`commande.ts::commandePossible`). Un
+produit par format (`commande::produit_pour`) : tous sauf `paysage-28x21`, qui passe par
+Quick order. Banc : `banc_commande_sandbox` (`#[ignore]`, `CLOUDPRINTER_SANDBOX_API_KEY`
+et `R2_*`). **`SECURITY.md` dit encore « exactly one network call » et « no HTTP client
+of its own »** : faux tant que ce code est dans l'app, et ce que le texte public en dit
+attend la décision d'Alexis.
+
+**lopdf est en 0.42** (#41, RUSTSEC-2026-0187) : la seule lecture de PDF en production
+est celle du prévol, sur des fichiers d'un dossier qui se partage, et un débordement de
+pile n'est pas une erreur qu'on rattrape.
+
+## L'alerte de qualité, la fiche et les dates
+
+**Un seul signe, un triangle au coin de la case rognée** (G-s1, `photos.ts::badgesDe`,
+`icons.tsx::PastilleAlerte`) : `sous_resolution` sur la taille de l'**original**, pas de
+la vignette, `sombre` sur la vignette au travers du réglage, `floue` dans le dernier
+décile de netteté du dossier (`qualite::seuil_de_flou`, `PART_FLOUE`, rien sous
+`PETIT_DOSSIER`). **Sans relevé, aucune alerte.** La mesure vient de
+`qualite::releve_album` (le `releve.json`, sinon les vignettes et les en-têtes, au bit
+de `analyze`), une fois par album. `SceneProxies` reçoit les alertes en codes et les
+ajoute au nom : il reste une fonction de la scène. Le Tri et Planches reprennent le
+signe. Aucun seuil de l'audit n'a bougé.
+
+**La fiche d'une photo** (F-s1, `core::fiche`, `FichePhoto.tsx`, ⌘I) lit l'EXIF étendu de
+`meta.rs` et la mesure par `qualite::mesure_photo`. « Voir l'original » passe par
+`fiche::a_reveler` (nom validé par `thumb::nom_propre`, chemins canonisés), puis
+`open -R`, `explorer /select,` en `raw_arg` ou `xdg-open` : jamais un shell.
+
+**Les dates des légendes** (H-s1) : `legende::date_de` est la seule formulation, la
+proposition de case et le bouton l'appellent tous les deux ; `dates_fiables` en fait la
+table, `edits.ts::daterLegendes` et `dedaterLegendes` sont idempotents et un seul pas
+d'annulation.
+
+**Le glisser depuis la réserve** annonce une copie (`reserve.ts::effetDeDepot`), l'échange
+de deux cases un déplacement, et `dragDropEnabled` est coupé sur la fenêtre. Le
+portrait 20 × 25 mesure **203,2 mm** (`format.rs`), le vrai 8 × 10.
+
 ## La scène, source unique de ce que porte une planche
 
 `Scene::of(planche, géométrie)` rend des objets : rectangle, **angle**, profondeur
@@ -595,9 +703,9 @@ laisse vert, la flèche à +1,00 mm et rougit. Chiffres :
 `docs/mesures/2026-09-06-l-ornement.json`.
 
 **6.3 s2 est faite**, et elle est ci-dessous, moins son compteur qui vit avec les autres
-dans « Le linter, la reprise et le prévol devant un objet libre ». Le jeu
-livré est **trois actifs de démonstration** ; les 32 arrivent par une PR de données. Les
-cartouches n'ont aucun gisement libre sur Commons : trois familles, `fleuron`, `filet`,
+dans « Le linter, la reprise et le prévol devant un objet libre ». Le pack porte
+**35 actifs** (#58, normalisés par `scripts/ornement-normaliser.py`). Les cartouches
+n'ont aucun gisement libre sur Commons : trois familles, `fleuron`, `filet`,
 `separateur`, et pas de quatrième.
 
 ### L'ornement se pose (6.3 s2)
@@ -771,9 +879,12 @@ serait tue.
 
 Recadrage, tiroir, table lumineuse ⌘3, badge « éditée » et cadenas ⌘L, « rendre à
 l'automatique », recomposition préservante, légendes, texte, couverture, **Envoi ⌘4**
-(qui offre le verdict après un export), bilan de choix, revue clavier, Stockage, À propos,
-**Préférences ⌘,** (FR/EN et le rendu des planches, `i18n.ts`, sans redémarrage),
-**aperçu fidèle ⇧⌘P** (pdf.js).
+(qui offre le verdict après un export ou une préparation), bilan de choix, revue
+clavier, Stockage, À propos, **fiche d'une photo ⌘I**, **Préférences ⌘,** (langue
+`i18n.ts` sans redémarrage, mises à jour, apparence), **aperçu
+fidèle ⇧⌘P** (pdf.js). Le compte Cloudprinter des Préférences appartient au code de
+commande (voir plus bas). L'interrupteur DOM/canvas a quitté les Préférences : il ne vit
+plus que dans la clé `colophon.rendu` du `localStorage` (`rendu.ts`), pour la mesure.
 
 **Le clavier garde sa place quand la page tourne** : la couche est démontée à chaque tour
 (`key={index}` rejoue l'animation), donc la mémoire du rang vit hors du composant ; au
@@ -784,7 +895,7 @@ avale son clic résiduel**, sans quoi le papier désélectionnait dans le même 
 ligne de statut est vivante** (`role="status"`, les quatre pieds) et **la table lumineuse
 se parcourt au clavier** (un arrêt de tabulation, flèches, verticales d'une rangée).
 **La légende proposée** : champ vide, fantôme gris (`legende::proposition`), Tab la pose
-et marque `edited`. Badges de case : « N ppi », « sombre », infobulle = remède.
+et marque `edited`. Les badges de case sont l'alerte de qualité (voir plus bas).
 
 **Le sélecteur de gabarits montre des dispositions** (`gabarit.ts`) : verso, bande de
 légende et forme de cellule repliés, une entrée par disposition, groupées par nombre
@@ -895,9 +1006,9 @@ de chaque jeu. `--reprise` : part des planches corrigées à la main contre
 `album.origin.json` ; sous 10 % bon, jusqu'à 30 % à surveiller, au-delà rédhibitoire.
 `--prevol --profil <id>` : bloquants et avertissements contre un `PrinterProfile`, et la
 fiche que l'imprimeur demande au téléphone. **Bloque ce que la coupe traverse ou que la
-reliure sépare** (`resolution`, `couverture_resolution`, `imposition`, `objet_coupe`,
-`objet_pli`, `fond_perdu`, `espace`, `pagination`, `fichier_interieur`,
-`fichier_couverture`, `fichier_profil`, `fichier_perime`) ; **avertit de ce qu'un fournisseur
+reliure sépare** (`resolution`, `couverture_resolution`, `couverture_vide`,
+`imposition`, `objet_coupe`, `objet_pli`, `fond_perdu`, `espace`, `pagination`,
+`fichier_interieur`, `fichier_couverture`, `fichier_profil`, `fichier_perime`) ; **avertit de ce qu'un fournisseur
 préfère** (`zone_sure`, `dos_nu`, un coefficient de dos provisoire). Un seuil réglé pour
 faire taire une règle est le défaut que cette frontière existe pour empêcher.
 
@@ -929,7 +1040,7 @@ dans `audit.rs`, importés par `layout.rs`.
 ICC sRGB, GeoNames **CC-BY, attribution obligatoire**) ; l'écran À propos porte les trois.
 Le pack d'ornements a le sien, `assets/ornements/LICENCES.md`, **engendré** par
 `ornement::licences_md` et dont la fraîcheur est un test — un inventaire de licences tenu
-à la main est faux au premier ajout. Son entrée dans À propos arrive en 6.3 s2. **Ce
+à la main est faux au premier ajout. À propos le crédite (6.3 s2). **Ce
 test compare des contenus, pas des fins de ligne** : git rend un `.md` en CRLF sur
 Windows là où le générateur écrit des `\n`, et le gate y accusait l'inventaire d'avoir
 vieilli sans qu'un caractère diffère. Le dépôt n'a pas de `.gitattributes`, et en poser
@@ -980,7 +1091,9 @@ bascule. `geometrie.test.ts` tient les quatre cas.
 **Installer le bundle après chaque push** (TCC pour le pilotage à l'écran), 19 Mo.
 **Les artefacts de mise à jour n'existent qu'en release** (`tauri.release.conf.json`).
 
-**Les six panneaux passent par `Dialogue.tsx`, et par rien d'autre** : rôle, `aria-modal`,
+**Les panneaux passent par `Dialogue.tsx`, et par rien d'autre** (Préférences, À propos,
+Stockage, Signaler, Raccourcis, Format, la fiche d'une photo, la confirmation de
+commande) : rôle, `aria-modal`,
 nom par le titre, focus dedans à l'ouverture et rendu à la fermeture, Tab qui cycle, et
 `inert` posé sur tous les frères de l'overlay le temps qu'il vit (un second panneau ne
 réveille pas l'éditeur en se fermant : chacun ne retire que ce qu'il a posé). Échap reste
@@ -1036,7 +1149,10 @@ de scène porte un angle et une origine, **jamais une matrice**.
 
 Autres drapeaux : `--print`, `--cover`, `--prevol --profil <id>`, `--densite`,
 `--variantes`, `--reprise`, `--bascule <FORMAT> [--essai]`, `--dump-scene`,
-`--dump-geometry`, `--dump-ornements`, `--profils`. Scripts :
+`--dump-geometry`, `--dump-ornements`, `--profils`, `--preparer <DOSSIER>`. Cachés :
+`--fiche`, `--releve-album`, `--dates`, `--reserve`, `--devis <album> --pays FR` (le
+code de commande, clé lue dans `CLOUDPRINTER_SANDBOX_API_KEY`, jamais en argument).
+Scripts :
 `pdfx.sh full`, `install-app.sh`, `fixture-scene.sh`, `ornement-encre.py`, `notices.sh`,
 `apercu-fidele.py`, `pages-simples.py`,
 `banc-gabarits.sh`, `mesure-cdp.mjs`, `feuille-cdp.mjs`, `police-cdp.mjs`. App :
@@ -1062,9 +1178,11 @@ COLOPHON_POLICE=.albums/corse-2013 cargo test -p colophon-core --release \
 Workspace Cargo. **`colophon-core`** : `scan` → `meta` → `thumb` → `analyze` → `face` →
 `heic` → `pipeline` (curation) → `layout` (Composer, `Densite`) → `scene` → `pdf` →
 `print` → `cover` → `audit` ; `build.rs` enchaîne. À côté : `font`, `icc`, `places`,
-`ornement` (les quatre actifs), `pdfx`, `reprise`, `log`, `printer`, `prevol`,
-`imposition` (la découpe en pages simples), `export` (le manifeste `export.json` et
-l'empreinte d'un album), `colophon` (la page).
+`ornement` (le pack), `pdfx`, `reprise`, `log`, `printer`, `prevol`,
+`imposition` (la découpe en pages simples), `export` (le manifeste `export.json`,
+l'empreinte d'un album, le dossier préparé, MD5 et SHA-256), `colophon` (la page),
+`fiche` (la fiche d'une photo), `qualite` (la mesure de l'alerte), `legende` (la
+proposition et les dates), `reserve`, `commande` (CloudCore), `depot` (le seau S3).
 **`colophon-cli`** : clap. **`colophon-app`** : React et Vite (`bridge.ts` seule porte,
 `album.ts` géométries, `scene.ts` la scène et `hitTest`, `SceneCanvas.tsx` le peintre,
 `SceneProxies.tsx` le clavier, `rendu.ts` l'interrupteur, `feuille.ts` le modèle de la
@@ -1072,11 +1190,14 @@ feuille qui tourne, `raster.ts` le PDF en bitmaps, `Feuilletage.tsx` la scène d
 feuilletage, `photos.ts` vignettes décodées et badges, `font.ts` la mesure de texte sur
 les octets de l'album, `police.ts` les noms et les refus d'une face,
 `ornement.ts` le pack et le seul tracé que les deux rendus partagent,
-`menu.ts`, `signaler.ts`, `pdfview.tsx`, `reasons.ts`, `icons.tsx`, `recents.ts`) plus la coquille Tauri, marques d'icône dans
-`design/marques`.
+`menu.ts`, `signaler.ts`, `pdfview.tsx`, `reasons.ts`, `icons.tsx`, `recents.ts`,
+`envoi.ts` et `commande.ts` la logique pure d'Envoi et de Commander) plus la coquille
+Tauri (`src-tauri/src/commande.rs` le compte et les commandes gardées), marques
+d'icône dans `design/marques`.
 
 
-Chaîne de distribution : `NOTICES.md` généré et embarqué, CSP réelle, CHANGELOG, README,
+Chaîne de distribution : `NOTICES.md` et `src-tauri/notices.md`, la copie embarquée,
+régénérés ensemble par `notices.sh` et identiques (le gate ne les compare pas), CSP réelle, CHANGELOG, README,
 modèles d'issue, `check.yml` et `release.yml` (binaires, SHA-256, `latest.json`), updater
 branché, `audit.yml` (avis RustSec, hebdomadaire, hors chemin de fusion). **La version vit
 à quatre endroits et `scripts/versions.py` est le seul à les comparer** : dans le gate sans

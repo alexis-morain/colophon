@@ -6,7 +6,7 @@ a file you own, and you print it wherever you like.
 
 What Darktable is to Lightroom, Colophon is to Blurb.
 
-> **Status:** pre-1.0, in active development. The release chain builds
+> **Status:** 1.0, the first public release. The release chain builds
 > installers for macOS and Windows; the Windows build has not yet been tried
 > on real hardware. HEIC, RAW and the Apple Photos import work on macOS only.
 
@@ -45,11 +45,12 @@ with.
   rejected in Lightroom never beats one you kept, a starred one gets a boost.
   A Google Takeout keeps its dates and places: its `.json` sidecars fill in
   what the EXIF lost.
-- **Curates** the take: blurry frames, near-duplicates, repeated shots of the
-  same scene, panoramas that do not fit the page, photos too small to print at
-  the size you chose. A folder of scanned prints, with no camera data at all,
-  still makes an album: the filter that needs camera data switches itself
-  off, says so, and the book follows the file dates.
+- **Curates** the take: near-duplicates, bursts and repeated shots of the
+  same scene (the sharpest frame, or the one you starred, stays), panoramas
+  that do not fit the page, photos too small to print at the size you chose.
+  A folder of scanned prints, with no camera data at all, still makes an
+  album: the filter that needs camera data switches itself off, says so, and
+  the book follows the file dates.
 - **Composes** spreads under hard constraints, not vibes. See below.
 - **Proposes three albums**, not one: the same photographs at two different
   paces and at two different lengths, composed from a single analysis. You
@@ -79,10 +80,10 @@ with.
   not fit runs past the bottom and the editor says so, and nothing is ever
   cut. Typographic ornaments (fleurons, rules, dividers) come from a pack
   shipped with the app, CC0 or public domain, and move, resize and turn the
-  same way, keeping their proportions. The pack holds three rules today. A
-  new block or ornament is placed clear of the photographs when the page has
-  room. The editor stops an object at the fold and warns when one enters the
-  safe area.
+  same way, keeping their proportions. The pack holds 35 of them in three
+  groups: 14 fleurons, 13 rules and 8 dividers. A new block or ornament is
+  placed clear of the photographs when the page has room. The editor stops
+  an object at the fold and warns when one enters the safe area.
 - **Sets the book in the typeface you choose.** In Format & type: a
   shortlist of ten families, one per voice, each name written in its own
   face, and every typeface installed on the computer one click behind it.
@@ -152,7 +153,8 @@ counter.
 ## The Sort view
 
 Every photo the curator dropped is shown, grouped by the reason it was
-dropped, with the frame it lost to sitting next to it. One click puts it back.
+dropped, with the frame it lost to sitting next to it. A double-click puts it
+back.
 
 No other tool tells you *why*. That was the whole point.
 
@@ -175,18 +177,22 @@ tells you the gesture that fixes it. Nothing ever fails silently.
 
 The preflight also opens the files already exported into the album folder.
 A PDF whose dimensions belong to another profile blocks. The command line
-records every export in `export.json`, next to `album.json`: the profile it
-was rendered for and a fingerprint of the album at that moment. A file
-rendered for another printer, or older than the album's last change, blocks
-too. A file that is not there says nothing.
+records every export in `export.json`, next to `album.json`, and Send writes
+one into every folder it prepares: the profile it was rendered for and a
+fingerprint of the album at that moment. A file rendered for another
+printer, or older than the album's last change, blocks too. A file that is
+not there says nothing.
 
 ```bash
 colophon --prevol --profil cloudprinter -o my-album
 ```
 
-Four profiles ship today: Cloudprinter, Prodigi, Lulu, and a generic one for
-the shop down the road. They disagree on bleed, on file count and on colour
-space, which is exactly why the profile is data and not a rule in the code.
+Four profiles ship with the command line: Cloudprinter, Prodigi, Lulu, and a
+generic one for the shop down the road. They disagree on bleed, on file count
+and on colour space, which is exactly why the profile is data and not a rule
+in the code. In the app, Send prepares a folder for Cloudprinter (interior,
+cover, `export.json`, and a sheet of what the order form asks for), or writes
+one plain PDF for any other shop.
 
 The album is always composed as spreads — nothing crosses the fold, and the
 editor shows two facing pages — but the export writes whatever shape the
@@ -293,11 +299,11 @@ and the typeface it is set in sits beside it. Nothing is captive, nothing
 expires, no project is locked behind a login.
 
 **Is this AI?**
-No model, no prompt, no cloud inference. Local heuristics: perceptual hashes,
-a sharpness measure, exposure, face detection. Every decision is explained in
-the interface, and you can overrule all of them. An AI mode may exist one day,
-with your own API key, and it will never be required and never decide anything
-on its own.
+No language model, no prompt, no cloud inference. Local heuristics:
+perceptual hashes, a sharpness measure, exposure, face detection. Every
+decision is explained in the interface, and you can overrule all of them. An
+AI mode may exist one day, with your own API key, and it will never be
+required and never decide anything on its own.
 
 **Why not just use Scribus or InDesign?**
 Because they are page layout tools and they start from an empty page. The work
@@ -321,8 +327,7 @@ HEIC is: counted and named, never silently dropped.
 **How do you make money?**
 Not from this. The software is free and stays free, and the full-resolution
 PDF export is free and stays free, offline and without an account, whatever
-happens next. An optional ordering feature may come later for people who would
-rather click once than deal with a print shop. It will always be optional.
+happens next.
 
 **Windows? Linux?**
 The release chain builds a Windows installer, and the test suite runs on

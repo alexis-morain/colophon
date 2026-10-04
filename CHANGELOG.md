@@ -9,398 +9,145 @@ sur la page des releases.
 
 ## [Non publié]
 
-### Ajouté
+## [1.0.0] - YYYY-MM-DD
 
-- **La date dans les légendes, en un bouton.** Planche → « Dater toutes les
-  légendes » écrit la date de prise de vue sous chaque photo, sur la même
-  ligne : la date seule dans une légende vide, « · 28 octobre 2013 » à la
-  suite d'une légende écrite. Seules les photos dont la date est fiable sont
-  datées, les autres se comptent dans la ligne de statut (« 41 légendes
-  datées, 3 photos sans date fiable »). Dater deux fois ne change rien, ⌘Z
-  défait tout l'album d'un coup, et « Retirer les dates des légendes » ôte
-  exactement ce que le bouton a écrit. Le popover de légende d'une photo
-  porte le même geste, « Dater » ou « Retirer la date ».
+First public release. Colophon takes a folder of photos and turns it into a
+composed album, spread by spread, in under a minute. You can rework any of it
+by hand, then export a 300 dpi PDF for whichever printer you choose. Free,
+offline, no account, GPL-3.0.
 
-- **Le dossier prêt pour Cloudprinter.** Dans Envoi, « Préparer pour
-  Cloudprinter » demande un dossier et y crée `<Titre> – Cloudprinter`, avec
-  quatre fichiers : `album-print.pdf` et `album-cover.pdf` à 300 dpi,
-  `export.json`, le manifeste qui dit de quel album et pour quel imprimeur
-  ils sortent, et `fiche.txt`, à recopier dans la commande : format, planches,
-  pages, fond perdu, feuille de couverture, dos, papier `pageblock_150mcs`,
-  couverture `cover_130mcg` en finition mate, et pour chaque PDF sa taille,
-  son SHA-256 et son MD5, celui que l'API de Cloudprinter demande. Le contrôle
-  se relit ensuite sur ces fichiers-là, le verdict tient en une phrase sous le
-  bouton, et le dossier s'ouvre dans le Finder ; « Montrer le dossier » le
-  rouvre. La ligne de commande fait la même chose avec `--preparer <dossier>`.
+Requires macOS 11 or later. The app is not signed by Apple, so the first
+launch goes through right-click, Open, or through System Settings, Privacy &
+Security, "Open Anyway", as the README explains. Windows has an installer, but
+nobody has run it on a real Windows machine yet. Unless you send a file
+somewhere yourself, only one request ever leaves your computer: the update
+check sent to GitHub at launch, which you can turn off in Preferences.
 
-- **Commander depuis Envoi, pour qui a un compte Cloudprinter.** Dans les
-  Préférences, « Compte Cloudprinter » enregistre une clé API, le mode qu'on
-  lui déclare (sandbox ou réel) et un dépôt S3 (Cloudflare R2, MinIO) d'où
-  Cloudprinter télécharge les deux PDF ; « Vérifier » essaie les deux. La clé
-  et les accès restent sur l'ordinateur, dans le dossier de données de
-  l'application, et l'écran n'en montre que les quatre derniers caractères.
-  Après « Préparer pour Cloudprinter », si le contrôle relu est vert,
-  « Commander » montre le papier intérieur, celui du dossier préparé, et
-  propose la finition, le nombre d'exemplaires et l'adresse, affiche le devis, puis demande confirmation avec
-  le prix et le mode en toutes lettres. L'état se relit à l'ouverture d'Envoi,
-  une commande s'annule tant que la production n'a pas commencé, et les
-  fichiers quittent le dépôt une fois la commande expédiée ou annulée. Cinq
-  formats ont un produit : carré 21, carré 30, A4 portrait, A4 paysage et
-  portrait 20 × 25. Le paysage 28 × 21 passe par le dossier préparé et Quick
-  order.
+### Added
 
-- **Une couverture composée d'office.** Un album neuf naît avec sa
-  couverture : la photo la mieux notée du quart supérieur du livre, en
-  paysage ou carrée, le titre de l'album, et les dates de la page de garde en
-  sous-titre. Elle se change dans Couverture, et une recomposition garde
-  celle que vous avez choisie.
+#### Compose
 
-- **Le moteur sait parler à Cloudprinter et à un dépôt S3, sans écran.**
-  Devis, commande, état et annulation par l'API CloudCore, et dépôt des deux
-  PDF sur un seau S3 (Cloudflare R2, MinIO) par URL présignée, lisible sept
-  jours. Rien n'est encore visible dans l'app : ces briques attendent l'écran
-  qui les utilisera. Une option cachée de la ligne de commande, `--devis`,
-  demande le prix d'un exemplaire au sandbox de Cloudprinter.
+- A folder goes in, with no import step and no catalogue. JPEG and PNG work
+  everywhere; HEIC and RAW work on macOS through the system decoder. On a Mac,
+  an album from Apple Photos is copied into a visible folder, and the photo
+  library is never modified.
+- Curation drops near-duplicates, bursts and repeated shots of a scene,
+  keeping the sharpest frame or the one you starred, plus panoramas too wide
+  for the page, photos too small for the format, and whatever a full book has
+  no room for. The Sort view shows every dropped photo, the reason, and the
+  frame it lost to; a double-click rescues it.
+- Lightroom star ratings and rejects (XMP) count, a Google Takeout export
+  keeps its dates, and a folder of scans with no EXIF still makes an album.
+- Three albums from a single analysis, at different paces and lengths, with a
+  summary: photos read, kept, dropped, and why.
+- Six page formats. Switching format keeps the spreads, the photos and the
+  crops.
+- A half-title (title, dates, towns) at the front and a colophon page at the
+  back, each removed with one click.
+- A new album comes with its cover: one of the book's best-rated photos,
+  landscape or square, the album's title, and the dates of the half-title.
+  Change it in Cover; a recomposition keeps the one you chose.
 
-- **Une alerte de qualité sur les photos, en un seul signe.** Un petit
-  triangle dans le coin d'une case dit qu'elle imprimera mal : sous 250 ppi,
-  très sombre, ou **floue**, l'alerte nouvelle, qui marque les photos du
-  dixième le moins net de leur dossier (rien sous 25 photos). Le survol
-  donne la raison et le remède, et VoiceOver lit l'alerte dans le nom de la
-  photo : « Photo 2 sur 3, IMG_2193.jpg, 220 ppi, sous 250 ». Le même
-  triangle marque, dans le Tri, les photos de la réserve trop petites pour
-  une demi-page du format ou floues, et Planches pose un point d'alerte à
-  côté du point « éditée » sur chaque planche qui en a une. Le ppi se juge
-  sur la taille de l'original, même quand sa vignette est réduite. Aucun
-  seuil de l'audit ne bouge.
+#### Edit
 
-- **La fiche d'une photo, et son original.** Sur une photo de la planche,
-  « Informations… » du menu contextuel ou ⌘I ouvre sa fiche : dimensions,
-  poids, format, date de prise de vue (et si elle vient du fichier faute
-  d'EXIF), appareil, objectif, ouverture, temps de pose, ISO, focale,
-  coordonnées en degrés décimaux, lieu (hors ligne, par l'atlas de
-  l'album), note, netteté et exposition quand l'album porte son relevé, et
-  la résolution dans sa case, en terracotta quand elle est sous le
-  plancher. Une ligne que le fichier ne dit pas ne s'affiche pas. « Voir
-  l'original » montre le fichier sélectionné dans le Finder ou l'Explorateur,
-  depuis la fiche ou depuis le menu ; l'app ne reçoit jamais un chemin, et
-  un nom qui sort du dossier des photos est refusé.
+- Crop inside a cell, replace a photo or add one from the reserve with a
+  right-click, reorder and duplicate spreads, pick from at most 23 named
+  dispositions, write captions, rename chapters, lay out the cover.
+- Exposure, contrast and black and white, without a byte of the original
+  changing.
+- Text blocks and 35 ornaments, public domain or CC0, that go anywhere on a
+  spread and can be turned, coloured, copied and pasted.
+- The book's typeface: a shortlist of ten families, and every typeface on the
+  computer one click behind it. It is copied into the album's folder, so the
+  album prints the same on another computer.
+- A photo that will print badly carries a triangle in the corner of its cell,
+  "N ppi, under 250", "dark" or "blurry", which VoiceOver reads too. The same
+  sign marks it in Sort, and Spreads puts an alert dot on its spread.
+- "Date every caption" writes the shooting date at the end of each caption,
+  "Date it" does it for one photo, and "Remove the dates from the captions"
+  takes them off again.
+- Photo info (⌘I), and "Show the original" in the Finder or Explorer.
+- ⌘Z undoes everything. Quitting, closing or opening another album asks
+  before discarding anything.
 
-- **Un clic droit sur la planche, et une photo s'ajoute ou se remplace
-  depuis la réserve.** Sur le papier nu d'une page : « Ajouter une photo… »,
-  un bloc de texte ou un ornement, posés là où vous avez cliqué. Sur une
-  photo : « Remplacer par… », retirer, copier. Sur un bloc ou un ornement :
-  copier, couper, dupliquer, supprimer, et ses réglages. « Ajouter » comme
-  « Remplacer » ouvrent le même choix, douze vignettes au plus prises dans
-  les photos que le livre ne montre pas, les plus proches de la planche
-  d'abord : le même jour, puis les jours voisins, les plus nettes en tête,
-  et jamais le quasi-double d'une photo déjà sur la planche. Ajouter fait
-  grandir la planche d'une case ; quand elle n'en a plus, le choix le dit et
-  pose la photo sur une planche neuve, insérée après. Une photo copiée se
-  colle d'un ⌘V sur la planche affichée. Le menu se parcourt au clavier et
-  se referme à Échap.
+#### Export
 
-- **Une police, un gras, un italique et une couleur pour chaque bloc de
-  texte, une couleur pour chaque ornement.** Choisissez le bloc sur la
-  planche : ses réglages s'ouvrent dessous. La première rangée porte la
-  police, G, I, le corps et la couleur ; la seconde l'alignement,
-  l'interligne et l'angle. La police se choisit dans la même liste que celle
-  du livre (dix familles, puis toutes celles de la machine), chaque nom écrit
-  dans sa police. « Police du livre » rend au bloc celle du livre. G et I
-  prennent la vraie face grasse ou italique de la famille, jamais une
-  imitation : quand la machine ne l'a pas, le bouton reste inactif et dit
-  pourquoi. La couleur se prend dans six pastilles (l'encre du livre, noir,
-  blanc, deux gris, terracotta) ou dans le sélecteur du système ; un
-  ornement n'a que la couleur et l'angle. La police choisie est copiée dans
-  le dossier de l'album, comme celle du livre. Si son fichier disparaît, le
-  bloc sort dans la police du livre et ses réglages le disent. Chaque choix
-  s'annule d'un ⌘Z, et un copier-coller garde la police et la couleur.
+- A 300 dpi PDF with its typeface embedded, PDF/A-2b checked with veraPDF,
+  PDF/X-4 declared, plus a light preview PDF for the screen.
+- The Faithful preview (⇧⌘P) shows the PDF itself, not a drawing of the
+  spread.
+- The preflight blocks what the guillotine would cut or the binding would
+  swallow, warns about the safe zone, and for every problem names the spread
+  and the gesture that fixes it. No photo ever prints below 250 ppi.
+- The preflight also blocks a file exported for another printer, or one older
+  than the album's last change.
 
-- **Copier, couper, coller, dupliquer et pousser un bloc de texte ou un
-  ornement au clavier.** Choisissez l'objet sur la planche : ⌘C le copie,
-  ⌘X le coupe, ⌘V le colle sur la planche affichée, et le menu Édition fait
-  la même chose. Collé sur sa propre planche, il se pose 4 mm plus bas et à
-  droite pour qu'on voie la copie ; sur une autre, à la même place, hors des
-  photos quand la page a de la place. ⌘D duplique l'objet choisi, et la
-  planche quand rien n'est choisi. Les flèches le poussent d'un millimètre,
-  de cinq avec ⇧, et il bute au pli comme à la souris. ⌫ le retire. Chaque
-  geste s'annule d'un ⌘Z. Un champ de saisie garde son copier-coller à lui.
+#### Print
 
-- **Choisir la police du livre.** Dans *Format*, à côté du format de page :
-  dix familles, une par voix — une linéale neutre, une humaniste, une
-  géométrique, un romain classique, un romain de texte, une didone, une
-  égyptienne, une machine à écrire, un romain élégant, une chasse fixe —,
-  chacune **écrite dans sa propre police**, avec une ligne de spécimen : on
-  voit la police avant de la choisir, et ce qui est dessiné à l'écran est ce
-  que le PDF embarquera. Toutes les polices de la machine restent à un clic,
-  groupées par famille, avec un champ pour filtrer. Une police pour tout le
-  livre — légendes, titres de
-  chapitre, page de garde, colophon, couverture et dos. Rien n'est
-  recomposé : les planches, les photos et les recadrages ne bougent pas,
-  seules les coupures de ligne suivent. ⌘Z annule le choix, ⌘S l'enregistre.
-  La police retenue est **copiée dans le dossier de l'album**, donc l'album
-  s'ouvre et s'imprime à l'identique sur une machine qui ne l'a pas.
-  Les polices que leur licence interdit d'incorporer, ou qu'un PDF ne peut
-  pas porter, restent dans la liste, grisées, avec la raison : mieux vaut
-  lire pourquoi qu'aller la chercher. Et si le fichier de la police disparaît
-  du dossier, l'album sort dans celle de Colophon et l'écran le dit — jamais
-  un livre imprimé dans une police que personne n'a choisie.
+- Any printer that accepts a PDF: no watermark, no logo, no partner you have
+  to use. In Send, "Another printer? A PDF without constraints" writes one
+  file, cover included.
+- "Prepare for Cloudprinter" writes a folder with the interior, the cover as
+  one flat sheet with its spine, `export.json`, and `fiche.txt`, which lists
+  what the order form asks for (format, pages, paper, file sizes, SHA-256 and
+  MD5). The preflight then runs again on the files written.
+- The command line ships four profiles: Cloudprinter, Prodigi, Lulu and a
+  generic one. Binders that work page by page get the interior as single
+  pages.
 
-- **Page de garde.** La première page du livre, comme dans un livre imprimé :
+#### Reporting and updates
 
-  le titre de l'album, les dates du voyage, les villes traversées. Trois
-  lignes, rien d'autre. Activée par défaut, décochable dans Envoi à côté de
-  la page de colophon. Le titre suit le renommage de l'album ; les dates et
-  les villes sortent de ce que la composition a mesuré, jamais d'une phrase
-  écrite à votre place. Le titre imprimé est celui du livre : celui de la
-  couverture quand vous lui en avez donné un, celui de l'album sinon. Un
-  titre trop long pour la page rétrécit plutôt que de déborder, et rien n'est
-  jamais coupé.
+- Help, Report a problem: the app builds the report, you read it before it
+  goes, and it carries no photo, no path and no GPS coordinate. After an
+  export, Send asks for your verdict on the first draft.
+- Updates arrive through the app, signed, and nothing installs without a
+  click.
+- French and English, a dark mode that follows the system, a Storage panel to
+  see and clear what the app has written, and an About screen with the
+  licences.
 
-- **Trente-deux ornements de plus.** Le sélecteur en montre trente-cinq,
-  rangés en trois groupes : quatorze fleurons, treize filets, huit
-  séparateurs. Tous viennent de Wikimedia Commons, tous sont dans le domaine
-  public ou sous CC0, et leur provenance est listée dans
-  `assets/ornements/LICENCES.md`. Pour en proposer un autre,
-  `scripts/ornement-normaliser.py` ramène un SVG dans ce que le PDF sait
-  tracer, et refuse en le nommant ce qu'il ne sait pas traduire.
+### Changed
 
-### Modifié
+Compared with 0.9.0, described below, which was built but never distributed:
 
-- **Envoi n'offre plus qu'un imprimeur.** Le choix entre quatre profils
-  disparaît : l'écran vise Cloudprinter, le seul qu'on commande. Un lien en
-  bas, « Un autre imprimeur ? PDF sans contrainte », bascule sur le PDF libre
-  et le dit en tête de l'écran ; son bouton enregistre un seul fichier, comme
-  avant. Prodigi et Lulu restent dans la ligne de commande (`--profil`).
+- *Install.* macOS 11 at minimum. Windows now ships only as an MSI installer.
+- *Compose.* A photo with no date, no GPS and no stars is no longer dropped
+  for lacking a camera fingerprint when most of the folder lacks one too: the
+  filter switches itself off and says so.
+- *Edit.* The picker shows at most 23 named dispositions instead of 171
+  template names. A block's settings open right below the block. Preferences
+  no longer carry the Elements or Canvas switch, which changed nothing in the
+  book.
+- *Print.* Send no longer offers four profiles: it prepares for Cloudprinter,
+  or writes a plain PDF for any other printer. Prodigi and Lulu stay on the
+  command line (`--profil`). A new album comes with a cover, and a cover with
+  no photo blocks a printer that takes it as a separate file. Cloudprinter
+  takes 24 to 800 pages.
+- *Export.* A photo too small for its cell still blocks the export, but its
+  line in Send carries three gestures: Show, Replace, Remove from spread.
+  Remove always works.
+- *Formats.* Portrait 20 × 25 is 203.2 mm wide, a true 8 × 10 inches,
+  instead of 203.0.
+- *Updates.* The update check is documented in the README and in the security
+  policy, and Preferences turns it off.
 
-- **Cloudprinter relie de 24 à 800 pages.** Le plafond était de 200, sans
-  source ; leur devis accepte tout compte pair de 24 à 800 pages et refuse 22
-  et 1000. Sous 24 pages, le contrôle propose d'ajouter des planches ou de
-  choisir un rythme plus aéré.
+### Fixed
 
-- **Les réglages d'un bloc de texte s'ouvrent sous le bloc.** Corps,
-  interligne, angle et alignement vivaient dans la barre sous la planche, où
-  ils s'empilaient faute de place dès que la fenêtre rétrécissait. Ils
-  s'ouvrent désormais juste sous le bloc choisi (au-dessus quand le bas de
-  la fenêtre est proche), sur deux rangées. L'alignement se
-  choisit par trois boutons à icône au lieu d'un menu. Un ornement n'y montre
-  que son angle. Échap abandonne une valeur en cours de saisie, et chaque
-  réglage reste un seul pas d'annulation.
-
-- **Le choix Éléments / Canvas quitte les Préférences.** Il ne changeait
-  rien au livre ni au PDF, et ne servait qu'à mesurer deux façons de dessiner
-  la planche à l'écran. Les Préférences ne gardent que la langue, les mises à
-  jour et l'apparence.
-
-- **La vérification des mises à jour se dit, et se coupe.** Elle existait
-  depuis la 0.9.0 et partait au lancement sans condition, pendant que
-  `SECURITY.md` promettait « no network call at runtime » et le README
-  « Fully offline » : la promesse était fausse, pas le code. Les deux textes
-  nomment désormais ce qui sort — une requête vers la page des versions, dont
-  GitHub voit l'adresse IP et le nom du système, rien des photographies, rien
-  de l'album, aucun identifiant fabriqué par Colophon — et *Préférences* (⌘,)
-  porte l'interrupteur. Le réglage agit dans la seconde : coupé, le bandeau
-  disparaît et plus rien ne sort ; rallumé, la question est posée tout de
-  suite. Il reste allumé par défaut, parce que pour une application
-  distribuée hors de toute boutique, c'est le seul chemin par lequel un
-  correctif arrive. Rien ne s'est jamais installé sans un clic, et rien ne
-  change de ce côté.
-
-- **Le sélecteur de gabarits montre des dispositions, pas des gabarits.** Une
-  planche de quatre photos en proposait jusqu'à 171, et la moitié de ce
-  nombre était le même dessin deux fois : une bande de légende de huit
-  millimètres, invisible à la taille d'une vignette, ou une forme de cellule
-  que la vignette montre déjà. Il en montre au plus vingt-trois, une par
-  disposition, groupées par nombre de photos et **nommées** — « Deux en
-  colonne par page », « Une pleine page, trois côte à côte » — là où les
-  gabarits ajoutés au catalogue s'affichaient encore sous leur nom de
-  fichier, `g_1x2f_1x2f`. Le gabarit réellement posé est la variante que ces
-  photos-là cadrent le mieux, jugée par le moteur et non choisie à la main.
-  G et ⇧G parcourent la même liste.
-
-- **Envoi ne laisse plus deux cents pixels de vide** entre le verdict et les
-  défauts qu'il annonce : les deux colonnes ne partagent plus leurs lignes.
-  Et plus rien dans l'interface ne se lit sous douze pixels : les pastilles
-  sur les photos, les noms de groupes des sélecteurs, les licences d'À propos
-  et la mention « fiche provisoire » montent d'un pixel.
-
-### Corrigé
-
-- **Un JPEG tronqué ne part plus tel quel chez l'imprimeur.** Quand une
-  photo était déjà à la bonne définition, le PDF d'impression recopiait ses
-  octets sans les décoder, et seul l'en-tête était lu : une copie
-  interrompue, un fichier iCloud à moitié synchronisé partaient à la presse
-  avec le tiers haut de l'image sur un aplat gris, prévol vert. Le fichier est
-  désormais parcouru jusqu'à son marqueur de fin d'image avant de partir,
-  une milliseconde par photo, et un fichier tronqué arrête l'export en
-  nommant le fichier.
-
-- **Un export bloqué par une photo trop petite a maintenant une sortie.**
-  Envoi refusait l'export et disait seulement quoi faire, alors qu'un
-  original vraiment petit peut ne tenir dans aucune case. Chaque photo sous
-  250 ppi a désormais sa ligne : la vignette, la planche, la résolution, et
-  trois gestes. « Voir » ouvre la planche sur la case, « Remplacer » propose
-  les photos de la réserve, « Retirer de la planche » la rend à la réserve.
-  Retirer marche toujours. Les deux derniers enregistrent l'album et relancent
-  le contrôle, ⌘Z les défait. La barre ne bouge pas : Colophon n'imprime
-  jamais sous 250 ppi. La ligne de commande dit le même remède, raccourci à
-  ce qui est vrai pour elle aussi.
-
-- **Le portrait 20 × 25 mesure 203,2 mm de large, le vrai 8 × 10 pouces.** Il
-  en faisait 203,0, un arrondi, et ces 0,2 mm le privaient du cartonné 8 × 10
-  de Cloudprinter. Les marges suivent la largeur, de 13,53 à 13,55 mm.
-
-- **Glisser une photo du tiroir sur une case la pose de nouveau.** Le tiroir
-  « Photos en réserve » propose une copie, et la case annonçait un
-  déplacement : le navigateur annulait le dépôt sans rien dire, et la photo
-  restait dans le tiroir. La case annonce maintenant une copie pour une photo
-  du tiroir, l'échange de deux cases reste un déplacement, et ⌘Z retire la
-  photo posée. Sous Windows, le glisser-déposer de fichiers de Tauri est coupé :
-  l'app n'en reçoit aucun, et il avalait celui de la page.
-
-- **La fiche d'une photo montre sa netteté et son exposition sur tout
-  album.** Elle ne les lisait que dans le relevé, que seul un album composé
-  depuis ses fiches porte : sur un album composé depuis les photos, les deux
-  lignes manquaient toujours. Elle lit désormais la même mesure que l'alerte
-  de qualité, prise sur la vignette de la photo quand le relevé manque.
-
-- **Une couverture sans photo ne part plus chez l'imprimeur.** Le 21/09, la
-  couverture envoyée à Cloudprinter était blanche : l'album n'avait pas de
-  couverture, le rendu est retombé sur le nom du dossier, aux bonnes cotes et
-  avec un contrôle vert. Chez qui relie deux fichiers, une couverture sans
-  photo bloque désormais l'envoi, avec le remède : choisissez une photo dans
-  Couverture.
-
-- **La date du colophon suit `SOURCE_DATE_EPOCH`.** Comme l'instant déclaré
-  dans le PDF : deux compositions reproductibles impriment le même jour, même
-  à cheval sur minuit.
-
-- **Les planches se réordonnent à la souris.** Glisser une planche sur une
-  autre dans *Planches* ne faisait rien dans l'application installée. Le
-  glisser est réécrit : la planche suit la souris, la planche visée se marque
-  d'un pointillé, et le déplacement se fait au relâchement. Un simple clic
-  choisit toujours la planche, Échap pendant le glisser annule sans rien
-  changer, et ⌘Z ramène la planche à sa place. ⌥ flèches marche comme avant.
-
-- **La légende d'une photo ne déborde plus.** Son champ prend la largeur de
-  la photo, entre 240 et 420 pixels, au lieu d'une largeur fixe qui pouvait
-  mordre sur la voisine ; une date proposée trop longue se coupe d'une
-  ellipse, entière au survol. La phrase d'aide sous la planche ne recouvre
-  plus rien quand la fenêtre est étroite : elle se coupe elle aussi, et se lit
-  en entier au survol. Les boutons de la barre ne passent plus sur plusieurs
-  lignes.
-
-- **Le cache de vignettes s'élague.** Une photo retouchée, renommée ou
-  retirée du dossier laissait son ancienne vignette pour toujours, 227 Ko
-  chacune, sans limite d'âge ni de taille. À chaque composition, ce que
-  l'index ne nomme plus est retiré, et le journal dit combien.
-
-- **Quitter et fermer la fenêtre demandent, comme tout le reste.** ⌘Q et la
-  pastille rouge jetaient un album modifié sans un mot, alors que *Fermer*
-  et *Recomposer* demandaient tous les deux : le menu *Quitter* était celui
-  du système, qui passe par une terminaison native et ne laisse aucun endroit
-  où poser la question. Il est à nous désormais, ⌘Q compris, et la fermeture
-  de fenêtre passe par la même question. Le garde du navigateur de
-  développement, qui ne faisait rien faute de `returnValue`, en profite.
-- **Ouvrir un autre album ne jette plus le travail en cours.** ⌘O et la liste
-  des albums récents, dans le menu comme sur l'écran d'accueil, remplaçaient
-  l'album ouvert sans rien demander, pile d'annulation comprise. Ils
-  demandent, avec la même phrase que fermer.
-- **Enregistrer ne supprime plus les sauvegardes faites à la main.** Le projet
-  annonce `album.json` réparable dans un éditeur de texte, donc il invite
-  exactement le geste qu'il punissait : copier l'album avant une édition
-  risquée. `album.sauvegarde.json` mourait au ⌘S suivant, le ménage des
-  propositions non choisies reconnaissant tout fichier `album.quelquechose.json`
-  au lieu des seuls noms qu'il avait lui-même écrits. Il ne supprime plus que
-  ceux-là. Une proposition périmée qui traînerait coûte un fichier ; une
-  sauvegarde effacée coûtait une soirée.
-- **Un titre imprime les caractères qu'il porte, et plus des points
-  d'interrogation.** L'éditeur affichait « Zażółć », le PDF imprimait
-  « Za?ó??? » : le texte du fichier était limité à 224 caractères, un jeu
-  latin occidental. Il ne l'est plus, et l'écran et le papier disent
-  maintenant la même chose. Le texte d'un PDF exporté se copie aussi
-  proprement dans un lecteur, accents compris. Les albums déjà composés
-  s'exportent à l'identique : rien ne bouge tant que rien ne sortait du jeu
-  d'avant.
-- **Une photo ne peut plus effacer une page de texte.** Envoyer une photo sur
-  la planche voisine (⌘⇧flèche) quand celle-ci était une page de texte, la
-  page de garde ou le colophon transformait la page en planche photo et son
-  texte disparaissait sans le dire. Le déplacement est refusé et la barre
-  d'état dit pourquoi. La page de respiration, elle, accepte toujours une
-  photo : c'est à ça qu'elle sert.
-- **Un dossier de tirages scannés fait un album.** Au-dessus de vingt-cinq
-  photos, une photo sans date EXIF, sans GPS et sans étoile était écartée
-  comme « parasite », et un dossier où aucune n'en avait — des scans, un
-  Takeout sans ses fichiers de dates — était refusé en bloc, sous ce mot-là.
-  Le filtre ne s'arme plus que lorsque la majorité des photos porte une
-  empreinte d'appareil : sinon il se coupe, le dit, et le livre suit les
-  dates de fichier. Et la raison affichée dans le tri ne dit plus
-  « parasites » mais « sans empreinte d'appareil ».
-- **Une erreur ne laisse plus une fenêtre blanche.** Une levée pendant un
-  rendu démontait tout l'écran sans un mot ni un journal. Une frontière
-  d'erreur l'attrape désormais : elle dit ce qui s'est passé, ce qui est sur
-  le disque et ce qui ne l'est pas, offre le détail à copier pour un
-  signalement, et un bouton relance l'écran.
-- **Les panneaux sont des dialogues.** Préférences, À propos, Stockage,
-  Signaler, Raccourcis et Format s'annoncent comme tels au lecteur d'écran,
-  prennent le focus à l'ouverture, le rendent à la fermeture, et tout ce qui
-  est derrière eux est inerte le temps qu'ils sont ouverts : Tab n'atteint
-  plus les boutons de l'éditeur caché. Le panneau *Format* était le seul
-  qu'Échap ne fermait pas ; il le ferme. Et Échap lâche l'objet libre choisi
-  en même temps que la case, au lieu de laisser les flèches le déplacer
-  pendant qu'on croit tourner les pages.
-- **Le livre se réordonne au clavier.** Dans *Planches*, ⌥ flèche déplace la
-  planche courante ; Entrée et Espace l'ouvrent. L'ordre des planches ne se
-  changeait qu'à la souris.
-- **L'écran « album vide » et l'alerte de dossier photo introuvable parlent
-  anglais** sur l'interface anglaise ; ils étaient restés en français.
-- **Un contrôle avant impression qui ne tourne pas le dit en français**, le
-  message brut passant derrière un « Détail technique » comme partout
-  ailleurs. Et le panneau *Signaler* ne meurt plus quand le diagnostic de la
-  machine est illisible : le rapport part sans lui et le dit.
-- **Le rapport de bug partait vide sous Windows.** L'URL de l'issue
-  pré-remplie passait par `cmd /C start`, qui coupe au premier `&` : le
-  formulaire s'ouvrait sans version, sans système, sans journal — et tout ce
-  qui suivait un `&` aurait été exécuté. L'URL est désormais remise au
-  navigateur sans interpréteur de commandes entre les deux, et le canal
-  n'accepte plus qu'une forme fermée : le formulaire du dépôt suivi d'une
-  requête faite de ce que l'application écrit, et rien d'autre.
-- **Une vignette ne se lit que dans le cache.** `thumbs.json` est un fichier
-  du dossier de l'album, donc un fichier qui se partage ; une valeur
-  `../../…` y était suivie telle quelle par six lecteurs. Un nom de vignette
-  est un nom de fichier, ou il est refusé.
-
-### Sécurité
-
-- La fenêtre ne nomme plus un chemin du disque : la boîte « Enregistrer le
-  PDF » est ouverte par le moteur, qui écrit là où vous avez cliqué et nulle
-  part ailleurs, et l'import depuis Photos n'écrit que dans le dossier qu'il
-  a lui-même proposé, sous Images › Colophon.
-
-- La chaîne de release refuse un tag dont la version ne serait pas celle des
-  quatre fichiers qui la portent, et un CHANGELOG sans section pour elle ;
-  elle passe le gate avant de construire quoi que ce soit. Le gate construit
-  désormais le bundle de l'interface, garde le Composer sous et sur le seuil
-  du petit dossier, et un workflow hebdomadaire lit les avis de sécurité des
-  crates. Windows ne sort plus qu'un installeur MSI, donc une seule forme de
-  mise à jour ; macOS exige 11.0, ce que la photothèque exigeait déjà.
-- **Composer un dossier déjà composé n'écrase plus l'album.** Le même
-  dossier de photos résolvait le même dossier de sortie, et la nouvelle
-  composition réécrivait l'album qu'on avait édité à la main — titre,
-  légendes, recadrages — avec pour seul filet une sauvegarde d'un pas. Un
-  album ne s'écrit plus jamais là où un album est : le second se pose à
-  côté. Et l'écran de création le demande avant : « Un album a déjà été
-  composé depuis ce dossier. Le rouvrir ? ». Le nom du dossier de sortie
-  ne dépend plus d'un algorithme que Rust ne garantit pas stable d'une
-  version à l'autre.
-- **L'écran montre ce que le livre imprime.** Un caractère que la police du
-  livre ne dessine pas s'imprime « ? » ; l'écran, lui, retombait sur une
-  autre police et montrait la légende parfaite. Le moteur nomme désormais ces
-  caractères (quatorzième compteur du linter, `caractere_absent`, qui
-  avertit et ne décide pas), l'éditeur les dessine « ? » comme le PDF, dans
-  les deux rendus et dans les coupures de ligne, et le panneau *Format*
-  comme *Envoi* les listent : « Cette police ne dessine pas 3 caractères de
-  l'album, imprimés « ? » : « ż », « ę », « ź » ».
+- *Compose.* Composing a folder that already has an album no longer
+  overwrites it: the new album is written next to the old one, and the app
+  offers to reopen the old one.
+- *Edit.* Saving no longer deletes a copy of `album.json` you made by hand. A
+  photo moved onto a text page no longer wipes out its text. Spreads reorder
+  with the mouse as well as with the keyboard. A photo dragged from the
+  reserve drawer onto a cell lands there. An error no longer leaves a blank
+  window, and the panels work with the keyboard and with a screen reader.
+- *Export.* A title like "Zażółć" prints as written, not as question marks. A
+  character the typeface cannot draw shows as "?" on screen, exactly as on
+  paper, and Send names it. A truncated JPEG no longer goes to print with a
+  grey band where the image stops: the export halts and names the file.
+- *Reporting.* Bug reports no longer go out empty on Windows.
+- *Security.* The interface no longer handles any path on disk, and a
+  thumbnail name that points outside the cache is refused.
 
 ## [0.9.0] - 2026-08-17
 

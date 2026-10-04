@@ -225,6 +225,14 @@ sur la page des releases.
 
 ### Corrigé
 
+- **Glisser une photo du tiroir sur une case la pose de nouveau.** Le tiroir
+  « Photos en réserve » propose une copie, et la case annonçait un
+  déplacement : le navigateur annulait le dépôt sans rien dire, et la photo
+  restait dans le tiroir. La case annonce maintenant une copie pour une photo
+  du tiroir, l'échange de deux cases reste un déplacement, et ⌘Z retire la
+  photo posée. Sous Windows, le glisser-déposer de fichiers de Tauri est coupé :
+  l'app n'en reçoit aucun, et il avalait celui de la page.
+
 - **La fiche d'une photo montre sa netteté et son exposition sur tout
   album.** Elle ne les lisait que dans le relevé, que seul un album composé
   depuis ses fiches porte : sur un album composé depuis les photos, les deux

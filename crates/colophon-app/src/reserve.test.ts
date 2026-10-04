@@ -7,7 +7,7 @@ import { Album, Slot, Spread, templateCapacity } from "./album";
 import { Candidat } from "./bridge";
 import fixture from "./geometrie.fixture.json";
 import { Dump, setGeometrie } from "./geometrie";
-import { pleineAvant, poser, poserApres } from "./reserve";
+import { effetDeDepot, pleineAvant, poser, poserApres, TYPE_PHOTO } from "./reserve";
 
 setGeometrie(fixture as unknown as Dump);
 
@@ -93,5 +93,20 @@ describe("poserApres", () => {
     expect(r.album.spreads[1].template).toBe("solo");
     expect(r.album.spreads[1].slots).toEqual([{ src: "reserve.jpg", focal: [0.3, 0.2] }]);
     expect(r.album.spreads[2]).toBe(a.spreads[1]);
+  });
+});
+
+describe("effetDeDepot", () => {
+  // Le tiroir n'autorise que la copie : une case qui annonce « move » à une
+  // photo du tiroir fait annuler le dépôt par le navigateur, `drop` ne part
+  // jamais (WebKit comme Chromium).
+  it("rend copy pour une photo du tiroir", () => {
+    expect(effetDeDepot([TYPE_PHOTO])).toBe("copy");
+    expect(effetDeDepot(["text/plain", TYPE_PHOTO])).toBe("copy");
+  });
+
+  it("garde move pour l'échange de deux cases", () => {
+    expect(effetDeDepot(["text/colophon-slot"])).toBe("move");
+    expect(effetDeDepot([])).toBe("move");
   });
 });

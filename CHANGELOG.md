@@ -44,9 +44,10 @@ sur la page des releases.
   propose la finition, le nombre d'exemplaires et l'adresse, affiche le devis, puis demande confirmation avec
   le prix et le mode en toutes lettres. L'état se relit à l'ouverture d'Envoi,
   une commande s'annule tant que la production n'a pas commencé, et les
-  fichiers quittent le dépôt une fois la commande expédiée ou annulée. Quatre
-  formats ont un produit : carré 21, carré 30, A4 portrait et A4 paysage. Les
-  autres passent par le dossier préparé et Quick order.
+  fichiers quittent le dépôt une fois la commande expédiée ou annulée. Cinq
+  formats ont un produit : carré 21, carré 30, A4 portrait, A4 paysage et
+  portrait 20 × 25. Le paysage 28 × 21 passe par le dossier préparé et Quick
+  order.
 
 - **Une couverture composée d'office.** Un album neuf naît avec sa
   couverture : la photo la mieux notée du quart supérieur du livre, en
@@ -224,6 +225,10 @@ sur la page des releases.
   et la mention « fiche provisoire » montent d'un pixel.
 
 ### Corrigé
+
+- **Le portrait 20 × 25 mesure 203,2 mm de large, le vrai 8 × 10 pouces.** Il
+  en faisait 203,0, un arrondi, et ces 0,2 mm le privaient du cartonné 8 × 10
+  de Cloudprinter. Les marges suivent la largeur, de 13,53 à 13,55 mm.
 
 - **Glisser une photo du tiroir sur une case la pose de nouveau.** Le tiroir
   « Photos en réserve » propose une copie, et la case annonçait un

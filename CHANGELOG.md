@@ -226,6 +226,17 @@ sur la page des releases.
 
 ### Corrigé
 
+- **Un export bloqué par une photo trop petite a maintenant une sortie.**
+  Envoi refusait l'export et disait seulement quoi faire, alors qu'un
+  original vraiment petit peut ne tenir dans aucune case. Chaque photo sous
+  250 ppi a désormais sa ligne : la vignette, la planche, la résolution, et
+  trois gestes. « Voir » ouvre la planche sur la case, « Remplacer » propose
+  les photos de la réserve, « Retirer de la planche » la rend à la réserve.
+  Retirer marche toujours. Les deux derniers enregistrent l'album et relancent
+  le contrôle, ⌘Z les défait. La barre ne bouge pas : Colophon n'imprime
+  jamais sous 250 ppi. La ligne de commande dit le même remède, raccourci à
+  ce qui est vrai pour elle aussi.
+
 - **Le portrait 20 × 25 mesure 203,2 mm de large, le vrai 8 × 10 pouces.** Il
   en faisait 203,0, un arrondi, et ces 0,2 mm le privaient du cartonné 8 × 10
   de Cloudprinter. Les marges suivent la largeur, de 13,53 à 13,55 mm.

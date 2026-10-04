@@ -3,14 +3,17 @@
 // `navigator`, langue anglaise par défaut : chaque cas pose la sienne.
 
 import { afterEach, describe, expect, it } from "vitest";
-import type { Preparation, Printer, PrevolReport } from "./bridge";
+import type { Album } from "./album";
+import type { Defaut, Preparation, Printer, PrevolReport } from "./bridge";
 import { setLangue } from "./i18n";
 import {
   PROFIL_ENVOI,
   PROFIL_LIBRE,
   actionEnvoi,
+  actionsDefaut,
   imprimeurAffiche,
   phrasePreparation,
+  ppiDe,
 } from "./envoi";
 
 afterEach(() => setLangue("en"));
@@ -109,5 +112,67 @@ describe("phrasePreparation", () => {
     expect(phrasePreparation(preparation(3))).toContain("3 défauts");
     setLangue("en");
     expect(phrasePreparation(preparation(3))).toContain("3 defects");
+  });
+});
+
+describe("actionsDefaut", () => {
+  // Planche 10, case 1 : IMG_2217, la photo que le prévol nomme.
+  const album = {
+    spreads: Array.from({ length: 12 }, (_, i) => ({
+      template: "g",
+      slots:
+        i === 9
+          ? [
+              { src: "IMG_2216.jpg", focal: [0.5, 0.5] },
+              { src: "IMG_2217.jpg", focal: [0.5, 0.5] },
+            ]
+          : [],
+    })),
+  } as unknown as Album;
+  const resolution: Defaut = {
+    regle: "resolution",
+    bloquant: true,
+    planche: 10,
+    case: 1,
+    src: "IMG_2217.jpg",
+    cause: "IMG_2217.jpg imprimerait à 130 ppi dans cette case, Cloudprinter exige 250",
+    remede: "mettez-la dans une case plus petite, remplacez-la, ou retirez-la",
+  };
+
+  it("voir, remplacer et retirer quand la réserve a des photos", () => {
+    expect(actionsDefaut(resolution, album, false)).toEqual(["voir", "remplacer", "retirer"]);
+  });
+
+  it("retirer reste quand la réserve est vide", () => {
+    expect(actionsDefaut(resolution, album, true)).toEqual(["voir", "retirer"]);
+  });
+
+  it("n'invente rien pour un défaut sans case", () => {
+    const { case: _, ...sansCase } = resolution;
+    expect(actionsDefaut(sansCase, album, false)).toEqual([]);
+  });
+
+  it("ne donne aucune action neuve à une autre règle", () => {
+    const pli: Defaut = { ...resolution, regle: "objet_pli" };
+    expect(actionsDefaut(pli, album, false)).toEqual([]);
+  });
+
+  it("se tait quand la case ne porte plus la photo du rapport", () => {
+    // Le rapport lit le disque : après une édition non enregistrée, la case
+    // 1 peut porter une autre photo, et retirer viserait la mauvaise.
+    expect(actionsDefaut({ ...resolution, case: 0 }, album, false)).toEqual([]);
+  });
+});
+
+describe("ppiDe", () => {
+  it("lit la résolution dans la cause du moteur", () => {
+    const d = {
+      regle: "resolution",
+      bloquant: true,
+      cause: "IMG_2217.jpg imprimerait à 130 ppi dans cette case, Cloudprinter exige 250",
+      remede: "",
+    };
+    expect(ppiDe(d)).toBe(130);
+    expect(ppiDe({ ...d, cause: "autre chose" })).toBeNull();
   });
 });

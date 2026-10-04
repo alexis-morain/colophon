@@ -1,8 +1,10 @@
 // Où envoyer ce PDF. The last screen before a file leaves the machine.
 //
 // Three things at once, in the order a human needs them: what is wrong and
-// where (clickable, each defect jumps to its spread), the printer the file is
-// for, and the sheet of specifications a printer asks for on the phone.
+// where (clickable, each defect jumps to its spread; a photo too small for
+// its cell carries its own gestures, and removing it always works), the
+// printer the file is for, and the sheet of specifications a printer asks
+// for on the phone.
 //
 // One printer, Cloudprinter, and its button prepares the folder of the
 // order. The PDF without constraints stays one link away; Prodigi and Lulu
@@ -26,8 +28,18 @@ import {
   openReportUrl,
   preflight,
 } from "./bridge";
-import { PROFIL_ENVOI, PROFIL_LIBRE, actionEnvoi, imprimeurAffiche, phrasePreparation } from "./envoi";
+import {
+  PROFIL_ENVOI,
+  PROFIL_LIBRE,
+  actionEnvoi,
+  ActionDefaut,
+  actionsDefaut,
+  imprimeurAffiche,
+  phrasePreparation,
+  ppiDe,
+} from "./envoi";
 import { t } from "./i18n";
+import { LazyThumb } from "./TriView";
 import { VERDICT_URL } from "./signaler";
 
 const mm = (v: number) => v.toFixed(1).replace(".", ",");
@@ -38,6 +50,10 @@ export function EnvoiView({
   profil,
   onProfil,
   onJump,
+  onVoir,
+  onRemplacer,
+  onRetirer,
+  reserveVide,
   onExport,
   onPrepare,
   preparation,
@@ -60,6 +76,14 @@ export function EnvoiView({
   onProfil: (id: string) => void;
   /** Show spread `n` (1-based) in the book view. */
   onJump: (planche: number) => void;
+  /** Une photo trop petite pour sa case : la planche ouverte sur la case. */
+  onVoir: (planche: number, cell: number) => void;
+  /** Le choix de la réserve pour cette case, ouvert sous le bouton. */
+  onRemplacer: (planche: number, cell: number, point: { x: number; y: number }) => void;
+  /** La photo retourne à la réserve ; une entrée d'historique. */
+  onRetirer: (planche: number, cell: number) => void;
+  /** Aucune photo à proposer à la place : « Remplacer » ne s'offre pas. */
+  reserveVide: boolean;
   /** Le PDF sans contrainte : un fichier, où la boîte le pose. */
   onExport: () => void;
   /** Chez qui relie deux fichiers : le dossier de la commande. */
@@ -124,6 +148,21 @@ export function EnvoiView({
   const action = chosen ? actionEnvoi(chosen) : null;
   const bloquants = report?.defauts.filter((d) => d.bloquant) ?? [];
   const avertissements = report?.defauts.filter((d) => !d.bloquant) ?? [];
+  const ligne = (d: Defaut, key: string) => {
+    const actions = actionsDefaut(d, album, reserveVide);
+    return actions.length > 0 ? (
+      <ResolutionLigne
+        key={key}
+        d={d}
+        actions={actions}
+        onVoir={onVoir}
+        onRemplacer={onRemplacer}
+        onRetirer={onRetirer}
+      />
+    ) : (
+      <DefautLigne key={key} d={d} onJump={onJump} />
+    );
+  };
 
   return (
     <div className="envoi">
@@ -188,12 +227,11 @@ export function EnvoiView({
 
       {(bloquants.length > 0 || avertissements.length > 0) && (
         <section className="envoi-defauts">
-          {bloquants.map((d, i) => (
-            <DefautLigne key={`b${i}`} d={d} onJump={onJump} />
-          ))}
-          {avertissements.map((d, i) => (
-            <DefautLigne key={`a${i}`} d={d} onJump={onJump} />
-          ))}
+          {bloquants.some((d) => d.regle === "resolution") && (
+            <p className="envoi-resolution-tete">{t("envoi.resolution.tete")}</p>
+          )}
+          {bloquants.map((d, i) => ligne(d, `b${i}`))}
+          {avertissements.map((d, i) => ligne(d, `a${i}`))}
         </section>
       )}
 
@@ -399,5 +437,62 @@ function DefautLigne({ d, onJump }: { d: Defaut; onJump: (n: number) => void }) 
     </button>
   ) : (
     <div className={cls}>{body}</div>
+  );
+}
+
+/** Une photo trop petite pour sa case : où elle est, à combien elle
+ *  imprimerait, et les gestes qui la sortent de là. Retirer est toujours
+ *  offert, parce qu'il peut n'exister aucune case assez petite. */
+function ResolutionLigne({
+  d,
+  actions,
+  onVoir,
+  onRemplacer,
+  onRetirer,
+}: {
+  d: Defaut;
+  actions: ActionDefaut[];
+  onVoir: (planche: number, cell: number) => void;
+  onRemplacer: (planche: number, cell: number, point: { x: number; y: number }) => void;
+  onRetirer: (planche: number, cell: number) => void;
+}) {
+  const planche = d.planche!;
+  const cell = d.case!;
+  const ppi = ppiDe(d);
+  return (
+    <div className="envoi-defaut bloquant envoi-resolution" title={d.cause}>
+      <span className="envoi-resolution-vignette">
+        <LazyThumb src={d.src!} />
+      </span>
+      <span className="envoi-defaut-cause">
+        {ppi === null
+          ? t("envoi.defaut.planche", { n: planche })
+          : t("envoi.resolution.ou", { n: planche, ppi })}
+      </span>
+      <span className="envoi-resolution-gestes">
+        {actions.includes("voir") && (
+          <button type="button" className="link" onClick={() => onVoir(planche, cell)}>
+            {t("envoi.resolution.voir")}
+          </button>
+        )}
+        {actions.includes("remplacer") && (
+          <button
+            type="button"
+            className="link"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              onRemplacer(planche, cell, { x: r.left, y: r.bottom + 4 });
+            }}
+          >
+            {t("envoi.resolution.remplacer")}
+          </button>
+        )}
+        {actions.includes("retirer") && (
+          <button type="button" className="link" onClick={() => onRetirer(planche, cell)}>
+            {t("envoi.resolution.retirer")}
+          </button>
+        )}
+      </span>
+    </div>
   );
 }

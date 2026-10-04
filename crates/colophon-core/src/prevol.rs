@@ -479,7 +479,7 @@ pub fn check(
                         "{} imprimerait à {ppi:.0} ppi dans cette case, {} exige {:.0}",
                         slot.src, profil.nom, profil.min_ppi
                     ),
-                    remede: "réduisez le zoom, mettez la photo dans une case plus petite, ou remplacez-la".into(),
+                    remede: "mettez-la dans une case plus petite, remplacez-la, ou retirez-la".into(),
                 });
             }
         }
@@ -1480,6 +1480,9 @@ mod tests {
         assert_eq!(d.planche, Some(4));
         assert_eq!(d.src.as_deref(), Some("3.jpg"));
         assert!(d.cause.contains("ppi"), "{}", d.cause);
+        // Vrai pour la CLI comme pour l'app : retirer marche toujours, même
+        // quand aucune case n'est assez petite pour cet original.
+        assert_eq!(d.remede, "mettez-la dans une case plus petite, remplacez-la, ou retirez-la");
         assert!(!r.ok);
     }
 

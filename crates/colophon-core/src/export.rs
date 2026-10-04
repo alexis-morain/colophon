@@ -254,21 +254,38 @@ struct Livre {
 
 /// Lit le fichier une fois, par tranches, et nourrit les deux empreintes.
 fn empreintes_fichier(chemin: &Path, nom: &'static str) -> Result<Livre> {
-    use std::io::Read;
-    let mut f = fs::File::open(chemin).with_context(|| format!("lecture de {}", chemin.display()))?;
     let (mut md5, mut sha) = (Md5::new(), Sha256::new());
+    let octets = par_tranches(chemin, |t| {
+        md5.update(t);
+        sha.update(t);
+    })?;
+    Ok(Livre { nom, octets, sha256: hex(&sha.finish()), md5: hex(&md5.finish()) })
+}
+
+/// Le MD5 d'un fichier livré, en hexadécimal : le `md5sum` que la commande
+/// Cloudprinter porte pour chaque URL qu'elle tirera. Le même hachage que la
+/// fiche, lu par les mêmes tranches.
+pub fn md5_du_fichier(chemin: &Path) -> Result<String> {
+    let mut md5 = Md5::new();
+    par_tranches(chemin, |t| md5.update(t))?;
+    Ok(hex(&md5.finish()))
+}
+
+/// Lit un fichier par tranches d'un mébioctet, jamais d'un bloc.
+fn par_tranches(chemin: &Path, mut f: impl FnMut(&[u8])) -> Result<u64> {
+    use std::io::Read;
+    let mut fichier =
+        fs::File::open(chemin).with_context(|| format!("lecture de {}", chemin.display()))?;
     let mut tampon = vec![0u8; 1 << 20];
     let mut octets = 0u64;
     loop {
-        let n = f.read(&mut tampon)?;
+        let n = fichier.read(&mut tampon)?;
         if n == 0 {
-            break;
+            return Ok(octets);
         }
-        md5.update(&tampon[..n]);
-        sha.update(&tampon[..n]);
+        f(&tampon[..n]);
         octets += n as u64;
     }
-    Ok(Livre { nom, octets, sha256: hex(&sha.finish()), md5: hex(&md5.finish()) })
 }
 
 /// Un nombre de millimètres comme la fiche de l'écran Envoi l'écrit.
@@ -668,6 +685,19 @@ mod tests {
             assert_eq!(hex(&a.finish()), md5, "md5 par {taille}");
             assert_eq!(hex(&b.finish()), sha, "sha256 par {taille}");
         }
+    }
+
+    /// Le MD5 que la commande porte est celui de la fiche, lu sur le disque
+    /// au-delà d'une tranche d'un mébioctet.
+    #[test]
+    fn le_md5_du_fichier_est_celui_de_ses_octets() {
+        let donnees: Vec<u8> = (0..(3 << 20) + 5u32).map(|i| (i * 7 % 253) as u8).collect();
+        let chemin = std::env::temp_dir().join(format!("colophon-md5-{}.bin", std::process::id()));
+        fs::write(&chemin, &donnees).unwrap();
+        let lu = md5_du_fichier(&chemin);
+        fs::remove_file(&chemin).unwrap();
+        assert_eq!(lu.unwrap(), md5_hex(&donnees));
+        assert!(md5_du_fichier(Path::new("/nulle/part/album-print.pdf")).is_err());
     }
 
     fn album() -> Album {

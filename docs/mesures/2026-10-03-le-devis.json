@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-03",
+  "session": "K-s2, la commande Cloudprinter et le dépôt S3, côté moteur",
+  "plan": "plans/2026-09-26-retours-du-test-a-l-ecran.md, chantier K, K5 à K10 (hors dépôt)",
+  "resume": "Le premier devis demandé par le moteur lui-même, une fois, contre le sandbox : le même prix et la même expédition qu'au 26/09, demandés alors à la main.",
+  "commande": "CLOUDPRINTER_SANDBOX_API_KEY=… colophon --devis .albums/papier --pays FR",
+  "cle": "clé sandbox du .env de gestion, lue dans l'environnement, jamais affichée ni écrite ; aucun orders/add",
+  "album": {
+    "dossier": ".albums/papier, lu seulement (dates et tailles de ses 584 fichiers identiques avant et après)",
+    "pages": 96,
+    "source_des_pages": "prevol::prevol(...).fiche.pages_fichier, le compte déclaré à la commande"
+  },
+  "demande": {
+    "endpoint": "orders/quote",
+    "country": "FR",
+    "currency": "EUR",
+    "product": "photobook_cw_s210_s_fc",
+    "count": 1,
+    "options": [
+      { "type": "pageblock_150mcs", "count": 96 },
+      { "type": "cover_130mcg", "count": 1 },
+      { "type": "cover_finish_matte", "count": 1 },
+      { "type": "total_pages", "count": 96 }
+    ]
+  },
+  "reponse": {
+    "mode_declare": "Sandbox",
+    "prix_ht": "11.8333",
+    "tva": "2.3667",
+    "devise": "EUR",
+    "expire_date": "2026-10-05T23:37:41.478873Z",
+    "expeditions": [
+      {
+        "poids_g": "627",
+        "offres": [
+          {
+            "niveau": "cp_limited",
+            "service": "Limited",
+            "transporteur": "Chronopost - France",
+            "prix_ht": "5.6320",
+            "tva": "1.1264",
+            "devise": "EUR",
+            "quote": "hash de 64 caractères, non recopié"
+          }
+        ]
+      }
+    ]
+  },
+  "compare_au_26_09": {
+    "articles_ht": { "26/09": "11,83 €", "03/10": "11,8333 €", "ecart": "aucun" },
+    "expedition_ht": { "26/09": "cp_limited, Chronopost - France, 5,63 €", "03/10": "cp_limited, Chronopost - France, 5,6320 €", "ecart": "aucun" },
+    "tva": "20 % des deux côtés",
+    "niveaux": "toujours une seule offre, toujours cp_limited, toujours absent de la doc",
+    "validite": "expire_date à J+2, les 48 h de la doc"
+  },
+  "le_mode": {
+    "question": "une réponse dit-elle si la clé est celle du sandbox ?",
+    "sonde": "orders/ (204 sans corps), products, products/info, shipping/countries, orders/quote, et orders/info puis orders/cancel sur une référence inexistante (410, corps vide) : corps et en-têtes relus, aucun ne nomme le mode",
+    "verdict": "déclaré : le Mode voyage avec la clé, et l'état 501, que seul le sandbox atteint, le confirme après coup"
+  },
+  "a_savoir": "Le devis du point 10 a été précédé d'un devis de sonde, même produit et mêmes options, pour lire la forme de la réponse avant d'écrire le type : deux appels à orders/quote ce jour-là, aucun ne dépense rien."
+}

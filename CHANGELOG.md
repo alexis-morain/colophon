@@ -33,6 +33,21 @@ sur la page des releases.
   bouton, et le dossier s'ouvre dans le Finder ; « Montrer le dossier » le
   rouvre. La ligne de commande fait la même chose avec `--preparer <dossier>`.
 
+- **Commander depuis Envoi, pour qui a un compte Cloudprinter.** Dans les
+  Préférences, « Compte Cloudprinter » enregistre une clé API, le mode qu'on
+  lui déclare (sandbox ou réel) et un dépôt S3 (Cloudflare R2, MinIO) d'où
+  Cloudprinter télécharge les deux PDF ; « Vérifier » essaie les deux. La clé
+  et les accès restent sur l'ordinateur, dans le dossier de données de
+  l'application, et l'écran n'en montre que les quatre derniers caractères.
+  Après « Préparer pour Cloudprinter », si le contrôle relu est vert,
+  « Commander » montre le papier intérieur, celui du dossier préparé, et
+  propose la finition, le nombre d'exemplaires et l'adresse, affiche le devis, puis demande confirmation avec
+  le prix et le mode en toutes lettres. L'état se relit à l'ouverture d'Envoi,
+  une commande s'annule tant que la production n'a pas commencé, et les
+  fichiers quittent le dépôt une fois la commande expédiée ou annulée. Quatre
+  formats ont un produit : carré 21, carré 30, A4 portrait et A4 paysage. Les
+  autres passent par le dossier préparé et Quick order.
+
 - **Une couverture composée d'office.** Un album neuf naît avec sa
   couverture : la photo la mieux notée du quart supérieur du livre, en
   paysage ou carrée, le titre de l'album, et les dates de la page de garde en

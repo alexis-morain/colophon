@@ -166,6 +166,20 @@ impl Depot {
         Ok(objet)
     }
 
+    /// Vérifie les accès : pose un objet de zéro octet,
+    /// `colophon/verification`, puis le retire. C'est le bouton « Vérifier »
+    /// des préférences ; il ne touche à aucun objet d'une commande.
+    pub fn verifier(&self) -> Result<()> {
+        let objet = Objet { cle: format!("{PREFIXE}/verification") };
+        let acces = self.acces();
+        let url = self.seau.put_object(Some(&acces), &objet.cle).sign(DUREE_DU_GESTE);
+        let statut = self.envoyer("vérification", self.agent.put(url.as_str()).send(&[][..]))?;
+        if !(200..300).contains(&statut) {
+            bail!("le dépôt refuse un objet de vérification : statut {statut}");
+        }
+        self.retirer(&objet)
+    }
+
     /// L'URL de lecture de sept jours à poser dans la commande.
     pub fn url_de_lecture(&self, objet: &Objet) -> String {
         self.url_de_lecture_a(objet, &jiff::Timestamp::now())
@@ -273,6 +287,54 @@ mod tests {
                 octets_recus,
             })
             .unwrap();
+        });
+        (adresse, rx)
+    }
+
+    /// Le même serveur pour plusieurs requêtes à la suite, une réponse par
+    /// requête.
+    fn serveur_de(statuts: &'static [&'static str]) -> (String, mpsc::Receiver<Vu>) {
+        let ecoute = TcpListener::bind("127.0.0.1:0").unwrap();
+        let adresse = format!("http://{}", ecoute.local_addr().unwrap());
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            for statut in statuts {
+                let (flux, _) = ecoute.accept().unwrap();
+                let mut lecteur = BufReader::new(flux.try_clone().unwrap());
+                let mut ligne = String::new();
+                lecteur.read_line(&mut ligne).unwrap();
+                let mut morceaux = ligne.split_whitespace();
+                let methode = morceaux.next().unwrap().to_string();
+                let cible = morceaux.next().unwrap().to_string();
+                let (chemin, requete) = cible.split_once('?').unwrap_or((&cible, ""));
+                let mut longueur = None;
+                loop {
+                    let mut h = String::new();
+                    lecteur.read_line(&mut h).unwrap();
+                    if h == "\r\n" {
+                        break;
+                    }
+                    if let Some((nom, valeur)) = h.split_once(':') {
+                        if nom.eq_ignore_ascii_case("content-length") {
+                            longueur = Some(valeur.trim().parse().unwrap());
+                        }
+                    }
+                }
+                let octets_recus = std::io::copy(
+                    &mut (&mut lecteur).take(longueur.unwrap_or(0)),
+                    &mut std::io::sink(),
+                )
+                .unwrap();
+                let mut flux = flux;
+                write!(flux, "HTTP/1.1 {statut}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                let _ = tx.send(Vu {
+                    methode,
+                    chemin: chemin.to_string(),
+                    requete: requete.to_string(),
+                    longueur_annoncee: longueur,
+                    octets_recus,
+                });
+            }
         });
         (adresse, rx)
     }
@@ -397,6 +459,28 @@ mod tests {
         std::fs::write(&fichier, b"%PDF-1.6").unwrap();
         let e = depot.deposer("a", &fichier).unwrap_err();
         std::fs::remove_dir_all(&dossier).unwrap();
+        let texte = format!("{e:?} {e:#}");
+        assert!(texte.contains("403"), "{texte}");
+        assert!(!texte.contains(ACCES) && !texte.contains(SECRET), "{texte}");
+    }
+
+    #[test]
+    fn verifier_pose_un_objet_vide_puis_le_retire() {
+        let (adresse, vu) = serveur_de(&["200 OK", "204 No Content"]);
+        let depot = Depot::new(reglages(&adresse)).unwrap();
+        depot.verifier().unwrap();
+        let put = vu.recv().unwrap();
+        assert_eq!((put.methode.as_str(), put.chemin.as_str()), ("PUT", "/albums/colophon/verification"));
+        assert_eq!((put.longueur_annoncee, put.octets_recus), (Some(0), 0));
+        let del = vu.recv().unwrap();
+        assert_eq!((del.methode.as_str(), del.chemin.as_str()), ("DELETE", "/albums/colophon/verification"));
+    }
+
+    #[test]
+    fn une_verification_refusee_le_dit_sans_les_acces() {
+        let (adresse, _vu) = serveur_de(&["403 Forbidden"]);
+        let depot = Depot::new(reglages(&adresse)).unwrap();
+        let e = depot.verifier().unwrap_err();
         let texte = format!("{e:?} {e:#}");
         assert!(texte.contains("403"), "{texte}");
         assert!(!texte.contains(ACCES) && !texte.contains(SECRET), "{texte}");

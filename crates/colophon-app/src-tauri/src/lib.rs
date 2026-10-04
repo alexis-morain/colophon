@@ -2,6 +2,7 @@
 //! stays in `colophon-core`, the app only opens albums and serves the
 //! thumbnails the book view needs.
 
+mod commande;
 mod photos;
 
 use colophon_core::model::Album;
@@ -32,9 +33,36 @@ struct AppState {
     /// rank the front end sends back names the same face it was shown.
     polices: Mutex<Vec<colophon_core::font::Installee>>,
     /// Le dernier dossier que « Préparer » a écrit. Tenu ici pour que
-    /// « Montrer le dossier » l'ouvre sans que le front ne porte jamais un
-    /// chemin : la même doctrine que `reveal_data_dir`.
-    prepare: Mutex<Option<PathBuf>>,
+    /// « Montrer le dossier » l'ouvre et que « Commander » y prenne ses deux
+    /// fichiers sans que le front ne porte jamais un chemin : la même
+    /// doctrine que `reveal_data_dir`.
+    prepare: Mutex<Option<Prepare>>,
+    /// Le dernier devis demandé, avec le livre et le pays qu'il chiffre. La
+    /// commande se passe sur lui et sur rien d'autre (K-s3).
+    devis: Mutex<Option<DevisTenu>>,
+}
+
+/// Le dossier préparé, et ce que la commande en lit.
+#[derive(Clone)]
+struct Prepare {
+    dossier: PathBuf,
+    /// Le `total_pages` à déclarer, lu dans la fiche relue sur les fichiers.
+    pages: u32,
+    /// Le nom du format de l'album (`carre-21`…), ou ses millimètres.
+    format: String,
+    /// Le prévol relu sur ces fichiers est vert.
+    ok: bool,
+    /// Le papier intérieur dont la couverture porte le dos
+    /// (`PrinterProfile::commande`), le seul qui se commande sur ce dossier.
+    /// Aucun chez un profil sans codes de commande.
+    papier: Option<&'static str>,
+}
+
+/// Un devis, et ce qu'il chiffre.
+struct DevisTenu {
+    devis: colophon_core::commande::Devis,
+    livre: colophon_core::commande::Livre,
+    pays: String,
 }
 
 
@@ -1345,7 +1373,18 @@ async fn preparer_dossier(
     .await
     .map_err(|e| e.to_string())??;
     colophon_core::log::line("dossier préparé");
-    *state.prepare.lock().unwrap() = Some(dest.clone());
+    let fiche = &p.rapport.fiche;
+    *state.prepare.lock().unwrap() = Some(Prepare {
+        dossier: dest.clone(),
+        pages: u32::try_from(fiche.pages_fichier).unwrap_or(0),
+        format: colophon_core::format::nom(colophon_core::model::Size {
+            w: fiche.format_page_mm[0],
+            h: fiche.format_page_mm[1],
+        }),
+        ok: p.rapport.ok,
+        papier: profil.commande.map(|c| c.papier),
+    });
+    *state.devis.lock().unwrap() = None;
     // Le dossier s'ouvre de lui-même : c'est là que la personne va prendre
     // les deux fichiers pour la commande. Un échec d'ouverture ne défait pas
     // ce qui est écrit.
@@ -1358,7 +1397,7 @@ async fn preparer_dossier(
 #[tauri::command]
 fn montrer_dossier_prepare(state: State<'_, AppState>) -> Result<(), String> {
     let dest = state.prepare.lock().unwrap().clone().ok_or("aucun dossier préparé")?;
-    ouvrir_dossier(&dest)
+    ouvrir_dossier(&dest.dossier)
 }
 
 /// Ouvre un dossier dans le gestionnaire de fichiers du système.
@@ -1446,12 +1485,370 @@ async fn report_data(
         .map_err(|e| e.to_string())?,
         None => None,
     };
-    Ok(ReportData {
-        version: app.package_info().version.to_string(),
+    Ok(rapport(app.package_info().version.to_string(), audit))
+}
+
+/// Le matériau du rapport, hors Tauri pour qu'un test le bâtisse.
+fn rapport(version: String, audit: Option<colophon_core::audit::AuditReport>) -> ReportData {
+    ReportData {
+        version,
         os: format!("{} ({})", std::env::consts::OS, std::env::consts::ARCH),
         log: colophon_core::log::extrait(30),
         audit,
+    }
+}
+
+// ---- la commande (K-s3) --------------------------------------------------------
+
+/// Le dossier de données de l'app, où vit `commande.json`.
+fn donnees(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().app_data_dir().map_err(|e| format!("dossier de données introuvable : {e}"))
+}
+
+/// Les réglages et les commandes, sans aucun secret.
+#[tauri::command]
+fn commande_vue(app: tauri::AppHandle) -> Result<commande::Vue, String> {
+    Ok(commande::Stock::lire(&donnees(&app)?)?.vue())
+}
+
+/// Lit, change et réécrit `commande.json`, et rend la vue.
+fn modifier(app: &tauri::AppHandle, f: impl FnOnce(&mut commande::Stock)) -> Result<commande::Vue, String> {
+    let dir = donnees(app)?;
+    let mut s = commande::Stock::lire(&dir)?;
+    f(&mut s);
+    s.ecrire(&dir)?;
+    Ok(s.vue())
+}
+
+/// Enregistre la clé Cloudprinter et le mode qu'on lui déclare.
+#[tauri::command]
+fn commande_cle(app: tauri::AppHandle, cle: String, mode: colophon_core::commande::Mode) -> Result<commande::Vue, String> {
+    let cle = cle.trim().to_string();
+    if cle.is_empty() {
+        return Err("clé vide".into());
+    }
+    let v = modifier(&app, |s| s.cloudprinter = Some(commande::CleGardee { cle, mode }))?;
+    commande::journal(commande::Evenement::CleEnregistree);
+    Ok(v)
+}
+
+#[tauri::command]
+fn commande_cle_retirer(app: tauri::AppHandle) -> Result<commande::Vue, String> {
+    let v = modifier(&app, |s| s.cloudprinter = None)?;
+    commande::journal(commande::Evenement::CleRetiree);
+    Ok(v)
+}
+
+/// Enregistre le dépôt. La région vaut `auto` quand elle est laissée vide.
+#[tauri::command]
+fn commande_depot(
+    app: tauri::AppHandle,
+    endpoint: String,
+    region: String,
+    bucket: String,
+    identifiant: String,
+    secret: String,
+) -> Result<commande::Vue, String> {
+    let (endpoint, bucket, identifiant, secret) =
+        (endpoint.trim().to_string(), bucket.trim().to_string(), identifiant.trim().to_string(), secret.trim().to_string());
+    if endpoint.is_empty() || bucket.is_empty() || identifiant.is_empty() || secret.is_empty() {
+        return Err("champ du dépôt vide".into());
+    }
+    let region = match region.trim() {
+        "" => "auto".to_string(),
+        r => r.to_string(),
+    };
+    let v = modifier(&app, |s| {
+        s.depot = Some(commande::DepotGarde { endpoint, region, bucket, identifiant, secret })
+    })?;
+    commande::journal(commande::Evenement::DepotEnregistre);
+    Ok(v)
+}
+
+#[tauri::command]
+fn commande_depot_retirer(app: tauri::AppHandle) -> Result<commande::Vue, String> {
+    let v = modifier(&app, |s| s.depot = None)?;
+    commande::journal(commande::Evenement::DepotRetire);
+    Ok(v)
+}
+
+/// Un côté de la vérification : bon, ou ce qui ne va pas.
+#[derive(Serialize)]
+struct Cote {
+    ok: bool,
+    /// Le nombre de produits du catalogue, côté Cloudprinter.
+    produits: Option<usize>,
+    erreur: Option<String>,
+}
+
+#[derive(Serialize)]
+struct Verification {
+    cloudprinter: Option<Cote>,
+    depot: Option<Cote>,
+}
+
+/// « Vérifier » : `products` avec la clé, et un objet de zéro octet posé
+/// puis retiré sur le dépôt.
+#[tauri::command]
+async fn commande_verifier(app: tauri::AppHandle) -> Result<Verification, String> {
+    let s = commande::Stock::lire(&donnees(&app)?)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        use colophon_core::commande as cc;
+        let cloudprinter = s.compte().map(|c| match cc::produits(&cc::Ureq::default(), &c) {
+            Ok(p) => Cote { ok: true, produits: Some(p.len()), erreur: None },
+            Err(e) => Cote { ok: false, produits: None, erreur: Some(e.to_string()) },
+        });
+        let depot = s.depot().map(|d| match d.and_then(|d| d.verifier().map_err(|e| format!("{e:#}"))) {
+            Ok(()) => Cote { ok: true, produits: None, erreur: None },
+            Err(e) => Cote { ok: false, produits: None, erreur: Some(e) },
+        });
+        Verification { cloudprinter, depot }
     })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Ce que l'écran Commander propose pour le dossier préparé.
+#[derive(Serialize)]
+struct OffreCommande {
+    format: String,
+    /// Le produit de ce format, ou aucun : l'écran le dit alors en une ligne.
+    /// Aucun aussi quand le produit n'offre pas le papier du dossier.
+    produit: Option<&'static str>,
+    pages: u32,
+    /// Le papier intérieur, figé sur celui du dossier préparé (décision
+    /// d'Alexis du 04/10) : la couverture porte son dos.
+    papier: Option<colophon_core::commande::OptionProduit>,
+    finitions: Vec<colophon_core::commande::OptionProduit>,
+    couverture: Option<String>,
+    /// Les pays de livraison qui ne demandent pas d'État dans l'adresse.
+    pays: Vec<colophon_core::commande::Pays>,
+}
+
+fn prepare_tenu(state: &State<'_, AppState>) -> Result<Prepare, String> {
+    state.prepare.lock().unwrap().clone().ok_or_else(|| "aucun dossier préparé".to_string())
+}
+
+fn compte_enregistre(app: &tauri::AppHandle) -> Result<(commande::Stock, colophon_core::commande::Compte), String> {
+    let s = commande::Stock::lire(&donnees(app)?)?;
+    let c = s.compte().ok_or("aucune clé Cloudprinter enregistrée")?;
+    Ok((s, c))
+}
+
+/// Le produit du format préparé, ses papiers et finitions lus par
+/// `products/info`, et les pays.
+#[tauri::command]
+async fn commande_offre(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<OffreCommande, String> {
+    use colophon_core::commande as cc;
+    let p = prepare_tenu(&state)?;
+    let sans_produit = |p: Prepare| OffreCommande {
+        format: p.format,
+        produit: None,
+        pages: p.pages,
+        papier: None,
+        finitions: vec![],
+        couverture: None,
+        pays: vec![],
+    };
+    let (Some(reference), Some(papier)) = (cc::produit_pour(&p.format), p.papier) else {
+        return Ok(sans_produit(p));
+    };
+    let (_, compte) = compte_enregistre(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let http = cc::Ureq::default();
+        let i = cc::infos_produit(&http, &compte, reference).map_err(|e| e.to_string())?;
+        // Un produit qui n'offre pas le papier du dossier ne se commande pas.
+        let Some(papier) = i.options_de(cc::TYPE_PAPIER).find(|o| o.reference == papier).cloned() else {
+            return Ok(sans_produit(p));
+        };
+        let pays = cc::pays(&http, &compte).map_err(|e| e.to_string())?;
+        let de = |t: &str| i.options_de(t).cloned().collect::<Vec<_>>();
+        let couvertures = de(cc::TYPE_COUVERTURE);
+        let couverture = couvertures.iter().find(|o| o.defaut).or(couvertures.first()).map(|o| o.reference.clone());
+        Ok(OffreCommande {
+            format: p.format,
+            produit: Some(reference),
+            pages: p.pages,
+            papier: Some(papier),
+            finitions: de(cc::TYPE_FINITION),
+            couverture,
+            pays: pays.into_iter().filter(|p| !p.etat_requis).collect(),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Demande le devis du dossier préparé et le tient pour la commande.
+#[tauri::command]
+async fn commande_devis(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    couverture: String,
+    finition: String,
+    quantite: u32,
+    pays: String,
+) -> Result<colophon_core::commande::Devis, String> {
+    use colophon_core::commande as cc;
+    if !(1..=10).contains(&quantite) {
+        return Err("quantité hors de 1 à 10".into());
+    }
+    let p = prepare_tenu(&state)?;
+    let produit = cc::produit_pour(&p.format).ok_or("ce format ne se commande pas depuis Colophon")?;
+    let papier = p.papier.ok_or("ce dossier n'a pas de papier de commande")?;
+    let (_, compte) = compte_enregistre(&app)?;
+    let livre = cc::Livre::choisi(produit, papier, &couverture, &finition, p.pages, quantite);
+    let (l, pa) = (livre.clone(), pays.clone());
+    let devis = tauri::async_runtime::spawn_blocking(move || cc::devis(&cc::Ureq::default(), &compte, &pa, &l))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    *state.devis.lock().unwrap() = Some(DevisTenu { devis: devis.clone(), livre, pays });
+    Ok(devis)
+}
+
+/// L'adresse telle que l'écran la saisit. Elle part chez Cloudprinter et
+/// n'est écrite nulle part sur le poste.
+#[derive(serde::Deserialize)]
+struct AdresseSaisie {
+    prenom: String,
+    nom: String,
+    rue: String,
+    rue2: Option<String>,
+    code_postal: String,
+    ville: String,
+    email: String,
+    telephone: String,
+}
+
+/// Le devis tenu est-il encore valable à `maintenant` ?
+fn devis_valable(expire_date: &str, maintenant: chrono::DateTime<chrono::Utc>) -> bool {
+    chrono::DateTime::parse_from_rfc3339(expire_date).is_ok_and(|d| d > maintenant)
+}
+
+/// Commande sur le devis tenu : dépôt des deux PDF, URL de sept jours,
+/// `orders/add` avec le hash de l'offre choisie. Un devis expiré est
+/// refusé (`devis_expire`), jamais réutilisé.
+#[tauri::command]
+async fn commande_passer(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    quote: String,
+    adresse: AdresseSaisie,
+) -> Result<commande::Vue, String> {
+    use colophon_core::commande as cc;
+    let p = prepare_tenu(&state)?;
+    if !p.ok {
+        return Err("le contrôle relu sur le dossier préparé n'est pas vert".into());
+    }
+    let (livre, pays) = {
+        let g = state.devis.lock().unwrap();
+        let t = g.as_ref().ok_or("aucun devis")?;
+        if !devis_valable(&t.devis.expire_date, chrono::Utc::now()) {
+            return Err("devis_expire".into());
+        }
+        if !t.devis.expeditions.iter().flat_map(|e| &e.offres).any(|o| o.quote == quote) {
+            return Err("cette expédition n'est pas dans le devis".into());
+        }
+        (t.livre.clone(), t.pays.clone())
+    };
+    let dir = donnees(&app)?;
+    let (stock, compte) = compte_enregistre(&app)?;
+    let depot = stock.depot().ok_or("aucun dépôt enregistré")??;
+    let adresse = cc::Adresse {
+        prenom: adresse.prenom,
+        nom: adresse.nom,
+        rue: adresse.rue,
+        rue2: adresse.rue2.filter(|r| !r.trim().is_empty()),
+        code_postal: adresse.code_postal,
+        ville: adresse.ville,
+        pays,
+        email: adresse.email,
+        telephone: adresse.telephone,
+    };
+    let reference = commande::reference_neuve(chrono::Utc::now());
+    let emetteur = app.clone();
+    let (r, mode) = (reference.clone(), compte.mode);
+    let papier = p.papier.ok_or("ce dossier n'a pas de papier de commande")?;
+    let (identifiant, objets) = tauri::async_runtime::spawn_blocking(move || {
+        commande::passer(&cc::Ureq::default(), &compte, &depot, &r, &p.dossier, papier, livre, quote, adresse, &|e| {
+            let _ = emetteur.emit("commande:progress", e);
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| {
+        commande::journal(commande::Evenement::CommandeEchouee);
+        e.to_string()
+    })?;
+    *state.devis.lock().unwrap() = None;
+    let mut s = commande::Stock::lire(&dir)?;
+    s.commandes.push(commande::CommandeGardee {
+        reference,
+        identifiant,
+        mode,
+        date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+        objets,
+        objets_retires: false,
+        etat: None,
+    });
+    s.ecrire(&dir)?;
+    commande::journal(commande::Evenement::CommandePassee);
+    Ok(s.vue())
+}
+
+/// Ce qu'une relecture rend : la vue, et la première erreur de lecture.
+#[derive(Serialize)]
+struct Relu {
+    vue: commande::Vue,
+    erreur: Option<String>,
+}
+
+/// Relit l'état des commandes (toutes celles dont les objets sont encore au
+/// dépôt, ou la seule `reference`) et retire les objets quand
+/// `depot::a_retirer` le dit. Jamais en tâche de fond : à l'ouverture
+/// d'Envoi et par « Relire l'état ».
+#[tauri::command]
+async fn commande_relire(app: tauri::AppHandle, reference: Option<String>) -> Result<Relu, String> {
+    let dir = donnees(&app)?;
+    let mut s = commande::Stock::lire(&dir)?;
+    let Some(compte) = s.compte() else {
+        return Ok(Relu { vue: s.vue(), erreur: None });
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let depot = s.depot().and_then(|d| d.ok());
+        let erreur = commande::relire(
+            &colophon_core::commande::Ureq::default(),
+            &compte,
+            depot.as_ref().map(|d| d as &dyn commande::Gestes),
+            &mut s,
+            reference.as_deref(),
+            chrono::Local::now().date_naive(),
+        );
+        s.ecrire(&dir)?;
+        Ok(Relu { vue: s.vue(), erreur })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Annule une commande. Un 409 rend `trop_tard`, que l'écran dit avec la
+/// phrase de K-s2.
+#[tauri::command]
+async fn commande_annuler(app: tauri::AppHandle, reference: String) -> Result<Relu, String> {
+    use colophon_core::commande as cc;
+    let (s, compte) = compte_enregistre(&app)?;
+    let mode = s.commandes.iter().find(|c| c.reference == reference).ok_or("commande inconnue")?.mode;
+    let r = reference.clone();
+    tauri::async_runtime::spawn_blocking(move || cc::annuler(&cc::Ureq::default(), &cc::Compte { cle: compte.cle, mode }, &r))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| match e {
+            cc::Erreur::TropTard => "trop_tard".to_string(),
+            autre => autre.to_string(),
+        })?;
+    commande::journal(commande::Evenement::CommandeAnnulee);
+    commande_relire(app, Some(reference)).await
 }
 
 /// Open the pre-filled issue form in the user's browser. The one URL this
@@ -1989,6 +2386,17 @@ pub fn run() {
             export_pdf,
             preparer_dossier,
             montrer_dossier_prepare,
+            commande_vue,
+            commande_cle,
+            commande_cle_retirer,
+            commande_depot,
+            commande_depot_retirer,
+            commande_verifier,
+            commande_offre,
+            commande_devis,
+            commande_passer,
+            commande_relire,
+            commande_annuler,
             list_formats,
             build_album_from_folder,
             recompose_album,
@@ -2291,6 +2699,56 @@ mod tests {
 
     /// Le dossier préparé porte le titre et l'imprimeur, nettoyés de la même
     /// façon qu'un nom de PDF : un titre ne crée jamais un sous-dossier.
+    /// Décision 2 de K-s3 : le rapport de Signaler, bâti sur un dossier de
+    /// données qui porte `commande.json` et un journal où la commande a
+    /// écrit, ne contient ni le nom du fichier ni la clé ni les accès.
+    #[test]
+    fn le_rapport_ne_cite_ni_commande_json_ni_la_cle() {
+        let dir = std::env::temp_dir().join(format!("colophon-rapport-commande-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        colophon_core::log::init(&dir).unwrap();
+        let cle = "cle-du-rapport-0123456789zz";
+        let secret = "secret-du-rapport-987654321";
+        let s = commande::Stock {
+            cloudprinter: Some(commande::CleGardee { cle: cle.into(), mode: colophon_core::commande::Mode::Sandbox }),
+            depot: Some(commande::DepotGarde {
+                endpoint: "https://compte.r2.cloudflarestorage.com".into(),
+                region: "auto".into(),
+                bucket: "seau-de-test".into(),
+                identifiant: "IDENTIFIANT-DU-RAPPORT".into(),
+                secret: secret.into(),
+            }),
+            commandes: vec![],
+        };
+        s.ecrire(&dir).unwrap();
+        assert!(dir.join(commande::FICHIER).is_file());
+        for e in [
+            commande::Evenement::CleEnregistree,
+            commande::Evenement::DepotEnregistre,
+            commande::Evenement::CommandePassee,
+            commande::Evenement::CommandeEchouee,
+            commande::Evenement::CommandeAnnulee,
+        ] {
+            commande::journal(e);
+        }
+        let r = serde_json::to_string(&rapport("0.9.0".into(), None)).unwrap();
+        assert!(r.contains("commande : passée"), "le journal a bien été lu : {r}");
+        for interdit in [commande::FICHIER, cle, secret, "IDENTIFIANT-DU-RAPPORT"] {
+            assert!(!r.contains(interdit), "{interdit} dans le rapport");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn un_devis_expire_ne_se_reutilise_pas() {
+        let t = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&chrono::Utc);
+        let expire = "2026-10-06T01:37:58.083165Z";
+        assert!(devis_valable(expire, t("2026-10-06T01:37:00Z")));
+        assert!(!devis_valable(expire, t("2026-10-06T01:38:00Z")));
+        assert!(!devis_valable("demain", t("2026-10-01T00:00:00Z")), "illisible, refusé");
+    }
+
     #[test]
     fn le_dossier_prepare_porte_le_titre_et_l_imprimeur() {
         assert_eq!(nom_du_dossier_prepare("Corse 2013", "Cloudprinter"), "Corse 2013 – Cloudprinter");

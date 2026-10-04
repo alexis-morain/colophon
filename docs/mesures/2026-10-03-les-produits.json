@@ -1,0 +1,693 @@
+{
+  "date": "2026-10-03",
+  "source": "clé sandbox, lecture seule : products (1673 produits), puis products/info sur les 43 photobook_cw du compte, puis orders/quote FR à 22, 24, 800 et 802 pages et une bissection des bornes paires, papier pageblock_150mcs, couverture cover_130mcg, finition mate",
+  "regle": "décision 0 de K-s3 : un format n'est associé que si les cotes lues par l'API égalent celles de printer.rs (profil cloudprinter) au dixième de millimètre",
+  "profil_cloudprinter": {
+    "fond_perdu_mm": 3.0,
+    "squeeze_mm": 5.0,
+    "overlap_mm": 3.0,
+    "wrap_mm": 18.0,
+    "pages_min": 24,
+    "pages_max": 800,
+    "pas": 2
+  },
+  "formats": {
+    "carre-21": {
+      "format_mm": [
+        210.0,
+        210.0
+      ],
+      "produit": "photobook_cw_s210_s_fc",
+      "cotes_lues": {
+        "largeur_mm": 210.0,
+        "hauteur_mm": 210.0,
+        "fond_perdu_mm": 3.0,
+        "squeeze_mm": 5.0,
+        "overlap_mm": 3.0,
+        "wrap_mm": 18.0,
+        "reliure": "CW - Casewrap"
+      },
+      "papiers": [
+        "pageblock_170mcg",
+        "pageblock_200mcg",
+        "pageblock_170mcs",
+        "pageblock_200mcs",
+        "pageblock_130mcs",
+        "pageblock_150mcg",
+        "pageblock_130mcg",
+        "pageblock_150mcs",
+        "pageblock_130_gsm_arctic",
+        "pageblock_115mcs"
+      ],
+      "finitions": [
+        "cover_finish_matte",
+        "cover_finish_gloss",
+        "cover_finish_soft_touch"
+      ],
+      "couverture": [
+        "cover_130mcg"
+      ],
+      "bornes_au_devis": {
+        "sondes": {
+          "22": {
+            "statut": 400,
+            "erreur": "total_pages_value_not_supported_by_available_productions"
+          },
+          "24": {
+            "statut": 200,
+            "prix": "9.3758"
+          },
+          "800": {
+            "statut": 200,
+            "prix": "52.7427"
+          },
+          "802": {
+            "statut": 200,
+            "prix": "52.8589"
+          }
+        },
+        "pair_min_accepte": 24,
+        "pair_max_accepte": 846
+      },
+      "verdict": "associé : largeur, hauteur, fond perdu, squeeze, overlap et wrap égaux au profil au dixième ; les bornes du profil (24 à 800, pair) sont contenues dans celles que le devis accepte"
+    },
+    "carre-30": {
+      "format_mm": [
+        300.0,
+        300.0
+      ],
+      "produit": "photobook_cw_s300_s_fc",
+      "cotes_lues": {
+        "largeur_mm": 300.0,
+        "hauteur_mm": 300.0,
+        "fond_perdu_mm": 3.0,
+        "squeeze_mm": 5.0,
+        "overlap_mm": 3.0,
+        "wrap_mm": 18.0,
+        "reliure": "CW - Casewrap"
+      },
+      "papiers": [
+        "pageblock_170mcg",
+        "pageblock_200mcg",
+        "pageblock_170mcs",
+        "pageblock_200mcs",
+        "pageblock_130mcs",
+        "pageblock_150mcg",
+        "pageblock_130mcg",
+        "pageblock_150mcs",
+        "pageblock_130_gsm_arctic",
+        "pageblock_115mcs"
+      ],
+      "finitions": [
+        "cover_finish_matte",
+        "cover_finish_gloss",
+        "cover_finish_soft_touch"
+      ],
+      "couverture": [
+        "cover_130mcg"
+      ],
+      "bornes_au_devis": {
+        "sondes": {
+          "22": {
+            "statut": 200,
+            "prix": "15.9653"
+          },
+          "24": {
+            "statut": 200,
+            "prix": "16.5743"
+          },
+          "800": {
+            "statut": 200,
+            "prix": "145.0730"
+          },
+          "802": {
+            "statut": 200,
+            "prix": "145.4174"
+          }
+        },
+        "pair_min_accepte": 22,
+        "pair_max_accepte": 846
+      },
+      "verdict": "associé : largeur, hauteur, fond perdu, squeeze, overlap et wrap égaux au profil au dixième ; les bornes du profil (24 à 800, pair) sont contenues dans celles que le devis accepte"
+    },
+    "portrait-a4": {
+      "format_mm": [
+        210.0,
+        297.0
+      ],
+      "produit": "photobook_cw_a4_p_fc",
+      "cotes_lues": {
+        "largeur_mm": 210.0,
+        "hauteur_mm": 297.0,
+        "fond_perdu_mm": 3.0,
+        "squeeze_mm": 5.0,
+        "overlap_mm": 3.0,
+        "wrap_mm": 18.0,
+        "reliure": "CW - Casewrap"
+      },
+      "papiers": [
+        "pageblock_170mcg",
+        "pageblock_200mcg",
+        "pageblock_170mcs",
+        "pageblock_200mcs",
+        "pageblock_130mcs",
+        "pageblock_150mcg",
+        "pageblock_130mcg",
+        "pageblock_150mcs",
+        "pageblock_130_gsm_arctic",
+        "pageblock_115mcs"
+      ],
+      "finitions": [
+        "cover_finish_matte",
+        "cover_finish_gloss",
+        "cover_finish_soft_touch"
+      ],
+      "couverture": [
+        "cover_130mcg"
+      ],
+      "bornes_au_devis": {
+        "sondes": {
+          "22": {
+            "statut": 200,
+            "prix": "9.4441"
+          },
+          "24": {
+            "statut": 200,
+            "prix": "9.6989"
+          },
+          "800": {
+            "statut": 200,
+            "prix": "52.7427"
+          },
+          "802": {
+            "statut": 200,
+            "prix": "52.8589"
+          }
+        },
+        "pair_min_accepte": 22,
+        "pair_max_accepte": 846
+      },
+      "verdict": "associé : largeur, hauteur, fond perdu, squeeze, overlap et wrap égaux au profil au dixième ; les bornes du profil (24 à 800, pair) sont contenues dans celles que le devis accepte"
+    },
+    "paysage-a4": {
+      "format_mm": [
+        297.0,
+        210.0
+      ],
+      "produit": "photobook_cw_a4_l_fc",
+      "cotes_lues": {
+        "largeur_mm": 297.0,
+        "hauteur_mm": 210.0,
+        "fond_perdu_mm": 3.0,
+        "squeeze_mm": 5.0,
+        "overlap_mm": 3.0,
+        "wrap_mm": 18.0,
+        "reliure": "CW - Casewrap"
+      },
+      "papiers": [
+        "pageblock_170mcg",
+        "pageblock_200mcg",
+        "pageblock_170mcs",
+        "pageblock_200mcs",
+        "pageblock_130mcs",
+        "pageblock_150mcg",
+        "pageblock_130mcg",
+        "pageblock_150mcs",
+        "pageblock_130_gsm_arctic",
+        "pageblock_115mcs"
+      ],
+      "finitions": [
+        "cover_finish_matte",
+        "cover_finish_gloss",
+        "cover_finish_soft_touch"
+      ],
+      "couverture": [
+        "cover_130mcg"
+      ],
+      "bornes_au_devis": {
+        "sondes": {
+          "22": {
+            "statut": 400,
+            "erreur": "total_pages_value_not_supported_by_available_productions"
+          },
+          "24": {
+            "statut": 200,
+            "prix": "9.6989"
+          },
+          "800": {
+            "statut": 200,
+            "prix": "52.7427"
+          },
+          "802": {
+            "statut": 200,
+            "prix": "52.8589"
+          }
+        },
+        "pair_min_accepte": 24,
+        "pair_max_accepte": 846
+      },
+      "verdict": "associé : largeur, hauteur, fond perdu, squeeze, overlap et wrap égaux au profil au dixième ; les bornes du profil (24 à 800, pair) sont contenues dans celles que le devis accepte"
+    },
+    "paysage-28x21": {
+      "format_mm": [
+        280.0,
+        210.0
+      ],
+      "produit": null,
+      "plus_proche": {
+        "produit": "photobook_cw_us_letter_l_fc",
+        "cotes_lues": {
+          "largeur_mm": 279.4,
+          "hauteur_mm": 215.9,
+          "fond_perdu_mm": 3.0,
+          "squeeze_mm": 5.0,
+          "overlap_mm": 3.0,
+          "wrap_mm": 18.0,
+          "reliure": "CW - Casewrap"
+        },
+        "ecart_mm": {
+          "largeur_mm": -0.6,
+          "hauteur_mm": 5.9
+        }
+      },
+      "verdict": "aucun produit : aucun cartonné du catalogue n'égale ce format au dixième"
+    },
+    "portrait-20x25": {
+      "format_mm": [
+        203.0,
+        254.0
+      ],
+      "produit": null,
+      "plus_proche": {
+        "produit": "photobook_cw_us_8x10_p_fc",
+        "cotes_lues": {
+          "largeur_mm": 203.2,
+          "hauteur_mm": 254.0,
+          "fond_perdu_mm": 3.0,
+          "squeeze_mm": 5.0,
+          "overlap_mm": 3.0,
+          "wrap_mm": 18.0,
+          "reliure": "CW - Casewrap"
+        },
+        "ecart_mm": {
+          "largeur_mm": 0.2
+        }
+      },
+      "verdict": "aucun produit : aucun cartonné du catalogue n'égale ce format au dixième"
+    }
+  },
+  "bornes_de_pages": "products/info ne rend aucune borne de pages : elles se lisent au devis. Le devis accepte 802 pages sur le 21 × 21, au-delà des 800 de printer.rs (K11 n'avait sondé que 1000) ; le plus grand compte pair accepté vaut 846 sur les quatre produits, le plus petit 24 (carrés 21 et paysage A4) ou 22 (carré 30 et portrait A4). Les bornes du profil sont contenues dans les quatre : printer.rs ne bouge pas.",
+  "ecarts_a_trancher": [
+    "portrait-20x25 vaut 203,0 × 254,0 dans format.rs, le 8 × 10 pouces de Cloudprinter (photobook_cw_us_8x10_p_fc) 203,2 × 254,0 : 0,2 mm de large, au-delà du dixième, donc aucun produit",
+    "paysage-28x21 : aucun cartonné à 280 × 210 ; les plus proches sont photobook_cw_us_letter_l_fc (279,4 × 215,9) et photobook_cw_280x250_mm_l_fc"
+  ],
+  "tous_les_cartonnes": {
+    "photobook_cw_us_s9_s_fc": {
+      "largeur_mm": 228.6,
+      "hauteur_mm": 228.6,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s875_s_fc": {
+      "largeur_mm": 222.3,
+      "hauteur_mm": 222.3,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s85_s_fc": {
+      "largeur_mm": 215.9,
+      "hauteur_mm": 215.9,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s7_s_fc": {
+      "largeur_mm": 177.8,
+      "hauteur_mm": 177.8,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_s12_s_fc": {
+      "largeur_mm": 304.8,
+      "hauteur_mm": 304.8,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_s10_s_fc": {
+      "largeur_mm": 254.0,
+      "hauteur_mm": 254.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_letter_p_fc": {
+      "largeur_mm": 215.9,
+      "hauteur_mm": 279.4,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_letter_l_fc": {
+      "largeur_mm": 279.4,
+      "hauteur_mm": 215.9,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_large_p_fc": {
+      "largeur_mm": 279.4,
+      "hauteur_mm": 431.8,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_large_l_fc": {
+      "largeur_mm": 431.8,
+      "hauteur_mm": 279.4,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_9x7_l_fc": {
+      "largeur_mm": 228.6,
+      "hauteur_mm": 177.8,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_8x10_p_fc": {
+      "largeur_mm": 203.2,
+      "hauteur_mm": 254.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_13x11_l_fc": {
+      "largeur_mm": 330.2,
+      "hauteur_mm": 279.4,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_us_10x8_l_fc": {
+      "largeur_mm": 254.0,
+      "hauteur_mm": 203.2,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s300_s_fc": {
+      "largeur_mm": 300.0,
+      "hauteur_mm": 300.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s290_s_fc": {
+      "largeur_mm": 290.0,
+      "hauteur_mm": 290.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s270_s_fc": {
+      "largeur_mm": 270.0,
+      "hauteur_mm": 270.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s230_s_fc": {
+      "largeur_mm": 230.0,
+      "hauteur_mm": 230.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s220_s_fc": {
+      "largeur_mm": 220.0,
+      "hauteur_mm": 220.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s210_s_fc": {
+      "largeur_mm": 210.0,
+      "hauteur_mm": 210.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s200_s_fc": {
+      "largeur_mm": 200.0,
+      "hauteur_mm": 200.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s185_s_fc": {
+      "largeur_mm": 185.0,
+      "hauteur_mm": 185.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s180_s_fc": {
+      "largeur_mm": 180.0,
+      "hauteur_mm": 180.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s150_s_fc": {
+      "largeur_mm": 150.0,
+      "hauteur_mm": 150.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_s140_s_fc": {
+      "largeur_mm": 140.0,
+      "hauteur_mm": 140.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_b5_l_fc": {
+      "largeur_mm": 250.0,
+      "hauteur_mm": 176.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_a6_p_fc": {
+      "largeur_mm": 105.0,
+      "hauteur_mm": 148.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_a6_l_fc": {
+      "largeur_mm": 148.0,
+      "hauteur_mm": 105.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_a5_p_fc": {
+      "largeur_mm": 148.0,
+      "hauteur_mm": 210.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_a5_l_fc": {
+      "largeur_mm": 210.0,
+      "hauteur_mm": 148.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_a4_p_fc": {
+      "largeur_mm": 210.0,
+      "hauteur_mm": 297.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_a4_l_fc": {
+      "largeur_mm": 297.0,
+      "hauteur_mm": 210.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_a3_p_fc": {
+      "largeur_mm": 297.0,
+      "hauteur_mm": 420.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_a3_l_fc": {
+      "largeur_mm": 420.0,
+      "hauteur_mm": 297.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_280x250_mm_l_fc": {
+      "largeur_mm": 280.0,
+      "hauteur_mm": 250.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_270x200_mm_l_fc": {
+      "largeur_mm": 270.0,
+      "hauteur_mm": 200.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_250x210_mm_l_fc": {
+      "largeur_mm": 250.0,
+      "hauteur_mm": 210.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_240x300_p_fc": {
+      "largeur_mm": 240.0,
+      "hauteur_mm": 300.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_210x250_mm_l_fc": {
+      "largeur_mm": 210.0,
+      "hauteur_mm": 250.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_200x270_mm_p_fc": {
+      "largeur_mm": 200.0,
+      "hauteur_mm": 270.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_200x148_mm_l_fc": {
+      "largeur_mm": 200.0,
+      "hauteur_mm": 148.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_165x240_mm_p_fc": {
+      "largeur_mm": 165.0,
+      "hauteur_mm": 240.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    },
+    "photobook_cw_148x200_mm_p_fc": {
+      "largeur_mm": 148.0,
+      "hauteur_mm": 200.0,
+      "fond_perdu_mm": 3.0,
+      "squeeze_mm": 5.0,
+      "overlap_mm": 3.0,
+      "wrap_mm": 18.0,
+      "reliure": "CW - Casewrap"
+    }
+  }
+}

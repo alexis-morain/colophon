@@ -34,6 +34,68 @@ pub const PRODUIT: &str = "photobook_cw_s210_s_fc";
 /// La devise demandée au devis.
 pub const DEVISE: &str = "EUR";
 
+/// La référence de l'unique article d'un devis et de sa commande. Le hash
+/// d'un devis tient l'article par sa référence : la commande doit la
+/// reprendre telle quelle, sinon CloudCore refuse le devis.
+pub const ARTICLE: &str = "livre";
+
+/// Les cotes qu'un produit a rendues à `products/info`, et les bornes de
+/// pages que le devis a acceptées, relevées le 03/10 sur le compte
+/// (`docs/mesures/2026-10-03-les-produits.json`). Gardées ici pour qu'un test
+/// confronte chaque association au profil, au dixième de millimètre.
+#[derive(Debug, Clone, Copy)]
+pub struct CotesProduit {
+    pub produit: &'static str,
+    pub largeur_mm: f64,
+    pub hauteur_mm: f64,
+    pub fond_perdu_mm: f64,
+    pub squeeze_mm: f64,
+    pub overlap_mm: f64,
+    pub wrap_mm: f64,
+    /// Le plus petit compte pair que le devis accepte.
+    pub pages_min: usize,
+    /// Le plus grand compte pair que le devis accepte.
+    pub pages_max: usize,
+}
+
+const fn cotes(produit: &'static str, largeur_mm: f64, hauteur_mm: f64, pages_min: usize) -> CotesProduit {
+    CotesProduit {
+        produit,
+        largeur_mm,
+        hauteur_mm,
+        fond_perdu_mm: 3.0,
+        squeeze_mm: 5.0,
+        overlap_mm: 3.0,
+        wrap_mm: 18.0,
+        pages_min,
+        pages_max: 846,
+    }
+}
+
+/// Les quatre cartonnés retenus. Les quarante-trois du catalogue ont tous
+/// le même fond perdu, squeeze, overlap et wrap : c'est la largeur et la
+/// hauteur qui tranchent.
+pub const COTES_DES_PRODUITS: [CotesProduit; 4] = [
+    cotes("photobook_cw_s210_s_fc", 210.0, 210.0, 24),
+    cotes("photobook_cw_s300_s_fc", 300.0, 300.0, 22),
+    cotes("photobook_cw_a4_p_fc", 210.0, 297.0, 22),
+    cotes("photobook_cw_a4_l_fc", 297.0, 210.0, 24),
+];
+
+/// Le produit Cloudprinter d'un format de Colophon (`format::FORMATS`), ou
+/// aucun. Un format n'a de produit que si les cotes que l'API rend pour lui
+/// égalent celles du profil au dixième de millimètre : un produit voisin
+/// recevrait un fichier qu'il couperait ailleurs.
+pub fn produit_pour(format: &str) -> Option<&'static str> {
+    match format {
+        "carre-21" => Some(PRODUIT),
+        "carre-30" => Some("photobook_cw_s300_s_fc"),
+        "portrait-a4" => Some("photobook_cw_a4_p_fc"),
+        "paysage-a4" => Some("photobook_cw_a4_l_fc"),
+        _ => None,
+    }
+}
+
 // ---- le secret ---------------------------------------------------------------
 
 /// La clé CloudCore. Elle dépense l'argent du compte : son `Debug` et son
@@ -75,7 +137,7 @@ impl fmt::Display for Cle {
 }
 
 /// Sandbox ou réel, déclaré avec la clé : aucune réponse de l'API ne le dit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Mode {
     Sandbox,
     Reel,
@@ -178,30 +240,47 @@ pub struct OptionLivre {
     pub compte: u32,
 }
 
-/// Le livre tel que Cloudprinter le facture : un produit et ses options.
+/// Le livre tel que Cloudprinter le facture : un produit, ses options, et
+/// combien d'exemplaires.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Livre {
     pub produit: String,
     pub options: Vec<OptionLivre>,
+    pub exemplaires: u32,
 }
 
 impl Livre {
     /// Le livre de `pages` pages chez un fournisseur qui a des codes de
-    /// commande (`PrinterProfile::commande`), `None` chez les autres.
-    /// Le papier compte les pages, comme `scripts/compare-prix.py` l'a
-    /// mesuré le 26/09 ; la couverture et sa finition comptent un.
+    /// commande (`PrinterProfile::commande`), `None` chez les autres, à un
+    /// exemplaire du produit convenu.
     pub fn pour(profil: &PrinterProfile, pages: u32) -> Option<Livre> {
         let OptionsCommande { papier, couverture, finition } = profil.commande?;
+        Some(Livre::choisi(PRODUIT, papier, couverture, finition, pages, 1))
+    }
+
+    /// Le livre tel que l'écran Commander le compose : un produit, et les
+    /// options que son `products/info` propose. Le papier compte les pages,
+    /// comme `scripts/compare-prix.py` l'a mesuré le 26/09 ; la couverture et
+    /// sa finition comptent un.
+    pub fn choisi(
+        produit: &str,
+        papier: &str,
+        couverture: &str,
+        finition: &str,
+        pages: u32,
+        exemplaires: u32,
+    ) -> Livre {
         let option = |o: &str, compte| OptionLivre { option: o.to_string(), compte };
-        Some(Livre {
-            produit: PRODUIT.to_string(),
+        Livre {
+            produit: produit.to_string(),
             options: vec![
                 option(papier, pages),
                 option(couverture, 1),
                 option(finition, 1),
                 option("total_pages", pages),
             ],
-        })
+            exemplaires,
+        }
     }
 }
 
@@ -283,6 +362,11 @@ pub struct Devis {
     #[serde(rename(deserialize = "currency"))]
     pub devise: String,
     pub expire_date: String,
+    /// Le délai de fabrication, en jours (`production_sla_days`). C'est le
+    /// seul délai que le devis rend : les offres d'expédition n'en portent
+    /// aucun, relevé au sandbox le 03/10.
+    #[serde(rename(deserialize = "production_sla_days"), default)]
+    pub production_jours: Option<u32>,
     /// Les expéditions telles que rendues, chacune avec ses offres.
     #[serde(rename(deserialize = "shipments"), default)]
     pub expeditions: Vec<Expedition>,
@@ -317,20 +401,118 @@ pub struct Offre {
     pub devise: String,
 }
 
-/// Demande un devis pour un exemplaire de `livre` livré dans `pays`
+/// Demande un devis pour `livre` (ses exemplaires compris) livré dans `pays`
 /// (code ISO à deux lettres).
 pub fn devis(http: &dyn Http, compte: &Compte, pays: &str, livre: &Livre) -> Result<Devis, Erreur> {
     let corps = json!({
         "country": pays,
         "currency": DEVISE,
         "items": [{
-            "reference": "devis",
+            "reference": ARTICLE,
             "product": livre.produit,
-            "count": "1",
+            "count": livre.exemplaires.to_string(),
             "options": options_json(livre),
         }],
     });
     lire(compte, &appeler(http, compte, "orders/quote", corps)?)
+}
+
+// ---- le catalogue -------------------------------------------------------------
+
+/// Un produit du catalogue du compte (`products`), tel que listé.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Produit {
+    pub reference: String,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Le catalogue que le compte a activé. Rien d'autre n'y est lu que la
+/// liste : c'est la preuve que la clé ouvre le compte.
+pub fn produits(http: &dyn Http, compte: &Compte) -> Result<Vec<Produit>, Erreur> {
+    lire(compte, &appeler(http, compte, "products", json!({}))?)
+}
+
+/// Le type d'option du papier intérieur.
+pub const TYPE_PAPIER: &str = "type_main_paper";
+/// Le type d'option du papier de couverture.
+pub const TYPE_COUVERTURE: &str = "type_cover_paper";
+/// Le type d'option de la finition de couverture.
+pub const TYPE_FINITION: &str = "type_book_cover_finish";
+
+/// Une option d'un produit, telle que `products/info` la rend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptionProduit {
+    pub reference: String,
+    #[serde(rename(deserialize = "type"))]
+    pub type_: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    /// Le choix par défaut du produit chez Cloudprinter (`default: 1`).
+    #[serde(rename(deserialize = "default"), default, deserialize_with = "drapeau")]
+    pub defaut: bool,
+}
+
+/// Une cote d'un produit : sa référence et sa valeur, telle qu'écrite.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Spec {
+    pub reference: String,
+    #[serde(deserialize_with = "texte_ou_nombre")]
+    pub value: String,
+}
+
+/// Ce que `products/info` dit d'un produit : ses options et ses cotes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InfosProduit {
+    pub reference: String,
+    #[serde(default)]
+    pub options: Vec<OptionProduit>,
+    #[serde(default)]
+    pub specs: Vec<Spec>,
+}
+
+impl InfosProduit {
+    /// Les options d'un type, dans l'ordre où l'API les rend.
+    pub fn options_de<'a>(&'a self, type_: &'a str) -> impl Iterator<Item = &'a OptionProduit> + 'a {
+        self.options.iter().filter(move |o| o.type_ == type_)
+    }
+
+    /// La valeur d'une cote, telle qu'écrite.
+    pub fn spec(&self, reference: &str) -> Option<&str> {
+        self.specs.iter().find(|s| s.reference == reference).map(|s| s.value.as_str())
+    }
+}
+
+/// `0` ou `1`, en nombre comme en texte, ou un booléen.
+fn drapeau<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        Value::Bool(b) => b,
+        Value::Number(n) => n.as_i64() == Some(1),
+        Value::String(s) => s.trim() == "1",
+        _ => false,
+    })
+}
+
+/// Les options et les cotes d'un produit.
+pub fn infos_produit(http: &dyn Http, compte: &Compte, reference: &str) -> Result<InfosProduit, Erreur> {
+    lire(compte, &appeler(http, compte, "products/info", json!({"reference": reference}))?)
+}
+
+/// Un pays où Cloudprinter livre.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Pays {
+    #[serde(rename(deserialize = "country_reference"))]
+    pub code: String,
+    #[serde(rename(deserialize = "note"))]
+    pub nom: String,
+    /// Le pays demande un État ou une province dans l'adresse.
+    #[serde(rename(deserialize = "require_state"), default, deserialize_with = "drapeau")]
+    pub etat_requis: bool,
+}
+
+/// Les pays de livraison (`shipping/countries`).
+pub fn pays(http: &dyn Http, compte: &Compte) -> Result<Vec<Pays>, Erreur> {
+    lire(compte, &appeler(http, compte, "shipping/countries", json!({}))?)
 }
 
 // ---- la commande -------------------------------------------------------------
@@ -365,7 +547,7 @@ impl FichierCommande {
     }
 }
 
-/// Une commande d'un exemplaire.
+/// Une commande, d'autant d'exemplaires que son livre en porte.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commande {
     /// La référence, de notre côté ; c'est elle qui nomme les objets du dépôt.
@@ -402,10 +584,10 @@ pub fn commander(http: &dyn Http, compte: &Compte, commande: &Commande) -> Resul
         "email": a.email,
         "addresses": [adresse],
         "items": [{
-            "reference": commande.reference,
+            "reference": ARTICLE,
             "product": commande.livre.produit,
             "quote": commande.quote,
-            "count": "1",
+            "count": commande.livre.exemplaires.to_string(),
             "files": [fichier("cover", &commande.couverture), fichier("book", &commande.interieur)],
             "options": options_json(&commande.livre),
         }],
@@ -421,7 +603,7 @@ pub fn commander(http: &dyn Http, compte: &Compte, commande: &Commande) -> Resul
 
 // ---- l'état ------------------------------------------------------------------
 
-/// L'état d'une commande, rangé depuis le `state_code` d'`orders/info`.
+/// L'état d'une commande, rangé depuis le `state` d'`orders/info`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Etat {
     /// 1.
@@ -462,19 +644,21 @@ impl Etat {
     }
 }
 
-/// Relit l'état de la commande `reference` (`orders/info`).
+/// Relit l'état de la commande `reference` (`orders/info`). Le numéro est
+/// dans `state` ; `state_code` en est le nom (`order_state_sandbox_done`),
+/// relevé au sandbox le 03/10.
 pub fn etat(http: &dyn Http, compte: &Compte, reference: &str) -> Result<Etat, Erreur> {
     #[derive(Deserialize)]
     struct Reponse {
         #[serde(deserialize_with = "texte_ou_nombre")]
-        state_code: String,
+        state: String,
     }
     let r: Reponse = lire(compte, &appeler(http, compte, "orders/info", json!({"reference": reference}))?)?;
     let code = r
-        .state_code
+        .state
         .trim()
         .parse()
-        .map_err(|_| Erreur::Reponse(compte.cle.masquer(&format!("state_code n'est pas un entier : {}", r.state_code))))?;
+        .map_err(|_| Erreur::Reponse(compte.cle.masquer(&format!("state n'est pas un entier : {}", r.state))))?;
     Ok(Etat::du_code(code))
 }
 
@@ -654,6 +838,7 @@ mod tests {
         let d = devis(&http, &compte(), "FR", &livre()).unwrap();
         assert_eq!((d.prix.as_str(), d.tva.as_str(), d.devise.as_str()), ("11.8333", "2.3667", "EUR"));
         assert_eq!(d.expire_date, "2026-09-28T21:00:00.000000Z");
+        assert_eq!(d.production_jours, Some(4));
         assert_eq!(d.expeditions.len(), 1);
         assert_eq!(d.expeditions[0].poids_g.as_deref(), Some("627"));
         let offres = &d.expeditions[0].offres;
@@ -762,21 +947,26 @@ mod tests {
         }
     }
 
+    /// La forme relevée au sandbox le 03/10 : le numéro est dans `state`,
+    /// `state_code` est un texte (`order_state_sandbox_done`). K-s2 lisait le
+    /// numéro dans `state_code`, d'après la note : aucune commande réelle ne
+    /// se relisait.
     #[test]
     fn l_etat_se_lit_dans_orders_info_en_nombre_comme_en_texte() {
         for corps in [
-            r#"{"reference": "colophon-a", "state": "Shipped", "state_code": 100}"#,
-            r#"{"reference": "colophon-a", "state": "Shipped", "state_code": "100"}"#,
+            r#"{"reference": "colophon-a", "state": 501, "state_code": "order_state_sandbox_done",
+                "is_cancelable": true, "items": [{"reference": "livre", "state": 75}]}"#,
+            r#"{"reference": "colophon-a", "state": "501", "state_code": "order_state_sandbox_done"}"#,
         ] {
             let http = Faux::new(200, corps);
-            assert_eq!(etat(&http, &compte(), "colophon-a").unwrap(), Etat::Expediee);
+            assert_eq!(etat(&http, &compte(), "colophon-a").unwrap(), Etat::SandboxTerminee);
             let (url, envoye) = http.dernier();
             assert_eq!(url, format!("{BASE}orders/info"));
             assert_eq!(envoye, json!({"apikey": CLE, "reference": "colophon-a"}));
         }
-        let http = Faux::new(200, r#"{"state_code": 77}"#);
-        assert_eq!(etat(&http, &compte(), "colophon-a").unwrap(), Etat::Inconnu(77));
-        let http = Faux::new(200, r#"{"state": "?"}"#);
+        let http = Faux::new(200, r#"{"state": 8, "state_code": "order_state_x"}"#);
+        assert_eq!(etat(&http, &compte(), "colophon-a").unwrap(), Etat::Inconnu(8));
+        let http = Faux::new(200, r#"{"state_code": "order_state_sandbox_done"}"#);
         assert!(matches!(etat(&http, &compte(), "colophon-a"), Err(Erreur::Reponse(_))));
     }
 
@@ -844,6 +1034,348 @@ mod tests {
         let _ = etat(&http, &c, "x");
         assert_eq!(http.dernier().1["apikey"], CLE, "la clé voyage dans le corps");
         assert!(!http.dernier().0.contains(CLE), "jamais dans l'URL");
+    }
+
+    /// La table de la décision 0, mesurée le 03/10 sur le catalogue du compte
+    /// (`docs/mesures/2026-10-03-les-produits.json`) : un format n'a un
+    /// produit que si largeur, hauteur, fond perdu, squeeze, overlap et wrap
+    /// lus par `products/info` égalent au dixième ceux du profil.
+    #[test]
+    fn chaque_format_a_son_produit_ou_aucun() {
+        let table: Vec<(&str, Option<&str>)> =
+            crate::format::FORMATS.iter().map(|(f, ..)| (*f, produit_pour(f))).collect();
+        assert_eq!(
+            table,
+            [
+                ("carre-21", Some("photobook_cw_s210_s_fc")),
+                ("carre-30", Some("photobook_cw_s300_s_fc")),
+                ("portrait-a4", Some("photobook_cw_a4_p_fc")),
+                ("paysage-a4", Some("photobook_cw_a4_l_fc")),
+                // Aucun cartonné du compte ne fait 280 × 210.
+                ("paysage-28x21", None),
+                // Le 8 × 10 pouces de Cloudprinter fait 203,2 de large, le
+                // format 203,0 : 0,2 mm d'écart, au-delà du dixième.
+                ("portrait-20x25", None),
+            ]
+        );
+        assert_eq!(produit_pour("carre-21"), Some(PRODUIT));
+        assert_eq!(produit_pour("210 × 210 mm"), None);
+        // Chaque produit retenu a ses cotes à côté, celles qui l'ont fait
+        // retenir, égales au profil au dixième.
+        let p = PrinterProfile::par_id("cloudprinter").unwrap();
+        for (format, w, h, ..) in crate::format::FORMATS {
+            let Some(produit) = produit_pour(format) else { continue };
+            let c = COTES_DES_PRODUITS.iter().find(|c| c.produit == produit).expect(produit);
+            let egal = |a: f64, b: f64| (a - b).abs() < 0.05;
+            assert!(egal(c.largeur_mm, *w) && egal(c.hauteur_mm, *h), "{format}");
+            assert!(egal(c.fond_perdu_mm, p.bleed_mm.max()), "{format}");
+            assert!(egal(c.squeeze_mm, p.mors_mm), "{format}");
+            assert!(egal(c.overlap_mm, p.debord_mm), "{format}");
+            assert!(egal(c.wrap_mm, p.rempli_mm), "{format}");
+            assert!(c.pages_min <= p.pages_min && c.pages_max >= p.pages_max, "{format}");
+        }
+    }
+
+    #[test]
+    fn un_livre_se_choisit_par_produit_papier_et_finition() {
+        let l = Livre::choisi("photobook_cw_a4_p_fc", "pageblock_170mcg", "cover_130mcg", "cover_finish_gloss", 48, 3);
+        assert_eq!(l.produit, "photobook_cw_a4_p_fc");
+        assert_eq!(l.exemplaires, 3);
+        let opts: Vec<(&str, u32)> = l.options.iter().map(|o| (o.option.as_str(), o.compte)).collect();
+        assert_eq!(
+            opts,
+            [("pageblock_170mcg", 48), ("cover_130mcg", 1), ("cover_finish_gloss", 1), ("total_pages", 48)]
+        );
+        // Le livre du profil reste celui de K-s2, à un exemplaire.
+        assert_eq!(livre().exemplaires, 1);
+    }
+
+    /// Mesuré au sandbox le 03/10 : un devis demandé pour l'article
+    /// « devis » puis posé sur une commande dont l'article s'appelle
+    /// autrement est refusé (`quote_validate_one_or_more_items_not_found_in_quote`).
+    /// Le hash du devis tient l'article par sa référence.
+    #[test]
+    fn le_devis_et_la_commande_nomment_l_article_pareil() {
+        let http = Faux::new(200, DEVIS);
+        devis(&http, &compte(), "FR", &livre()).unwrap();
+        let au_devis = http.dernier().1["items"][0]["reference"].clone();
+        let http = Faux::new(201, r#"{"order": "CP-1"}"#);
+        commander(&http, &compte(), &commande_exemple()).unwrap();
+        assert_eq!(http.dernier().1["items"][0]["reference"], au_devis);
+        assert_eq!(au_devis, ARTICLE);
+    }
+
+    #[test]
+    fn le_nombre_d_exemplaires_voyage_au_devis_et_a_la_commande() {
+        let mut l = livre();
+        l.exemplaires = 4;
+        let http = Faux::new(200, DEVIS);
+        devis(&http, &compte(), "FR", &l).unwrap();
+        assert_eq!(http.dernier().1["items"][0]["count"], "4");
+        let http = Faux::new(201, r#"{"order": "CP-1"}"#);
+        let mut c = commande_exemple();
+        c.livre = l;
+        commander(&http, &compte(), &c).unwrap();
+        assert_eq!(http.dernier().1["items"][0]["count"], "4");
+    }
+
+    #[test]
+    fn le_catalogue_se_lit_sans_rien_supposer() {
+        let http = Faux::new(
+            200,
+            r#"[{"category": "Photobook", "name": "Photobook CW S210 mm S FC TNR",
+                 "reference": "photobook_cw_s210_s_fc", "availability": "Regional"},
+                {"name": "Business card", "reference": "businesscard_ss"}]"#,
+        );
+        let p = produits(&http, &compte()).unwrap();
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].reference, "photobook_cw_s210_s_fc");
+        let (url, corps) = http.dernier();
+        assert_eq!(url, format!("{BASE}products"));
+        assert_eq!(corps, json!({"apikey": CLE}));
+    }
+
+    /// Une réponse de `products/info` réduite à ce que l'écran lit, dans la
+    /// forme relevée le 03/10.
+    const INFO: &str = r#"{
+        "name": "Photobook CW S210 mm S FC TNR", "reference": "photobook_cw_s210_s_fc",
+        "options": [
+            {"reference": "pageblock_200mcg", "note": "Pageblock paper 200gsm Machine Coated Gloss",
+             "type": "type_main_paper", "type_name": "Main paper", "default": 1},
+            {"reference": "pageblock_150mcs", "note": "Pageblock paper 150gsm Machine Coated Silk",
+             "type": "type_main_paper", "type_name": "Main paper", "default": 0},
+            {"reference": "cover_130mcg", "note": "Cover paper 130gsm Machine Coated Gloss",
+             "type": "type_cover_paper", "default": 1},
+            {"reference": "cover_finish_gloss", "note": "Cover lamination Gloss finish",
+             "type": "type_book_cover_finish", "default": 1},
+            {"reference": "cover_finish_matte", "note": "Cover lamination Matte finish",
+             "type": "type_book_cover_finish", "default": 0},
+            {"reference": "total_pages", "type": "type_total_pages", "default": 0}
+        ],
+        "specs": [
+            {"reference": "exact_width_in_mm", "value": "210.0"},
+            {"reference": "cover_wrap_in_mm", "value": "18"}
+        ]
+    }"#;
+
+    #[test]
+    fn les_options_d_un_produit_se_rangent_par_type() {
+        let http = Faux::new(200, INFO);
+        let i = infos_produit(&http, &compte(), "photobook_cw_s210_s_fc").unwrap();
+        assert_eq!(http.dernier().1["reference"], "photobook_cw_s210_s_fc");
+        let refs = |t: &str| -> Vec<(String, bool)> {
+            i.options_de(t).map(|o| (o.reference.clone(), o.defaut)).collect()
+        };
+        assert_eq!(
+            refs(TYPE_PAPIER),
+            [("pageblock_200mcg".to_string(), true), ("pageblock_150mcs".to_string(), false)]
+        );
+        assert_eq!(refs(TYPE_COUVERTURE), [("cover_130mcg".to_string(), true)]);
+        assert_eq!(refs(TYPE_FINITION).len(), 2);
+        assert_eq!(i.spec("exact_width_in_mm"), Some("210.0"));
+        assert_eq!(i.spec("absente"), None);
+    }
+
+    #[test]
+    fn les_pays_viennent_de_shipping_countries() {
+        let http = Faux::new(
+            200,
+            r#"[{"country_reference": "FR", "note": "France", "require_state": 0},
+                {"country_reference": "US", "note": "United States", "require_state": 1}]"#,
+        );
+        let p = pays(&http, &compte()).unwrap();
+        assert_eq!(http.dernier().0, format!("{BASE}shipping/countries"));
+        assert_eq!(p[0], Pays { code: "FR".into(), nom: "France".into(), etat_requis: false });
+        assert!(p[1].etat_requis);
+    }
+
+    /// Retire d'une réponse tout ce qui ne doit pas entrer dans une mesure :
+    /// les URL (une URL présignée porte l'identifiant du dépôt), les champs
+    /// d'adresse, et toute occurrence d'un des secrets.
+    fn expurger(v: &Value, secrets: &[&str]) -> Value {
+        const PERSONNEL: [&str; 10] = [
+            "addresses", "email", "phone", "firstname", "lastname", "street1", "street2", "zip",
+            "city", "name",
+        ];
+        match v {
+            Value::String(s) if s.starts_with("http") => Value::String("<url>".into()),
+            Value::String(s) => {
+                let mut t = s.clone();
+                for x in secrets.iter().filter(|x| !x.is_empty()) {
+                    t = t.replace(x, "***");
+                }
+                Value::String(t)
+            }
+            Value::Array(a) => Value::Array(a.iter().map(|x| expurger(x, secrets)).collect()),
+            Value::Object(o) => Value::Object(
+                o.iter()
+                    .filter(|(k, _)| !PERSONNEL.contains(&k.as_str()))
+                    .map(|(k, x)| (k.clone(), expurger(x, secrets)))
+                    .collect(),
+            ),
+            autre => autre.clone(),
+        }
+    }
+
+    /// Le bout en bout, au sandbox seulement (décision 8). Lit
+    /// `CLOUDPRINTER_SANDBOX_API_KEY` et les quatre `R2_*` de
+    /// l'environnement, n'en affiche aucun, dépose les deux PDF de
+    /// `.albums/papier` (lecture seule), demande un devis France, commande au
+    /// sandbox, relit l'état jusqu'à 501 ou dix minutes, puis retire les
+    /// objets quoi qu'il arrive. Ce qu'il voit va dans `COLOPHON_MESURE`.
+    ///
+    /// ```text
+    /// (set -a; . <.env>; set +a; COLOPHON_MESURE=docs/mesures/2026-10-03-la-commande-sandbox.json \
+    ///   cargo test -p colophon-core --lib banc_commande_sandbox -- --ignored --nocapture)
+    /// ```
+    #[test]
+    #[ignore]
+    fn banc_commande_sandbox() {
+        use crate::depot::{Acces, Depot, Reglages};
+        use crate::export::{LIVRAISON_COUVERTURE, LIVRAISON_INTERIEUR};
+        let env = |n: &str| std::env::var(n).unwrap_or_else(|_| panic!("{n} absente de l'environnement"));
+        let (cle, compte_r2, seau, acces, secret) = (
+            env("CLOUDPRINTER_SANDBOX_API_KEY"),
+            env("R2_ACCOUNT_ID"),
+            env("R2_BUCKET"),
+            env("R2_ACCESS_KEY_ID"),
+            env("R2_SECRET_ACCESS_KEY"),
+        );
+        let secrets = [cle.as_str(), compte_r2.as_str(), acces.as_str(), secret.as_str()];
+        let compte = Compte { cle: Cle::new(cle.clone()), mode: Mode::Sandbox };
+        let depot = Depot::new(Reglages {
+            endpoint: format!("https://{compte_r2}.r2.cloudflarestorage.com"),
+            region: "auto".into(),
+            bucket: seau.clone(),
+            access_key: Acces::new(acces.clone()),
+            secret_key: Acces::new(secret.clone()),
+        })
+        .unwrap();
+        let papier = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.albums/papier");
+        let profil = PrinterProfile::par_id("cloudprinter").unwrap();
+        let pages = crate::prevol::prevol(&papier, profil).unwrap().fiche.pages_fichier as u32;
+        let livre = Livre::pour(profil, pages).unwrap();
+        let debut = std::time::Instant::now();
+        let reference = format!("colophon-banc-{}", chrono::Utc::now().format("%Y%m%d%H%M%S"));
+        let http = Ureq::default();
+
+        let mut deposes = Vec::new();
+        let mut mesure = json!({
+            "date_utc": chrono::Utc::now().format("%Y-%m-%d").to_string(),
+            "mode": "Sandbox",
+            "reference": reference,
+            "produit": livre.produit,
+            "pages": pages,
+            "fichiers": {},
+        });
+        let resultat = (|| -> Result<(), String> {
+            let mut fichiers = Vec::new();
+            for nom in [LIVRAISON_INTERIEUR, LIVRAISON_COUVERTURE] {
+                let chemin = papier.join(nom);
+                let t = std::time::Instant::now();
+                let objet = depot.deposer(&reference, &chemin).map_err(|e| format!("{e:#}"))?;
+                let octets = std::fs::metadata(&chemin).unwrap().len();
+                let f = FichierCommande::depuis(depot.url_de_lecture(&objet), &chemin).unwrap();
+                mesure["fichiers"][nom] = json!({
+                    "objet": objet.cle, "octets": octets, "md5": f.md5,
+                    "depot_s": (t.elapsed().as_secs_f64() * 10.0).round() / 10.0,
+                });
+                deposes.push(objet);
+                fichiers.push(f);
+            }
+            let d = devis(&http, &compte, "FR", &livre).map_err(|e| e.to_string())?;
+            let offre = d.expeditions[0].offres[0].clone();
+            mesure["devis"] = json!({
+                "articles_ht": d.prix, "tva": d.tva, "devise": d.devise, "expire_date": d.expire_date,
+                "offre": {"niveau": offre.niveau, "transporteur": offre.transporteur, "prix_ht": offre.prix},
+            });
+            let interieur = fichiers.remove(0);
+            let couverture = fichiers.remove(0);
+            let c = Commande {
+                reference: reference.clone(),
+                adresse: Adresse {
+                    prenom: "Banc".into(),
+                    nom: "Colophon".into(),
+                    rue: "1 rue de l'Essai".into(),
+                    rue2: None,
+                    code_postal: "75001".into(),
+                    ville: "Paris".into(),
+                    pays: "FR".into(),
+                    email: "banc@example.org".into(),
+                    telephone: "+33100000000".into(),
+                },
+                livre: livre.clone(),
+                quote: offre.quote,
+                couverture,
+                interieur,
+            };
+            let id = commander(&http, &compte, &c).map_err(|e| e.to_string())?;
+            mesure["commande"] = json!({"identifiant_rendu": !id.is_empty()});
+            let mut etats: Vec<Value> = Vec::new();
+            let mut dernier = None;
+            // Dix minutes, la borne de la décision 8 ; `COLOPHON_BANC_LIMITE_S`
+            // la raccourcit quand le banc doit tenir dans une fenêtre plus courte.
+            let limite = std::time::Duration::from_secs(
+                std::env::var("COLOPHON_BANC_LIMITE_S").ok().and_then(|s| s.parse().ok()).unwrap_or(600),
+            );
+            let t0 = std::time::Instant::now();
+            loop {
+                let (statut, corps) = http
+                    .post_json(&format!("{BASE}orders/info"), &json!({"apikey": cle, "reference": reference}))
+                    .map_err(|e| compte.cle.masquer(&e))?;
+                let lu: Value = serde_json::from_str(&corps).unwrap_or(Value::Null);
+                let code = lu["state"].as_i64().or_else(|| lu["state"].as_str()?.parse().ok());
+                if code != dernier {
+                    etats.push(json!({
+                        "apres_s": t0.elapsed().as_secs(),
+                        "statut_http": statut,
+                        "state": code,
+                        "state_code": lu["state_code"],
+                        "etat": format!("{:?}", code.map(Etat::du_code)),
+                    }));
+                    mesure["orders_info_au_passage"][code.map_or("aucun".to_string(), |c| c.to_string())] =
+                        expurger(&lu, &secrets);
+                    dernier = code;
+                }
+                if code == Some(501) || code == Some(500) || t0.elapsed() > limite {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(3));
+            }
+            assert_eq!(etat(&http, &compte, &reference).ok(), dernier.map(Etat::du_code));
+            mesure["etats"] = Value::Array(etats);
+            let (_, log) = http
+                .post_json(&format!("{BASE}orders/log"), &json!({"apikey": cle, "reference": reference}))
+                .map_err(|e| compte.cle.masquer(&e))?;
+            let log: Value = serde_json::from_str(&log).unwrap_or(Value::Null);
+            // Combien de temps l'étape des fichiers (10 à 15) a duré avant le
+            // rendu (30 et plus) : Cloudprinter y tire les deux URL.
+            let quand = |pred: &dyn Fn(i64) -> bool| {
+                log.as_array()?.iter().find(|l| l["state"].as_i64().is_some_and(pred))?["create_date"]
+                    .as_str()
+                    .and_then(|d| chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%d %H:%M:%S").ok())
+            };
+            if let (Some(a), Some(b)) = (quand(&|e| (10..=15).contains(&e)), quand(&|e| e >= 30)) {
+                mesure["etape_fichiers_s"] = json!((b - a).num_seconds());
+            }
+            mesure["orders_log"] = expurger(&log, &secrets);
+            Ok(())
+        })();
+        // Les objets quittent le dépôt quoi qu'il soit arrivé.
+        let mut retires = Vec::new();
+        for o in &deposes {
+            retires.push(json!({"objet": o.cle, "retire": depot.retirer(o).is_ok()}));
+        }
+        mesure["objets_retires"] = Value::Array(retires);
+        mesure["duree_s"] = json!(debut.elapsed().as_secs());
+        mesure["resultat"] = json!(resultat.as_ref().map(|_| "ok".to_string()).unwrap_or_else(|e| e.clone()));
+        let mut texte = serde_json::to_string_pretty(&mesure).unwrap();
+        for s in secrets.iter().filter(|s| !s.is_empty()) {
+            texte = texte.replace(s, "***");
+        }
+        let sortie = std::env::var("COLOPHON_MESURE").unwrap_or_else(|_| "/dev/null".into());
+        std::fs::write(&sortie, texte + "\n").unwrap();
+        resultat.unwrap();
     }
 
     #[test]

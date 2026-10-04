@@ -118,6 +118,7 @@ function albumDevServer(dir: string): Plugin {
       // même `export::preparer` que la fenêtre, dans COLOPHON_PREPARER. La
       // réponse a la forme de la commande Tauri : le nom du dossier, jamais
       // son chemin.
+      server.middlewares.use("/__dev/commande", commandeDev(dir));
       server.middlewares.use("/__dev/preparer", (req, res) => {
         if (req.method !== "POST") {
           res.statusCode = 405;
@@ -436,6 +437,165 @@ function geometryParity(): Plugin {
         );
       });
     },
+  };
+}
+
+/**
+ * Le faux de la commande (K-s3), pour le harnais : les commandes Tauri
+ * `commande_*` rejouées en mémoire, sur les réponses du faux CloudCore de
+ * K-s2 (`core::commande`, tests) et la forme relevée au sandbox le 03/10.
+ * Aucune clé ne voyage, aucun réseau n'est touché, rien ne s'écrit sur le
+ * disque : `commande.json` n'existe pas au harnais, la vue vit le temps du
+ * serveur. L'état d'une commande avance d'un cran à chaque relecture,
+ * 1, 5, 10, 15, 33 puis 501, comme le banc sandbox l'a vu passer.
+ */
+function commandeDev(dir: string) {
+  type Commande = {
+    reference: string;
+    identifiant: string;
+    mode: "Sandbox" | "Reel";
+    date: string;
+    etat: number | null;
+    objets_retires: boolean;
+  };
+  const memoire: {
+    cle: { fin: string; mode: "Sandbox" | "Reel" } | null;
+    depot: { endpoint: string; region: string; bucket: string } | null;
+    commandes: Commande[];
+    quotes: string[];
+  } = { cle: null, depot: null, commandes: [], quotes: [] };
+  const vue = () => ({
+    cle: memoire.cle,
+    depot: memoire.depot,
+    commandes: [...memoire.commandes].reverse(),
+  });
+  // Le miroir de `commande::produit_pour`, pour le seul harnais.
+  const PRODUITS: Record<string, string> = {
+    "210x210": "photobook_cw_s210_s_fc",
+    "300x300": "photobook_cw_s300_s_fc",
+    "210x297": "photobook_cw_a4_p_fc",
+    "297x210": "photobook_cw_a4_l_fc",
+  };
+  const option = (reference: string, type_: string, note: string, defaut = false) => ({
+    reference,
+    type_,
+    note,
+    defaut,
+  });
+  const SUITE = [1, 5, 10, 15, 33, 501];
+  const actions: Record<string, (b: any) => unknown> = {
+    vue: () => vue(),
+    cle: (b) => {
+      memoire.cle = { fin: String(b.cle).trim().slice(-4), mode: b.mode };
+      return vue();
+    },
+    cle_retirer: () => ((memoire.cle = null), vue()),
+    depot: (b) => {
+      memoire.depot = { endpoint: b.endpoint, region: b.region || "auto", bucket: b.bucket };
+      return vue();
+    },
+    depot_retirer: () => ((memoire.depot = null), vue()),
+    verifier: () => ({
+      cloudprinter: memoire.cle ? { ok: true, produits: 1673, erreur: null } : null,
+      depot: memoire.depot ? { ok: true, produits: null, erreur: null } : null,
+    }),
+    offre: () => {
+      const album = JSON.parse(readFileSync(join(dir, "album.json")).toString());
+      const cle = `${album.trim_mm.w}x${album.trim_mm.h}`;
+      const produit = PRODUITS[cle] ?? null;
+      return {
+        format: cle,
+        produit,
+        pages: 2 * album.spreads.length,
+        papier: produit
+          ? option("pageblock_150mcs", "type_main_paper", "Pageblock paper 150gsm Machine Coated Silk")
+          : null,
+        finitions: produit
+          ? [
+              option("cover_finish_gloss", "type_book_cover_finish", "Cover lamination Gloss finish", true),
+              option("cover_finish_matte", "type_book_cover_finish", "Cover lamination Matte finish"),
+            ]
+          : [],
+        couverture: produit ? "cover_130mcg" : null,
+        pays: produit
+          ? [
+              { code: "BE", nom: "Belgium", etat_requis: false },
+              { code: "DE", nom: "Germany", etat_requis: false },
+              { code: "FR", nom: "France", etat_requis: false },
+            ]
+          : [],
+      };
+    },
+    devis: (b) => {
+      const n = Number(b.quantite) || 1;
+      const quotes = [`faux-${Date.now()}-a`, `faux-${Date.now()}-b`];
+      memoire.quotes = quotes;
+      return {
+        prix: (11.8333 * n).toFixed(4),
+        tva: (2.3667 * n).toFixed(4),
+        devise: "EUR",
+        expire_date: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+        production_jours: 4,
+        expeditions: [
+          {
+            poids_g: "627",
+            offres: [
+              { quote: quotes[0], niveau: "cp_limited", service: "Limited", transporteur: "Chronopost - France", prix: "5.6320", tva: "1.1264", devise: "EUR" },
+              { quote: quotes[1], niveau: "cp_jamais_vu", service: null, transporteur: null, prix: "9.5", tva: "1.9", devise: "EUR" },
+            ],
+          },
+        ],
+      };
+    },
+    passer: (b) => {
+      if (!memoire.quotes.includes(b.quote)) throw new Error("cette expédition n'est pas dans le devis");
+      const now = new Date();
+      memoire.commandes.push({
+        reference: `colophon-${now.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15)}`,
+        identifiant: `CP-FAUX-${memoire.commandes.length + 1}`,
+        mode: memoire.cle?.mode ?? "Sandbox",
+        date: now.toISOString().slice(0, 10),
+        etat: null,
+        objets_retires: false,
+      });
+      memoire.quotes = [];
+      return vue();
+    },
+    relire: (b) => {
+      for (const c of memoire.commandes) {
+        if (b.reference ? c.reference !== b.reference : c.objets_retires) continue;
+        if (c.etat !== 500) c.etat = SUITE[Math.min(SUITE.indexOf(c.etat ?? 0) + 1, SUITE.length - 1)];
+        if ([100, 500, 501].includes(c.etat ?? 0)) c.objets_retires = true;
+      }
+      return { vue: vue(), erreur: null };
+    },
+    annuler: (b) => {
+      const c = memoire.commandes.find((x) => x.reference === b.reference);
+      if (!c) throw new Error("commande inconnue");
+      if ((c.etat ?? 0) >= 30) throw new Error("trop_tard");
+      c.etat = 500;
+      c.objets_retires = true;
+      return { vue: vue(), erreur: null };
+    },
+  };
+  return (req: any, res: any) => {
+    const action = (req.url ?? "").replace(/^\//, "").split("?")[0];
+    let corps = "";
+    req.on("data", (c: Buffer) => (corps += c));
+    req.on("end", () => {
+      try {
+        const faire = actions[action];
+        if (!faire) throw new Error(`action inconnue : ${action}`);
+        const r = faire(corps ? JSON.parse(corps) : {});
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(r));
+      } catch (e: any) {
+        const m = String(e?.message ?? e);
+        // Le 409 de CloudCore, tel que la commande Tauri le rend.
+        res.statusCode = m === "trop_tard" ? 409 : 500;
+        res.end(m);
+      }
+    });
   };
 }
 

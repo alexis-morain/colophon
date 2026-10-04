@@ -1,0 +1,685 @@
+{
+  "commande": {
+    "identifiant_rendu": true
+  },
+  "date_utc": "2026-10-04",
+  "devis": {
+    "articles_ht": "11.8333",
+    "devise": "EUR",
+    "expire_date": "2026-10-06T01:46:38.029586Z",
+    "offre": {
+      "niveau": "cp_limited",
+      "prix_ht": "5.6320",
+      "transporteur": "Chronopost - France"
+    },
+    "tva": "2.3667"
+  },
+  "duree_s": 54,
+  "etape_fichiers_s": 13,
+  "etats": [
+    {
+      "apres_s": 0,
+      "etat": "Some(Nouvelle)",
+      "state": 1,
+      "state_code": "order_state_new",
+      "statut_http": 200
+    },
+    {
+      "apres_s": 9,
+      "etat": "Some(Verification)",
+      "state": 5,
+      "state_code": "order_state_verify",
+      "statut_http": 200
+    },
+    {
+      "apres_s": 12,
+      "etat": "Some(Fichiers)",
+      "state": 10,
+      "state_code": "order_state_download",
+      "statut_http": 200
+    },
+    {
+      "apres_s": 16,
+      "etat": "Some(Fichiers)",
+      "state": 15,
+      "state_code": "order_state_downloaded",
+      "statut_http": 200
+    },
+    {
+      "apres_s": 25,
+      "etat": "Some(Rendu)",
+      "state": 33,
+      "state_code": "order_state_distribute",
+      "statut_http": 200
+    },
+    {
+      "apres_s": 28,
+      "etat": "Some(SandboxTerminee)",
+      "state": 501,
+      "state_code": "order_state_sandbox_done",
+      "statut_http": 200
+    }
+  ],
+  "fichiers": {
+    "album-cover.pdf": {
+      "depot_s": 1.1,
+      "md5": "4eb4a8769a7ecc552c53ea6bb051a1a8",
+      "objet": "colophon/colophon-banc-20261004014613/album-cover.pdf",
+      "octets": 4870674
+    },
+    "album-print.pdf": {
+      "depot_s": 22.2,
+      "md5": "275947b4f9a7958287828b9f6470d3ec",
+      "objet": "colophon/colophon-banc-20261004014613/album-print.pdf",
+      "octets": 94980105
+    }
+  },
+  "mode": "Sandbox",
+  "note": "Banc banc_commande_sandbox, lancé le 03/10 au soir (heure de Paris, le 04 en UTC) avec COLOPHON_BANC_LIMITE_S=420. Clé sandbox seulement. Les deux PDF de .albums/papier, lus sans être modifiés (empreintes SHA-256 identiques avant et après). L'état 15 se nomme order_state_downloaded : Cloudprinter dit avoir tiré les deux URL de lecture ; etape_fichiers_s est le temps entre l'état 10 et le premier état de rendu dans orders/log. Deux défauts du moteur trouvés par les deux passes précédentes, corrigés dans la même PR : l'article du devis s'appelait « devis » et celui de la commande portait la référence de la commande (quote_validate_one_or_more_items_not_found_in_quote), et orders/info met le numéro d'état dans state, pas dans state_code, qui est un nom. Les objets ont été retirés après chaque passe, celles en échec comprises.",
+  "objets_retires": [
+    {
+      "objet": "colophon/colophon-banc-20261004014613/album-print.pdf",
+      "retire": true
+    },
+    {
+      "objet": "colophon/colophon-banc-20261004014613/album-cover.pdf",
+      "retire": true
+    }
+  ],
+  "orders_info_au_passage": {
+    "1": {
+      "is_cancelable": true,
+      "items": [
+        {
+          "co2": null,
+          "count": 1,
+          "files": [
+            {
+              "format": "pdf",
+              "md5sum": "4eb4a8769a7ecc552c53ea6bb051a1a8",
+              "type": "cover",
+              "url": "<url>"
+            },
+            {
+              "format": "pdf",
+              "md5sum": "275947b4f9a7958287828b9f6470d3ec",
+              "type": "book",
+              "url": "<url>"
+            }
+          ],
+          "is_reordable": false,
+          "options": [
+            {
+              "count": 1,
+              "type": "Cover 130MCG"
+            },
+            {
+              "count": 1,
+              "type": "Cover finish Matte"
+            },
+            {
+              "count": 96,
+              "type": "Total pages"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock 150MCS"
+            }
+          ],
+          "product_reference": "photobook_cw_s210_s_fc",
+          "reference": "livre",
+          "shipping_level": null,
+          "shipping_level_reference": null,
+          "shipping_option": "Chronopost - France",
+          "shipping_option_reference": "chronopost_france",
+          "state": 1,
+          "state_code": "item_state_new",
+          "title": "",
+          "tracking": null,
+          "type": "pod"
+        }
+      ],
+      "order_date": "2026-10-04 01:46:38",
+      "reference": "colophon-banc-20261004014613",
+      "state": 1,
+      "state_code": "order_state_new",
+      "status_logs": []
+    },
+    "10": {
+      "is_cancelable": true,
+      "items": [
+        {
+          "co2": null,
+          "count": 1,
+          "files": [
+            {
+              "format": "pdf",
+              "md5sum": "4eb4a8769a7ecc552c53ea6bb051a1a8",
+              "type": "cover",
+              "url": "<url>"
+            },
+            {
+              "format": "pdf",
+              "md5sum": "275947b4f9a7958287828b9f6470d3ec",
+              "type": "book",
+              "url": "<url>"
+            }
+          ],
+          "is_reordable": false,
+          "options": [
+            {
+              "count": 1,
+              "type": "Cover 130MCG"
+            },
+            {
+              "count": 1,
+              "type": "Cover finish Matte"
+            },
+            {
+              "count": 96,
+              "type": "Total pages"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock finish None"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock 150MCS"
+            }
+          ],
+          "product_reference": "photobook_cw_s210_s_fc",
+          "reference": "livre",
+          "shipping_level": null,
+          "shipping_level_reference": null,
+          "shipping_option": "Chronopost - France",
+          "shipping_option_reference": "chronopost_france",
+          "state": 25,
+          "state_code": "item_state_verified",
+          "title": "",
+          "tracking": null,
+          "type": "pod"
+        }
+      ],
+      "order_date": "2026-10-04 01:46:38",
+      "reference": "colophon-banc-20261004014613",
+      "state": 10,
+      "state_code": "order_state_download",
+      "status_logs": [
+        {
+          "create_date": "2026-10-04 01:46:47",
+          "reference": "colophon-banc-20261004014613",
+          "state": 5
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 6
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 8
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 9
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 10
+        }
+      ]
+    },
+    "15": {
+      "is_cancelable": true,
+      "items": [
+        {
+          "co2": null,
+          "count": 1,
+          "files": [
+            {
+              "format": "pdf",
+              "md5sum": "4eb4a8769a7ecc552c53ea6bb051a1a8",
+              "type": "cover",
+              "url": "<url>"
+            },
+            {
+              "format": "pdf",
+              "md5sum": "275947b4f9a7958287828b9f6470d3ec",
+              "type": "book",
+              "url": "<url>"
+            }
+          ],
+          "is_reordable": false,
+          "options": [
+            {
+              "count": 1,
+              "type": "Cover 130MCG"
+            },
+            {
+              "count": 1,
+              "type": "Cover finish Matte"
+            },
+            {
+              "count": 96,
+              "type": "Total pages"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock finish None"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock 150MCS"
+            }
+          ],
+          "product_reference": "photobook_cw_s210_s_fc",
+          "reference": "livre",
+          "shipping_level": null,
+          "shipping_level_reference": null,
+          "shipping_option": "Chronopost - France",
+          "shipping_option_reference": "chronopost_france",
+          "state": 25,
+          "state_code": "item_state_verified",
+          "title": "",
+          "tracking": null,
+          "type": "pod"
+        }
+      ],
+      "order_date": "2026-10-04 01:46:38",
+      "reference": "colophon-banc-20261004014613",
+      "state": 15,
+      "state_code": "order_state_downloaded",
+      "status_logs": [
+        {
+          "create_date": "2026-10-04 01:46:47",
+          "reference": "colophon-banc-20261004014613",
+          "state": 5
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 6
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 8
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 9
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 10
+        }
+      ]
+    },
+    "33": {
+      "is_cancelable": true,
+      "items": [
+        {
+          "co2": null,
+          "count": 1,
+          "files": [
+            {
+              "format": "pdf",
+              "md5sum": "4eb4a8769a7ecc552c53ea6bb051a1a8",
+              "type": "cover",
+              "url": "<url>"
+            },
+            {
+              "format": "pdf",
+              "md5sum": "275947b4f9a7958287828b9f6470d3ec",
+              "type": "book",
+              "url": "<url>"
+            }
+          ],
+          "is_reordable": false,
+          "options": [
+            {
+              "count": 1,
+              "type": "Cover 130MCG"
+            },
+            {
+              "count": 1,
+              "type": "Cover finish Matte"
+            },
+            {
+              "count": 96,
+              "type": "Total pages"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock finish None"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock 150MCS"
+            }
+          ],
+          "product_reference": "photobook_cw_s210_s_fc",
+          "reference": "livre",
+          "shipping_level": null,
+          "shipping_level_reference": null,
+          "shipping_option": "Chronopost - France",
+          "shipping_option_reference": "chronopost_france",
+          "state": 25,
+          "state_code": "item_state_verified",
+          "title": "",
+          "tracking": null,
+          "type": "pod"
+        }
+      ],
+      "order_date": "2026-10-04 01:46:38",
+      "reference": "colophon-banc-20261004014613",
+      "state": 33,
+      "state_code": "order_state_distribute",
+      "status_logs": [
+        {
+          "create_date": "2026-10-04 01:46:47",
+          "reference": "colophon-banc-20261004014613",
+          "state": 5
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 6
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 8
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 9
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 10
+        },
+        {
+          "create_date": "2026-10-04 01:47:01",
+          "reference": "colophon-banc-20261004014613",
+          "state": 30
+        },
+        {
+          "create_date": "2026-10-04 01:47:02",
+          "reference": "colophon-banc-20261004014613",
+          "state": 32
+        },
+        {
+          "create_date": "2026-10-04 01:47:03",
+          "reference": "colophon-banc-20261004014613",
+          "state": 33
+        },
+        {
+          "create_date": "2026-10-04 01:47:03",
+          "reference": "colophon-banc-20261004014613",
+          "state": 37
+        },
+        {
+          "create_date": "2026-10-04 01:47:03",
+          "reference": "colophon-banc-20261004014613",
+          "state": 38
+        }
+      ]
+    },
+    "5": {
+      "is_cancelable": true,
+      "items": [
+        {
+          "co2": null,
+          "count": 1,
+          "files": [
+            {
+              "format": "pdf",
+              "md5sum": "4eb4a8769a7ecc552c53ea6bb051a1a8",
+              "type": "cover",
+              "url": "<url>"
+            },
+            {
+              "format": "pdf",
+              "md5sum": "275947b4f9a7958287828b9f6470d3ec",
+              "type": "book",
+              "url": "<url>"
+            }
+          ],
+          "is_reordable": false,
+          "options": [
+            {
+              "count": 1,
+              "type": "Cover 130MCG"
+            },
+            {
+              "count": 1,
+              "type": "Cover finish Matte"
+            },
+            {
+              "count": 96,
+              "type": "Total pages"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock finish None"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock 150MCS"
+            }
+          ],
+          "product_reference": "photobook_cw_s210_s_fc",
+          "reference": "livre",
+          "shipping_level": null,
+          "shipping_level_reference": null,
+          "shipping_option": "Chronopost - France",
+          "shipping_option_reference": "chronopost_france",
+          "state": 1,
+          "state_code": "item_state_new",
+          "title": "",
+          "tracking": null,
+          "type": "pod"
+        }
+      ],
+      "order_date": "2026-10-04 01:46:38",
+      "reference": "colophon-banc-20261004014613",
+      "state": 5,
+      "state_code": "order_state_verify",
+      "status_logs": [
+        {
+          "create_date": "2026-10-04 01:46:47",
+          "reference": "colophon-banc-20261004014613",
+          "state": 5
+        }
+      ]
+    },
+    "501": {
+      "is_cancelable": true,
+      "items": [
+        {
+          "co2": null,
+          "count": 1,
+          "files": [
+            {
+              "format": "pdf",
+              "md5sum": "4eb4a8769a7ecc552c53ea6bb051a1a8",
+              "type": "cover",
+              "url": "<url>"
+            },
+            {
+              "format": "pdf",
+              "md5sum": "275947b4f9a7958287828b9f6470d3ec",
+              "type": "book",
+              "url": "<url>"
+            }
+          ],
+          "is_reordable": false,
+          "options": [
+            {
+              "count": 1,
+              "type": "Cover 130MCG"
+            },
+            {
+              "count": 1,
+              "type": "Cover finish Matte"
+            },
+            {
+              "count": 96,
+              "type": "Total pages"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock finish None"
+            },
+            {
+              "count": 96,
+              "type": "Pageblock 150MCS"
+            }
+          ],
+          "product_reference": "photobook_cw_s210_s_fc",
+          "reference": "livre",
+          "shipping_level": null,
+          "shipping_level_reference": null,
+          "shipping_option": "Chronopost - France",
+          "shipping_option_reference": "chronopost_france",
+          "state": 75,
+          "state_code": "item_state_production_shipped",
+          "title": "",
+          "tracking": "SANDBOX_5050025_tracking",
+          "type": "pod"
+        }
+      ],
+      "order_date": "2026-10-04 01:46:38",
+      "reference": "colophon-banc-20261004014613",
+      "state": 501,
+      "state_code": "order_state_sandbox_done",
+      "status_logs": [
+        {
+          "create_date": "2026-10-04 01:46:47",
+          "reference": "colophon-banc-20261004014613",
+          "state": 5
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 6
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 8
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 9
+        },
+        {
+          "create_date": "2026-10-04 01:46:48",
+          "reference": "colophon-banc-20261004014613",
+          "state": 10
+        },
+        {
+          "create_date": "2026-10-04 01:47:01",
+          "reference": "colophon-banc-20261004014613",
+          "state": 30
+        },
+        {
+          "create_date": "2026-10-04 01:47:02",
+          "reference": "colophon-banc-20261004014613",
+          "state": 32
+        },
+        {
+          "create_date": "2026-10-04 01:47:03",
+          "reference": "colophon-banc-20261004014613",
+          "state": 33
+        },
+        {
+          "create_date": "2026-10-04 01:47:03",
+          "reference": "colophon-banc-20261004014613",
+          "state": 37
+        },
+        {
+          "create_date": "2026-10-04 01:47:03",
+          "reference": "colophon-banc-20261004014613",
+          "state": 38
+        },
+        {
+          "create_date": "2026-10-04 01:47:04",
+          "reference": "colophon-banc-20261004014613",
+          "state": 501
+        }
+      ]
+    }
+  },
+  "orders_log": [
+    {
+      "create_date": "2026-10-04 01:46:47",
+      "reference": "colophon-banc-20261004014613",
+      "state": 5
+    },
+    {
+      "create_date": "2026-10-04 01:46:48",
+      "reference": "colophon-banc-20261004014613",
+      "state": 6
+    },
+    {
+      "create_date": "2026-10-04 01:46:48",
+      "reference": "colophon-banc-20261004014613",
+      "state": 8
+    },
+    {
+      "create_date": "2026-10-04 01:46:48",
+      "reference": "colophon-banc-20261004014613",
+      "state": 9
+    },
+    {
+      "create_date": "2026-10-04 01:46:48",
+      "reference": "colophon-banc-20261004014613",
+      "state": 10
+    },
+    {
+      "create_date": "2026-10-04 01:47:01",
+      "reference": "colophon-banc-20261004014613",
+      "state": 30
+    },
+    {
+      "create_date": "2026-10-04 01:47:02",
+      "reference": "colophon-banc-20261004014613",
+      "state": 32
+    },
+    {
+      "create_date": "2026-10-04 01:47:03",
+      "reference": "colophon-banc-20261004014613",
+      "state": 33
+    },
+    {
+      "create_date": "2026-10-04 01:47:03",
+      "reference": "colophon-banc-20261004014613",
+      "state": 37
+    },
+    {
+      "create_date": "2026-10-04 01:47:03",
+      "reference": "colophon-banc-20261004014613",
+      "state": 38
+    },
+    {
+      "create_date": "2026-10-04 01:47:04",
+      "reference": "colophon-banc-20261004014613",
+      "state": 501
+    }
+  ],
+  "pages": 96,
+  "produit": "photobook_cw_s210_s_fc",
+  "reference": "colophon-banc-20261004014613",
+  "resultat": "ok"
+}

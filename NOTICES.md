@@ -2113,7 +2113,7 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License
 
 - hyper-rustls 0.27.9
-- rustls 0.23.43
+- rustls 0.23.45
 
 ```
 Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com>

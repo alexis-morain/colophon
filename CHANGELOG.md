@@ -148,6 +148,9 @@ Compared with 0.9.0, described below, which was built but never distributed:
 - *Reporting.* Bug reports no longer go out empty on Windows.
 - *Security.* The interface no longer handles any path on disk, and a
   thumbnail name that points outside the cache is refused.
+- *Security.* The update check and the CLI's network calls use rustls
+  0.23.45, which fixes RUSTSEC-2026-0285 (TLS 1.3 handshake messages accepted
+  across encryption levels).
 
 ## [0.9.0] - 2026-08-17
 

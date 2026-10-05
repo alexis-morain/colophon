@@ -12,9 +12,12 @@ on:
     - cron: "17 6 * * 1"
   workflow_dispatch:
 
+# Sur un push, l'action rend son verdict en créant un check run ; sans
+# `checks: write`, le job tombait rouge même à zéro vulnérabilité (26/09-05/10).
 permissions:
   contents: read
   issues: write
+  checks: write
 
 jobs:
   audit:

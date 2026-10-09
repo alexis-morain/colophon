@@ -2,6 +2,7 @@
 //! stays in `colophon-core`, the app only opens albums and serves the
 //! thumbnails the book view needs.
 
+mod commande;
 mod photos;
 
 use colophon_core::model::Album;
@@ -32,21 +33,37 @@ struct AppState {
     /// rank the front end sends back names the same face it was shown.
     polices: Mutex<Vec<colophon_core::font::Installee>>,
     /// Le dernier dossier que « Préparer » a écrit. Tenu ici pour que
-    /// « Montrer le dossier » l'ouvre sans que le front ne porte jamais un
-    /// chemin : la même doctrine que `reveal_data_dir`.
+    /// « Montrer le dossier » l'ouvre et que Commander y prenne ses deux
+    /// fichiers sans que le front ne porte jamais un chemin : la même
+    /// doctrine que `reveal_data_dir`.
     prepare: Mutex<Option<Prepare>>,
+    /// L'intention dont les fichiers ne sont pas encore partis : ses deux URL
+    /// de dépôt portent une signature, elles ne quittent jamais le moteur.
+    envoi: Mutex<Option<EnvoiTenu>>,
 }
 
-/// Le dossier préparé, et le papier intérieur dont sa couverture porte le
-/// dos.
+/// Le dossier préparé, et ce que la commande en lit.
 #[derive(Clone)]
 struct Prepare {
     dossier: PathBuf,
+    /// Le nom du format de l'album (`carre-21`…), ou ses millimètres.
+    format: String,
+    /// Le compte de pages déclaré à la commande, lu dans la fiche relue sur
+    /// les fichiers.
+    pages: u32,
+    /// Le prévol relu sur ces fichiers est vert.
+    ok: bool,
     /// `PrinterProfile::commande` ; aucun chez un profil sans codes de
-    /// commande. Rien ne le lit tant que Commander attend le relais (S-s3),
-    /// qui l'enverra avec le dossier.
-    #[allow(dead_code)]
+    /// commande. Le relais n'imprime que `relais::PAPIER`.
     papier: Option<&'static str>,
+}
+
+/// Une intention créée, en attente de ses deux fichiers.
+struct EnvoiTenu {
+    id: String,
+    dossier: PathBuf,
+    demande: colophon_core::relais::Demande,
+    televersements: colophon_core::relais::Televersements,
 }
 
 
@@ -1357,10 +1374,18 @@ async fn preparer_dossier(
     .await
     .map_err(|e| e.to_string())??;
     colophon_core::log::line("dossier préparé");
+    let fiche = &p.rapport.fiche;
     *state.prepare.lock().unwrap() = Some(Prepare {
         dossier: dest.clone(),
+        format: colophon_core::format::nom(colophon_core::model::Size {
+            w: fiche.format_page_mm[0],
+            h: fiche.format_page_mm[1],
+        }),
+        pages: u32::try_from(fiche.pages_fichier).unwrap_or(0),
+        ok: p.rapport.ok,
         papier: profil.commande.map(|c| c.papier),
     });
+    *state.envoi.lock().unwrap() = None;
     // Le dossier s'ouvre de lui-même : c'est là que la personne va prendre
     // les deux fichiers pour la commande. Un échec d'ouverture ne défait pas
     // ce qui est écrit.
@@ -1480,8 +1505,13 @@ fn rapport(version: String, audit: Option<colophon_core::audit::AuditReport>) ->
 #[tauri::command]
 fn open_report_url(url: String) -> Result<(), String> {
     url_de_rapport(&url)?;
+    navigateur(&url)
+}
+
+/// Hands a URL its guard has already accepted to the system browser.
+fn navigateur(url: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    let run = std::process::Command::new("open").arg(&url).spawn();
+    let run = std::process::Command::new("open").arg(url).spawn();
     // Never through `cmd /C start`: cmd reads `&` as a command separator,
     // and `std` only quotes an argument that carries a space or is empty —
     // so an issue URL, which is nothing but `&`-separated parameters, was
@@ -1491,10 +1521,10 @@ fn open_report_url(url: String) -> Result<(), String> {
     // in between.
     #[cfg(target_os = "windows")]
     let run = std::process::Command::new("rundll32")
-        .args(["url.dll,FileProtocolHandler", &url])
+        .args(["url.dll,FileProtocolHandler", url])
         .spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let run = std::process::Command::new("xdg-open").arg(&url).spawn();
+    let run = std::process::Command::new("xdg-open").arg(url).spawn();
     run.map(|_| ())
         .map_err(|e| format!("ouverture du navigateur : {e}"))
 }
@@ -1521,6 +1551,280 @@ fn url_de_rapport(url: &str) -> Result<(), String> {
         return Err(format!("caractère refusé dans l'URL du rapport : {c:?}"));
     }
     Ok(())
+}
+
+
+// ---- Commander, par le relais (S-s3) ---------------------------------------
+//
+// Tout appel au relais part d'ici, jamais du webview : la CSP `connect-src`
+// reste à `'self'` et `ipc:`. Le secret de chaque intention reste dans
+// `commande.json` ; la fenêtre ne reçoit qu'identifiant, mode, état et
+// dernier code, plus la grille des prix.
+
+/// Le dossier de données de l'app, où vit `commande.json`.
+fn donnees(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().app_data_dir().map_err(|e| format!("dossier de données introuvable : {e}"))
+}
+
+/// L'adresse compilée du relais, ou le refus : un build de release n'en
+/// porte aucune tant que le relais réel n'existe pas.
+fn relais_url() -> Result<&'static str, String> {
+    colophon_core::relais::RELAIS_URL.ok_or_else(|| "aucun relais dans ce build".to_string())
+}
+
+/// Les pays ouverts à la commande. `None` sans relais compilé : c'est ce qui
+/// fait que Commander ne s'affiche pas, sans un appel réseau.
+#[tauri::command]
+async fn relais_pays() -> Result<Option<Vec<colophon_core::relais::Pays>>, String> {
+    let Some(base) = colophon_core::relais::RELAIS_URL else {
+        return Ok(None);
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let reseau = colophon_core::relais::Reseau::default();
+        colophon_core::relais::Relais { base, transport: &reseau }.pays().map(Some).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Ce que la fenêtre reçoit d'une intention créée : la grille des prix, pas
+/// le secret, pas les URL de dépôt.
+#[derive(Serialize)]
+struct Offre {
+    id: String,
+    mode: colophon_core::relais::Mode,
+    grille: Vec<colophon_core::relais::Niveau>,
+    expire: String,
+}
+
+/// Ouvre une intention pour le dossier préparé : les MD5 et tailles de ses
+/// deux fichiers, le pays, puis la grille des prix du relais. L'identifiant
+/// et le secret vont dans `commande.json` avant tout autre geste.
+#[tauri::command]
+async fn relais_creer(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    pays: String,
+    etat_region: Option<String>,
+) -> Result<Offre, String> {
+    use colophon_core::relais::{Demande, Relais, Reseau};
+    let base = relais_url()?;
+    let p = state.prepare.lock().unwrap().clone().ok_or("aucun dossier préparé")?;
+    if !p.ok {
+        return Err("le contrôle relu sur le dossier préparé n'est pas vert".into());
+    }
+    let dir = donnees(&app)?;
+    let dossier = p.dossier.clone();
+    let (demande, intention) = tauri::async_runtime::spawn_blocking(move || {
+        let d = Demande::du_dossier(&p.dossier, p.papier, &p.format, p.pages, &pays, etat_region)
+            .map_err(|e| e.to_string())?;
+        let reseau = Reseau::default();
+        let i = Relais { base, transport: &reseau }.creer(&d).map_err(|e| e.to_string())?;
+        Ok::<_, String>((d, i))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let mut s = commande::Stock::lire(&dir)?;
+    s.intentions.push(commande::IntentionGardee {
+        id: intention.id.clone(),
+        secret: intention.secret.clone(),
+        mode: intention.mode,
+        date: chrono_jour(),
+        etat: "attente_fichiers".into(),
+        dernier_code: None,
+    });
+    s.ecrire(&dir)?;
+    commande::journal(commande::Evenement::IntentionCreee);
+    *state.envoi.lock().unwrap() = Some(EnvoiTenu {
+        id: intention.id.clone(),
+        dossier,
+        demande,
+        televersements: intention.televersements,
+    });
+    Ok(Offre { id: intention.id, mode: intention.mode, grille: intention.grille, expire: intention.expire })
+}
+
+/// Le jour local, `AAAA-MM-JJ`.
+fn chrono_jour() -> String {
+    colophon_core::chrono::Local::now().format("%Y-%m-%d").to_string()
+}
+
+/// Ce que l'écran reçoit pendant l'envoi : le fichier, les octets partis, le
+/// total.
+#[derive(Clone, Serialize)]
+struct Progres {
+    fichier: colophon_core::relais::Quel,
+    envoyes: u64,
+    total: u64,
+}
+
+/// Envoie les deux PDF de l'intention `id` (le gros d'abord, la progression
+/// par l'événement `relais:progres`), puis demande au relais de les vérifier
+/// et de les figer. Un échec laisse l'intention tenue : on peut réessayer
+/// tant que ses URL de dépôt vivent.
+#[tauri::command]
+async fn relais_envoyer(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<commande::IntentionVue, String> {
+    use colophon_core::relais::{envoyer, Relais, Reseau};
+    let base = relais_url()?;
+    let dir = donnees(&app)?;
+    let secret = commande::Stock::lire(&dir)?.trouver(&id)?.secret.clone();
+    let tenu = {
+        let mut g = state.envoi.lock().unwrap();
+        match g.take() {
+            Some(t) if t.id == id => t,
+            autre => {
+                *g = autre;
+                return Err("aucun envoi en cours pour cette commande".into());
+            }
+        }
+    };
+    let emetteur = app.clone();
+    let (tenu, issue) = tauri::async_runtime::spawn_blocking(move || {
+        let reseau = Reseau::default();
+        let issue = envoyer(&reseau, &tenu.televersements, &tenu.dossier, &tenu.demande, &|fichier, envoyes, total| {
+            let _ = emetteur.emit("relais:progres", Progres { fichier, envoyes, total });
+        })
+        .and_then(|()| Relais { base, transport: &reseau }.fichiers(&tenu.id, &secret));
+        (tenu, issue)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let etat = match issue {
+        Ok(etat) => etat,
+        Err(e) => {
+            commande::journal(commande::Evenement::EnvoiEchoue);
+            *state.envoi.lock().unwrap() = Some(tenu);
+            return Err(e.to_string());
+        }
+    };
+    commande::journal(commande::Evenement::FichiersEnvoyes);
+    let mut s = commande::Stock::lire(&dir)?;
+    s.poser(&id, &etat, None);
+    s.ecrire(&dir)?;
+    vue_de(&s, &id)
+}
+
+fn vue_de(s: &commande::Stock, id: &str) -> Result<commande::IntentionVue, String> {
+    s.vue().into_iter().find(|v| v.id == id).ok_or_else(|| "commande inconnue".to_string())
+}
+
+/// Ouvre le paiement de l'intention `id` au niveau choisi : le relais crée
+/// la session Checkout, et son URL va au navigateur du système, sans passer
+/// par la fenêtre, après sa garde (condition 33). Pas de plugin opener.
+#[tauri::command]
+async fn ouvrir_paiement(app: tauri::AppHandle, id: String, niveau: String) -> Result<(), String> {
+    use colophon_core::relais::{Relais, Reseau};
+    let base = relais_url()?;
+    let s = commande::Stock::lire(&donnees(&app)?)?;
+    let i = s.trouver(&id)?.clone();
+    let url = tauri::async_runtime::spawn_blocking(move || {
+        let reseau = Reseau::default();
+        Relais { base, transport: &reseau }.paiement(&i.id, &i.secret, &niveau).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    ouvrir_si_paiement(&url, navigateur)
+}
+
+/// La garde, puis l'ouverture : rien ne s'ouvre quand l'URL est refusée.
+fn ouvrir_si_paiement(url: &str, ouvrir: impl FnOnce(&str) -> Result<(), String>) -> Result<(), String> {
+    if let Err(e) = url_de_paiement(url) {
+        commande::journal(commande::Evenement::PaiementRefuse);
+        return Err(e);
+    }
+    ouvrir(url)?;
+    commande::journal(commande::Evenement::PaiementOuvert);
+    Ok(())
+}
+
+/// The one shape of URL the payment may open: a Stripe Checkout page, over
+/// https, on that exact host, no credentials, no port. A prefix that ends on
+/// the slash after the host is what makes `checkout.stripe.com.exemple.fr`,
+/// `checkout.stripe.com:8443` and `checkout.stripe.com@ailleurs` all fail.
+/// The rest is the closed set of characters a Checkout URL carries, because
+/// the whole string reaches a process spawn. The message never quotes the
+/// URL: a session URL is a payment page someone else could open.
+fn url_de_paiement(url: &str) -> Result<(), String> {
+    const BASE: &str = "https://checkout.stripe.com/";
+    let reste = url.strip_prefix(BASE).ok_or("adresse de paiement hors de Stripe Checkout")?;
+    let permis = |c: char| c.is_ascii_alphanumeric() || "-._~/?#&=%+".contains(c);
+    if reste.is_empty() || !reste.chars().all(permis) {
+        return Err("caractère refusé dans l'adresse de paiement".into());
+    }
+    Ok(())
+}
+
+/// Ce qu'une relecture rend : les intentions, et la première erreur.
+#[derive(Serialize)]
+struct Relu {
+    intentions: Vec<commande::IntentionVue>,
+    erreur: Option<String>,
+}
+
+/// Relit au relais l'état de l'intention `id`, ou de toutes celles qui
+/// peuvent encore bouger, et le garde. À l'ouverture d'Envoi, et toutes les
+/// cinq secondes pendant qu'un paiement attend.
+#[tauri::command]
+async fn relais_relire(app: tauri::AppHandle, id: Option<String>) -> Result<Relu, String> {
+    use colophon_core::relais::{Relais, Reseau};
+    let dir = donnees(&app)?;
+    let mut s = commande::Stock::lire(&dir)?;
+    let Some(base) = colophon_core::relais::RELAIS_URL else {
+        return Ok(Relu { intentions: s.vue(), erreur: None });
+    };
+    let a_lire: Vec<commande::IntentionGardee> = s
+        .intentions
+        .iter()
+        .filter(|i| match &id {
+            Some(id) => &i.id == id,
+            None => !commande::terminal(&i.etat) && i.etat != "attente_fichiers",
+        })
+        .cloned()
+        .collect();
+    let lus = tauri::async_runtime::spawn_blocking(move || {
+        let reseau = Reseau::default();
+        let r = Relais { base, transport: &reseau };
+        a_lire.into_iter().map(|i| (i.id.clone(), r.etat(&i.id, &i.secret))).collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let mut erreur = None;
+    for (id, lu) in lus {
+        match lu {
+            Ok(e) => s.poser(&id, &e.etat, e.dernier_code),
+            Err(e) => {
+                erreur.get_or_insert(e.to_string());
+            }
+        }
+    }
+    s.ecrire(&dir)?;
+    Ok(Relu { intentions: s.vue(), erreur })
+}
+
+/// Annule la commande `id`. Trop tard, l'erreur porte `trop_tard`, que
+/// l'écran dit avec sa phrase ; l'état est relu dans tous les cas.
+#[tauri::command]
+async fn relais_annuler(app: tauri::AppHandle, id: String) -> Result<Relu, String> {
+    use colophon_core::relais::{Relais, Reseau};
+    let base = relais_url()?;
+    let dir = donnees(&app)?;
+    let i = commande::Stock::lire(&dir)?.trouver(&id)?.clone();
+    commande::journal(commande::Evenement::Annulee);
+    let issue = tauri::async_runtime::spawn_blocking(move || {
+        let reseau = Reseau::default();
+        Relais { base, transport: &reseau }.annuler(&i.id, &i.secret)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let relu = relais_relire(app, Some(id)).await?;
+    match issue {
+        Ok(_) => Ok(relu),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// What the About screen shows: the version, the licence, and the three
@@ -2034,6 +2338,12 @@ pub fn run() {
             list_densities,
             report_data,
             open_report_url,
+            relais_pays,
+            relais_creer,
+            relais_envoyer,
+            ouvrir_paiement,
+            relais_relire,
+            relais_annuler,
             album_existant,
             police_absents,
             polices_de_famille,
@@ -2205,6 +2515,46 @@ mod tests {
         }
     }
 
+    /// Condition 33 : le paiement n'ouvre qu'une page de Stripe Checkout, et
+    /// une URL refusée n'ouvre rien du tout. L'opener est un témoin : s'il
+    /// est appelé, c'est que la garde a laissé passer.
+    #[test]
+    fn le_paiement_n_ouvre_que_stripe_checkout() {
+        let bonne = "https://checkout.stripe.com/c/pay/cs_test_a1B2c3#fidkdWxOYHwnPyd1blpxYHZxWjA0T2pV%2Fb0pkVGBj";
+        let ouverte = std::cell::RefCell::new(None);
+        ouvrir_si_paiement(bonne, |u| {
+            *ouverte.borrow_mut() = Some(u.to_string());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(ouverte.into_inner().as_deref(), Some(bonne));
+        for mauvaise in [
+            "file:///etc/passwd",
+            "http://checkout.stripe.com/c/pay/cs_test_a1",
+            "https://exemple.fr/c/pay/cs_test_a1",
+            "https://checkout.stripe.co/c/pay/cs_test_a1",
+            "https://pay.stripe.com/c/pay/cs_test_a1",
+            "https://checkout.stripe.com.exemple.fr/c/pay/cs_test_a1",
+            "https://checkout.stripe.com:8443/c/pay/cs_test_a1",
+            "https://moi:motdepasse@checkout.stripe.com/c/pay/cs_test_a1",
+            "https://checkout.stripe.com@exemple.fr/c/pay/cs_test_a1",
+            "https://checkout.stripe.com/",
+            "https://checkout.stripe.com/c/pay/x\"; rm -rf ~",
+            "https://checkout.stripe.com/c/pay/x y",
+            "javascript:alert(1)",
+            "",
+        ] {
+            let ouverte = std::cell::Cell::new(false);
+            let e = ouvrir_si_paiement(mauvaise, |_| {
+                ouverte.set(true);
+                Ok(())
+            })
+            .unwrap_err();
+            assert!(!ouverte.get(), "{mauvaise} a été ouverte");
+            assert!(mauvaise.is_empty() || !e.contains(mauvaise), "le refus cite l'URL : {e}");
+        }
+    }
+
     /// A `thumbs.json` value that is not a file name is refused before any
     /// read: the album folder is shared data.
     #[test]
@@ -2320,7 +2670,12 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         colophon_core::log::init(&dir).unwrap();
         let cle = "cle-du-rapport-0123456789zz";
-        std::fs::write(dir.join("commande.json"), format!(r#"{{"cloudprinter":{{"cle":"{cle}"}}}}"#)).unwrap();
+        // La forme de S-s3 : un secret de lecture par intention.
+        std::fs::write(
+            dir.join("commande.json"),
+            format!(r#"{{"intentions":[{{"id":"x","secret":"{cle}","mode":"sandbox","date":"2026-10-09","etat":"commandee"}}]}}"#),
+        )
+        .unwrap();
         colophon_core::log::line("le rapport est bâti");
         let r = serde_json::to_string(&rapport("1.0.0".into(), None)).unwrap();
         assert!(r.contains("le rapport est bâti"), "le journal a bien été lu : {r}");

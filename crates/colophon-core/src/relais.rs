@@ -950,4 +950,113 @@ mod tests {
         assert!(vu.len() >= 3, "une progression par mébioctet : {vu:?}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    /// Le banc du sandbox (`#[ignore]`), à la main : le parcours de l'app
+    /// contre le relais sandbox déployé, sur les deux PDF vérifiés de
+    /// `.albums/papier` (`COLOPHON_PAPIER` pour un autre dossier). Intention,
+    /// les deux PUT (le gros d'abord) avec durée, octets et ETag, `fichiers`,
+    /// puis `paiement`, dont on ne garde que l'hôte de l'URL : la session
+    /// n'est **ni payée ni ouverte**, elle expire en trente minutes et le
+    /// balayage du relais purge l'intention à 24 h. Aucune clé n'est lue.
+    /// La mesure, expurgée (ni secret ni URL), va dans `COLOPHON_MESURE`.
+    #[test]
+    #[ignore]
+    fn banc_relais_sandbox() {
+        use crate::printer::PrinterProfile;
+        use std::time::Instant;
+        // Un build de release ne porte aucune adresse : le banc se lance en
+        // debug, ou `COLOPHON_RELAIS` la donne.
+        let base = std::env::var("COLOPHON_RELAIS")
+            .ok()
+            .or(RELAIS_URL.map(str::to_string))
+            .expect("aucune adresse de relais : build de debug, ou COLOPHON_RELAIS");
+        let papier = std::env::var("COLOPHON_PAPIER").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.albums/papier")
+        });
+        let profil = PrinterProfile::par_id("cloudprinter").unwrap();
+        let fiche = crate::prevol::prevol(&papier, profil).unwrap().fiche;
+        let format = crate::format::nom(crate::model::Size { w: fiche.format_page_mm[0], h: fiche.format_page_mm[1] });
+        let reseau = Reseau::default();
+        let r = Relais { base: &base, transport: &reseau };
+        let ms = |t: Instant| t.elapsed().as_millis() as u64;
+        let debut = Instant::now();
+        let mut mesure = json!({
+            "date_utc": chrono::Utc::now().format("%Y-%m-%d").to_string(),
+            "session": "S-s3, Commander dans l'app (banc_relais_sandbox)",
+            "relais": base,
+            "client": "colophon_core::relais, transport Reseau (ureq, rustls), comme l'app",
+            "expurgation": "aucun secret, aucune URL présignée ni de session ; seul l'hôte de l'URL de paiement est gardé ; l'identifiant d'intention reste (référence sandbox)",
+        });
+
+        let t = Instant::now();
+        let pays = r.pays().unwrap();
+        mesure["pays"] = json!({"ms": ms(t), "codes": pays.iter().map(|p| p.code.clone()).collect::<Vec<_>>()});
+
+        let t = Instant::now();
+        let demande = Demande::du_dossier(
+            &papier,
+            profil.commande.map(|c| c.papier),
+            &format,
+            fiche.pages_fichier as u32,
+            "FR",
+            None,
+        )
+        .unwrap();
+        mesure["md5_ms"] = json!(ms(t));
+        let t = Instant::now();
+        let i = r.creer(&demande).unwrap();
+        mesure["intention"] = json!({
+            "ms": ms(t), "id": i.id, "mode": i.mode, "grille": i.grille, "expire": i.expire,
+            "demande": demande,
+            "entetes_a_envoyer": i.televersements.interieur.entetes.keys().collect::<Vec<_>>(),
+        });
+
+        for (quel, tv, nom, f) in [
+            (Quel::Interieur, &i.televersements.interieur, LIVRAISON_INTERIEUR, &demande.interieur),
+            (Quel::Couverture, &i.televersements.couverture, LIVRAISON_COUVERTURE, &demande.couverture),
+        ] {
+            let t = Instant::now();
+            let derniere = RefCell::new(0u64);
+            let paliers = RefCell::new(0u32);
+            televerser(&reseau, quel, tv, &papier.join(nom), f, &|n| {
+                *derniere.borrow_mut() = n;
+                *paliers.borrow_mut() += 1;
+            })
+            .unwrap();
+            // `televerser` a déjà refusé tout ETag autre que le MD5.
+            mesure["puts"][nom] = json!({
+                "duree_s": t.elapsed().as_secs_f64(),
+                "octets": f.octets,
+                "octets_signales": *derniere.borrow(),
+                "progressions": *paliers.borrow(),
+                "md5": f.md5,
+                "etag_egal_md5": true,
+            });
+        }
+
+        let t = Instant::now();
+        let etat = r.fichiers(&i.id, &i.secret).unwrap();
+        mesure["fichiers"] = json!({"ms": ms(t), "etat": etat});
+
+        let niveau = i.grille[0].niveau.clone();
+        let t = Instant::now();
+        let url = r.paiement(&i.id, &i.secret, &niveau).unwrap();
+        let hote = url.strip_prefix("https://").and_then(|u| u.split('/').next()).unwrap_or("").to_string();
+        mesure["paiement"] = json!({
+            "ms": ms(t), "niveau": niveau, "url_https": url.starts_with("https://"), "hote": hote,
+            "ouverte": false, "payee": false,
+        });
+        let t = Instant::now();
+        let apres = r.etat(&i.id, &i.secret).unwrap();
+        mesure["etat_apres"] = json!({"ms": ms(t), "etat": apres});
+        mesure["duree_s"] = json!(debut.elapsed().as_secs());
+
+        let mut texte = serde_json::to_string_pretty(&mesure).unwrap();
+        texte = texte.replace(&i.secret.0, "***").replace(&url, "***");
+        assert!(!texte.contains("X-Amz-") && !texte.contains("cs_test_") && !texte.contains("cs_live_"));
+        let sortie = std::env::var("COLOPHON_MESURE").unwrap_or_else(|_| "/dev/null".into());
+        std::fs::write(&sortie, texte + "\n").unwrap();
+        assert_eq!(etat, "attente_paiement");
+        assert_eq!(hote, "checkout.stripe.com");
+    }
 }

@@ -37,6 +37,7 @@ pub mod print;
 pub mod printer;
 pub mod qualite;
 pub mod reglage;
+pub mod relais;
 pub mod releve;
 pub mod reprise;
 pub mod reserve;

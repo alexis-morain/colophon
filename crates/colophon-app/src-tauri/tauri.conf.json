@@ -42,7 +42,8 @@
     "active": true,
     "targets": ["app", "dmg", "msi"],
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "entitlements": "entitlements.plist"
     },
     "category": "Photography",
     "shortDescription": "Libre photo book creator",

@@ -1260,7 +1260,18 @@ argument, dans `release.yml` avec `--attendue <tag>`, qui refuse aussi un CHANGE
 section `## [<tag>]`, et qui ne construit rien avant un `check.sh` vert. Le gate construit
 le bundle Vite et garde le petit dossier (`scripts/petit-dossier.py`, 24/25/30/2 photos
 depuis la fiche de corse). Windows ne sort que le MSI (`bundle.targets`), pour une seule
-forme d'artefact de mise à jour. **`thumb::chemin` est la seule porte vers une vignette
+forme d'artefact de mise à jour. **Le DMG est signé Developer ID et notarisé** quand les
+cinq secrets Apple sont posés, tous ou aucun (`release.yml` refuse un jeu partiel) :
+Tauri signe l'app en runtime durci, la notarise et l'agrafe ; `scripts/signature-macos.sh`
+notarise le DMG, que Tauri laisse, puis vérifie au lieu de supposer. **Le runtime durci
+refuse la photothèque** à qui ne la déclare pas : sans `entitlements.plist`
+(`personal-information.photos-library`), seule une release signée rencontrerait ce refus,
+jamais le bundle ad hoc du Mac de dev. Vérifié le 10/10 : un DMG Developer ID notarisé
+par Apple, agrafé, accepté par `spctl`, installé, demande la photothèque et en affiche les
+albums. La forme du refus sans la clé n'est pas mesurée. `signature-macos.sh verifier`
+tourne aussi en local avec un certificat Apple Development.
+Pas de Mac App Store : la GPL, le bac à sable et l'updater en font un chantier à part.
+**`thumb::chemin` est la seule porte vers une vignette
 du cache**, six lecteurs y passent, un nom qui n'est pas un nom de fichier est refusé.
 **`url_de_rapport` est un jeu fermé**, et Windows ouvre par `rundll32`, jamais `cmd`.
 Reste le parcours de correction.

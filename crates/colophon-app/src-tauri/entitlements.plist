@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Le runtime durci, que la notarisation exige, refuse la photothèque à
+       toute app qui ne la déclare pas ici (Hardened Runtime, « Resource
+       Access »). Le bundle ad hoc de la machine de dev n'a pas de runtime
+       durci : il ne verrait jamais ce refus, et seule une release signée le
+       rencontrerait, chez l'utilisateur. Non mesuré à l'écran : la forme
+       exacte du refus côté PhotoKit (statut refusé ou liste vide, voir
+       src/photos.rs). `scripts/signature-macos.sh verifier` exige la clé.
+       Aucune autre ressource n'est demandée : ni caméra, ni micro, ni
+       position, ni Apple Events (« Voir l'original » passe par `open -R`,
+       un processus, pas un événement). -->
+  <key>com.apple.security.personal-information.photos-library</key>
+  <true/>
+</dict>
+</plist>

@@ -226,17 +226,11 @@ Download the latest release from the
 for macOS, a `.msi` for Windows. Every file ships with its SHA-256 sum, and
 the app updates itself from the same place.
 
-**macOS will refuse to open it the first time.** The app is not signed with an
-Apple certificate yet, so Gatekeeper shows "cannot be opened" or "damaged". It
-is neither. To open it anyway:
+On macOS, the app is signed with an Apple Developer ID and notarized by Apple:
+drag it to Applications and it opens like any other app, with no warning.
 
-1. Right-click (or Ctrl-click) Colophon.app, choose **Open**.
-2. In the dialog, click **Open** again.
-3. That's it, and macOS remembers the choice: next time it opens normally.
-
-If the buttons above do not appear (macOS Sequoia and later), go to
-**System Settings → Privacy & Security**, scroll down, and click
-**Open Anyway** next to the Colophon line.
+On Windows, the installer is not signed yet, so SmartScreen may show "Windows
+protected your PC". Click **More info**, then **Run anyway**.
 
 ### Build from source
 

@@ -16,9 +16,9 @@ composed album, spread by spread, in under a minute. You can rework any of it
 by hand, then export a 300 dpi PDF for whichever printer you choose. Free,
 offline, no account, GPL-3.0.
 
-Requires macOS 11 or later. The app is not signed by Apple, so the first
-launch goes through right-click, Open, or through System Settings, Privacy &
-Security, "Open Anyway", as the README explains. Windows has an installer, but
+Requires macOS 11 or later. The app is signed with an Apple Developer ID and
+notarized by Apple, so it opens on first launch like any other app. Windows has
+an unsigned installer, but
 nobody has run it on a real Windows machine yet. Unless you send a file
 somewhere yourself, only one request ever leaves your computer: the update
 check sent to GitHub at launch, which you can turn off in Preferences.
@@ -110,7 +110,8 @@ check sent to GitHub at launch, which you can turn off in Preferences.
 
 Compared with 0.9.0, described below, which was built but never distributed:
 
-- *Install.* macOS 11 at minimum. Windows now ships only as an MSI installer.
+- *Install.* macOS 11 at minimum, and the macOS app is now signed with a
+  Developer ID and notarized. Windows now ships only as an MSI installer.
 - *Compose.* A photo with no date, no GPS and no stars is no longer dropped
   for lacking a camera fingerprint when most of the folder lacks one too: the
   filter switches itself off and says so.

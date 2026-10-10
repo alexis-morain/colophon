@@ -11,12 +11,14 @@
 # C'est un contrat, pas un détail de présentation : renommer un fichier casse
 # le bouton de téléchargement du site.
 #
-# **Deux étapes attendent un compte Apple Developer** et resteront rouges
-# jusque-là : la signature Developer ID et la notarisation. Elles portent
-# « (compte Apple requis) » dans leur nom, parce qu'une étape rouge sans
-# explication est pire qu'une étape absente. Le DMG produit sans elles
-# s'installe, mais Gatekeeper le met en quarantaine chez tout le monde sauf
-# sur cette machine.
+# **Le DMG macOS est signé Developer ID et notarisé** quand les cinq secrets
+# Apple sont posés : APPLE_CERTIFICATE (le .p12 en base64),
+# APPLE_CERTIFICATE_PASSWORD, APPLE_ID, APPLE_PASSWORD (un mot de passe
+# d'application, jamais celui du compte) et APPLE_TEAM_ID. **Tous ou aucun** :
+# sans aucun, le DMG sort nu et l'étape le dit en avertissement — Gatekeeper le
+# met alors en quarantaine chez tout le monde ; avec une partie seulement, la
+# release échoue, parce qu'un DMG signé mais non notarisé est bloqué comme un
+# DMG nu et que Tauri ne s'en plaindrait qu'en jaune.
 
 name: release
 
@@ -82,6 +84,10 @@ jobs:
             extension: msi
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # Un secret ne se lit pas dans un `if:` d'étape, et l'`env:` d'une étape
+    # ne se lit pas dans son propre `if:` : la question se pose ici, une fois.
+    env:
+      SIGNER: ${{ secrets.APPLE_CERTIFICATE != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -126,40 +132,81 @@ jobs:
           cargo install cargo-about --locked --features cli
           ./scripts/notices.sh
 
+      - name: Secrets Apple, tous ou aucun
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          C: ${{ secrets.APPLE_CERTIFICATE != '' }}
+          CP: ${{ secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
+          ID: ${{ secrets.APPLE_ID != '' }}
+          PW: ${{ secrets.APPLE_PASSWORD != '' }}
+          TEAM: ${{ secrets.APPLE_TEAM_ID != '' }}
+        run: |
+          poses="$C$CP$ID$PW$TEAM"
+          case "$poses" in
+            truetruetruetruetrue) echo "les cinq secrets Apple sont posés : signature et notarisation" ;;
+            falsefalsefalsefalsefalse)
+              echo "::warning::Aucun secret Apple : le DMG sort sans signature, Gatekeeper le mettra en quarantaine." ;;
+            *) echo "::error::Secrets Apple incomplets (certificat $C, mot de passe $CP, APPLE_ID $ID, APPLE_PASSWORD $PW, APPLE_TEAM_ID $TEAM)."
+               exit 1 ;;
+          esac
+
       # La clé privée vit dans le .env d'Alexis et dans ce secret, jamais
       # dans le dépôt. Sans elle, le bundle sort quand même : ce sont les
       # artefacts de mise à jour, et eux seuls, qui ne sont pas produits.
       - name: Bundle
         working-directory: crates/colophon-app
+        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        # `--config` ajoute la seule clé qui n'a pas sa place dans le
-        # fichier principal : les artefacts de mise à jour exigent la clé de
-        # signature, et un développeur qui compile chez lui ne l'a pas.
-        run: >
-          npm run tauri build --
-          --target ${{ matrix.cible }}
-          --config src-tauri/tauri.release.conf.json
+          S_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          S_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          S_APPLE_ID: ${{ secrets.APPLE_ID }}
+          S_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          S_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        # Tauri lit les variables Apple par leur seule présence : une
+        # variable vide vaudrait un certificat vide et ferait échouer
+        # l'import. Elles ne sont donc exportées que posées. Avec elles,
+        # Tauri importe le certificat dans un trousseau jetable, signe l'app
+        # en runtime durci avec `entitlements.plist`, la notarise, l'agrafe,
+        # puis signe le DMG. `--config` ajoute la seule clé qui n'a pas sa
+        # place dans le fichier principal : les artefacts de mise à jour
+        # exigent la clé de signature, et un développeur qui compile chez lui
+        # ne l'a pas.
+        run: |
+          set -eu
+          if [ "$RUNNER_OS" = "macOS" ] && [ "$SIGNER" = "true" ]; then
+            export APPLE_CERTIFICATE="$S_APPLE_CERTIFICATE"
+            export APPLE_CERTIFICATE_PASSWORD="$S_APPLE_CERTIFICATE_PASSWORD"
+            export APPLE_ID="$S_APPLE_ID"
+            export APPLE_PASSWORD="$S_APPLE_PASSWORD"
+            export APPLE_TEAM_ID="$S_APPLE_TEAM_ID"
+          fi
+          npm run tauri build -- \
+            --target ${{ matrix.cible }} \
+            --config src-tauri/tauri.release.conf.json
 
-      # Signature et notarisation : les deux seules étapes qui attendent un
-      # compte. Elles se sautent proprement tant que les secrets sont vides,
-      # et le nom de l'étape dit pourquoi.
-      - name: Signature Developer ID (compte Apple requis)
-        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-        run: echo "à brancher le jour où le certificat existe"
-
-      - name: Notarisation Apple (compte Apple requis)
-        if: runner.os == 'macOS' && env.APPLE_ID != ''
+      # Tauri ne notarise que l'app, et le DMG est ce qu'on télécharge :
+      # Gatekeeper juge d'abord lui. Puis on vérifie au lieu de supposer —
+      # runtime durci, clé de la photothèque, autorité Developer ID, tickets
+      # agrafés, verdict de `spctl` — sur l'app même qui part dans le DMG.
+      - name: Notariser le DMG et vérifier la signature
+        if: runner.os == 'macOS' && env.SIGNER == 'true'
+        shell: bash
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: echo "à brancher le jour où le compte existe"
+        run: |
+          set -eu
+          bundle="target/${{ matrix.cible }}/release/bundle"
+          app="$bundle/macos/Colophon.app"
+          dmg="$(find "$bundle/dmg" -name '*.dmg' -type f | head -1)"
+          [ -n "$dmg" ] || { echo "aucun DMG produit" >&2; exit 1; }
+          ./scripts/signature-macos.sh verifier "$app" --distribution
+          ./scripts/signature-macos.sh notariser "$dmg"
+          ./scripts/signature-macos.sh gatekeeper "$app" "$dmg"
 
       # Un seul nom par plateforme, celui que le site attend, plus son
       # empreinte à côté : un téléchargement qu'on ne peut pas vérifier n'est

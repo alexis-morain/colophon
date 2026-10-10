@@ -1,0 +1,129 @@
+{
+ "date_utc": "2026-10-10",
+ "session": "S-s3, Commander dans l'app, par le relais",
+ "banc": "cargo test -p colophon-core --lib banc_relais_sandbox -- --ignored --nocapture (build de debug : la release ne porte aucune adresse de relais, mesuré : RELAIS_URL vaut None et le banc refuse de partir)",
+ "fichiers_de_depart": ".albums/papier (album-print.pdf 95 Mo, album-cover.pdf 4,9 Mo, les MD5 du 03/10)",
+ "client": "colophon_core::relais, transport Reseau (ureq, rustls), comme l'app",
+ "duree_s": 62,
+ "etat_apres": {
+  "etat": {
+   "dernier_code": null,
+   "etat": "attente_paiement",
+   "mode": "sandbox"
+  },
+  "ms": 238
+ },
+ "expurgation": "aucun secret, aucune URL présignée ni de session ; seul l'hôte de l'URL de paiement est gardé ; l'identifiant d'intention reste (référence sandbox)",
+ "fichiers": {
+  "etat": "attente_paiement",
+  "ms": 10383
+ },
+ "intention": {
+  "demande": {
+   "couverture": {
+    "md5": "4eb4a8769a7ecc552c53ea6bb051a1a8",
+    "octets": 4870674
+   },
+   "format": "carre-21",
+   "interieur": {
+    "md5": "275947b4f9a7958287828b9f6470d3ec",
+    "octets": 94980105
+   },
+   "pages": 96,
+   "pays": "FR"
+  },
+  "entetes_a_envoyer": [
+   "content-md5"
+  ],
+  "expire": "2026-10-12T11:45:20.149413Z",
+  "grille": [
+   {
+    "delai_jours": 4,
+    "niveau": "cp_ground",
+    "prix_ttc_centimes": 4700,
+    "transporteur": "Fedex - Regional Economy"
+   },
+   {
+    "delai_jours": 4,
+    "niveau": "cp_fast",
+    "prix_ttc_centimes": 5350,
+    "transporteur": "FedEx - International Priority"
+   }
+  ],
+  "id": "7e0JE_J_w_TzgpRJE6Jscg",
+  "mode": "sandbox",
+  "ms": 2068
+ },
+ "md5_ms": 2057,
+ "paiement": {
+  "hote": "checkout.stripe.com",
+  "ms": 1731,
+  "niveau": "cp_ground",
+  "ouverte": false,
+  "payee": false,
+  "url_https": true
+ },
+ "pays": {
+  "codes": [
+   "AT",
+   "BE",
+   "BG",
+   "CY",
+   "CZ",
+   "DE",
+   "DK",
+   "EE",
+   "ES",
+   "FI",
+   "FR",
+   "GB",
+   "GR",
+   "HR",
+   "HU",
+   "IE",
+   "IT",
+   "LT",
+   "LU",
+   "LV",
+   "MT",
+   "NL",
+   "PL",
+   "PT",
+   "RO",
+   "SE",
+   "SI",
+   "SK",
+   "US"
+  ],
+  "ms": 5217
+ },
+ "puts": {
+  "album-cover.pdf": {
+   "duree_s": 2.128842542,
+   "etag_egal_md5": true,
+   "md5": "4eb4a8769a7ecc552c53ea6bb051a1a8",
+   "octets": 4870674,
+   "octets_signales": 4870674,
+   "progressions": 5
+  },
+  "album-print.pdf": {
+   "duree_s": 38.675954333,
+   "etag_egal_md5": true,
+   "md5": "275947b4f9a7958287828b9f6470d3ec",
+   "octets": 94980105,
+   "octets_signales": 94980105,
+   "progressions": 91
+  }
+ },
+ "relais": "https://colophon-relais-sandbox.alexis-c1f.workers.dev",
+ "deux_passes": "la première passe (même jour, avant correction du chrono de la relecture) : intention 2_NJaXOJIIptSnF_B70gYg, PUT intérieur 16,4 s, couverture 1,4 s, fichiers 9,7 s, paiement checkout.stripe.com ; la seconde fait foi",
+ "prix": "47,00 € et 53,50 € TTC le 09/10 au soir, contre 46,00 et 52,50 à la mesure S-s1 du même jour : le relais a changé de prix entre les deux (Stripe Tax, journal du pilotage), l'app affiche ce que la grille rend",
+ "non_fait": "aucun paiement, aucune page ouverte : les deux sessions Checkout expirent à 30 min, les intentions sont purgées par le balayage à 24 h. La carte 4242 et le bundle installé relèvent de S-s4.",
+ "captures": {
+  "harnais": "npm run dev avec COLOPHON_ALBUM sur une copie jetable de .albums/papier, faux relais /__dev/relais, dossier préparé par colophon --preparer, viewport 1280 × 860 réduit à 800 px",
+  "1-grille.jpg": "la grille : deux niveaux, prix TTC livraison comprise, délai",
+  "2-attente.jpg": "après « Ouvrir le paiement » : l'attente, et la commande dans la liste",
+  "3-commandee.jpg": "après POST /__dev/relais/suivant jusqu'à commandee, code 10 : référence, état Cloudprinter, Annuler",
+  "vu_aussi": "la confirmation en toutes lettres (sandbox) ; la relecture à 5 s qui referme le parcours sur payee ; Annuler sur un code passé à 30 côté relais rend la phrase trop_tard et relit l'état ; Envoi rouvert : Commander disparaît (préparation d'avant), la liste reste"
+ }
+}

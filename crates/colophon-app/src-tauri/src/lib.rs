@@ -40,6 +40,11 @@ struct AppState {
     /// L'intention dont les fichiers ne sont pas encore partis : ses deux URL
     /// de dépôt portent une signature, elles ne quittent jamais le moteur.
     envoi: Mutex<Option<EnvoiTenu>>,
+    /// Le verrou de `commande.json` : toute lecture-modification-écriture
+    /// passe dessous (`commande::modifier`).
+    stock: Mutex<()>,
+    /// Les intentions dont les fichiers partent en ce moment.
+    envois: commande::EnvoisEnCours,
 }
 
 /// Le dossier préparé, et ce que la commande en lit.
@@ -1624,16 +1629,19 @@ async fn relais_creer(
     })
     .await
     .map_err(|e| e.to_string())??;
-    let mut s = commande::Stock::lire(&dir)?;
-    s.intentions.push(commande::IntentionGardee {
+    let gardee = commande::IntentionGardee {
         id: intention.id.clone(),
         secret: intention.secret.clone(),
         mode: intention.mode,
         date: chrono_jour(),
         etat: "attente_fichiers".into(),
         dernier_code: None,
-    });
-    s.ecrire(&dir)?;
+        niveau: None,
+    };
+    commande::modifier(&state.stock, &dir, |s| {
+        s.intentions.push(gardee);
+        Ok(())
+    })?;
     commande::journal(commande::Evenement::IntentionCreee);
     *state.envoi.lock().unwrap() = Some(EnvoiTenu {
         id: intention.id.clone(),
@@ -1661,7 +1669,8 @@ struct Progres {
 /// Envoie les deux PDF de l'intention `id` (le gros d'abord, la progression
 /// par l'événement `relais:progres`), puis demande au relais de les vérifier
 /// et de les figer. Un échec laisse l'intention tenue : on peut réessayer
-/// tant que ses URL de dépôt vivent.
+/// tant que ses URL de dépôt vivent. Un second appel pour la même intention,
+/// pendant le premier, rend `envoi_en_cours` sans rien toucher.
 #[tauri::command]
 async fn relais_envoyer(
     app: tauri::AppHandle,
@@ -1671,6 +1680,9 @@ async fn relais_envoyer(
     use colophon_core::relais::{envoyer, Relais, Reseau};
     let base = relais_url()?;
     let dir = donnees(&app)?;
+    let Some(_jeton) = state.envois.prendre(&id) else {
+        return Err("envoi_en_cours".into());
+    };
     let secret = commande::Stock::lire(&dir)?.trouver(&id)?.secret.clone();
     let tenu = {
         let mut g = state.envoi.lock().unwrap();
@@ -1702,25 +1714,61 @@ async fn relais_envoyer(
         }
     };
     commande::journal(commande::Evenement::FichiersEnvoyes);
-    let mut s = commande::Stock::lire(&dir)?;
-    s.poser(&id, &etat, None);
-    s.ecrire(&dir)?;
-    vue_de(&s, &id)
+    commande::modifier(&state.stock, &dir, |s| {
+        s.poser(&id, &etat, None);
+        vue_de(s, &id)
+    })
 }
 
 fn vue_de(s: &commande::Stock, id: &str) -> Result<commande::IntentionVue, String> {
-    s.vue().into_iter().find(|v| v.id == id).ok_or_else(|| "commande inconnue".to_string())
+    s.vue(colophon_core::relais::RELAIS_MODE)
+        .into_iter()
+        .find(|v| v.id == id)
+        .ok_or_else(|| "commande inconnue".to_string())
+}
+
+/// Garde le niveau d'expédition choisi pour l'intention `id`, dès le choix :
+/// la liste rouvre le paiement avec lui.
+#[tauri::command]
+fn relais_niveau(app: tauri::AppHandle, state: State<'_, AppState>, id: String, niveau: String) -> Result<(), String> {
+    commande::modifier(&state.stock, &donnees(&app)?, |s| {
+        let i = s.intentions.iter_mut().find(|i| i.id == id).ok_or("commande inconnue")?;
+        i.niveau = Some(niveau);
+        Ok(())
+    })
+}
+
+/// Oublie l'intention `id`, localement, sans appeler le relais : il purge à
+/// 24 h ce qui n'a pas été payé. Seulement avant le paiement.
+#[tauri::command]
+fn relais_oublier(app: tauri::AppHandle, state: State<'_, AppState>, id: String) -> Result<Vec<commande::IntentionVue>, String> {
+    commande::modifier(&state.stock, &donnees(&app)?, |s| {
+        let etat = s.trouver(&id)?.etat.clone();
+        if etat != "attente_fichiers" && etat != "attente_paiement" {
+            return Err("cette commande ne s'abandonne plus".into());
+        }
+        s.oublier(&id);
+        Ok(s.vue(colophon_core::relais::RELAIS_MODE))
+    })
 }
 
 /// Ouvre le paiement de l'intention `id` au niveau choisi : le relais crée
 /// la session Checkout, et son URL va au navigateur du système, sans passer
 /// par la fenêtre, après sa garde (condition 33). Pas de plugin opener.
 #[tauri::command]
-async fn ouvrir_paiement(app: tauri::AppHandle, id: String, niveau: String) -> Result<(), String> {
+async fn ouvrir_paiement(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    niveau: String,
+) -> Result<(), String> {
     use colophon_core::relais::{Relais, Reseau};
     let base = relais_url()?;
-    let s = commande::Stock::lire(&donnees(&app)?)?;
-    let i = s.trouver(&id)?.clone();
+    let i = commande::modifier(&state.stock, &donnees(&app)?, |s| {
+        let i = s.intentions.iter_mut().find(|i| i.id == id).ok_or("commande inconnue")?;
+        i.niveau = Some(niveau.clone());
+        Ok(i.clone())
+    })?;
     let url = tauri::async_runtime::spawn_blocking(move || {
         let reseau = Reseau::default();
         Relais { base, transport: &reseau }.paiement(&i.id, &i.secret, &niveau).map_err(|e| e.to_string())
@@ -1770,39 +1818,20 @@ struct Relu {
 /// cinq secondes pendant qu'un paiement attend.
 #[tauri::command]
 async fn relais_relire(app: tauri::AppHandle, id: Option<String>) -> Result<Relu, String> {
-    use colophon_core::relais::{Relais, Reseau};
+    use colophon_core::relais::{Relais, Reseau, RELAIS_MODE};
     let dir = donnees(&app)?;
-    let mut s = commande::Stock::lire(&dir)?;
     let Some(base) = colophon_core::relais::RELAIS_URL else {
-        return Ok(Relu { intentions: s.vue(), erreur: None });
+        return Ok(Relu { intentions: vec![], erreur: None });
     };
-    let a_lire: Vec<commande::IntentionGardee> = s
-        .intentions
-        .iter()
-        .filter(|i| match &id {
-            Some(id) => &i.id == id,
-            None => !commande::terminal(&i.etat) && i.etat != "attente_fichiers",
-        })
-        .cloned()
-        .collect();
-    let lus = tauri::async_runtime::spawn_blocking(move || {
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app2.state::<AppState>();
         let reseau = Reseau::default();
-        let r = Relais { base, transport: &reseau };
-        a_lire.into_iter().map(|i| (i.id.clone(), r.etat(&i.id, &i.secret))).collect::<Vec<_>>()
+        let erreur = commande::relire(&state.stock, &dir, &Relais { base, transport: &reseau }, id.as_deref())?;
+        Ok(Relu { intentions: commande::Stock::lire(&dir)?.vue(RELAIS_MODE), erreur })
     })
     .await
-    .map_err(|e| e.to_string())?;
-    let mut erreur = None;
-    for (id, lu) in lus {
-        match lu {
-            Ok(e) => s.poser(&id, &e.etat, e.dernier_code),
-            Err(e) => {
-                erreur.get_or_insert(e.to_string());
-            }
-        }
-    }
-    s.ecrire(&dir)?;
-    Ok(Relu { intentions: s.vue(), erreur })
+    .map_err(|e| e.to_string())?
 }
 
 /// Annule la commande `id`. Trop tard, l'erreur porte `trop_tard`, que
@@ -2342,6 +2371,8 @@ pub fn run() {
             relais_creer,
             relais_envoyer,
             ouvrir_paiement,
+            relais_niveau,
+            relais_oublier,
             relais_relire,
             relais_annuler,
             album_existant,

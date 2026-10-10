@@ -13,7 +13,7 @@
 // fichiers, rien ne s'affiche : « Préparer » reste la porte.
 
 import type { Preparation } from "./bridge";
-import { Cle, Lang, t } from "./i18n";
+import { Cle, Lang, langue, t } from "./i18n";
 
 /** Sandbox ou réel : le relais le déclare dans chaque réponse. */
 export type Mode = "sandbox" | "reel";
@@ -43,6 +43,9 @@ export type IntentionVue = {
   dernier_code: number | null;
   /** Le niveau d'expédition choisi, gardé dès le choix. */
   niveau: string | null;
+  /** Quand « Abandonner » redevient possible (RFC 3339) : la fin de la
+   *  dernière page de paiement ouverte. */
+  abandon_des: string | null;
 };
 
 export type Quel = "interieur" | "couverture";
@@ -169,10 +172,28 @@ export function payable(i: IntentionVue): boolean {
   return i.etat === "attente_paiement" && !!i.niveau;
 }
 
-/** « Abandonner » s'offre tant que rien n'est payé. L'intention s'oublie
- *  localement ; le relais la purge à 24 h. */
-export function abandonnable(i: IntentionVue): boolean {
+/** « Abandonner » s'offre tant que rien n'est payé, et pas avant la fin de
+ *  la dernière page de paiement ouverte. Le moteur relit le relais avant
+ *  d'oublier quoi que ce soit ; le relais purge à 24 h. */
+export function abandonnable(i: IntentionVue, maintenant: Date): boolean {
+  return avantPaiement(i) && abandonAttendu(i, maintenant) === null;
+}
+
+function avantPaiement(i: IntentionVue): boolean {
   return i.etat === "attente_fichiers" || i.etat === "attente_paiement";
+}
+
+/** L'heure à laquelle « Abandonner » sera offert, quand une page de
+ *  paiement ouverte vit encore ; null sinon. */
+export function abandonAttendu(i: IntentionVue, maintenant: Date): Date | null {
+  if (!avantPaiement(i) || !i.abandon_des) return null;
+  const des = new Date(i.abandon_des);
+  return des > maintenant ? des : null;
+}
+
+/** Une heure, dans la langue de l'écran. */
+export function heure(d: Date): string {
+  return d.toLocaleTimeString(langue() === "fr" ? "fr-FR" : "en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
 /** La confirmation : le prix et le mode en toutes lettres. */
@@ -184,6 +205,9 @@ export function phraseConfirmation(prix: string, mode: Mode): string {
 
 /** Les codes du relais qui ont leur phrase ; le reste voyage tel quel. */
 const ERREURS: [string, Cle][] = [
+  ["abandon_envoi_en_cours", "commande.abandon.envoi"],
+  ["abandon_injoignable", "commande.abandon.injoignable"],
+  ["abandon_refuse", "commande.abandon.refuse"],
   ["trop_tard", "commande.annuler.tard"],
   ["devis_expire", "commande.devis.expire"],
   ["intention_expiree", "commande.devis.expire"],
@@ -209,6 +233,8 @@ export function ignorable(e: unknown): boolean {
 /** Une erreur de commande, dite. */
 export function phraseErreur(e: unknown): string {
   const s = String(e);
+  const tot = /abandon_trop_tot (\S+)/.exec(s);
+  if (tot) return t("commandes.abandonner.des", { heure: heure(new Date(tot[1])) });
   for (const [code, cle] of ERREURS) if (s.includes(code)) return t(cle);
   return t("commande.erreur", { erreur: s.replace(/^Error: /, "") });
 }
@@ -237,6 +263,7 @@ export type Evenement =
   | { type: "progres"; progres: Progres }
   | { type: "envoye" }
   | { type: "confirmer" }
+  | { type: "fermer" }
   | { type: "payer" }
   | { type: "ouvert" }
   | { type: "echec"; definitif?: string }
@@ -287,6 +314,10 @@ export function avancer(p: Parcours, e: Evenement): Parcours {
         : p;
     case "envoye":
       return p.etape === "envoi" ? { etape: "confirmation", offre: p.offre, niveau: p.niveau } : p;
+    case "fermer":
+      // L'attente se referme sans rien oublier : l'intention reste dans la
+      // liste, avec « Payer » et son suivi.
+      return p.etape === "attente" ? { etape: "repos" } : p;
     case "confirmer":
       return p.etape === "pret" ? { etape: "confirmation", offre: p.offre, niveau: p.niveau } : p;
     case "payer":

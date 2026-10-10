@@ -28,7 +28,9 @@ import {
   IntentionVue,
   Pays,
   aRelire,
+  abandonAttendu,
   abandonnable,
+  heure,
   ignorable,
   payable,
   refusDefinitif,
@@ -58,6 +60,7 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
   const [parcours, envoyer] = useReducer(avancer, { etape: "repos" });
   const [occupe, setOccupe] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const recevoir = useCallback((liste: IntentionVue[]) => {
     setIntentions(liste);
@@ -170,8 +173,19 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
       recevoir((await relaisRelire(i.id)).intentions);
     });
 
-  const abandonner = (id: string) =>
-    void tenter(t("commandes.abandonner"), async () => setIntentions(await relaisOublier(id)));
+  // Le moteur relit le relais avant d'oublier : la phrase de confirmation ne
+  // vient qu'après lui. Un refus garde l'intention, et la liste se relit.
+  const abandonner = (id: string) => {
+    setMessage(null);
+    void tenter(
+      t("commandes.abandonner"),
+      async () => {
+        setIntentions(await relaisOublier(id));
+        setMessage(t("commandes.abandonnee"));
+      },
+      () => void relaisRelire(id).then((r) => recevoir(r.intentions), () => {}),
+    );
+  };
 
   const annuler = (id: string) =>
     void tenter(
@@ -183,6 +197,7 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
     );
 
   const liste = visibles(intentions, "offre" in parcours ? parcours.offre.id : null);
+  const maintenant = new Date();
 
   return (
     <>
@@ -333,9 +348,14 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
           {parcours.etape === "attente" && (
             <div className="commande-attente" role="status">
               <p>{t("commande.attente")}</p>
-              <button className="link" disabled={occupe !== null} onClick={payer}>
-                {t("commande.attente.rouvrir")}
-              </button>
+              <div className="commande-gestes">
+                <button className="link" disabled={occupe !== null} onClick={payer}>
+                  {t("commande.attente.rouvrir")}
+                </button>
+                <button className="link" onClick={() => envoyer({ type: "fermer" })}>
+                  {t("commande.fermer")}
+                </button>
+              </div>
             </div>
           )}
 
@@ -373,6 +393,11 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
         </section>
       )}
 
+      {message && (
+        <p className="envoi-sub" role="status">
+          {message}
+        </p>
+      )}
       {parcours.etape === "repos" && erreur && (
         <p className="commande-erreur" role="alert">
           {erreur}
@@ -394,7 +419,7 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
                 <span className="commandes-etat" role="status">
                   {phraseIntention(i)}
                 </span>
-                {(annulableIntention(i) || payable(i) || abandonnable(i)) && (
+                {(annulableIntention(i) || payable(i) || abandonnable(i, maintenant)) && (
                   <span className="commandes-gestes">
                     {payable(i) && (
                       <button className="link" disabled={occupe !== null} onClick={() => payerDepuisLaListe(i)}>
@@ -406,7 +431,7 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
                         {t("commandes.annuler")}
                       </button>
                     )}
-                    {abandonnable(i) && (
+                    {abandonnable(i, maintenant) && (
                       <button
                         className="link"
                         disabled={occupe !== null}
@@ -418,7 +443,12 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
                     )}
                   </span>
                 )}
-                {abandonnable(i) && <span className="commandes-note">{t("commandes.abandonner.note")}</span>}
+                {abandonnable(i, maintenant) && <span className="commandes-note">{t("commandes.abandonner.note")}</span>}
+                {abandonAttendu(i, maintenant) && (
+                  <span className="commandes-note">
+                    {t("commandes.abandonner.des", { heure: heure(abandonAttendu(i, maintenant)!) })}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

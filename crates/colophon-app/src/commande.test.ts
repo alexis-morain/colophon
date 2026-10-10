@@ -10,6 +10,7 @@ import {
   Parcours,
   Pays,
   aRelire,
+  abandonAttendu,
   abandonnable,
   annulable,
   annulableIntention,
@@ -39,13 +40,21 @@ const preparation = (ok: boolean): Preparation => ({
   rapport: { ok, bloquants: ok ? 0 : 1, defauts: [] } as unknown as PrevolReport,
 });
 
-const intention = (etat: string, dernier_code: number | null = null, niveau: string | null = null): IntentionVue => ({
+const intention = (
+  etat: string,
+  dernier_code: number | null = null,
+  niveau: string | null = null,
+  abandon_des: string | null = null,
+): IntentionVue => ({
   id: "zNRsXsjGDfnOhog10i579Q",
   mode: "sandbox",
   etat,
   dernier_code,
   niveau,
+  abandon_des,
 });
+
+const MIDI = new Date("2026-10-10T12:00:00Z");
 
 // La grille de la mesure S-s1 du 09/10.
 const OFFRE: Offre = {
@@ -191,15 +200,41 @@ describe("les états du relais", () => {
     for (const e of ETATS.filter((x) => x !== "attente_paiement")) {
       expect(payable(intention(e, null, "cp_ground")), e).toBe(false);
     }
-    expect(ETATS.filter((e) => abandonnable(intention(e)))).toEqual(["attente_fichiers", "attente_paiement"]);
+    expect(ETATS.filter((e) => abandonnable(intention(e), MIDI))).toEqual(["attente_fichiers", "attente_paiement"]);
   });
 
-  it("disent en deux langues qu'abandonner n'appelle personne et ne débite rien", () => {
+  it("n'offrent Abandonner qu'à la fin de la page de paiement ouverte, et disent quand", () => {
+    const ouverte = intention("attente_paiement", null, "cp_ground", "2026-10-10T12:01:00Z");
+    expect(abandonnable(ouverte, MIDI)).toBe(false);
+    expect(abandonAttendu(ouverte, MIDI)).toEqual(new Date("2026-10-10T12:01:00Z"));
+    const passee = new Date("2026-10-10T12:02:00Z");
+    expect(abandonnable(ouverte, passee)).toBe(true);
+    expect(abandonAttendu(ouverte, passee)).toBeNull();
+    // Payée, l'heure ne compte plus : ni bouton, ni promesse.
+    expect(abandonAttendu({ ...ouverte, etat: "payee" }, MIDI)).toBeNull();
+    expect(abandonnable({ ...ouverte, etat: "payee" }, passee)).toBe(false);
+  });
+
+  it("ne promettent « rien n'a été payé » qu'après la confirmation du relais", () => {
     setLangue("fr");
-    expect(t("commandes.abandonner.note")).toContain("24 h");
-    expect(t("commandes.abandonner.note")).toContain("débité");
+    expect(t("commandes.abandonner.note")).not.toMatch(/débité|payé\./);
+    expect(t("commandes.abandonnee")).toContain("confirme");
+    expect(phraseErreur("abandon_injoignable")).toContain("gardée");
+    expect(phraseErreur("abandon_refuse payee")).toContain("gardée");
+    expect(phraseErreur("abandon_envoi_en_cours")).toContain("partent encore");
+    expect(phraseErreur("abandon_trop_tot 2026-10-10T12:30:00+00:00")).toMatch(/à partir de \d\d:\d\d/);
     setLangue("en");
-    expect(t("commandes.abandonner.note")).toContain("24 hours");
+    expect(t("commandes.abandonnee")).toContain("confirms");
+    expect(phraseErreur("abandon_injoignable")).toContain("kept");
+  });
+
+  it("disent en deux langues qu'abandonner demande d'abord au relais", () => {
+    setLangue("fr");
+    expect(t("commandes.abandonner.note")).toContain("relais");
+    expect(t("commandes.abandonnee")).toContain("24 h");
+    setLangue("en");
+    expect(t("commandes.abandonner.note")).toContain("relay");
+    expect(t("commandes.abandonnee")).toContain("24 hours");
     expect(t("commandes.payer")).toBe("Pay");
   });
 });
@@ -282,9 +317,12 @@ describe("le parcours", () => {
     expect(avancer(pret, { type: "confirmer" }).etape).toBe("confirmation");
     const paiement = avancer(confirmation, { type: "payer" });
     expect(avancer(paiement, { type: "echec" }).etape).toBe("pret");
-    // En attente, on peut rouvrir la page de paiement.
+    // En attente, on peut rouvrir la page de paiement, ou fermer sans rien
+    // oublier : l'intention reste dans la liste.
     const attente = avancer(paiement, { type: "ouvert" });
     expect(avancer(attente, { type: "payer" }).etape).toBe("paiement");
+    expect(avancer(attente, { type: "fermer" })).toEqual({ etape: "repos" });
+    expect(avancer(pret, { type: "fermer" })).toBe(pret);
     expect(avancer(grille, { type: "retour" })).toEqual({ etape: "repos" });
     // L'étape `pret` a sa sortie.
     expect(avancer(pret, { type: "retour" })).toEqual({ etape: "repos" });

@@ -516,8 +516,9 @@ atomique, `src-tauri/src/commande.rs`) garde par intention identifiant, secret d
 lecture, mode, date, état, dernier code et niveau choisi. **Toute écriture passe sous
 `AppState.stock`** (`commande::modifier`) ; une relecture fait ses appels hors du verrou
 puis relit le fichier sous lui et ne pose que l'état des intentions relues
-(`commande::relire`), jamais un cliché. Debug et release partagent ce fichier : la liste
-ne montre que le mode du relais compilé (`RELAIS_MODE`), rien sans relais. La fenêtre ne
+(`commande::relire`), jamais un cliché, et jamais un état terminal défait. Debug et
+release partagent ce fichier : la liste comme la relecture ne voient que le mode du relais
+compilé (`RELAIS_MODE`), donc un secret ne part jamais vers le relais de l'autre mode. La fenêtre ne
 reçoit que `IntentionVue` (identifiant, mode, état, dernier code, niveau) et la grille ; les URL de dépôt restent dans
 `AppState.envoi`. `relais::Secret` rend `***` en `Debug` et `Display`, et tout texte venu
 de dehors passe par son masque. Le rapport de Signaler ne cite jamais `commande.json`
@@ -535,8 +536,12 @@ TTC par niveau, envoi à deux barres, confirmation en toutes lettres
 `attente_paiement`, `payee`, et les deux états de remboursement et d'annulation) se
 relit toutes les cinq secondes tant qu'Envoi est ouvert, tout le reste à chaque
 ouverture. Les neuf états du relais ont leur phrase (`phraseIntention`), un état inconnu
-une phrase neutre. La liste offre « Payer » (niveau gardé) et « Abandonner » (oubli local,
-le relais purge à 24 h) avant tout paiement ; un refus définitif du paiement
+une phrase neutre. La liste offre « Payer » (niveau gardé) et « Abandonner » avant tout
+paiement. **Abandonner relit le relais d'abord** (`commande::abandonner`) et n'oublie que
+sur `attente_fichiers`, `attente_paiement`, `purgee` ou un 404 ; injoignable ou au-delà,
+l'intention reste. Il attend aussi trente minutes après le dernier `ouvrir_paiement`
+(`paiement_ouvert_le`), la vie d'une session Checkout, et se refuse pendant l'envoi des
+fichiers. L'attente se referme par « Fermer » sans rien oublier ; un refus définitif du paiement
 (`devis_expire`, `intention_expiree`, `trop_de_sessions`) mène à une étape d'erreur
 d'où l'on recommence au pays ; un second envoi de la même intention rend
 `envoi_en_cours` et l'écran l'ignore. « Commander » ne s'offre que sur un dossier préparé **dans cette

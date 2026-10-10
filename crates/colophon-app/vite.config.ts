@@ -450,7 +450,14 @@ function geometryParity(): Plugin {
  * pour piloter l'écran jusqu'à `commandee`.
  */
 function relaisDev() {
-  type Intention = { id: string; mode: "sandbox"; etat: string; dernier_code: number | null; niveau: string | null };
+  type Intention = {
+    id: string;
+    mode: "sandbox";
+    etat: string;
+    dernier_code: number | null;
+    niveau: string | null;
+    abandon_des: string | null;
+  };
   const intentions: Intention[] = [];
   const vue = () => [...intentions].reverse();
   const trouver = (id: string) => {
@@ -466,7 +473,7 @@ function relaisDev() {
     pays: () => [{ code: "FR", nom: "France", require_state: false }],
     creer: () => {
       const id = `faux${Date.now().toString(36)}`;
-      intentions.push({ id, mode: "sandbox", etat: "attente_fichiers", dernier_code: null, niveau: null });
+      intentions.push({ id, mode: "sandbox", etat: "attente_fichiers", dernier_code: null, niveau: null, abandon_des: null });
       return {
         id,
         mode: "sandbox",
@@ -483,7 +490,10 @@ function relaisDev() {
       return i;
     },
     payer: (b) => {
-      trouver(b.id).niveau = b.niveau;
+      const i = trouver(b.id);
+      i.niveau = b.niveau;
+      // Comme le moteur : pas d'abandon avant la fin de la session Checkout.
+      i.abandon_des = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       return null;
     },
     niveau: (b) => {
@@ -492,7 +502,8 @@ function relaisDev() {
     },
     oublier: (b) => {
       const i = trouver(b.id);
-      if (i.etat !== "attente_fichiers" && i.etat !== "attente_paiement") throw new Error("cette commande ne s'abandonne plus");
+      if (i.abandon_des && new Date(i.abandon_des) > new Date()) throw new Error(`abandon_trop_tot ${i.abandon_des}`);
+      if (i.etat !== "attente_fichiers" && i.etat !== "attente_paiement") throw new Error(`abandon_refuse ${i.etat}`);
       intentions.splice(intentions.indexOf(i), 1);
       return vue();
     },

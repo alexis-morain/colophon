@@ -25,13 +25,46 @@ use std::fmt;
 use std::path::Path;
 use std::time::Duration;
 
-/// L'adresse du relais, compilée (décision 3). Le sandbox dans un build de
-/// debug ; **rien** dans un build de release tant que S-s4 n'a pas posé le
-/// domaine du relais réel. Sans adresse, l'app n'offre pas Commander.
-#[cfg(debug_assertions)]
-pub const RELAIS_URL: Option<&str> = Some("https://colophon-relais-sandbox.alexis-c1f.workers.dev");
-#[cfg(not(debug_assertions))]
-pub const RELAIS_URL: Option<&str> = None;
+/// L'adresse du relais sandbox.
+const SANDBOX: &str = "https://colophon-relais-sandbox.alexis-c1f.workers.dev";
+
+/// L'adresse du relais pour un build de debug ou de release : le sandbox en
+/// debug ; **rien** en release tant que S-s4 n'a pas posé le domaine du relais
+/// réel. Une fonction plutôt que deux `cfg` : le gate tourne en debug, et
+/// c'est ainsi qu'un test y tient aussi la valeur de la release.
+pub const fn url_pour(debug: bool) -> Option<&'static str> {
+    if debug {
+        Some(SANDBOX)
+    } else {
+        None
+    }
+}
+
+/// Le mode des intentions que ce relais rend : sandbox en debug, réel en
+/// release, aucun sans relais. L'app ne liste que celles-là : debug et
+/// release partagent `commande.json`.
+pub const fn mode_pour(debug: bool) -> Option<Mode> {
+    match url_pour(debug) {
+        None => None,
+        Some(_) if debug => Some(Mode::Sandbox),
+        Some(_) => Some(Mode::Reel),
+    }
+}
+
+/// L'adresse du relais compilé (décision 3). Sans adresse, l'app n'offre pas
+/// Commander.
+pub const RELAIS_URL: Option<&str> = url_pour(cfg!(debug_assertions));
+
+/// Le mode du relais compilé.
+pub const RELAIS_MODE: Option<Mode> = mode_pour(cfg!(debug_assertions));
+
+/// Les seuls en-têtes de la réponse de création que le PUT recopie. Le relais
+/// n'est pas cru sur parole : `Host`, `Authorization`, `Cookie`,
+/// `Transfer-Encoding`, `Content-Length` ou tout autre nom est ignoré.
+const ENTETES_PERMIS: [&str; 2] = ["content-md5", "content-type"];
+
+/// L'hôte de tout dépôt R2.
+const HOTE_R2: &str = ".r2.cloudflarestorage.com";
 
 /// Le seul papier intérieur que le relais imprime (`produits.ts` du relais) :
 /// celui dont la couverture du dossier préparé porte le dos. Un dossier
@@ -224,6 +257,9 @@ pub enum Erreur {
     Fichier(String),
     /// Le dossier préparé est fait pour un autre papier que celui du relais.
     Papier,
+    /// L'URL de dépôt rendue n'est pas une URL R2 en https, sans port ni
+    /// identifiants. Rien n'est envoyé.
+    UrlDeDepot { fichier: &'static str },
 }
 
 impl Erreur {
@@ -250,6 +286,7 @@ impl fmt::Display for Erreur {
             ),
             Erreur::Fichier(e) => write!(f, "dossier préparé illisible : {e}"),
             Erreur::Papier => write!(f, "ce dossier est préparé pour un autre papier que celui du relais ({PAPIER})"),
+            Erreur::UrlDeDepot { fichier } => write!(f, "le relais rend pour {fichier} une adresse de dépôt refusée"),
         }
     }
 }
@@ -523,7 +560,16 @@ pub fn televerser(
         Quel::Interieur => LIVRAISON_INTERIEUR,
         Quel::Couverture => LIVRAISON_COUVERTURE,
     };
-    let envoi = Envoi { url: &t.url, entetes: &t.entetes, chemin, octets: fichier.octets };
+    if !url_de_depot(&t.url) {
+        return Err(Erreur::UrlDeDepot { fichier: nom });
+    }
+    let entetes: BTreeMap<String, String> = t
+        .entetes
+        .iter()
+        .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
+        .filter(|(k, _)| ENTETES_PERMIS.contains(&k.as_str()))
+        .collect();
+    let envoi = Envoi { url: &t.url, entetes: &entetes, chemin, octets: fichier.octets };
     // Une erreur de transport peut recopier l'URL, qui porte une signature.
     let (statut, etag) = transport
         .put_fichier(&envoi, progression)
@@ -536,6 +582,18 @@ pub fn televerser(
         return Err(Erreur::Etag { fichier: nom, md5: fichier.md5.clone(), etag: lu });
     }
     Ok(())
+}
+
+/// Une URL de dépôt R2 : `https`, un hôte qui finit par
+/// `.r2.cloudflarestorage.com`, ni port ni identifiants.
+fn url_de_depot(url: &str) -> bool {
+    let Some(reste) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let hote = reste.split(['/', '?', '#']).next().unwrap_or("");
+    hote.len() > HOTE_R2.len()
+        && hote.ends_with(HOTE_R2)
+        && hote.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
 }
 
 /// Pose les deux fichiers du dossier préparé, le gros d'abord.
@@ -635,8 +693,8 @@ mod tests {
         format!(
             r#"{{"id": "zNRsXsjGDfnOhog10i579Q", "secret": "{SECRET}", "mode": "sandbox",
               "televersements": {{
-                "interieur": {{"url": "https://depot.exemple/depot/i?X-Amz-Signature=aaa", "entetes": {{"content-md5": "J1lHtPmnlYKHgoufZHDT7A=="}}}},
-                "couverture": {{"url": "https://depot.exemple/depot/c?X-Amz-Signature=bbb", "entetes": {{"content-md5": "TrSodpp+zFUsU+pqsFGhqA=="}}}}
+                "interieur": {{"url": "https://compte.r2.cloudflarestorage.com/depot/i?X-Amz-Signature=aaa", "entetes": {{"content-md5": "J1lHtPmnlYKHgoufZHDT7A=="}}}},
+                "couverture": {{"url": "https://compte.r2.cloudflarestorage.com/depot/c?X-Amz-Signature=bbb", "entetes": {{"content-md5": "TrSodpp+zFUsU+pqsFGhqA=="}}}}
               }},
               "grille": [
                 {{"niveau": "cp_ground", "transporteur": "Fedex - Regional Economy", "prix_ttc_centimes": 4600, "delai_jours": 4}},
@@ -659,9 +717,47 @@ mod tests {
 
     #[test]
     fn l_adresse_du_relais_est_le_sandbox_en_debug_seulement() {
-        // `cargo test` compile en debug : la release, elle, ne porte rien, et
-        // c'est ce qui rend Commander inerte dans le bundle (décision 3).
-        assert_eq!(RELAIS_URL, Some("https://colophon-relais-sandbox.alexis-c1f.workers.dev"));
+        // La release ne porte rien : c'est ce qui rend Commander inerte dans
+        // le bundle (décision 3). Le gate tourne en debug, d'où `url_pour`.
+        assert_eq!(url_pour(false), None);
+        assert_eq!(url_pour(true), Some("https://colophon-relais-sandbox.alexis-c1f.workers.dev"));
+        assert_eq!(RELAIS_URL, url_pour(cfg!(debug_assertions)));
+        assert_eq!((mode_pour(true), mode_pour(false)), (Some(Mode::Sandbox), None));
+    }
+
+    #[test]
+    fn un_put_ne_recopie_que_les_entetes_permis() {
+        let mut t: Televersement = serde_json::from_str(
+            r#"{"url": "https://compte.r2.cloudflarestorage.com/depot/x?X-Amz-Signature=a",
+                "entetes": {"Content-MD5": "J1lHtPmnlYKHgoufZHDT7A==", "content-type": "application/pdf",
+                  "Host": "ailleurs.exemple", "Authorization": "Bearer vole", "Cookie": "a=b",
+                  "Transfer-Encoding": "chunked", "Content-Length": "1", "X-Autre": "y"}}"#,
+        )
+        .unwrap();
+        let d = demande();
+        let mut f = Faux::new(&[]);
+        f.etag = Some(format!("\"{}\"", d.interieur.md5));
+        televerser(&f, Quel::Interieur, &t, Path::new("album-print.pdf"), &d.interieur, &|_| {}).unwrap();
+        let recus: Vec<String> = f.puts.borrow()[0].1.keys().cloned().collect();
+        assert_eq!(recus, ["content-md5", "content-type"]);
+
+        for url in [
+            "http://compte.r2.cloudflarestorage.com/depot/x",
+            "https://exemple.fr/depot/x",
+            "https://r2.cloudflarestorage.com/depot/x",
+            "https://.r2.cloudflarestorage.com/depot/x",
+            "https://x.r2.cloudflarestorage.com.exemple.fr/depot/x",
+            "https://x.r2.cloudflarestorage.com:8443/depot/x",
+            "https://moi:mdp@x.r2.cloudflarestorage.com/depot/x",
+            "https://x.r2.cloudflarestorage.com@exemple.fr/depot/x",
+            "file:///etc/passwd",
+        ] {
+            t.url = url.to_string();
+            let f = Faux::new(&[]);
+            let e = televerser(&f, Quel::Interieur, &t, Path::new("album-print.pdf"), &d.interieur, &|_| {}).unwrap_err();
+            assert_eq!(e, Erreur::UrlDeDepot { fichier: "album-print.pdf" }, "{url}");
+            assert!(f.puts.borrow().is_empty(), "{url} a été envoyée");
+        }
     }
 
     #[test]

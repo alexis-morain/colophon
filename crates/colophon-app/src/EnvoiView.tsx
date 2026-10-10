@@ -8,7 +8,9 @@
 //
 // One printer, Cloudprinter, and its button prepares the folder of the
 // order. The PDF without constraints stays one link away; Prodigi and Lulu
-// are engine and command-line profiles only (`envoi.ts`).
+// are engine and command-line profiles only (`envoi.ts`). Under the prepared
+// folder, Commander sends it to the relay (`CommandeView`), only when this
+// opening of the screen prepared it.
 //
 // Nothing here is computed in the browser. The preflight, the spec sheet and
 // the spine all come from the engine, per profile: two suppliers disagree on
@@ -17,6 +19,7 @@
 
 import { useEffect, useState } from "react";
 import { phraseAbsents } from "./BasculeView";
+import { CommandeView } from "./CommandeView";
 import { Album } from "./album";
 import {
   Defaut,
@@ -114,6 +117,10 @@ export function EnvoiView({
 }) {
 
   const [report, setReport] = useState<PrevolReport | null>(null);
+  // The folder prepared before this opening of the screen is not offered to
+  // Commander: the screen unmounts when left, so what it found on arrival
+  // is the line between the two.
+  const [prepareeAvant] = useState(preparation);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
@@ -375,6 +382,11 @@ export function EnvoiView({
             </button>
           </div>
         )}
+        <CommandeView
+          preparationNeuve={
+            action?.prepare && preparation !== prepareeAvant ? preparation : null
+          }
+        />
         {!libre && (
           <p className="envoi-autre">
             <button className="link" onClick={() => onProfil(PROFIL_LIBRE)}>

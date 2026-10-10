@@ -78,7 +78,8 @@ Ce qu'ils ont posé, et qui se lit plus bas : la fiche d'une photo et son origin
 Cloudprinter seul avec le dossier préparé et la couverture composée (K-s1), la sortie
 d'un export bloqué par la résolution et le glisser depuis la réserve (L-s1), lopdf 0.42
 (#41) et le passe-plat JPEG vérifié (#52). Le code de commande de K-s2 reste dans le
-moteur et la CLI ; l'écran de K-s3 est retiré de l'app (S-s3a), Commander attend le relais.
+moteur et la CLI ; l'écran de K-s3 est retiré de l'app (S-s3a), et Commander revient par le
+relais (S-s3), inerte dans un build de release.
 Ce qui suit est l'état laissé par les vagues 2 à 6.
 
 **2.6, la page qui tourne, est close — et la vague 2 avec elle (28/08).** Session 1
@@ -486,19 +487,68 @@ le dépôt.
 pas. Retirer et Remplacer **enregistrent l'album**, parce que le prévol lit le disque ;
 une ligne dont la case ne porte plus la photo du rapport se tait.
 
-### Le code de commande : le moteur et la CLI, pas l'app
+### Commander, par le relais (S-s3)
 
-**L'app ne tient ni clé ni dépôt, et n'offre pas Commander** (S-s3a). Le compte
-Cloudprinter des Préférences, `CommandeView`, `src-tauri/src/commande.rs`, les onze
-commandes Tauri `commande_*` et le faux `/__dev/commande` sont partis avant la 1.0 ; ils
-se relisent dans git (#76). Commander reviendra contre un relais tenu par Alexis (S-s3),
-qui tient les clés : sans relais joignable, rien ne s'affiche. `commande.ts` garde ce que
-ce parcours réemploiera, testé et sans appelant : `commandePossible(relaisJoignable,
-preparationNeuve)`, `formatPrix`, `phraseEtat`, `annulable`, `phraseConfirmation`,
-`phraseErreur`, avec leurs phrases FR et EN. `AppState.prepare` garde le papier du
-dossier préparé pour ce relais. Le rapport de Signaler ne cite jamais `commande.json`,
-même quand un tel fichier traîne au dossier de données
+**L'app ne tient aucune clé.** Le relais d'Alexis (`colophon-relais`, dépôt privé, un
+Worker) devise, encaisse par Stripe Checkout et commande chez Cloudprinter. L'app ne
+connaît qu'une adresse compilée, **`relais::RELAIS_URL`** = `url_pour(cfg!(debug_assertions))` :
+le sandbox `workers.dev` en debug, **rien en release** (le gate tourne en debug, d'où la
+fonction : son test tient aussi la valeur de la release) tant que S-s4 n'a pas posé le domaine du relais réel. Sans
+adresse, `relais_pays` rend `null` sans un appel et Commander ne s'affiche pas (jamais
+grisé) : la 1.0 embarque ce code inerte.
+
+**Le client vit dans le moteur** (`core::relais`), derrière son trait `Transport` (GET,
+POST JSON avec `Authorization: Bearer`, PUT d'un fichier en flux), écrit sur le modèle de
+`commande::Http`, qui ne sait poser ni en-tête ni GET et que la CLI garde. Les appels
+partent de Rust, jamais du webview : la CSP `connect-src` n'a pas bougé. Une réponse non
+2xx devient `Erreur::Relais { statut, erreur }`, le seul champ `erreur` du relais. Les
+deux PDF montent par les URL PUT que la création rend, **le gros d'abord**, avec
+`Content-Length` et les en-têtes signés qu'elle rend à côté. **Le relais n'est pas cru sur
+parole** : seuls `content-md5` et `content-type` sont recopiés, et l'URL doit être en
+`https` sur un hôte `*.r2.cloudflarestorage.com`, sans port ni identifiants, sinon rien
+ne part. L'ETag relu est comparé au MD5. La progression sort par l'événement
+`relais:progres`, en octets. Pas de `papier` dans la demande : la liste blanche du
+relais le refuse, et `relais::PAPIER` refuse avant tout appel un dossier préparé pour
+un autre papier.
+
+**Le secret ne quitte pas Rust.** `commande.json` (dossier de données, `0600`, écriture
+atomique, `src-tauri/src/commande.rs`) garde par intention identifiant, secret de
+lecture, mode, date, état, dernier code et niveau choisi. **Toute écriture passe sous
+`AppState.stock`** (`commande::modifier`) ; une relecture fait ses appels hors du verrou
+puis relit le fichier sous lui et ne pose que l'état des intentions relues
+(`commande::relire`), jamais un cliché, et jamais un état terminal défait. Debug et
+release partagent ce fichier : la liste comme la relecture ne voient que le mode du relais
+compilé (`RELAIS_MODE`), donc un secret ne part jamais vers le relais de l'autre mode. La fenêtre ne
+reçoit que `IntentionVue` (identifiant, mode, état, dernier code, niveau) et la grille ; les URL de dépôt restent dans
+`AppState.envoi`. `relais::Secret` rend `***` en `Debug` et `Display`, et tout texte venu
+de dehors passe par son masque. Le rapport de Signaler ne cite jamais `commande.json`
 (`le_rapport_ne_cite_jamais_commande_json`).
+
+**Le paiement s'ouvre sans plugin opener** (condition 33) : `ouvrir_paiement` demande
+l'URL au relais et la donne au navigateur du système par `navigateur`, la porte
+d'`open_report_url`, après `url_de_paiement` — préfixe `https://checkout.stripe.com/`
+exact, donc ni autre schéma, ni autre hôte, ni suffixe, ni port, ni identifiants, et un
+jeu fermé de caractères. L'URL ne passe jamais par la fenêtre.
+
+**Le parcours** (`CommandeView.tsx`, la machine `commande.ts::avancer`) : pays, grille
+TTC par niveau, envoi à deux barres, confirmation en toutes lettres
+(`phraseConfirmation`), navigateur, attente. Ce qui bouge seul (`enAttente` :
+`attente_paiement`, `payee`, et les deux états de remboursement et d'annulation) se
+relit toutes les cinq secondes tant qu'Envoi est ouvert, tout le reste à chaque
+ouverture. Les neuf états du relais ont leur phrase (`phraseIntention`), un état inconnu
+une phrase neutre. La liste offre « Payer » (niveau gardé) et « Abandonner » avant tout
+paiement. **Abandonner relit le relais d'abord** (`commande::abandonner`) et n'oublie que
+sur `attente_fichiers`, `attente_paiement`, `purgee` ou un 404 ; injoignable ou au-delà,
+l'intention reste. Il attend aussi trente minutes après le dernier `ouvrir_paiement`
+(`paiement_ouvert_le`), la vie d'une session Checkout, et se refuse pendant l'envoi des
+fichiers. L'attente se referme par « Fermer » sans rien oublier ; un refus définitif du paiement
+(`devis_expire`, `intention_expiree`, `trop_de_sessions`) mène à une étape d'erreur
+d'où l'on recommence au pays ; un second envoi de la même intention rend
+`envoi_en_cours` et l'écran l'ignore. « Commander » ne s'offre que sur un dossier préparé **dans cette
+ouverture** d'Envoi : la vue retient la préparation trouvée à son montage. Au harnais,
+`/__dev/relais/*` rejoue le relais en mémoire, et `POST /__dev/relais/suivant` force
+l'état suivant. Banc : `banc_relais_sandbox` (`#[ignore]`, en debug, aucune clé),
+`docs/mesures/2026-10-09-commander-sandbox.json`.
 
 **Le moteur et la CLI gardent CloudCore et S3.** `core::commande` parle à CloudCore
 (`devis`, `commander`, `etat`, `annuler`) derrière le trait `Http`, `Ureq` en vrai
@@ -886,7 +936,7 @@ l'automatique », recomposition préservante, légendes, texte, couverture, **En
 (qui offre le verdict après un export ou une préparation), bilan de choix, revue
 clavier, Stockage, À propos, **fiche d'une photo ⌘I**, **Préférences ⌘,** (langue
 `i18n.ts` sans redémarrage, mises à jour, apparence), **aperçu
-fidèle ⇧⌘P** (pdf.js). Ni clé ni dépôt dans les Préférences : Commander attend le
+fidèle ⇧⌘P** (pdf.js). Ni clé ni dépôt dans les Préférences : Commander passe par le
 relais (voir plus haut). L'interrupteur DOM/canvas a quitté les Préférences : il ne vit
 plus que dans la clé `colophon.rendu` du `localStorage` (`rendu.ts`), pour la mesure.
 
@@ -1186,7 +1236,8 @@ Workspace Cargo. **`colophon-core`** : `scan` → `meta` → `thumb` → `analyz
 `imposition` (la découpe en pages simples), `export` (le manifeste `export.json`,
 l'empreinte d'un album, le dossier préparé, MD5 et SHA-256), `colophon` (la page),
 `fiche` (la fiche d'une photo), `qualite` (la mesure de l'alerte), `legende` (la
-proposition et les dates), `reserve`, `commande` (CloudCore), `depot` (le seau S3).
+proposition et les dates), `reserve`, `commande` (CloudCore), `depot` (le seau S3), `relais` (le client du relais
+marchand).
 **`colophon-cli`** : clap. **`colophon-app`** : React et Vite (`bridge.ts` seule porte,
 `album.ts` géométries, `scene.ts` la scène et `hitTest`, `SceneCanvas.tsx` le peintre,
 `SceneProxies.tsx` le clavier, `rendu.ts` l'interrupteur, `feuille.ts` le modèle de la
@@ -1195,7 +1246,8 @@ feuilletage, `photos.ts` vignettes décodées et badges, `font.ts` la mesure de 
 les octets de l'album, `police.ts` les noms et les refus d'une face,
 `ornement.ts` le pack et le seul tracé que les deux rendus partagent,
 `menu.ts`, `signaler.ts`, `pdfview.tsx`, `reasons.ts`, `icons.tsx`, `recents.ts`,
-`envoi.ts` la logique pure d'Envoi, `commande.ts` celle que Commander reprendra) plus
+`envoi.ts` la logique pure d'Envoi, `commande.ts` celle de Commander, `CommandeView.tsx`
+son parcours) plus
 la coquille Tauri, marques d'icône dans `design/marques`.
 
 

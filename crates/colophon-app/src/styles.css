@@ -4518,3 +4518,190 @@ button.envoi-defaut:focus-visible {
   z-index: 40;
   bottom: auto;
 }
+
+/* ---- Commander, par le relais (S-s3) -------------------------------------- */
+
+/* Commander sits under the prepared folder, the same weight as Préparer:
+   it is the next step, not an aside. */
+.commande-ouvrir {
+  margin: 16px 0 0;
+}
+
+.commande {
+  margin: 22px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+  max-width: 62ch;
+}
+
+.commande h3,
+.commandes h3 {
+  margin: 0 0 10px;
+  font-size: var(--fs-15);
+  font-weight: 600;
+}
+
+.commande-grille {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 12px;
+  align-items: center;
+  max-width: 460px;
+  font-size: var(--fs-13);
+}
+
+.commande-grille select {
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 4px 6px;
+  min-width: 0;
+}
+
+.commande-grille select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.commande-gestes {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 14px 0 0;
+}
+
+.commande-offres {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.commande-offres legend {
+  padding: 0;
+  margin: 0 0 6px;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.commande-offres label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.commande-offre-prix {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.commande-offre-delai {
+  grid-column: 2 / 4;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.commande-envoi {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  max-width: 460px;
+}
+
+.commande-barre {
+  display: grid;
+  grid-template-columns: 7em minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  font-size: var(--fs-13);
+}
+
+.commande-barre progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+}
+
+.commande-barre-mo {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+}
+
+.commande-attente {
+  margin: 4px 0 0;
+}
+
+.commande-attente p {
+  margin: 0 0 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  line-height: var(--lh-ui);
+}
+
+.commande-erreur {
+  margin: 10px 0 0;
+  color: var(--accent);
+  max-width: 62ch;
+}
+
+.commande-confirmation {
+  width: min(460px, 92vw);
+}
+
+.commande-confirmation-phrase {
+  font-size: var(--fs-15);
+  line-height: var(--lh-ui);
+  margin: 4px 0 8px;
+}
+
+.commande-confirmation-gestes {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.commandes {
+  margin: 22px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+  max-width: 62ch;
+}
+
+.commandes ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.commandes li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-13);
+}
+
+.commandes-ref {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.commandes-gestes {
+  display: flex;
+  gap: 14px;
+}
+
+.commandes-note {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}

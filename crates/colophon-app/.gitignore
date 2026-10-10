@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# `tsc -p tsconfig.node.json` (composite) writes its build state here; the
+# gate never runs it, a hand check does.
+*.tsbuildinfo

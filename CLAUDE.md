@@ -1214,8 +1214,10 @@ Tauri signe l'app en runtime durci, la notarise et l'agrafe ; `scripts/signature
 notarise le DMG, que Tauri laisse, puis vérifie au lieu de supposer. **Le runtime durci
 refuse la photothèque** à qui ne la déclare pas : sans `entitlements.plist`
 (`personal-information.photos-library`), seule une release signée rencontrerait ce refus,
-jamais le bundle ad hoc du Mac de dev. Sa forme côté PhotoKit n'est pas mesurée.
-`signature-macos.sh verifier` le prouve en local avec un certificat Apple Development.
+jamais le bundle ad hoc du Mac de dev. Vérifié le 10/10 : un DMG Developer ID notarisé
+par Apple, agrafé, accepté par `spctl`, installé, demande la photothèque et en affiche les
+albums. La forme du refus sans la clé n'est pas mesurée. `signature-macos.sh verifier`
+tourne aussi en local avec un certificat Apple Development.
 Pas de Mac App Store : la GPL, le bac à sable et l'updater en font un chantier à part.
 **`thumb::chemin` est la seule porte vers une vignette
 du cache**, six lecteurs y passent, un nom qui n'est pas un nom de fichier est refusé.

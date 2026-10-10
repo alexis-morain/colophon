@@ -1637,6 +1637,7 @@ async fn relais_creer(
         etat: "attente_fichiers".into(),
         dernier_code: None,
         niveau: None,
+        paiement_ouvert_le: None,
     };
     commande::modifier(&state.stock, &dir, |s| {
         s.intentions.push(gardee);
@@ -1738,18 +1739,25 @@ fn relais_niveau(app: tauri::AppHandle, state: State<'_, AppState>, id: String, 
     })
 }
 
-/// Oublie l'intention `id`, localement, sans appeler le relais : il purge à
-/// 24 h ce qui n'a pas été payé. Seulement avant le paiement.
+/// « Abandonner » l'intention `id` : le relais est relu d'abord, et l'oubli
+/// n'a lieu que s'il confirme que rien n'est payé (`commande::abandonner`).
+/// Rend la liste, ou le code du refus.
 #[tauri::command]
-fn relais_oublier(app: tauri::AppHandle, state: State<'_, AppState>, id: String) -> Result<Vec<commande::IntentionVue>, String> {
-    commande::modifier(&state.stock, &donnees(&app)?, |s| {
-        let etat = s.trouver(&id)?.etat.clone();
-        if etat != "attente_fichiers" && etat != "attente_paiement" {
-            return Err("cette commande ne s'abandonne plus".into());
-        }
-        s.oublier(&id);
-        Ok(s.vue(colophon_core::relais::RELAIS_MODE))
+async fn relais_oublier(app: tauri::AppHandle, id: String) -> Result<Vec<commande::IntentionVue>, String> {
+    use colophon_core::relais::{Relais, Reseau, RELAIS_MODE};
+    let base = relais_url()?;
+    let dir = donnees(&app)?;
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app2.state::<AppState>();
+        let reseau = Reseau::default();
+        let relais = Relais { base, transport: &reseau };
+        commande::abandonner(&state.stock, &dir, &relais, RELAIS_MODE, &state.envois, &id, colophon_core::chrono::Utc::now())
+            .map_err(|e| e.to_string())?;
+        Ok(commande::Stock::lire(&dir)?.vue(RELAIS_MODE))
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Ouvre le paiement de l'intention `id` au niveau choisi : le relais crée
@@ -1767,6 +1775,9 @@ async fn ouvrir_paiement(
     let i = commande::modifier(&state.stock, &donnees(&app)?, |s| {
         let i = s.intentions.iter_mut().find(|i| i.id == id).ok_or("commande inconnue")?;
         i.niveau = Some(niveau.clone());
+        // La session qui va s'ouvrir peut être payée trente minutes durant :
+        // d'ici là, « Abandonner » attend.
+        i.paiement_ouvert_le = Some(colophon_core::chrono::Utc::now().to_rfc3339());
         Ok(i.clone())
     })?;
     let url = tauri::async_runtime::spawn_blocking(move || {
@@ -1827,7 +1838,8 @@ async fn relais_relire(app: tauri::AppHandle, id: Option<String>) -> Result<Relu
     tauri::async_runtime::spawn_blocking(move || {
         let state = app2.state::<AppState>();
         let reseau = Reseau::default();
-        let erreur = commande::relire(&state.stock, &dir, &Relais { base, transport: &reseau }, id.as_deref())?;
+        let relais = Relais { base, transport: &reseau };
+        let erreur = commande::relire(&state.stock, &dir, &relais, RELAIS_MODE, id.as_deref())?;
         Ok(Relu { intentions: commande::Stock::lire(&dir)?.vue(RELAIS_MODE), erreur })
     })
     .await

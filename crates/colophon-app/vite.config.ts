@@ -118,6 +118,7 @@ function albumDevServer(dir: string): Plugin {
       // même `export::preparer` que la fenêtre, dans COLOPHON_PREPARER. La
       // réponse a la forme de la commande Tauri : le nom du dossier, jamais
       // son chemin.
+      server.middlewares.use("/__dev/relais", relaisDev());
       server.middlewares.use("/__dev/preparer", (req, res) => {
         if (req.method !== "POST") {
           res.statusCode = 405;
@@ -436,6 +437,96 @@ function geometryParity(): Plugin {
         );
       });
     },
+  };
+}
+
+/**
+ * Le faux relais (S-s3), pour le harnais : les commandes Tauri `relais_*`
+ * rejouées en mémoire, sur les réponses relevées au sandbox le 09/10
+ * (`docs/mesures-relais/`, hors dépôt). Aucun secret, aucun réseau, rien
+ * sur le disque : `commande.json` n'existe pas au harnais. Le paiement
+ * n'ouvre rien. `POST /__dev/relais/suivant` force l'état suivant de la
+ * dernière intention (ou celui que le corps nomme : `{etat, dernier_code}`),
+ * pour piloter l'écran jusqu'à `commandee`.
+ */
+function relaisDev() {
+  type Intention = { id: string; mode: "sandbox"; etat: string; dernier_code: number | null };
+  const intentions: Intention[] = [];
+  const vue = () => [...intentions].reverse();
+  const trouver = (id: string) => {
+    const i = intentions.find((x) => x.id === id);
+    if (!i) throw new Error("commande inconnue");
+    return i;
+  };
+  // La suite que le relais et Cloudprinter ont rendue au banc du 09/10.
+  const SUITE_ETATS = ["attente_fichiers", "attente_paiement", "payee", "commandee"];
+  const SUITE_CODES = [null, 1, 10, 15, 30, 501];
+  const actions: Record<string, (b: any) => unknown> = {
+    // La France seule, comme au relais réel.
+    pays: () => [{ code: "FR", nom: "France", require_state: false }],
+    creer: () => {
+      const id = `faux${Date.now().toString(36)}`;
+      intentions.push({ id, mode: "sandbox", etat: "attente_fichiers", dernier_code: null });
+      return {
+        id,
+        mode: "sandbox",
+        grille: [
+          { niveau: "cp_ground", transporteur: "Fedex - Regional Economy", prix_ttc_centimes: 4600, delai_jours: 4 },
+          { niveau: "cp_fast", transporteur: "FedEx - International Priority", prix_ttc_centimes: 5250, delai_jours: 4 },
+        ],
+        expire: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      };
+    },
+    envoyer: (b) => {
+      const i = trouver(b.id);
+      i.etat = "attente_paiement";
+      return i;
+    },
+    payer: (b) => {
+      trouver(b.id);
+      return null;
+    },
+    relire: (b) => {
+      if (b.id) trouver(b.id);
+      return { intentions: vue(), erreur: null };
+    },
+    annuler: (b) => {
+      const i = trouver(b.id);
+      if (i.etat !== "commandee" || (i.dernier_code ?? 0) >= 30) throw new Error("relais : trop_tard (409)");
+      i.etat = "annulee";
+      return { intentions: vue(), erreur: null };
+    },
+    suivant: (b) => {
+      const i = b.id ? trouver(b.id) : intentions[intentions.length - 1];
+      if (!i) throw new Error("aucune intention");
+      if (b.etat) {
+        i.etat = b.etat;
+        if (b.dernier_code !== undefined) i.dernier_code = b.dernier_code;
+      } else if (i.etat !== "commandee") {
+        i.etat = SUITE_ETATS[Math.min(SUITE_ETATS.indexOf(i.etat) + 1, SUITE_ETATS.length - 1)];
+      } else {
+        i.dernier_code = SUITE_CODES[Math.min(SUITE_CODES.indexOf(i.dernier_code) + 1, SUITE_CODES.length - 1)];
+      }
+      return i;
+    },
+  };
+  return (req: any, res: any) => {
+    const action = (req.url ?? "").replace(/^\//, "").split("?")[0];
+    let corps = "";
+    req.on("data", (c: Buffer) => (corps += c));
+    req.on("end", () => {
+      try {
+        const faire = actions[action];
+        if (!faire) throw new Error(`action inconnue : ${action}`);
+        const r = faire(corps ? JSON.parse(corps) : {});
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(r ?? null));
+      } catch (e: any) {
+        const m = String(e?.message ?? e);
+        res.statusCode = m.includes("trop_tard") ? 409 : 500;
+        res.end(m);
+      }
+    });
   };
 }
 

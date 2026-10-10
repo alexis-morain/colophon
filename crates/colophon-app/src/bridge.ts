@@ -9,6 +9,7 @@ import { Album, Discard, OpenedAlbum, Police, Spread } from "./album";
 
 import { Dump, setGeometrie, setGeometrieFormat } from "./geometrie";
 import { t } from "./i18n";
+import type { IntentionVue, Offre, Pays, Progres } from "./commande";
 
 export const inTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -1203,3 +1204,58 @@ export async function exportPdf(
     off();
   }
 }
+
+// ---- Commander, par le relais (S-s3) ----------------------------------------
+//
+// Toutes les commandes passent par le moteur, qui seul parle au relais et
+// tient le secret de chaque intention dans `commande.json` : la fenêtre ne
+// reçoit qu'identifiant, mode, état, dernier code et grille. Au harnais,
+// `/__dev/relais/*` rejoue un faux relais en mémoire, aucun réseau.
+
+export type Relu = { intentions: IntentionVue[]; erreur: string | null };
+
+async function relaisDev<T>(action: string, corps: object = {}): Promise<T> {
+  const res = await fetch(`/__dev/relais/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(corps),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(text);
+  return JSON.parse(text);
+}
+
+function relaisAppel<T>(commande: string, action: string, args: Record<string, unknown> = {}): Promise<T> {
+  return inTauri ? invoke<T>(commande, args) : relaisDev<T>(action, args);
+}
+
+/** Les pays ouverts à la commande, ou null quand ce build ne porte aucun
+ *  relais : Commander ne s'affiche alors pas. */
+export const relaisPays = () => relaisAppel<Pays[] | null>("relais_pays", "pays");
+
+/** Ouvre une intention pour le dossier préparé et rend sa grille. */
+export const relaisCreer = (pays: string, etatRegion: string | null) =>
+  relaisAppel<Offre>("relais_creer", "creer", { pays, etatRegion });
+
+/** Envoie les deux PDF, le gros d'abord ; la progression arrive en octets. */
+export async function relaisEnvoyer(id: string, onProgres?: (p: Progres) => void): Promise<IntentionVue> {
+  if (!inTauri) return relaisDev<IntentionVue>("envoyer", { id });
+  const { listen } = await import("@tauri-apps/api/event");
+  const off = await listen<Progres>("relais:progres", (e) => onProgres?.(e.payload));
+  try {
+    return await invoke<IntentionVue>("relais_envoyer", { id });
+  } finally {
+    off();
+  }
+}
+
+/** Ouvre la page de paiement du niveau choisi dans le navigateur du
+ *  système. L'URL ne passe jamais par la fenêtre. */
+export const ouvrirPaiement = (id: string, niveau: string) =>
+  relaisAppel<void>("ouvrir_paiement", "payer", { id, niveau });
+
+/** Relit l'état d'une intention, ou de toutes celles qui bougent encore. */
+export const relaisRelire = (id?: string) => relaisAppel<Relu>("relais_relire", "relire", { id: id ?? null });
+
+/** Annule une commande passée. Trop tard, l'erreur porte `trop_tard`. */
+export const relaisAnnuler = (id: string) => relaisAppel<Relu>("relais_annuler", "annuler", { id });

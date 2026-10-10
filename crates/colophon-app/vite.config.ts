@@ -450,7 +450,7 @@ function geometryParity(): Plugin {
  * pour piloter l'écran jusqu'à `commandee`.
  */
 function relaisDev() {
-  type Intention = { id: string; mode: "sandbox"; etat: string; dernier_code: number | null };
+  type Intention = { id: string; mode: "sandbox"; etat: string; dernier_code: number | null; niveau: string | null };
   const intentions: Intention[] = [];
   const vue = () => [...intentions].reverse();
   const trouver = (id: string) => {
@@ -466,7 +466,7 @@ function relaisDev() {
     pays: () => [{ code: "FR", nom: "France", require_state: false }],
     creer: () => {
       const id = `faux${Date.now().toString(36)}`;
-      intentions.push({ id, mode: "sandbox", etat: "attente_fichiers", dernier_code: null });
+      intentions.push({ id, mode: "sandbox", etat: "attente_fichiers", dernier_code: null, niveau: null });
       return {
         id,
         mode: "sandbox",
@@ -483,8 +483,18 @@ function relaisDev() {
       return i;
     },
     payer: (b) => {
-      trouver(b.id);
+      trouver(b.id).niveau = b.niveau;
       return null;
+    },
+    niveau: (b) => {
+      trouver(b.id).niveau = b.niveau;
+      return null;
+    },
+    oublier: (b) => {
+      const i = trouver(b.id);
+      if (i.etat !== "attente_fichiers" && i.etat !== "attente_paiement") throw new Error("cette commande ne s'abandonne plus");
+      intentions.splice(intentions.indexOf(i), 1);
+      return vue();
     },
     relire: (b) => {
       if (b.id) trouver(b.id);

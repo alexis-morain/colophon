@@ -4700,3 +4700,8 @@ button.envoi-defaut:focus-visible {
   display: flex;
   gap: 14px;
 }
+
+.commandes-note {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}

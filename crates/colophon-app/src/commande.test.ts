@@ -10,22 +10,26 @@ import {
   Parcours,
   Pays,
   aRelire,
+  abandonnable,
   annulable,
   annulableIntention,
   avancer,
   commandePossible,
   formatPrix,
+  ignorable,
   niveauChoisi,
   nomNiveau,
   part,
+  payable,
   phraseConfirmation,
   phraseErreur,
   phraseEtat,
   phraseIntention,
   prixDeCentimes,
+  refusDefinitif,
   visibles,
 } from "./commande";
-import { setLangue } from "./i18n";
+import { setLangue, t } from "./i18n";
 
 afterEach(() => setLangue("en"));
 
@@ -35,11 +39,12 @@ const preparation = (ok: boolean): Preparation => ({
   rapport: { ok, bloquants: ok ? 0 : 1, defauts: [] } as unknown as PrevolReport,
 });
 
-const intention = (etat: string, dernier_code: number | null = null): IntentionVue => ({
+const intention = (etat: string, dernier_code: number | null = null, niveau: string | null = null): IntentionVue => ({
   id: "zNRsXsjGDfnOhog10i579Q",
   mode: "sandbox",
   etat,
   dernier_code,
+  niveau,
 });
 
 // La grille de la mesure S-s1 du 09/10.
@@ -172,11 +177,30 @@ describe("les états du relais", () => {
     }
   });
 
-  it("se relisent tant qu'elles bougent seules, et la liste tait celles restées en route", () => {
+  it("se relisent tant qu'elles bougent seules, et la liste tait celle que le parcours tient", () => {
     const toutes = ETATS.map((e, i) => ({ ...intention(e), id: String(i) }));
     expect(aRelire(toutes)).toEqual(["1", "2", "4", "6"]);
-    expect(visibles(toutes).map((i) => i.etat)).not.toContain("attente_fichiers");
-    expect(visibles(toutes)).toHaveLength(8);
+    expect(visibles(toutes, null)).toHaveLength(9);
+    expect(visibles(toutes, "0").map((i) => i.id)).not.toContain("0");
+    expect(visibles(toutes, "0")).toHaveLength(8);
+  });
+
+  it("offrent Payer en attente de paiement avec un niveau, et Abandonner avant tout paiement", () => {
+    expect(payable(intention("attente_paiement", null, "cp_ground"))).toBe(true);
+    expect(payable(intention("attente_paiement"))).toBe(false);
+    for (const e of ETATS.filter((x) => x !== "attente_paiement")) {
+      expect(payable(intention(e, null, "cp_ground")), e).toBe(false);
+    }
+    expect(ETATS.filter((e) => abandonnable(intention(e)))).toEqual(["attente_fichiers", "attente_paiement"]);
+  });
+
+  it("disent en deux langues qu'abandonner n'appelle personne et ne débite rien", () => {
+    setLangue("fr");
+    expect(t("commandes.abandonner.note")).toContain("24 h");
+    expect(t("commandes.abandonner.note")).toContain("débité");
+    setLangue("en");
+    expect(t("commandes.abandonner.note")).toContain("24 hours");
+    expect(t("commandes.payer")).toBe("Pay");
   });
 });
 
@@ -199,6 +223,17 @@ describe("la confirmation", () => {
     expect(phraseErreur("relais : devis_expire (409)")).toContain("expiré");
     expect(phraseErreur("relais : commander_indisponible (503)")).toContain("indisponible");
     expect(phraseErreur(new Error("relais injoignable : dns"))).toContain("injoignable");
+    expect(phraseErreur("relais : trop_de_sessions (429)")).toContain("tentatives");
+  });
+
+  it("sépare un refus définitif d'un refus qui se réessaie, et tait le second envoi", () => {
+    for (const c of ["devis_expire", "intention_expiree", "trop_de_sessions"]) {
+      expect(refusDefinitif(new Error(`relais : ${c} (409)`)), c).toBe(true);
+    }
+    expect(refusDefinitif("relais : stripe (502)")).toBe(false);
+    expect(refusDefinitif("relais injoignable : dns")).toBe(false);
+    expect(ignorable("envoi_en_cours")).toBe(true);
+    expect(ignorable("relais : fichiers (422)")).toBe(false);
   });
 });
 
@@ -251,6 +286,30 @@ describe("le parcours", () => {
     const attente = avancer(paiement, { type: "ouvert" });
     expect(avancer(attente, { type: "payer" }).etape).toBe("paiement");
     expect(avancer(grille, { type: "retour" })).toEqual({ etape: "repos" });
+    // L'étape `pret` a sa sortie.
+    expect(avancer(pret, { type: "retour" })).toEqual({ etape: "repos" });
+  });
+
+  it("mène un refus définitif du paiement à l'erreur, d'où l'on recommence au pays", () => {
+    const confirmation = suite(
+      { etape: "repos" },
+      { type: "commander", pays: PAYS },
+      { type: "offre", offre: OFFRE },
+      { type: "envoyer" },
+      { type: "envoye" },
+    );
+    const paiement = avancer(confirmation, { type: "payer" });
+    const erreur = avancer(paiement, { type: "echec", definitif: "Le prix a expiré." });
+    expect(erreur).toEqual({ etape: "erreur", phrase: "Le prix a expiré." });
+    // Rien d'autre n'en sort : ni payer, ni confirmer, ni un état relu.
+    for (const e of [{ type: "payer" }, { type: "confirmer" }, { type: "envoye" }] as const) {
+      expect(avancer(erreur, e), e.type).toBe(erreur);
+    }
+    const repris = avancer(erreur, { type: "recommencer", pays: PAYS });
+    expect(repris).toMatchObject({ etape: "pays", choisi: "FR" });
+    expect(avancer(erreur, { type: "retour" })).toEqual({ etape: "repos" });
+    // Recommencer n'a de sens que depuis l'erreur.
+    expect(avancer(paiement, { type: "recommencer", pays: PAYS })).toBe(paiement);
   });
 
   it("ignore un événement qui ne concerne pas l'étape", () => {

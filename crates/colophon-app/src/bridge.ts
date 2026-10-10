@@ -1254,6 +1254,13 @@ export async function relaisEnvoyer(id: string, onProgres?: (p: Progres) => void
 export const ouvrirPaiement = (id: string, niveau: string) =>
   relaisAppel<void>("ouvrir_paiement", "payer", { id, niveau });
 
+/** Garde le niveau choisi pour une intention, dès le choix. */
+export const relaisNiveau = (id: string, niveau: string) =>
+  relaisAppel<void>("relais_niveau", "niveau", { id, niveau });
+
+/** Oublie une intention non payée, localement : aucun appel au relais. */
+export const relaisOublier = (id: string) => relaisAppel<IntentionVue[]>("relais_oublier", "oublier", { id });
+
 /** Relit l'état d'une intention, ou de toutes celles qui bougent encore. */
 export const relaisRelire = (id?: string) => relaisAppel<Relu>("relais_relire", "relire", { id: id ?? null });
 

@@ -41,6 +41,8 @@ export type IntentionVue = {
   mode: Mode;
   etat: string;
   dernier_code: number | null;
+  /** Le niveau d'expédition choisi, gardé dès le choix. */
+  niveau: string | null;
 };
 
 export type Quel = "interieur" | "couverture";
@@ -155,11 +157,22 @@ export function aRelire(intentions: IntentionVue[]): string[] {
   return intentions.filter((i) => enAttente(i.etat)).map((i) => i.id);
 }
 
-/** Les intentions que l'écran liste : celles dont les fichiers sont partis.
- *  Une intention restée en `attente_fichiers` a été laissée en route, et
- *  celle en cours vit dans le parcours. */
-export function visibles(intentions: IntentionVue[]): IntentionVue[] {
-  return intentions.filter((i) => i.etat !== "attente_fichiers");
+/** Les intentions que l'écran liste : toutes, sauf celle que le parcours
+ *  tient en ce moment (`enCours`), qui se montre déjà là-haut. */
+export function visibles(intentions: IntentionVue[], enCours: string | null): IntentionVue[] {
+  return intentions.filter((i) => i.id !== enCours);
+}
+
+/** « Payer » s'offre dans la liste sur une intention qui attend son
+ *  paiement et dont on connaît le niveau choisi. */
+export function payable(i: IntentionVue): boolean {
+  return i.etat === "attente_paiement" && !!i.niveau;
+}
+
+/** « Abandonner » s'offre tant que rien n'est payé. L'intention s'oublie
+ *  localement ; le relais la purge à 24 h. */
+export function abandonnable(i: IntentionVue): boolean {
+  return i.etat === "attente_fichiers" || i.etat === "attente_paiement";
 }
 
 /** La confirmation : le prix et le mode en toutes lettres. */
@@ -174,10 +187,24 @@ const ERREURS: [string, Cle][] = [
   ["trop_tard", "commande.annuler.tard"],
   ["devis_expire", "commande.devis.expire"],
   ["intention_expiree", "commande.devis.expire"],
+  ["trop_de_sessions", "commande.sessions"],
   ["commander_indisponible", "commande.indisponible"],
   ["trop_de_demandes", "commande.indisponible"],
   ["autre papier", "commande.papier"],
 ];
+
+/** Un refus du paiement qui ne se rattrape pas en réessayant : le parcours
+ *  doit recommencer. */
+export function refusDefinitif(e: unknown): boolean {
+  const s = String(e);
+  return ["devis_expire", "intention_expiree", "trop_de_sessions"].some((c) => s.includes(c));
+}
+
+/** Le second envoi d'une intention dont les fichiers partent déjà : le
+ *  moteur le refuse sans rien toucher, et l'écran n'en dit rien. */
+export function ignorable(e: unknown): boolean {
+  return String(e).includes("envoi_en_cours");
+}
 
 /** Une erreur de commande, dite. */
 export function phraseErreur(e: unknown): string {
@@ -197,7 +224,8 @@ export type Parcours =
   | { etape: "confirmation"; offre: Offre; niveau: string }
   | { etape: "pret"; offre: Offre; niveau: string }
   | { etape: "paiement"; offre: Offre; niveau: string }
-  | { etape: "attente"; offre: Offre; niveau: string };
+  | { etape: "attente"; offre: Offre; niveau: string }
+  | { etape: "erreur"; phrase: string };
 
 export type Evenement =
   | { type: "commander"; pays: Pays[] }
@@ -211,7 +239,8 @@ export type Evenement =
   | { type: "confirmer" }
   | { type: "payer" }
   | { type: "ouvert" }
-  | { type: "echec" }
+  | { type: "echec"; definitif?: string }
+  | { type: "recommencer"; pays: Pays[] }
   | { type: "retour" }
   | { type: "etat"; intention: IntentionVue };
 
@@ -226,6 +255,8 @@ function paysChoisi(pays: Pays[], code: string): { choisi: string; region: strin
  *  change rien : l'écran peut en recevoir un en retard sans casser. */
 export function avancer(p: Parcours, e: Evenement): Parcours {
   switch (e.type) {
+    case "recommencer":
+      return p.etape === "erreur" ? avancer({ etape: "repos" }, { type: "commander", pays: e.pays }) : p;
     case "commander": {
       if (p.etape !== "repos" || e.pays.length === 0) return p;
       // La France d'abord quand elle est ouverte, sinon le premier.
@@ -267,15 +298,21 @@ export function avancer(p: Parcours, e: Evenement): Parcours {
     case "echec":
       // L'envoi raté revient à la grille, où « Envoyer » réessaie ; un
       // paiement raté revient au bouton qui le rouvre.
+      // Un refus définitif (`refusDefinitif`) mène à l'étape d'erreur, d'où
+      // l'on recommence.
       if (p.etape === "envoi") return { etape: "grille", offre: p.offre, niveau: p.niveau };
-      if (p.etape === "paiement") return { etape: "pret", offre: p.offre, niveau: p.niveau };
+      if (p.etape === "paiement") {
+        return e.definitif !== undefined
+          ? { etape: "erreur", phrase: e.definitif }
+          : { etape: "pret", offre: p.offre, niveau: p.niveau };
+      }
       return p;
     case "retour":
       // Les fichiers partis restent partis : refermer la confirmation garde
       // le bouton qui la rouvre. Avant l'envoi, on repart de zéro ; pendant,
       // rien ne s'interrompt.
       if (p.etape === "confirmation") return { etape: "pret", offre: p.offre, niveau: p.niveau };
-      return p.etape === "pays" || p.etape === "grille" ? { etape: "repos" } : p;
+      return ["pays", "grille", "pret", "erreur"].includes(p.etape) ? { etape: "repos" } : p;
     case "etat":
       // Le paiement a abouti ou échoué : la liste des commandes prend le
       // relais, le parcours se referme.

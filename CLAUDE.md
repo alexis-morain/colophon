@@ -491,8 +491,9 @@ une ligne dont la case ne porte plus la photo du rapport se tait.
 
 **L'app ne tient aucune clé.** Le relais d'Alexis (`colophon-relais`, dépôt privé, un
 Worker) devise, encaisse par Stripe Checkout et commande chez Cloudprinter. L'app ne
-connaît qu'une adresse compilée, **`relais::RELAIS_URL`** : le sandbox `workers.dev` en
-debug, **rien en release** tant que S-s4 n'a pas posé le domaine du relais réel. Sans
+connaît qu'une adresse compilée, **`relais::RELAIS_URL`** = `url_pour(cfg!(debug_assertions))` :
+le sandbox `workers.dev` en debug, **rien en release** (le gate tourne en debug, d'où la
+fonction : son test tient aussi la valeur de la release) tant que S-s4 n'a pas posé le domaine du relais réel. Sans
 adresse, `relais_pays` rend `null` sans un appel et Commander ne s'affiche pas (jamais
 grisé) : la 1.0 embarque ce code inerte.
 
@@ -502,16 +503,22 @@ POST JSON avec `Authorization: Bearer`, PUT d'un fichier en flux), écrit sur le
 partent de Rust, jamais du webview : la CSP `connect-src` n'a pas bougé. Une réponse non
 2xx devient `Erreur::Relais { statut, erreur }`, le seul champ `erreur` du relais. Les
 deux PDF montent par les URL PUT que la création rend, **le gros d'abord**, avec
-`Content-Length` et les en-têtes signés qu'elle rend à côté (`Content-MD5`, que R2
-vérifie) ; l'ETag relu est comparé au MD5. La progression sort par l'événement
+`Content-Length` et les en-têtes signés qu'elle rend à côté. **Le relais n'est pas cru sur
+parole** : seuls `content-md5` et `content-type` sont recopiés, et l'URL doit être en
+`https` sur un hôte `*.r2.cloudflarestorage.com`, sans port ni identifiants, sinon rien
+ne part. L'ETag relu est comparé au MD5. La progression sort par l'événement
 `relais:progres`, en octets. Pas de `papier` dans la demande : la liste blanche du
 relais le refuse, et `relais::PAPIER` refuse avant tout appel un dossier préparé pour
 un autre papier.
 
 **Le secret ne quitte pas Rust.** `commande.json` (dossier de données, `0600`, écriture
 atomique, `src-tauri/src/commande.rs`) garde par intention identifiant, secret de
-lecture, mode, date, état et dernier code. La fenêtre ne reçoit que `IntentionVue`
-(identifiant, mode, état, dernier code) et la grille ; les URL de dépôt restent dans
+lecture, mode, date, état, dernier code et niveau choisi. **Toute écriture passe sous
+`AppState.stock`** (`commande::modifier`) ; une relecture fait ses appels hors du verrou
+puis relit le fichier sous lui et ne pose que l'état des intentions relues
+(`commande::relire`), jamais un cliché. Debug et release partagent ce fichier : la liste
+ne montre que le mode du relais compilé (`RELAIS_MODE`), rien sans relais. La fenêtre ne
+reçoit que `IntentionVue` (identifiant, mode, état, dernier code, niveau) et la grille ; les URL de dépôt restent dans
 `AppState.envoi`. `relais::Secret` rend `***` en `Debug` et `Display`, et tout texte venu
 de dehors passe par son masque. Le rapport de Signaler ne cite jamais `commande.json`
 (`le_rapport_ne_cite_jamais_commande_json`).
@@ -528,7 +535,11 @@ TTC par niveau, envoi à deux barres, confirmation en toutes lettres
 `attente_paiement`, `payee`, et les deux états de remboursement et d'annulation) se
 relit toutes les cinq secondes tant qu'Envoi est ouvert, tout le reste à chaque
 ouverture. Les neuf états du relais ont leur phrase (`phraseIntention`), un état inconnu
-une phrase neutre. « Commander » ne s'offre que sur un dossier préparé **dans cette
+une phrase neutre. La liste offre « Payer » (niveau gardé) et « Abandonner » (oubli local,
+le relais purge à 24 h) avant tout paiement ; un refus définitif du paiement
+(`devis_expire`, `intention_expiree`, `trop_de_sessions`) mène à une étape d'erreur
+d'où l'on recommence au pays ; un second envoi de la même intention rend
+`envoi_en_cours` et l'écran l'ignore. « Commander » ne s'offre que sur un dossier préparé **dans cette
 ouverture** d'Envoi : la vue retient la préparation trouvée à son montage. Au harnais,
 `/__dev/relais/*` rejoue le relais en mémoire, et `POST /__dev/relais/suivant` force
 l'état suivant. Banc : `banc_relais_sandbox` (`#[ignore]`, en debug, aucune clé),

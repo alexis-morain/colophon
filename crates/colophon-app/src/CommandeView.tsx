@@ -19,6 +19,8 @@ import {
   relaisAnnuler,
   relaisCreer,
   relaisEnvoyer,
+  relaisNiveau,
+  relaisOublier,
   relaisPays,
   relaisRelire,
 } from "./bridge";
@@ -26,6 +28,10 @@ import {
   IntentionVue,
   Pays,
   aRelire,
+  abandonnable,
+  ignorable,
+  payable,
+  refusDefinitif,
   annulableIntention,
   avancer,
   commandePossible,
@@ -96,14 +102,14 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
   const possible = commandePossible(joignable, preparationNeuve);
   const prix = (c: number) => prixDeCentimes(c, langue);
 
-  const tenter = async (quoi: string, geste: () => Promise<void>, sinon?: () => void) => {
+  const tenter = async (quoi: string, geste: () => Promise<void>, sinon?: (e: unknown) => void) => {
     setOccupe(quoi);
     setErreur(null);
     try {
       await geste();
     } catch (e) {
       setErreur(phraseErreur(e));
-      sinon?.();
+      sinon?.(e);
     } finally {
       setOccupe(null);
     }
@@ -116,18 +122,28 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
     });
   };
 
-  const envoyerLesFichiers = () => {
+  // Le niveau se garde dès le choix : la liste rouvre le paiement avec lui.
+  const choisirNiveau = (id: string, niveau: string) => {
+    envoyer({ type: "niveau", niveau });
+    relaisNiveau(id, niveau).catch(() => {});
+  };
+
+  const envoyerLesFichiers = async () => {
     if (parcours.etape !== "grille") return;
-    const id = parcours.offre.id;
+    const { offre, niveau } = parcours;
     envoyer({ type: "envoyer" });
-    void tenter(
-      t("commande.envoyer"),
-      async () => {
-        await relaisEnvoyer(id, (p) => envoyer({ type: "progres", progres: p }));
-        envoyer({ type: "envoye" });
-      },
-      () => envoyer({ type: "echec" }),
-    );
+    setErreur(null);
+    try {
+      await relaisNiveau(offre.id, niveau);
+      await relaisEnvoyer(offre.id, (p) => envoyer({ type: "progres", progres: p }));
+      envoyer({ type: "envoye" });
+    } catch (e) {
+      // Un second envoi pendant le premier : le moteur l'a refusé sans rien
+      // toucher, le premier continue.
+      if (ignorable(e)) return;
+      setErreur(phraseErreur(e));
+      envoyer({ type: "echec" });
+    }
   };
 
   const payer = () => {
@@ -141,9 +157,21 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
         envoyer({ type: "ouvert" });
         recevoir((await relaisRelire(offre.id)).intentions);
       },
-      () => envoyer({ type: "echec" }),
+      // Un refus définitif mène à l'étape d'erreur, d'où l'on recommence ;
+      // le reste revient au bouton qui rouvre le paiement.
+      (e) => envoyer(refusDefinitif(e) ? { type: "echec", definitif: phraseErreur(e) } : { type: "echec" }),
     );
   };
+
+  /** « Payer » depuis la liste : le niveau gardé, la même porte. */
+  const payerDepuisLaListe = (i: IntentionVue) =>
+    void tenter(t("commande.payer.encours"), async () => {
+      await ouvrirPaiement(i.id, i.niveau!);
+      recevoir((await relaisRelire(i.id)).intentions);
+    });
+
+  const abandonner = (id: string) =>
+    void tenter(t("commandes.abandonner"), async () => setIntentions(await relaisOublier(id)));
 
   const annuler = (id: string) =>
     void tenter(
@@ -154,7 +182,7 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
       () => void relaisRelire(id).then((r) => recevoir(r.intentions), () => {}),
     );
 
-  const liste = visibles(intentions);
+  const liste = visibles(intentions, "offre" in parcours ? parcours.offre.id : null);
 
   return (
     <>
@@ -226,7 +254,7 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
                     type="radio"
                     name="commande-niveau"
                     checked={n.niveau === parcours.niveau}
-                    onChange={() => envoyer({ type: "niveau", niveau: n.niveau })}
+                    onChange={() => choisirNiveau(parcours.offre.id, n.niveau)}
                   />
                   <span className="commande-offre-nom">{nomNiveau(n)}</span>
                   <span className="commande-offre-prix">{prix(n.prix_ttc_centimes)}</span>
@@ -244,7 +272,7 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
                 className="envoi-exporter"
                 title={t("commande.envoyer.titre")}
                 disabled={occupe !== null}
-                onClick={envoyerLesFichiers}
+                onClick={() => void envoyerLesFichiers()}
               >
                 {t("commande.envoyer")}
               </button>
@@ -276,7 +304,30 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
               <button className="envoi-exporter" onClick={() => envoyer({ type: "confirmer" })}>
                 {t("commande.payer", { prix: prix(niveauChoisi(parcours).prix_ttc_centimes) })}
               </button>
+              <button className="link" onClick={() => envoyer({ type: "retour" })}>
+                {t("commande.abandonner")}
+              </button>
             </div>
+          )}
+
+          {parcours.etape === "erreur" && (
+            <>
+              <p className="commande-erreur" role="alert">
+                {parcours.phrase}
+              </p>
+              <div className="commande-gestes">
+                <button
+                  className="envoi-exporter"
+                  disabled={!pays?.length}
+                  onClick={() => pays && envoyer({ type: "recommencer", pays })}
+                >
+                  {t("commande.recommencer")}
+                </button>
+                <button className="link" onClick={() => envoyer({ type: "retour" })}>
+                  {t("commande.abandonner")}
+                </button>
+              </div>
+            </>
           )}
 
           {parcours.etape === "attente" && (
@@ -293,7 +344,7 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
               {occupe}
             </p>
           )}
-          {erreur && (
+          {erreur && parcours.etape !== "erreur" && (
             <p className="commande-erreur" role="alert">
               {erreur}
             </p>
@@ -343,13 +394,31 @@ export function CommandeView({ preparationNeuve }: { preparationNeuve: Preparati
                 <span className="commandes-etat" role="status">
                   {phraseIntention(i)}
                 </span>
-                {annulableIntention(i) && (
+                {(annulableIntention(i) || payable(i) || abandonnable(i)) && (
                   <span className="commandes-gestes">
-                    <button className="link" disabled={occupe !== null} onClick={() => annuler(i.id)}>
-                      {t("commandes.annuler")}
-                    </button>
+                    {payable(i) && (
+                      <button className="link" disabled={occupe !== null} onClick={() => payerDepuisLaListe(i)}>
+                        {t("commandes.payer")}
+                      </button>
+                    )}
+                    {annulableIntention(i) && (
+                      <button className="link" disabled={occupe !== null} onClick={() => annuler(i.id)}>
+                        {t("commandes.annuler")}
+                      </button>
+                    )}
+                    {abandonnable(i) && (
+                      <button
+                        className="link"
+                        disabled={occupe !== null}
+                        title={t("commandes.abandonner.note")}
+                        onClick={() => abandonner(i.id)}
+                      >
+                        {t("commandes.abandonner")}
+                      </button>
+                    )}
                   </span>
                 )}
+                {abandonnable(i) && <span className="commandes-note">{t("commandes.abandonner.note")}</span>}
               </li>
             ))}
           </ul>

@@ -119,6 +119,7 @@ export const FR = {
   "apropos.ornements.licence": "CC0 1.0 et domaine public",
   "apropos.ornements.quoi":
     "Les fleurons, filets et séparateurs que l’on pose sur une planche. Le détail par ornement vit dans assets/ornements/LICENCES.md.",
+  "apropos.confidentialite": "Confidentialité",
   "apropos.notices.voir": "Notices des licences tierces",
   "apropos.notices.masquer": "Masquer les notices des licences tierces",
   "apropos.notices.absentes":
@@ -340,6 +341,8 @@ export const FR = {
     "Chaque nom est écrit dans sa propre police : c’est celle que le livre imprimera.",
   "police.toutes": "Toutes les polices de cet ordinateur ({n})",
   "police.toutes.masquer": "Masquer la liste complète",
+  "police.mas":
+    "Les polices installées pour vous seul ne sont pas proposées dans la version App Store.",
   "police.specimen": "Le vif zéphyr jubile sur les quais",
   "police.voix.grotesque": "sans empattement, neutre",
   "police.voix.humaniste": "sans empattement, chaleureuse",
@@ -1051,6 +1054,13 @@ export const FR = {
   "vide.autre": "Composer un autre album",
   "racine.introuvable":
     "Dossier photo introuvable ({dossier}). L’aperçu tourne sur le cache de vignettes, l’export pleine résolution ne marchera pas.",
+  "racine.a.revoir":
+    "Colophon a besoin de revoir le dossier de photos ({dossier}) pour lire les originaux. L’aperçu tourne sur les vignettes en attendant.",
+  "racine.a.revoir.bouton": "Retrouver le dossier…",
+  "racine.a.revoir.titre": "Retrouver le dossier de photos de cet album",
+  "racine.revoir.autre.nom": "Ce n’est pas le dossier de cet album : il s’appelait « {nom} ».",
+  "racine.revoir.manquantes":
+    "Ce dossier ne porte pas les photos de l’album : {n} sur {total} manquent.",
   "envoi.prevol.echec": "Le contrôle avant impression n’a pas pu tourner.",
   "signaler.diagnostic.absent":
     "Le diagnostic de la machine n’a pas pu être lu : le rapport part sans lui, décrivez ce qui s’est passé.",
@@ -1077,6 +1087,8 @@ export const FR = {
   "police.absents.un":
     "Cette police ne dessine pas un caractère de l’album, imprimé « ? » : {liste}",
   "erreur.reouverture": "Cet album n’a pas pu être rouvert. A-t-il été déplacé ?",
+  "erreur.revoir": "Ce dossier n’a pas été retenu.",
+  "erreur.confidentialite": "La page de confidentialité n’a pas pu s’ouvrir.",
   "erreur.auto": "Cette planche n’a pas pu être rendue à l’automatique.",
   "erreur.dates": "Les dates des photos n’ont pas pu être lues.",
   "erreur.colophon": "La page de colophon n’a pas pu être changée.",
@@ -1172,6 +1184,7 @@ export const EN: Record<Cle, string> = {
   "apropos.ornements.licence": "CC0 1.0 and public domain",
   "apropos.ornements.quoi":
     "The fleurons, rules and dividers one places on a spread. The detail, ornament by ornament, lives in assets/ornements/LICENCES.md.",
+  "apropos.confidentialite": "Privacy",
   "apropos.notices.voir": "Third-party licence notices",
   "apropos.notices.masquer": "Hide the third-party licence notices",
   "apropos.notices.absentes":
@@ -1380,6 +1393,8 @@ export const EN: Record<Cle, string> = {
     "Each name is set in its own face: the one the book will print.",
   "police.toutes": "Every typeface on this computer ({n})",
   "police.toutes.masquer": "Hide the full list",
+  "police.mas":
+    "Typefaces installed for you alone are not offered in the App Store version.",
   "police.specimen": "Sphinx of black quartz, judge my vow",
   "police.voix.grotesque": "sans serif, neutral",
   "police.voix.humaniste": "sans serif, warm",
@@ -2058,6 +2073,13 @@ export const EN: Record<Cle, string> = {
   "vide.autre": "Compose another album",
   "racine.introuvable":
     "Photo folder not found ({dossier}). The preview runs on the thumbnail cache; the full-resolution export will not work.",
+  "racine.a.revoir":
+    "Colophon needs to see the photo folder again ({dossier}) to read the originals. The preview runs on the thumbnails meanwhile.",
+  "racine.a.revoir.bouton": "Find the folder…",
+  "racine.a.revoir.titre": "Find this album’s photo folder",
+  "racine.revoir.autre.nom": "This is not this album’s folder: it was called “{nom}”.",
+  "racine.revoir.manquantes":
+    "This folder does not hold the album’s photos: {n} of {total} are missing.",
   "envoi.prevol.echec": "The preflight could not run.",
   "signaler.diagnostic.absent":
     "The machine’s diagnostic could not be read: the report goes without it, describe what happened.",
@@ -2084,6 +2106,8 @@ export const EN: Record<Cle, string> = {
   "police.absents.un":
     "This typeface cannot draw one character of the album; it prints as “?”: {liste}",
   "erreur.reouverture": "This album could not be reopened. Has it moved?",
+  "erreur.revoir": "That folder was not accepted.",
+  "erreur.confidentialite": "The privacy page could not be opened.",
   "erreur.auto": "This spread could not be given back to the machine.",
   "erreur.dates": "The photos’ dates could not be read.",
   "erreur.colophon": "The colophon page could not be changed.",

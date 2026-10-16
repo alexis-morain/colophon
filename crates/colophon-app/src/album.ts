@@ -143,6 +143,9 @@ export type OpenedAlbum = {
   album: Album;
   dir: string;
   root_present: boolean;
+  /** Version App Store seulement : le bac à sable ne lit plus le dossier de
+   *  photos, la personne doit le rechoisir (`racine.ts`). */
+  dossier_a_revoir: boolean;
   /** Every source with a cached thumbnail: shown photos plus discarded. */
   thumb_srcs: string[];
 };

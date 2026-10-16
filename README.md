@@ -360,7 +360,9 @@ under CC0 or in the public domain.
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+GPL-3.0-or-later. See [LICENSE](LICENSE). An additional permission under
+section 7 allows distribution through the Mac App Store: see
+[LICENSE-APPSTORE.md](LICENSE-APPSTORE.md).
 
 What ships inside the app, each with its licence next to it in
 `crates/colophon-core/assets/`:

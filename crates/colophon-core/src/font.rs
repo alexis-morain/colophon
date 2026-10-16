@@ -856,6 +856,16 @@ pub fn installed() -> Vec<Installee> {
     installed_in(&dossiers_systeme())
 }
 
+/// The same walk, the user's own font folder left out when `utilisateur` is
+/// false. The App Store build cannot read `~/Library/Fonts` from its sandbox
+/// without a temporary exception, so it does not list it rather than list
+/// a folder it would be refused (the app says so in the font panel).
+pub fn installed_avec(utilisateur: bool) -> Vec<Installee> {
+    let mut dirs = dossiers_de(crate::maison::vrai_dossier_personnel().as_deref(), utilisateur);
+    dirs.retain(|d| d.is_dir());
+    installed_in(&dirs)
+}
+
 /// Every face `dirs` carry, refused ones included, sorted by path then index.
 ///
 /// The manners are `scan.rs`'s: symlinks are not followed, hidden files are
@@ -903,32 +913,44 @@ pub fn installed_in(dirs: &[PathBuf]) -> Vec<Installee> {
 /// rather than walked: a machine without a user font folder is normal, and so
 /// is a Linux box with no system fonts at all.
 pub fn dossiers_systeme() -> Vec<PathBuf> {
+    let mut dirs = dossiers_de(crate::maison::vrai_dossier_personnel().as_deref(), true);
+    dirs.retain(|d| d.is_dir());
+    dirs
+}
+
+/// The font folders of this platform, existing or not, the user's own one
+/// included when `utilisateur` is true. On macOS it is found under the home
+/// folder the account database names, never `$HOME`, which the App Store
+/// sandbox points at the app's container (`maison`). Pure, so a test reads
+/// the list on any machine.
+pub fn dossiers_de(maison: Option<&Path>, utilisateur: bool) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     #[cfg(target_os = "macos")]
     {
         dirs.push(PathBuf::from("/System/Library/Fonts"));
         dirs.push(PathBuf::from("/Library/Fonts"));
-        if let Some(h) = std::env::var_os("HOME") {
-            dirs.push(PathBuf::from(h).join("Library/Fonts"));
+        if let (true, Some(h)) = (utilisateur, maison) {
+            dirs.push(h.join("Library/Fonts"));
         }
     }
     #[cfg(target_os = "windows")]
     {
+        let _ = maison;
         let racine = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
         dirs.push(PathBuf::from(racine).join("Fonts"));
-        if let Some(l) = std::env::var_os("LOCALAPPDATA") {
+        if let (true, Some(l)) = (utilisateur, std::env::var_os("LOCALAPPDATA")) {
             dirs.push(PathBuf::from(l).join("Microsoft").join("Windows").join("Fonts"));
         }
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
+        let _ = maison;
         dirs.push(PathBuf::from("/usr/share/fonts"));
         dirs.push(PathBuf::from("/usr/local/share/fonts"));
-        if let Some(h) = std::env::var_os("HOME") {
+        if let (true, Some(h)) = (utilisateur, std::env::var_os("HOME")) {
             dirs.push(PathBuf::from(h).join(".local/share/fonts"));
         }
     }
-    dirs.retain(|d| d.is_dir());
     dirs
 }
 
@@ -1457,6 +1479,26 @@ fn somme_sfnt(data: &[u8]) -> u32 {
 pub(crate) mod tests {
     use super::*;
     use std::fs;
+
+    /// Le dossier de polices de la personne se nomme sous le dossier que la
+    /// base des comptes connaît, et disparaît de la liste quand on le
+    /// demande : c'est ce que fait la version App Store. Les dossiers du
+    /// système, eux, restent dans les deux cas.
+    #[test]
+    fn le_dossier_de_polices_de_la_personne_se_retire_a_la_demande() {
+        let maison = Path::new("/Users/quelqu-un");
+        let avec = dossiers_de(Some(maison), true);
+        let sans = dossiers_de(Some(maison), false);
+        #[cfg(target_os = "macos")]
+        {
+            assert!(avec.contains(&maison.join("Library/Fonts")), "{avec:?}");
+            assert_eq!(
+                sans,
+                vec![PathBuf::from("/System/Library/Fonts"), PathBuf::from("/Library/Fonts")]
+            );
+        }
+        assert!(sans.iter().all(|d| avec.contains(d)), "{sans:?} ⊄ {avec:?}");
+    }
 
     /// The advance a fixture gives its glyphs, read the way the emitter reads
     /// it: through the character map, then `hmtx`. The fixtures give every

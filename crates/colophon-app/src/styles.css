@@ -2993,6 +2993,14 @@ kbd {
   margin: 0;
 }
 
+/* Un avertissement qui a une issue : la phrase, puis le geste qui répare. */
+.warn-action {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
 /* An error banner: the French sentence leads, the raw detail folds away. */
 .fault-quoi {
   margin: 0;

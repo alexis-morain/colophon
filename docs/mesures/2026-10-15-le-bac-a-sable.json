@@ -1,0 +1,97 @@
+{
+  "session": "MAS-s1",
+  "date": "2026-10-15",
+  "machine": "MacBook Air d'Alexis, macOS 26.5.2, arm64",
+  "contexte": "fseventsd figé tout le soir (FSEventStreamStart bloque même dans un programme C de dix lignes), probablement par le volume Time Machine monté en SMB via Tailscale ; `tauri build` s'arrête avant toute compilation, DMG compris. L'app d'essai a donc été construite sans le CLI : `VITE_COLOPHON_MAS=1 npm run build`, puis `TAURI_CONFIG=<tauri.essai.conf.json> cargo build --release -p colophon-app --features mas,tauri/custom-protocol --target aarch64-apple-darwin`, binaire posé dans une copie du bundle de main, PrivacyInfo.xcprivacy et ITSAppUsesNonExemptEncryption ajoutés, signature ad hoc avec les droits d'essai (les deux identifiants retirés). Lancée depuis target/mas/essai, jamais depuis /Applications.",
+  "signature": "ad hoc (aucun certificat Apple Distribution ni profil sur ce Mac)",
+  "binaire_sans_updater": {
+    "mas_aarch64": {
+      "latest.json": 0,
+      "cle_publique_updater": 0,
+      "plugin:updater": 0,
+      "colophon_signet_commencer": 1
+    },
+    "dmg_target_release": {
+      "latest.json": 1,
+      "cle_publique_updater": 1
+    },
+    "bundle_web_mas": "aucun fichier de dist/ ne contient « plugin:updater »"
+  },
+  "droits_lus_par_codesign": [
+    "com.apple.security.app-sandbox = true",
+    "com.apple.security.assets.pictures.read-write = true",
+    "com.apple.security.files.bookmarks.app-scope = true",
+    "com.apple.security.files.user-selected.read-write = true",
+    "com.apple.security.personal-information.photos-library = true"
+  ],
+  "conteneur": "~/Library/Containers/fr.morain.colophon créé au premier lancement ; le journal de l'app y écrit (« démarrage, version 1.0.0 »)",
+  "webkit_sans_network_client": {
+    "vu": "fenêtre blanche ; pile du fil principal : WebProcessProxy::didClose → processDidTerminate → wry WebView::reload → WebPageProxy::launchProcess, en boucle",
+    "journal_noyau": [
+      "Sandbox: colophon-app deny(1) file-read-data /Library/Preferences/com.apple.networkd.plist",
+      "Sandbox: colophon-app deny(1) file-read-data /private/var/db/nsurlstoraged/dafsaData.bin",
+      "runningboardd : xpcservice com.apple.WebKit.WebContent de l'app, erreur"
+    ]
+  },
+  "webkit_avec_network_client": {
+    "vu": "plus aucun processDidTerminate dans la pile ; un processus WebContent neuf reste en vie",
+    "decision": "D5 prévoyait le cas : network.client est ajouté à entitlements.mas.plist, pour WebKit ; l'app ne fait toujours aucun appel réseau. Fiche App Store et page de confidentialité corrigées."
+  },
+  "pas_vu": [
+    "l'import depuis Photos au-delà de la demande d'accès : le sélecteur d'albums n'a pas été atteint (voir verification_16_10.photos)",
+    "le dialogue de couverture d'export_pdf en mas : aucun bouton n'y mène (Cloudprinter passe par « Préparer », « PDF sans contrainte » est un fichier unique)"
+  ],
+  "contexte_2": "Après redémarrage, fseventsd rendu : `CARGO_BUILD_JOBS=4 scripts/mas.sh build` passe de bout en bout (code=0) : binaire x86_64 + arm64, preuves du script vertes, signature ad hoc + runtime, six droits lus par codesign dont network.client. App lancée depuis target/mas, pilotée par System Events, /Applications jamais touché.",
+  "parcours_vu": {
+    "fenetre": "se charge (accueil, boutons accessibles à l'arbre d'accessibilité)",
+    "choisir_un_dossier": "panneau du powerbox ; ~/Pictures/colophon-testsets/corse-2013 (577 fichiers)",
+    "composer": "12 s : 412 gardées après dédoublonnage, 8 chapitres, 50 planches ; root.bookmark de 768 octets écrit à côté d'album.json dans le conteneur : la signature ad hoc n'empêche pas sa création",
+    "quitter_relancer_rouvrir": "menu Quitter, relance, album rouvert depuis les récents, photos à l'écran, aucun bandeau",
+    "fiche_photo": "EXIF de l'original lu (4000 × 3000)",
+    "voir_l_original": "NSWorkspace : le Finder sélectionne /Users/alex-pack/Pictures/colophon-testsets/corse-2013/2013-10-27_190817_L1110824.jpg",
+    "signaler": "rapport construit, « Ouvrir l'issue » ouvre le formulaire GitHub dans Brave ; rien envoyé, onglet refermé",
+    "confidentialite": "ouvre https://alexis-morain.github.io/colophon-site/confidentialite/ (404 tant que le site n'est pas fusionné)",
+    "polices": "787 faces, comme le DMG (~/Library/Fonts est vide sur ce Mac, l'écart ne se voit pas ici) ; la phrase « version App Store » est affichée",
+    "prevol": "lit les originaux sous bac à sable (deux photos à 130 ppi signalées, retirées de l'album d'essai)"
+  },
+  "bug_trouve": {
+    "vu": "export en échec : « write pdf: Operation not permitted (os error 1) »",
+    "cause": "le moteur écrit album.pdf.part à côté du fichier choisi puis renomme ; le powerbox n'accorde que le fichier choisi, pas son dossier. Même motif pour la couverture des profils à deux fichiers (`-couverture.pdf` d'à côté).",
+    "correctif": "`print::poser_pdf`, partagé par l'intérieur et la couverture : `.part` à côté si possible, sinon (PermissionDenied) le PDF entier dans le dossier temporaire puis recopié dans le fichier accordé ; test `export_vers_un_fichier_seul_accorde` (dossier en lecture seule), rouge puis vert. En `mas`, la couverture a son propre dialogue d'enregistrement. Commit a3bbb34.",
+    "verifie_a_l_ecran": true
+  },
+  "verification_16_10": {
+    "app": "mas.sh build --essai (ad hoc, universel, preuves vertes), lancée depuis target/mas ; /Applications jamais touché",
+    "export_sans_contrainte": "dossier target/mas-export-2 : hors-images.pdf seul (19 074 408 octets), rien d'autre écrit à côté ; 14 pages PDF lues par pypdfium2, encre 0,3 à 100 % selon la planche",
+    "preparer_cloudprinter": "dossier choisi par le panneau : sous-dossier « hors-images – Cloudprinter » avec album-print.pdf (24 pages 216 × 216 mm), album-cover.pdf (485,6 × 258,0 mm, encre 49,3 %), export.json, fiche.txt ; le Finder s'ouvre dessus (NSWorkspace)",
+    "hors_images": {
+      "dossier": "target/mas-photos/hors-images (30 JPEG), hors de ~/Pictures donc hors de assets.pictures",
+      "compose": "30 lues, 24 gardées, 16 planches ; root.bookmark de 844 octets ; prévol lit les originaux (4 photos sous 250 ppi, retirées)",
+      "rouvert_par_le_seul_marque_page": "quitter, relancer, rouvrir depuis les récents : aucun bandeau, et un export pleine résolution identique à l'octet près (19 074 408) au premier"
+    },
+    "a_revoir": {
+      "sans_marque_page": "root.bookmark retiré : bandeau « Colophon a besoin de revoir le dossier de photos (…) » et bouton « Retrouver le dossier… » ; c'est la contre-épreuve que l'accès venait du marque-page",
+      "mauvais_dossier": "target/mas-photos rechoisi : refusé ; la raison n'était lisible que sous « Détail technique », en français seul (corrigé, voir bugs)",
+      "bon_dossier": "rechoisi : bandeau tombé, root.bookmark réécrit",
+      "dossier_deplace": "hors-images déplacé dans deplace/ : le marque-page l'a suivi et s'est réécrit sur le nouveau chemin, mais l'album demandait quand même le dossier (bug, corrigé) ; « Retrouver » sur le dossier déplacé met album.root à jour"
+    },
+    "bugs": [
+      {
+        "vu": "dossier déplacé : marque-page résolu sur le nouveau chemin, album.root resté sur l'ancien, bandeau « à revoir » quand même",
+        "correctif": "signet::suivre + open_album : album.root suit le marque-page (même nom, mêmes photos) ; tests l_album_suit_le_marque_page_d_un_dossier_deplace, un_marque_page_au_meme_endroit_ne_change_rien, un_marque_page_vers_un_dossier_renomme_ne_suit_pas",
+        "verifie_a_l_ecran": "dossier remis à sa place, album rouvert : aucun bandeau, journal « l'album suit son marque-page », album.root réécrit, export identique à l'octet près"
+      },
+      {
+        "vu": "refus de « Retrouver » : phrase générique « Ce dossier n'a pas été retenu. », la raison repliée et en français seul",
+        "correctif": "dossier_revu rend un code refus-revoir:autre-nom:<nom> / refus-revoir:manquantes:<n>:<total>, traduit par racine.ts::refusRevoir (FR/EN)",
+        "verifie_a_l_ecran": "« Ce n'est pas le dossier de cet album : il s'appelait « hors-images ». » en phrase principale"
+      },
+      {
+        "vu": "le .env de gestion porte depuis le 16/10 les identités App Store : mas.sh build signe « Apple Distribution » avec profil, et l'app ne se lance plus sur ce Mac (AMFI : No matching profile found, launchd code 163)",
+        "correctif": "mas.sh build --essai : ad hoc même quand les identités existent ; une option inconnue est refusée"
+      }
+    ],
+    "photos": "« Importer un album de Photos » puis « Autoriser l'accès… » : la demande système de TCC s'affiche sous bac à sable, avec la phrase d'usage FR/EN. Laissée sans réponse : autoriser ouvre toute la photothèque d'Alexis, refuser inscrit un refus pour fr.morain.colophon. La demande reste à l'écran après la fermeture de l'app (UserNotificationCenter). Reste à Alexis.",
+    "signature_app_store": "une construction sans --essai, avec les identités du .env, a produit un bundle « Apple Distribution: Alexis Morain (27VZJ5H6Q9) », profil embarqué, huit clés de droits dont les deux identifiants : la chaîne de MAS-s2 se construit"
+  }
+}

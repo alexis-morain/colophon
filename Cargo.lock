@@ -535,6 +535,7 @@ dependencies = [
  "image_hasher",
  "jiff",
  "kamadak-exif",
+ "libc",
  "lopdf",
  "rayon",
  "rustface",

@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "maj",
+  "description": "The updater, and the restart it ends with. Never loaded by the App Store build (build.rs).",
+  "windows": ["main"],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

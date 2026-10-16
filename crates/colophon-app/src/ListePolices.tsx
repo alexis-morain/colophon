@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PoliceOfferte } from "./bridge";
 import { Cle, t } from "./i18n";
 import { nomLisible, parFamille, refusLibelle, selection, voixDe } from "./police";
+import { saveurMas } from "./saveur";
 import { chargerApercu, familleDeja, retenirApercus } from "./specimen";
 
 /** Au-delà, la liste devient un mur : le filtre est ce qui la rend
@@ -126,6 +127,11 @@ export function ListePolices({
         {toutes ? t("police.toutes.masquer") : t("police.toutes", { n: polices.length })}
       </button>
       )}
+
+      {/* La version App Store ne lit pas ~/Library/Fonts sans exception de
+          bac à sable : elle ne les liste pas, et le dit plutôt que de laisser
+          chercher une police qui ne viendra pas. */}
+      {saveurMas() && <p className="police-note">{t("police.mas")}</p>}
 
       {toutes && polices.length > 0 && (
         <>

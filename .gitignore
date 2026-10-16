@@ -20,3 +20,7 @@ __pycache__/
 # elle qui sert à choisir.
 /design/rendu/*
 !/design/rendu/comparaison.png
+
+# Le profil d'approvisionnement de la version Mac App Store : `scripts/mas.sh`
+# le copie depuis $COLOPHON_MAS_PROFIL le temps d'une construction.
+/crates/colophon-app/src-tauri/embedded.provisionprofile

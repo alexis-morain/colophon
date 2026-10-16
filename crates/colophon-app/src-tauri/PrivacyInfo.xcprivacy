@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Le manifeste de confidentialité de la version Mac App Store.
+       Rien n'est collecté, rien ne piste. Une seule famille d'API à raison
+       déclarée est appelée, les horodatages de fichiers (`stat`, par
+       `std::fs::metadata(..).modified()`) : l'album déjà composé
+       (`album_deja_compose`), la liste des albums (Stockage), le cache de vignettes (`thumb.rs`), la réserve
+       (`reserve.rs`), et la date d'une photo sans EXIF (`meta.rs`), qui peut
+       finir dans une légende sous les yeux de la personne. Inventaire du
+       15/10 : ni espace disque, ni durée de démarrage, ni UserDefaults, dans
+       notre code comme dans wry 0.55 et tao 0.35 côté macOS. -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>C617.1</string>
+        <string>3B52.1</string>
+        <string>DDA9.1</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

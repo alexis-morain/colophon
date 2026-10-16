@@ -21,3 +21,8 @@ walkdir.workspace = true
 ureq.workspace = true
 rusty-s3.workspace = true
 jiff.workspace = true
+
+# Le vrai dossier personnel (`maison`), que `$HOME` cache sous le bac à sable
+# du Mac App Store. Déjà dans le Cargo.lock : aucune licence neuve.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

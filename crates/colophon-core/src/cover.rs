@@ -202,15 +202,7 @@ pub fn render_cover_pdf(
         xobjects,
     );
 
-    let tmp = out.with_extension("pdf.part");
-    let saved = writer.save(&tmp);
-    if saved.is_err() {
-        let _ = fs::remove_file(&tmp);
-        saved?;
-    }
-    fs::rename(&tmp, out)
-        .with_context(|| format!("renommage vers {}", out.display()))?;
-    Ok(out.to_path_buf())
+    crate::print::poser_pdf(writer, out)
 }
 
 /// Where the front-cover photo goes: everything to the right of the spine,

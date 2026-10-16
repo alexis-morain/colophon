@@ -27,6 +27,7 @@ pub mod langue;
 pub mod layout;
 pub mod legende;
 pub mod log;
+pub mod maison;
 pub mod meta;
 pub mod model;
 pub mod ornement;

@@ -9,7 +9,7 @@
 // where nobody can lose it.
 
 import { useEffect, useState } from "react";
-import { aboutData, AboutData } from "./bridge";
+import { aboutData, AboutData, ouvrirConfidentialite } from "./bridge";
 import { Dialogue } from "./Dialogue";
 import { Cle, t } from "./i18n";
 import { ornements } from "./ornement";
@@ -46,7 +46,13 @@ function actifs(): [string, () => string, Cle][] {
   ];
 }
 
-export function AProposView({ onClose }: { onClose: () => void }) {
+export function AProposView({
+  onClose,
+  onErreur,
+}: {
+  onClose: () => void;
+  onErreur: (e: unknown) => void;
+}) {
   const [data, setData] = useState<AboutData | null>(null);
   const [notices, setNotices] = useState(false);
 
@@ -76,6 +82,12 @@ export function AProposView({ onClose }: { onClose: () => void }) {
         <p className="apropos-attribution">{t("apropos.attribution")}</p>
 
         <p className="apropos-actions">
+          {/* Ce que l'app fait de vos données, sur le site : rien. La revue du
+              Mac App Store (5.1.1) veut ce lien dans l'app, et il ne coûte
+              rien au DMG. */}
+          <button className="link" onClick={() => ouvrirConfidentialite().catch(onErreur)}>
+            {t("apropos.confidentialite")}
+          </button>{" "}
           <button className="link" onClick={() => setNotices((n) => !n)}>
             {notices ? t("apropos.notices.masquer") : t("apropos.notices.voir")}
           </button>

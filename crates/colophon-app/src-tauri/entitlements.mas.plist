@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- La version Mac App Store, et rien qu'elle (tauri.appstore.conf.json).
+       Six droits, et pas un de plus : un dossier choisi par la personne, le
+       marque-page qui le retrouve au lancement suivant, le dossier Images où
+       l'import depuis Photos écrit, la photothèque, et network.client.
+       Celui-là n'est pas pour Colophon, qui n'appelle personne (ni updater
+       ni relais dans cette version) : c'est WebKit qui l'exige. Mesuré le
+       15/10 sous bac à sable, signature ad hoc : sans lui, le noyau refuse au
+       processus `com.apple.networkd.plist` et `nsurlstoraged`, le processus
+       WebContent meurt dès son lancement, wry recharge en boucle, et la
+       fenêtre reste blanche. Avec lui, la page se charge. Les deux
+       identifiants ne valent qu'avec le profil embarqué : `scripts/mas.sh`
+       les retire d'une signature ad hoc, que macOS tuerait au lancement
+       sinon. -->
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <key>com.apple.security.files.bookmarks.app-scope</key>
+  <true/>
+  <key>com.apple.security.assets.pictures.read-write</key>
+  <true/>
+  <key>com.apple.security.personal-information.photos-library</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.application-identifier</key>
+  <string>27VZJ5H6Q9.fr.morain.colophon</string>
+  <key>com.apple.developer.team-identifier</key>
+  <string>27VZJ5H6Q9</string>
+</dict>
+</plist>

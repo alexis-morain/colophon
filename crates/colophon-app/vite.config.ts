@@ -60,6 +60,7 @@ function albumDevServer(dir: string): Plugin {
               album,
               dir,
               root_present: true,
+              dossier_a_revoir: false,
               thumb_srcs: Object.keys(thumbs),
             }),
           );

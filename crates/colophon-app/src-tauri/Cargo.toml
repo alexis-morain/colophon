@@ -11,6 +11,14 @@ repository.workspace = true
 name = "colophon_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# La saveur Mac App Store (`scripts/mas.sh`) : bac à sable, sans updater, avec
+# les marque-pages de sécurité et NSWorkspace. Le DMG et la CI ne l'activent
+# jamais. L'updater reste une dépendance dans les deux saveurs, seul son
+# enregistrement et sa capacité sont retirés : le linker ne garde rien de ce
+# que personne n'appelle, et la preuve est faite sur le binaire (mas.sh).
+mas = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 # Compile le pont Objective-C vers PhotoKit (src/photos.m), sur macOS

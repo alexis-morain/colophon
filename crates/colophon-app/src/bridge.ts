@@ -28,10 +28,20 @@ export async function pickPhotosFolder(): Promise<string | null> {
   return pickFolder("Choisir un dossier de photos");
 }
 
-async function pickFolder(title: string): Promise<string | null> {
+async function pickFolder(title: string, defaultPath?: string): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const picked = await open({ directory: true, multiple: false, title });
+  const picked = await open({ directory: true, multiple: false, title, defaultPath });
   return typeof picked === "string" ? picked : null;
+}
+
+/** La version App Store ne lit plus le dossier de photos de l'album : la
+ *  personne le rechoisit, le choix s'ouvrant sur l'ancien chemin, et l'album
+ *  se rouvre. Null quand elle renonce. */
+export async function revoirDossier(ancien: string): Promise<OpenedAlbum | null> {
+  if (!inTauri) return null;
+  const choisi = await pickFolder(t("racine.a.revoir.titre"), ancien);
+  if (choisi === null) return null;
+  return invoke<OpenedAlbum>("revoir_dossier", { chemin: choisi });
 }
 
 export type FormatPreset = { name: string; w: number; h: number; about: string };
@@ -882,6 +892,16 @@ export async function reportData(): Promise<ReportData> {
   };
 }
 
+/** La page de confidentialité du site, dans le navigateur. L'adresse est
+ *  fixée côté Rust : la fenêtre ne fait que demander. */
+export async function ouvrirConfidentialite(): Promise<void> {
+  if (!inTauri) {
+    window.open("https://alexis-morain.github.io/colophon-site/confidentialite/", "_blank", "noopener");
+    return;
+  }
+  return invoke("ouvrir_confidentialite");
+}
+
 /** Open the pre-filled issue form. In the shell a guarded Rust command hands
  *  the URL to the system browser; the harness opens a tab. */
 export async function openReportUrl(url: string): Promise<void> {
@@ -906,7 +926,10 @@ export async function checkUpdate(): Promise<{
   notes: string;
   install: () => Promise<void>;
 } | null> {
-  if (!inTauri) return null;
+  // La version App Store n'a pas d'updater : la condition est écrite en
+  // clair pour que Vite la remplace à la construction et que le paquet du
+  // plugin ne finisse pas dans le bundle (`scripts/mas.sh` le vérifie).
+  if (!inTauri || import.meta.env.VITE_COLOPHON_MAS === "1") return null;
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
     const maj = await check();

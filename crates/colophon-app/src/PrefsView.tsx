@@ -13,7 +13,7 @@
 
 import { Dialogue } from "./Dialogue";
 import { Lang, setLangue, t, useLangue } from "./i18n";
-import { Veille, setVeille, useVeille } from "./maj";
+import { Veille, majPossible, setVeille, useVeille } from "./maj";
 
 const LANGES: [Lang, string][] = [
   ["fr", "Français"],
@@ -46,21 +46,26 @@ export function PrefsView({ onClose }: { onClose: () => void }) {
         </div>
         <p className="signaler-note">{t("prefs.langue.note")}</p>
 
-        <h3>{t("prefs.maj")}</h3>
-        <div className="prefs-langues" role="radiogroup" aria-label={t("prefs.maj")}>
-          {VEILLES.map(([id, nom]) => (
-            <button
-              key={id}
-              role="radio"
-              aria-checked={regarde === id}
-              className={"prefs-langue" + (regarde === id ? " active" : "")}
-              onClick={() => setVeille(id)}
-            >
-              {nom}
-            </button>
-          ))}
-        </div>
-        <p className="signaler-note">{t("prefs.maj.note")}</p>
+        {/* La version App Store n'a pas d'updater : rien à régler. */}
+        {majPossible() && (
+          <>
+            <h3>{t("prefs.maj")}</h3>
+            <div className="prefs-langues" role="radiogroup" aria-label={t("prefs.maj")}>
+              {VEILLES.map(([id, nom]) => (
+                <button
+                  key={id}
+                  role="radio"
+                  aria-checked={regarde === id}
+                  className={"prefs-langue" + (regarde === id ? " active" : "")}
+                  onClick={() => setVeille(id)}
+                >
+                  {nom}
+                </button>
+              ))}
+            </div>
+            <p className="signaler-note">{t("prefs.maj.note")}</p>
+          </>
+        )}
 
         <h3>{t("prefs.theme")}</h3>
         <p className="signaler-note">{t("prefs.theme.note")}</p>

@@ -12,6 +12,11 @@
 // aucun identifiant que Colophon fabriquerait. Rien n'est jamais installé
 // sans un clic : le bandeau attend.
 //
+// **Sauf dans la version Mac App Store**, qui n'a pas d'updater (règle
+// 2.4.5(vii) : une app du Store ne se met pas à jour elle-même, le Store le
+// fait). La veille y vaut « jamais », même avec un choix rangé par un DMG
+// d'avant, ne se rallume pas, et les Préférences ne la montrent pas.
+//
 // `veille` n'est pas `maj`. La veille dit si on regarde ; `maj`, dans
 // `App`, est la version trouvée quand on a regardé.
 //
@@ -19,6 +24,7 @@
 // un crochet, une clé de `localStorage`, aucune bibliothèque.
 
 import { useSyncExternalStore } from "react";
+import { saveurMas } from "./saveur";
 
 export type Veille = "au-lancement" | "jamais";
 
@@ -37,12 +43,17 @@ let courante: Veille = (() => {
 
 const abonnes = new Set<() => void>();
 
+/** Si cette construction sait se mettre à jour : pas la version App Store. */
+export function majPossible(): boolean {
+  return !saveurMas();
+}
+
 export function veille(): Veille {
-  return courante;
+  return majPossible() ? courante : "jamais";
 }
 
 export function setVeille(v: Veille): void {
-  if (v === courante) return;
+  if (!majPossible() || v === courante) return;
   courante = v;
   try {
     if (typeof localStorage !== "undefined") localStorage.setItem(CLE, v);
@@ -62,9 +73,5 @@ export function abonneVeille(f: () => void): () => void {
 
 /** Rend le composant appelant sensible au changement de veille. */
 export function useVeille(): Veille {
-  return useSyncExternalStore(
-    abonneVeille,
-    () => courante,
-    () => courante,
-  );
+  return useSyncExternalStore(abonneVeille, veille, veille);
 }

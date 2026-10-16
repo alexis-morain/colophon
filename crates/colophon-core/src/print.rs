@@ -346,9 +346,26 @@ pub fn render_print_pdf(
         cover::add_cover_page(&mut writer, &album, profil, cover::Face::Quatrieme)?;
     }
 
-    // Temp file then rename: a crash mid-write never leaves a truncated PDF
-    // where the caller will look for a finished one.
+    poser_pdf(writer, out)
+}
+
+/// Écrit le PDF à `out` sans jamais y laisser un fichier tronqué : un
+/// `.part` à côté, puis un renommage, pour que ni une panne ni une annulation
+/// ne laissent un demi-PDF là où l'appelant attend le fichier fini. L'intérieur
+/// et la couverture passent tous deux par ici.
+pub(crate) fn poser_pdf(writer: pdf::PdfWriter, out: &Path) -> Result<PathBuf> {
     let tmp = out.with_extension("pdf.part");
+    match fs::File::create(&tmp) {
+        Ok(_) => {}
+        // Le bac à sable du Mac App Store n'ouvre que le fichier choisi, pas
+        // son dossier : le `.part` d'à côté est refusé. Le PDF s'écrit alors
+        // dans le dossier temporaire de l'app, puis se recopie dans le
+        // fichier accordé. Hors bac à sable, ce chemin ne sert jamais.
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            return ecrire_par_le_temporaire(writer, out);
+        }
+        Err(e) => return Err(e).with_context(|| format!("création de {}", tmp.display())),
+    }
     let saved = writer.save(&tmp);
     if saved.is_err() {
         let _ = fs::remove_file(&tmp);
@@ -356,6 +373,28 @@ pub fn render_print_pdf(
     }
     fs::rename(&tmp, out)
         .with_context(|| format!("renommage vers {}", out.display()))?;
+    Ok(out.to_path_buf())
+}
+
+/// Le PDF fini dans le dossier temporaire, puis recopié dans `out`, le seul
+/// fichier que le bac à sable laisse écrire. La destination n'est touchée
+/// qu'une fois le PDF entier sur le disque.
+fn ecrire_par_le_temporaire(writer: pdf::PdfWriter, out: &Path) -> Result<PathBuf> {
+    let tmp = std::env::temp_dir().join(format!(
+        "colophon-export-{}-{}.pdf.part",
+        std::process::id(),
+        out.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+    ));
+    let rendu = writer.save(&tmp).and_then(|()| {
+        let mut source = fs::File::open(&tmp).context("relecture du PDF temporaire")?;
+        let mut cible =
+            fs::File::create(out).with_context(|| format!("écriture de {}", out.display()))?;
+        std::io::copy(&mut source, &mut cible)
+            .with_context(|| format!("copie vers {}", out.display()))?;
+        Ok(())
+    });
+    let _ = fs::remove_file(&tmp);
+    rendu?;
     Ok(out.to_path_buf())
 }
 
@@ -378,6 +417,50 @@ mod tests {
         let wide = rect(200.0, 50.0);
         let f = print_scale(&wide, 2000, 4000);
         assert!((f - (200.0 / 2000.0) * PRINT_DPI / 25.4).abs() < 1e-9);
+    }
+
+    /// Le bac à sable du Mac App Store ouvre le seul fichier choisi dans le
+    /// dialogue d'enregistrement, pas son dossier : le `.part` d'à côté est
+    /// refusé. Simulé par un dossier en lecture seule où le fichier de
+    /// destination existe déjà et reste inscriptible. L'export doit passer par
+    /// le dossier temporaire et poser le PDF entier à la destination.
+    #[cfg(unix)]
+    #[test]
+    fn export_vers_un_fichier_seul_accorde() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("colophon-seul-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let src_dir = dir.join("photos");
+        fs::create_dir_all(&src_dir).unwrap();
+        let img = image::RgbImage::from_pixel(320, 240, image::Rgb([90, 120, 150]));
+        image::DynamicImage::ImageRgb8(img)
+            .save_with_format(src_dir.join("a.jpg"), image::ImageFormat::Jpeg)
+            .unwrap();
+        let mut album = Album::new("t", &src_dir, crate::model::Size { w: 210.0, h: 210.0 });
+        album.spreads.push(crate::model::Spread {
+            template: "solo".into(),
+            slots: vec![crate::model::Slot::new("a.jpg".into(), [0.5, 0.5])],
+            caption: None,
+            text: None,
+            edited: false,
+            locked: false,
+            objets: Vec::new(),
+        });
+        fs::write(dir.join("album.json"), serde_json::to_string(&album).unwrap()).unwrap();
+
+        let dest = dir.join("dest");
+        fs::create_dir_all(&dest).unwrap();
+        let out = dest.join("album.pdf");
+        fs::write(&out, b"").unwrap();
+        fs::set_permissions(&dest, fs::Permissions::from_mode(0o555)).unwrap();
+        let profil = PrinterProfile::par_id("generique").unwrap();
+        let rendu = render_print_pdf(&dir, profil, &out, &|_| {}, &|| false);
+        fs::set_permissions(&dest, fs::Permissions::from_mode(0o755)).unwrap();
+        rendu.unwrap();
+        let doc = lopdf::Document::load(&out).expect("un PDF entier à la destination");
+        assert!(!doc.get_pages().is_empty());
+        assert!(!out.with_extension("pdf.part").exists());
+        fs::remove_dir_all(&dir).ok();
     }
 
     /// A cancelled export writes nothing: no destination file, no leftover

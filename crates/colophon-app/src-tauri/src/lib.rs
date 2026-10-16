@@ -4,6 +4,7 @@
 
 mod commande;
 mod photos;
+mod signet;
 
 use colophon_core::model::Album;
 use serde::Serialize;
@@ -26,6 +27,10 @@ struct Opened {
 #[derive(Default)]
 struct AppState {
     open: Mutex<Option<Opened>>,
+    /// L'accès au dossier de photos de l'album ouvert, sous le bac à sable du
+    /// Mac App Store (`signet`). Toujours vide ailleurs. Remplacé à chaque
+    /// ouverture, ce qui referme celui de l'album d'avant.
+    acces: Mutex<Option<signet::Acces>>,
     /// Raised by the Annuler buttons; the running build or export polls it.
     cancel_build: Arc<AtomicBool>,
     cancel_export: Arc<AtomicBool>,
@@ -84,6 +89,10 @@ struct OpenedAlbum {
     /// False when the original photo folder has moved: the preview still works
     /// off the thumbnail cache, a full-resolution export would not.
     root_present: bool,
+    /// The App Store build only: the photo folder cannot be read until the
+    /// person picks it again (no bookmark, or one the system no longer
+    /// resolves). Always false in the DMG.
+    dossier_a_revoir: bool,
     /// Every source with a cached thumbnail: shown photos plus discarded
     /// ones. The sorting view derives "removed by hand" from what is here
     /// but neither in the album nor in curation.json.
@@ -173,16 +182,63 @@ fn read_thumb(dir: &Path, thumbs: &ThumbIndex, src: &str) -> Result<Vec<u8>, Str
 /// Open an album from either its folder or its `album.json` directly.
 #[tauri::command]
 fn open_album(path: String, state: State<'_, AppState>) -> Result<OpenedAlbum, String> {
-    let (dir, album, thumbs) = load_album(Path::new(&path))?;
-    let root_present = Path::new(&album.root).is_dir();
+    let (dir, mut album, thumbs) = load_album(Path::new(&path))?;
+    // Sous le bac à sable, l'accès aux photos s'ouvre avant toute lecture, et
+    // reste ouvert tant que l'album l'est. Ailleurs, `ouvrir` ne fait rien.
+    let acces = signet::ouvrir(&dir);
+    // Un dossier déplacé, le marque-page l'a suivi : l'album le suit aussi,
+    // comme quand la personne le rechoisit, au lieu de le lui redemander.
+    if let Some(nouveau) = acces
+        .as_ref()
+        .and_then(|a| signet::suivre(Path::new(&album.root), &a.chemin, &photos_posees(&album)))
+    {
+        colophon_core::log::line("dossier de photos déplacé : l'album suit son marque-page");
+        album.root = nouveau.to_string_lossy().to_string();
+        colophon_core::write_album_json(&dir, &album).map_err(|e| format!("{e:#}"))?;
+    }
+    let root = Path::new(&album.root);
+    let root_present = root.is_dir();
+    let dossier_a_revoir = cfg!(all(target_os = "macos", feature = "mas")) && !signet::lisible(root);
+    *state.acces.lock().unwrap() = acces;
     let thumb_srcs = thumbs.keys().cloned().collect();
     *state.open.lock().unwrap() = Some(Opened { dir: dir.clone(), thumbs });
     Ok(OpenedAlbum {
         album,
         dir: dir.to_string_lossy().to_string(),
         root_present,
+        dossier_a_revoir,
         thumb_srcs,
     })
+}
+
+/// Les photos posées dans l'album, par leur chemin relatif à `root`.
+fn photos_posees(album: &Album) -> Vec<String> {
+    album.spreads.iter().flat_map(|s| s.slots.iter().map(|sl| sl.src.clone())).collect()
+}
+
+/// Le dossier de photos de l'album ouvert, rechoisi par la personne quand
+/// le bac à sable ne le retrouve plus. Le dossier doit être celui de l'album
+/// (même nom, toutes les photos posées dedans) ; un dossier déplacé met
+/// `root` à jour, et le marque-page est réécrit. L'album se rouvre ensuite,
+/// comme depuis les récents.
+#[tauri::command]
+fn revoir_dossier(chemin: String, state: State<'_, AppState>) -> Result<OpenedAlbum, String> {
+    let dir = {
+        let guard = state.open.lock().unwrap();
+        guard.as_ref().ok_or("aucun album ouvert")?.dir.clone()
+    };
+    let text = std::fs::read_to_string(dir.join("album.json"))
+        .map_err(|e| format!("lecture de album.json : {e}"))?;
+    let mut album: Album =
+        serde_json::from_str(&text).map_err(|e| format!("album.json illisible : {e}"))?;
+    let choisi = PathBuf::from(&chemin);
+    signet::dossier_revu(Path::new(&album.root), &choisi, &photos_posees(&album))?;
+    signet::poser(&dir, &choisi)?;
+    if album.root != chemin {
+        album.root = chemin;
+        colophon_core::write_album_json(&dir, &album).map_err(|e| format!("{e:#}"))?;
+    }
+    open_album(dir.to_string_lossy().to_string(), state)
 }
 
 /// The face-anchored focal point of a photo, recomputed on its cached
@@ -286,8 +342,11 @@ fn reveler_photo(src: String, state: State<'_, AppState>) -> Result<(), String> 
 }
 
 fn reveler(cible: &Path) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let run = std::process::Command::new("open").arg("-R").arg(cible).spawn();
+    // Sous le bac à sable, NSWorkspace : l'API qu'il prévoit, sans processus.
+    #[cfg(all(target_os = "macos", feature = "mas"))]
+    let run = signet::bureau::reveler(cible);
+    #[cfg(all(target_os = "macos", not(feature = "mas")))]
+    let run = std::process::Command::new("open").arg("-R").arg(cible).spawn().map(|_| ());
     // explorer wants `/select,<path>` as a single argument, and `std` would
     // wrap a path with a space in quotes around the whole thing, which
     // explorer reads as part of the path. `raw_arg` hands it over verbatim,
@@ -298,13 +357,14 @@ fn reveler(cible: &Path) -> Result<(), String> {
         std::process::Command::new("explorer")
             .raw_arg(format!("/select,\"{}\"", cible.display()))
             .spawn()
+            .map(|_| ())
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let run = std::process::Command::new("xdg-open")
         .arg(cible.parent().unwrap_or(cible))
-        .spawn();
-    run.map(|_| ())
-        .map_err(|e| format!("ouverture du gestionnaire de fichiers : {e}"))
+        .spawn()
+        .map(|_| ());
+    run.map_err(|e| format!("ouverture du gestionnaire de fichiers : {e}"))
 }
 
 /// What the quality alert reads of every photo of the open album: original
@@ -523,6 +583,16 @@ impl PoliceOfferte {
     }
 }
 
+/// Si les polices installées pour la personne seule (`~/Library/Fonts`) sont
+/// proposées. Pas dans la version App Store : son bac à sable ne les lit pas
+/// sans exception temporaire, et le panneau Police le dit.
+const POLICES_DE_LA_PERSONNE: bool = !cfg!(feature = "mas");
+
+/// Ce que le sélecteur parcourt, selon la saveur.
+fn polices_de_la_machine() -> Vec<colophon_core::font::Installee> {
+    colophon_core::font::installed_avec(POLICES_DE_LA_PERSONNE)
+}
+
 /// Every face installed on this machine, refused ones included.
 ///
 /// The list is kept, because the rank the front end sends back has to mean
@@ -531,7 +601,7 @@ impl PoliceOfferte {
 /// every rank after it.
 #[tauri::command]
 fn polices_installees(state: State<'_, AppState>) -> Vec<PoliceOfferte> {
-    let faces = colophon_core::font::installed();
+    let faces = polices_de_la_machine();
     let offertes = faces.iter().enumerate().map(|(rang, i)| PoliceOfferte::de(rang, i)).collect();
     *state.polices.lock().unwrap() = faces;
     offertes
@@ -545,7 +615,7 @@ fn polices_installees(state: State<'_, AppState>) -> Vec<PoliceOfferte> {
 fn polices_de_famille(famille: String, state: State<'_, AppState>) -> Vec<PoliceOfferte> {
     let mut polices = state.polices.lock().unwrap();
     if polices.is_empty() {
-        *polices = colophon_core::font::installed();
+        *polices = polices_de_la_machine();
     }
     polices
         .iter()
@@ -893,6 +963,7 @@ async fn build_album_from_folder(
     let densite = colophon_core::layout::Densite::par_id(&densite)
         .ok_or_else(|| format!("densité inconnue : {densite}"))?;
     let photos = PathBuf::from(&photos_dir);
+    let racine = photos.clone();
     let out = album_out_dir(&app, &photos)?;
     let title = title
         .map(|t| t.trim().to_string())
@@ -933,6 +1004,12 @@ async fn build_album_from_folder(
         format!("{e:#}")
     })?;
 
+    // Le marque-page du dossier choisi, tant que le choix l'ouvre encore :
+    // c'est lui qui le rouvrira au prochain lancement, sous le bac à sable.
+    // Un refus ne défait pas l'album, il se dira au prochain lancement.
+    if let Err(e) = signet::poser(&out, &racine) {
+        colophon_core::log::line(&format!("marque-page : {e}"));
+    }
     let opened = open_album(out.to_string_lossy().to_string(), state)?;
     Ok(BuiltAlbum {
         opened,
@@ -1124,13 +1201,27 @@ async fn photos_demander() -> Result<photos::Etat, String> {
 /// Le dossier d'import proposé pour un album : visible, dans les Images.
 #[tauri::command]
 fn photos_dossier_propose(nom: String, app: tauri::AppHandle) -> Result<String, String> {
-    let maison = app
-        .path()
-        .home_dir()
-        .map_err(|e| format!("dossier personnel introuvable : {e}"))?;
+    let maison = maison(&app)?;
     Ok(photos::dossier_propose(&maison, &nom)
         .to_string_lossy()
         .to_string())
+}
+
+/// Le dossier personnel où l'import écrit. Sur macOS, celui de la base des
+/// comptes et jamais `$HOME`, que le bac à sable du Mac App Store pointe sur
+/// le conteneur : `~/Pictures/Colophon` y serait un dossier que personne ne
+/// voit (`colophon_core::maison`). Ailleurs, ce que Tauri annonce.
+fn maison(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        colophon_core::maison::vrai_dossier_personnel()
+            .ok_or_else(|| "dossier personnel introuvable".to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    app.path()
+        .home_dir()
+        .map_err(|e| format!("dossier personnel introuvable : {e}"))
 }
 
 /// The file name the save dialog proposes: the album's title, with what a
@@ -1188,10 +1279,7 @@ async fn photos_importer(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<photos::RapportImport, String> {
-    let maison = app
-        .path()
-        .home_dir()
-        .map_err(|e| format!("dossier personnel introuvable : {e}"))?;
+    let maison = maison(&app)?;
     if !dossier_d_import_valide(&maison, Path::new(&dossier)) {
         return Err(format!(
             "dossier d'import refusé : {dossier} n'est pas un dossier que Colophon propose"
@@ -1320,6 +1408,31 @@ async fn export_pdf(
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "album".into());
             let cover = interior.with_file_name(format!("{stem}-couverture.pdf"));
+            // Sous le bac à sable, le dialogue n'a ouvert que le fichier de
+            // l'intérieur : la couverture d'à côté serait refusée. Elle a donc
+            // son propre dialogue, qui propose le même dossier et le même nom.
+            #[cfg(all(target_os = "macos", feature = "mas"))]
+            let cover = {
+                use tauri_plugin_dialog::DialogExt;
+                let mut boite = app
+                    .dialog()
+                    .file()
+                    .set_title("Enregistrer la couverture")
+                    .set_file_name(cover.file_name().unwrap_or_default().to_string_lossy())
+                    .add_filter("PDF", &["pdf"]);
+                if let Some(d) = cover.parent() {
+                    boite = boite.set_directory(d);
+                }
+                match boite.blocking_save_file().map(|c| c.into_path()) {
+                    Some(Ok(c)) => c,
+                    // L'intérieur est posé ; renoncer à la couverture le dit.
+                    Some(Err(e)) => return Err(format!("couverture : destination illisible : {e}")),
+                    None => {
+                        colophon_core::log::line("couverture : enregistrement abandonné");
+                        return Ok(written);
+                    }
+                }
+            };
             colophon_core::cover::render_cover_pdf(&dir, profil, &cover)
                 .map_err(|e| {
                     colophon_core::log::line(&format!("couverture en échec : {e:#}"));
@@ -1439,14 +1552,15 @@ fn montrer_dossier_prepare(state: State<'_, AppState>) -> Result<(), String> {
 
 /// Ouvre un dossier dans le gestionnaire de fichiers du système.
 fn ouvrir_dossier(dir: &Path) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let run = std::process::Command::new("open").arg(dir).spawn();
+    #[cfg(all(target_os = "macos", feature = "mas"))]
+    let run = signet::bureau::ouvrir_dossier(dir);
+    #[cfg(all(target_os = "macos", not(feature = "mas")))]
+    let run = std::process::Command::new("open").arg(dir).spawn().map(|_| ());
     #[cfg(target_os = "windows")]
-    let run = std::process::Command::new("explorer").arg(dir).spawn();
+    let run = std::process::Command::new("explorer").arg(dir).spawn().map(|_| ());
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let run = std::process::Command::new("xdg-open").arg(dir).spawn();
-    run.map(|_| ())
-        .map_err(|e| format!("ouverture du dossier : {e}"))
+    let run = std::process::Command::new("xdg-open").arg(dir).spawn().map(|_| ());
+    run.map_err(|e| format!("ouverture du dossier : {e}"))
 }
 
 /// The composition paces the creation screen offers, each with the sentence
@@ -1544,10 +1658,23 @@ fn open_report_url(url: String) -> Result<(), String> {
     navigateur(&url)
 }
 
+/// La page de confidentialité du site, la seule adresse que ce bouton ouvre.
+const CONFIDENTIALITE: &str = "https://alexis-morain.github.io/colophon-site/confidentialite/";
+
+/// « Confidentialité », dans À propos : la page qui dit ce que l'app fait
+/// de vos données, c'est-à-dire rien. Une adresse fixe, jamais une que la
+/// fenêtre envoie.
+#[tauri::command]
+fn ouvrir_confidentialite() -> Result<(), String> {
+    navigateur(CONFIDENTIALITE)
+}
+
 /// Hands a URL its guard has already accepted to the system browser.
 fn navigateur(url: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let run = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(all(target_os = "macos", feature = "mas"))]
+    let run = signet::bureau::ouvrir_url(url);
+    #[cfg(all(target_os = "macos", not(feature = "mas")))]
+    let run = std::process::Command::new("open").arg(url).spawn().map(|_| ());
     // Never through `cmd /C start`: cmd reads `&` as a command separator,
     // and `std` only quotes an argument that carries a space or is empty —
     // so an issue URL, which is nothing but `&`-separated parameters, was
@@ -1558,11 +1685,11 @@ fn navigateur(url: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let run = std::process::Command::new("rundll32")
         .args(["url.dll,FileProtocolHandler", url])
-        .spawn();
+        .spawn()
+        .map(|_| ());
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let run = std::process::Command::new("xdg-open").arg(url).spawn();
-    run.map(|_| ())
-        .map_err(|e| format!("ouverture du navigateur : {e}"))
+    let run = std::process::Command::new("xdg-open").arg(url).spawn().map(|_| ());
+    run.map_err(|e| format!("ouverture du navigateur : {e}"))
 }
 
 /// The one shape of URL the report channel may open: the repo's issue form,
@@ -2367,9 +2494,13 @@ async fn bascule_album(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // L'updater, hors de la version App Store : la règle 2.4.5(vii)
+            // interdit à une app du Store de se mettre à jour elle-même, et
+            // sa capacité n'y est pas chargée non plus (build.rs).
+            #[cfg(not(feature = "mas"))]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             app.manage(AppState::default());
             // The file log the report channel will quote: errors and long
             // stages, rotating, path-scrubbed. Failing to open it must not
@@ -2418,6 +2549,8 @@ pub fn run() {
             list_densities,
             report_data,
             open_report_url,
+            ouvrir_confidentialite,
+            revoir_dossier,
             relais_pays,
             relais_creer,
             relais_envoyer,
@@ -2852,5 +2985,124 @@ mod tests {
         let Some(dir) = sample() else { return };
         let (from_json, _, _) = load_album(&dir.join("album.json")).expect("album.json direct");
         assert_eq!(from_json, dir);
+    }
+
+    // ---- La saveur Mac App Store -----------------------------------------
+
+    /// Un fichier du crate, fins de ligne ramenées à `\n` : git le rend en
+    /// CRLF sur Windows, et le contenu est ce qu'on compare.
+    fn fichier(nom: &str) -> String {
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(nom))
+            .unwrap_or_else(|e| panic!("{nom} : {e}"))
+            .replace("\r\n", "\n")
+    }
+
+    /// La fusion que fait `tauri build --config` (RFC 7396) : un objet se
+    /// fusionne clé à clé, `null` retire la clé, tout le reste remplace.
+    fn fusionner(base: &mut serde_json::Value, patch: &serde_json::Value) {
+        match (base, patch) {
+            (serde_json::Value::Object(b), serde_json::Value::Object(p)) => {
+                for (k, v) in p {
+                    if v.is_null() {
+                        b.remove(k);
+                    } else {
+                        fusionner(b.entry(k.clone()).or_insert(serde_json::Value::Null), v);
+                    }
+                }
+            }
+            (b, p) => *b = p.clone(),
+        }
+    }
+
+    /// La version App Store ne porte ni le flux des versions ni la clé
+    /// publique de l'updater : la configuration fusionnée n'en garde rien, et
+    /// la capacité de l'updater vit dans un fichier que sa construction ne
+    /// charge pas. Le test vérifie d'abord que la base les porte, sans quoi il
+    /// ne mordrait sur rien. `scripts/mas.sh` refait la preuve sur le binaire.
+    #[test]
+    fn la_saveur_mas_n_embarque_pas_l_updater() {
+        let mut conf: serde_json::Value = serde_json::from_str(&fichier("tauri.conf.json")).unwrap();
+        let cle = conf["plugins"]["updater"]["pubkey"].as_str().unwrap().to_string();
+        let flux = "latest.json";
+        assert!(conf.to_string().contains(flux) && conf.to_string().contains(&cle));
+        let patch: serde_json::Value =
+            serde_json::from_str(&fichier("tauri.appstore.conf.json")).unwrap();
+        fusionner(&mut conf, &patch);
+        let rendu = conf.to_string();
+        assert!(!rendu.contains(flux), "le flux des versions reste dans la saveur mas");
+        assert!(!rendu.contains(&cle), "la clé de l'updater reste dans la saveur mas");
+        assert_eq!(conf["bundle"]["createUpdaterArtifacts"], serde_json::json!(false));
+        assert_eq!(conf["bundle"]["targets"], serde_json::json!(["app"]));
+        assert_eq!(conf["bundle"]["macOS"]["entitlements"], "entitlements.mas.plist");
+
+        let commune = fichier("capabilities/default.json");
+        assert!(!commune.contains("updater"), "la capacité commune nomme l'updater");
+        assert!(fichier("capabilities/maj.json").contains("\"updater:default\""));
+        assert!(fichier("build.rs").contains("\"./capabilities/default.json\""));
+    }
+
+    /// Les clés d'un plist, dans l'ordre, sans bibliothèque : ces fichiers
+    /// sont plats et écrits à la main.
+    fn cles(plist: &str) -> Vec<String> {
+        plist
+            .split("<key>")
+            .skip(1)
+            .map(|m| m.split("</key>").next().unwrap().to_string())
+            .collect()
+    }
+
+    /// Exactement les cinq droits de la décision D5, `network.client` que
+    /// WebKit exige sous bac à sable (mesuré le 15/10, voir le plist), et les
+    /// deux identifiants du profil embarqué : un droit de plus est une
+    /// question de plus à la revue.
+    #[test]
+    fn les_droits_de_la_saveur_mas_sont_ceux_de_la_decision() {
+        let mut lus = cles(&fichier("entitlements.mas.plist"));
+        lus.sort();
+        let mut voulus = vec![
+            "com.apple.security.app-sandbox",
+            "com.apple.security.files.user-selected.read-write",
+            "com.apple.security.files.bookmarks.app-scope",
+            "com.apple.security.assets.pictures.read-write",
+            "com.apple.security.personal-information.photos-library",
+            "com.apple.security.network.client",
+            "com.apple.application-identifier",
+            "com.apple.developer.team-identifier",
+        ];
+        voulus.sort();
+        assert_eq!(lus, voulus);
+        assert!(fichier("entitlements.mas.plist").contains("27VZJ5H6Q9.fr.morain.colophon"));
+    }
+
+    /// La phrase de la photothèque est la même dans les deux saveurs, au
+    /// caractère près : c'est la seule que la personne lit.
+    #[test]
+    fn la_phrase_de_la_phototheque_ne_change_pas_de_saveur() {
+        let phrase = |p: &str| {
+            p.split("<key>NSPhotoLibraryUsageDescription</key>")
+                .nth(1)
+                .and_then(|r| r.split("</string>").next())
+                .map(str::trim)
+                .map(str::to_string)
+                .unwrap()
+        };
+        let mas = fichier("Info.mas.plist");
+        assert_eq!(phrase(&fichier("Info.plist")), phrase(&mas));
+        assert!(mas.contains("<key>ITSAppUsesNonExemptEncryption</key>\n  <false/>"));
+        assert!(mas.contains("public.app-category.photography"));
+    }
+
+    /// Les polices de la personne sont proposées par le DMG, pas par la
+    /// version App Store. Tourne dans les deux saveurs, et dit l'inverse
+    /// selon celle qui est compilée.
+    #[test]
+    fn les_polices_proposees_suivent_la_saveur() {
+        let maison = Path::new("/Users/quelqu-un");
+        let dirs = colophon_core::font::dossiers_de(Some(maison), POLICES_DE_LA_PERSONNE);
+        let a_celles_de_la_personne = dirs.iter().any(|d| d.starts_with(maison));
+        #[cfg(target_os = "macos")]
+        assert_eq!(a_celles_de_la_personne, !cfg!(feature = "mas"), "{dirs:?}");
+        #[cfg(not(target_os = "macos"))]
+        let _ = a_celles_de_la_personne;
     }
 }

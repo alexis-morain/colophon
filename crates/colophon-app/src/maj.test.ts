@@ -32,7 +32,10 @@ function memoire(depart: Record<string, string> = {}): Faux {
 }
 
 beforeEach(() => vi.resetModules());
-afterEach(() => poser(null));
+afterEach(() => {
+  poser(null);
+  vi.unstubAllEnvs();
+});
 
 describe("la veille", () => {
   it("vérifie au lancement tant que personne n'a dit le contraire", async () => {
@@ -108,5 +111,25 @@ describe("la veille", () => {
     desabonne();
     setVeille("au-lancement");
     expect(appels).toBe(1);
+  });
+
+  /** La version Mac App Store n'a pas d'updater (règle 2.4.5(vii)) : la
+   *  veille y vaut « jamais », même avec un choix rangé par un DMG d'avant,
+   *  et personne ne la rallume. Le bandeau et l'interrogation en dépendent. */
+  it("ne regarde jamais dans la version App Store, et ne se rallume pas", async () => {
+    vi.stubEnv("VITE_COLOPHON_MAS", "1");
+    poser(memoire({ "colophon.maj": "au-lancement" }));
+    const { veille, setVeille, majPossible } = await import("./maj");
+    expect(majPossible()).toBe(false);
+    expect(veille()).toBe("jamais");
+    setVeille("au-lancement");
+    expect(veille()).toBe("jamais");
+  });
+
+  it("regarde dans le DMG, où l'updater existe", async () => {
+    poser(memoire());
+    const { veille, majPossible } = await import("./maj");
+    expect(majPossible()).toBe(true);
+    expect(veille()).toBe("au-lancement");
   });
 });

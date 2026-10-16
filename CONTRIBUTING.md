@@ -113,4 +113,7 @@ Suggestions and questions go to Discussions.
 ## Licence
 
 GPL-3.0-or-later. By contributing you agree your contribution is licensed
-under it. Keep the header on files you create.
+under it. Keep the header on files you create. You also grant, for your
+contribution, the additional permission written in
+[LICENSE-APPSTORE.md](LICENSE-APPSTORE.md), so that Colophon can keep being
+distributed through the Mac App Store.
